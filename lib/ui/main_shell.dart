@@ -59,6 +59,9 @@ class _MainShellState extends State<MainShell>
   final List<PackProject> _projects = <PackProject>[];
   int? _selectedIndex;
 
+  /// 是否正在执行某库项目的映射刷新（用于列表行显示处理中状态）。
+  bool _refreshing = false;
+
   /// 已注册到输出目录注册表的 packageId 集合（用于删除时同步移除注册表条目）。
   final Set<String> _registeredIds = <String>{};
 
@@ -114,6 +117,8 @@ class _MainShellState extends State<MainShell>
                   onRename: _renameProject,
                   onDelete: _deleteProject,
                   onSettings: _openSettings,
+                  onRefresh: _refreshMappings,
+                  refreshing: _refreshing,
                 ),
                 Container(width: 1, color: AppColors.borderStrong),
                 Expanded(child: _workspace(project)),
@@ -159,6 +164,7 @@ class _MainShellState extends State<MainShell>
                 project: project,
                 onChanged: _updateProject,
                 onAddSourceDir: _addSourceDirToCurrent,
+                onLogInfo: _log.info,
               ),
               BuildConfigPage(
                 key: ValueKey('build-$_selectedIndex'),
@@ -267,6 +273,112 @@ class _MainShellState extends State<MainShell>
     _log.info('已添加源目录：${sourceDir.path}，映射 ${sourceDir.mappings.length} 条');
     _notify('已添加源目录：${sourceDir.path}');
     return updated.sourceDirs.length - 1;
+  }
+
+  /// 刷新库项目的文件映射：重新扫描各源目录，检测变化后合并条件并替换映射。
+  ///
+  /// - 每个源目录重新执行 [scanSourceDir]；与现有映射（归一化 srcGlob+fileKind 集合）
+  ///   对比，仅当文件类条目有差异时重新生成。
+  /// - 重生成时对「归一化 srcGlob 相同」的旧条目保留 platforms/configurations 条件。
+  /// - 刷新只更新内存态（不写源目录配置 JSON，避免频繁 IO）；下一轮打包 upsert 时自然持久化。
+  Future<void> _refreshMappings(int index) async {
+    if (index < 0 || index >= _projects.length) return;
+    if (_refreshing) return;
+    final project = _projects[index];
+    if (project.sourceDirs.isEmpty) {
+      _log.warn('刷新映射失败：库项目「${project.packageId}」没有源目录');
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      final updatedSourceDirs = <SourceDir>[];
+      var changedAny = false;
+      final totalAdded = <String, int>{};
+      final totalRemoved = <String, int>{};
+      for (final sourceDir in project.sourceDirs) {
+        final dir = sourceDir.path.trim();
+        if (dir.isEmpty) {
+          updatedSourceDirs.add(sourceDir);
+          continue;
+        }
+        try {
+          final scan = await Future<ScanResult>(() => scanSourceDir(dir));
+          if (!hasMappingChanged(sourceDir.mappings, scan)) {
+            updatedSourceDirs.add(sourceDir);
+            _log.info('目录无变化：$dir');
+            continue;
+          }
+          _accumulateKindDiff(
+            sourceDir.mappings,
+            scan,
+            totalAdded,
+            totalRemoved,
+          );
+          final merged = mergeMappingConditions(
+            sourceDir.mappings,
+            scan.suggestedMappings,
+          );
+          updatedSourceDirs.add(sourceDir.copyWith(mappings: merged));
+          changedAny = true;
+        } on Object catch (e) {
+          _log.warn('刷新映射失败：$dir（$e）');
+          updatedSourceDirs.add(sourceDir);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        final current = index < _projects.length ? _projects[index] : null;
+        if (current != null &&
+            current.sourceDirs.length == updatedSourceDirs.length) {
+          _projects[index] = current.copyWith(sourceDirs: updatedSourceDirs);
+        }
+        _refreshing = false;
+      });
+      if (changedAny) {
+        _log.info(
+          '重新生成映射：${_formatMappingChangeSummary(totalAdded, totalRemoved)}；'
+          '仅更新内存态，打包时生效。建议打开打包页重新生成文件。',
+        );
+        _notify('映射已更新，建议打开打包页重新生成文件');
+      } else {
+        _log.info('映射刷新完成，目录无变化');
+      }
+    } on Object catch (e) {
+      _log.warn('刷新映射异常：$e');
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  /// 按文件类别累计新增/移除的 glob 数量。
+  void _accumulateKindDiff(
+    List<FileMapping> current,
+    ScanResult scan,
+    Map<String, int> added,
+    Map<String, int> removed,
+  ) {
+    final currentKindByGlob = <String, String>{};
+    for (final mapping in current) {
+      currentKindByGlob[normalizeMappingGlob(mapping.srcGlob)] =
+          mapping.fileKind;
+    }
+    final scanKindByGlob = <String, String>{};
+    for (final mapping in scan.suggestedMappings) {
+      scanKindByGlob[normalizeMappingGlob(mapping.srcGlob)] = mapping.fileKind;
+    }
+    final addedGlobs = scanKindByGlob.keys.toSet().difference(
+      currentKindByGlob.keys.toSet(),
+    );
+    final removedGlobs = currentKindByGlob.keys.toSet().difference(
+      scanKindByGlob.keys.toSet(),
+    );
+    for (final glob in addedGlobs) {
+      final kind = scanKindByGlob[glob] ?? 'other';
+      added[kind] = (added[kind] ?? 0) + 1;
+    }
+    for (final glob in removedGlobs) {
+      final kind = currentKindByGlob[glob] ?? 'other';
+      removed[kind] = (removed[kind] ?? 0) + 1;
+    }
   }
 
   Future<void> _renameProject(int index) async {
@@ -486,4 +598,44 @@ class _MainShellState extends State<MainShell>
     if (id.isEmpty || id.replaceAll('_', '').isEmpty) return 'Pkg';
     return id;
   }
+}
+
+/// 刷新映射摘要中文件类别的展示顺序。
+const List<String> _kRefreshKindOrder = [
+  'header',
+  'source',
+  'module',
+  'library',
+  'data',
+  'other',
+];
+
+/// 文件类别中文标签（与 `FileKindBadge`/说明文案保持一致）。
+String _fileKindLabel(String kind) => switch (kind) {
+  'header' => '头文件',
+  'source' => '源码',
+  'module' => '模块',
+  'library' => '库',
+  'data' => '数据',
+  _ => '其他',
+};
+
+/// 拼接「重新生成映射」摘要，如 `+3 头文件，-1 数据文件`。
+String _formatMappingChangeSummary(
+  Map<String, int> added,
+  Map<String, int> removed,
+) {
+  final parts = <String>[];
+  for (final kind in _kRefreshKindOrder) {
+    final addedCount = added[kind] ?? 0;
+    final removedCount = removed[kind] ?? 0;
+    if (addedCount == 0 && removedCount == 0) continue;
+    final label = _fileKindLabel(kind);
+    final changes = <String>[
+      if (addedCount > 0) '+$addedCount $label',
+      if (removedCount > 0) '-$removedCount $label',
+    ];
+    parts.add(changes.join('，'));
+  }
+  return parts.isEmpty ? '无变化' : parts.join('，');
 }

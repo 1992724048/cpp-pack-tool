@@ -25,6 +25,10 @@ PackProject buildProject() {
             target: r'build\native\src\v8wrap',
           ),
           FileMapping(
+            srcGlob: r'src\v8wrap\module.ixx',
+            target: r'build\native\src\v8wrap',
+          ),
+          FileMapping(
             srcGlob: r'lib\x64\Debug\icudtl.dat',
             target: r'build\native\lib\x64\Debug',
           ),
@@ -137,6 +141,17 @@ void main() {
       expect(propsIdx, greaterThan(filesOpenIdx));
       expect(targetsIdx, greaterThan(propsIdx));
       expect(firstMappingIdx, greaterThan(targetsIdx));
+    });
+
+    test('C++ Module 映射 target 前缀与源码相同（build\\native\\src）', () {
+      final nuspec = generate(buildProject(), baseDir: r'C:\pkg\build');
+      expect(
+        nuspec,
+        contains(
+          r'<file src="..\..\src\v8\src\v8wrap\module.ixx" '
+          r'target="build\native\src\v8wrap" />',
+        ),
+      );
     });
   });
 
@@ -256,6 +271,17 @@ void main() {
         ),
       );
       expect(targets, contains('<V8_Native_win32_cpp_Injected'));
+    });
+
+    test('C++ Module 映射注入 ClCompile（与源码共用注入逻辑）', () {
+      final targets = generateTargets(buildProject());
+      expect(
+        targets,
+        contains(
+          r'<ClCompile Include="$(MSBuildThisFileDirectory)src\v8wrap\module.ixx" />',
+        ),
+      );
+      expect(targets, contains('<V8_Native_module_ixx_Injected'));
     });
 
     test('链接依赖与库路径', () {

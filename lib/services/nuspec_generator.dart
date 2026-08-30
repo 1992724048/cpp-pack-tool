@@ -133,7 +133,7 @@ bool _startsWithParentSegment(String path) {
 ///
 /// 按 `mapping.fileKind` 分类：
 /// - `header`：target 为「最终 `#include` 路径」，展开为 `build\native\include\{target}`；
-/// - `source`：target 为相对 src 段，展开为 `build\native\src\{target}`；
+/// - `source`/`module`：target 为相对 src 段，展开为 `build\native\src\{target}`；
 /// - `library`/`data`/`other`：target 原样输出（本身就为包内路径，如 `build\native\lib\x64\Debug`）。
 /// - 向后兼容：若目标已带对应前缀（旧配置），原样保留，不重复添加前缀。
 String _resolveTarget(FileMapping mapping) {
@@ -144,7 +144,7 @@ String _resolveTarget(FileMapping mapping) {
     if (startsWithMsBuildIncludeRoot(target)) return target;
     return joinPath(['build', 'native', 'include', target]);
   }
-  if (kind == 'source') {
+  if (kind == 'source' || kind == 'module') {
     if (startsWithMsBuildSourceRoot(target)) return target;
     return joinPath(['build', 'native', 'src', target]);
   }

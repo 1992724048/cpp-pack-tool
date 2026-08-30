@@ -165,9 +165,14 @@ void main() {
       expect(FileMapping(srcGlob: 'a.c').fileKind, 'source');
       expect(FileMapping(srcGlob: 'a.lib').fileKind, 'library');
       expect(FileMapping(srcGlob: 'a.a').fileKind, 'library');
+      expect(FileMapping(srcGlob: 'a.so').fileKind, 'library');
+      expect(FileMapping(srcGlob: 'a.dll').fileKind, 'data');
       expect(FileMapping(srcGlob: 'a.dat').fileKind, 'data');
       expect(FileMapping(srcGlob: 'a.json').fileKind, 'data');
       expect(FileMapping(srcGlob: 'a.xml').fileKind, 'data');
+      expect(FileMapping(srcGlob: 'a.cppm').fileKind, 'module');
+      expect(FileMapping(srcGlob: 'a.ixx').fileKind, 'module');
+      expect(FileMapping(srcGlob: 'a.mpp').fileKind, 'module');
       expect(FileMapping(srcGlob: 'a.unknown').fileKind, 'other');
       expect(FileMapping(srcGlob: '').fileKind, 'other');
     });
@@ -176,6 +181,16 @@ void main() {
       expect(FileMapping(srcGlob: 'a.h').isHeaderMapping, isTrue);
       expect(FileMapping(srcGlob: 'a.cpp').isHeaderMapping, isFalse);
       expect(FileMapping(srcGlob: 'a.dat').isHeaderMapping, isFalse);
+    });
+
+    test('isSourceMapping 覆盖 source 与 module', () {
+      expect(FileMapping(srcGlob: 'a.cpp').isSourceMapping, isTrue);
+      expect(FileMapping(srcGlob: 'a.cppm').isSourceMapping, isTrue);
+      expect(FileMapping(srcGlob: 'a.ixx').isSourceMapping, isTrue);
+      expect(FileMapping(srcGlob: 'a.mpp').isSourceMapping, isTrue);
+      expect(FileMapping(srcGlob: 'a.h').isSourceMapping, isFalse);
+      expect(FileMapping(srcGlob: 'a.lib').isSourceMapping, isFalse);
+      expect(FileMapping(srcGlob: 'a.dat').isSourceMapping, isFalse);
     });
   });
 

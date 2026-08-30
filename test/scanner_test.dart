@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:cpp_nuget_pack/models/pack_project.dart';
 import 'package:cpp_nuget_pack/services/path_utils.dart';
 import 'package:cpp_nuget_pack/services/scanner.dart';
 
@@ -45,6 +46,8 @@ void main() {
     makeFile('lib/x64/Release/v8_monolith.lib');
     makeFile('lib/x64/Debug/icudtl.dat');
     makeFile('src/v8wrap/win32.cpp');
+    makeFile('src/mod/foo.cppm');
+    makeFile('bin/x64/Debug/mylib.dll');
     makeFile('data/icudtl.dat');
     makeFile('build/ignored.h');
     makeFile('out/ignored.lib');
@@ -65,10 +68,19 @@ void main() {
         r'lib\x64\Release\v8_monolith.lib',
       ]),
     );
-    expect(result.sources, unorderedEquals([r'src\v8wrap\win32.cpp']));
+    expect(
+      result.sources,
+      unorderedEquals([r'src\v8wrap\win32.cpp', r'src\mod\foo.cppm']),
+    );
+    // .dll 动态库按数据处理，不进入 libraries。
+    expect(result.libraries, isNot(contains(r'bin\x64\Debug\mylib.dll')));
     expect(
       result.dataFiles,
-      unorderedEquals([r'data\icudtl.dat', r'lib\x64\Debug\icudtl.dat']),
+      unorderedEquals([
+        r'data\icudtl.dat',
+        r'lib\x64\Debug\icudtl.dat',
+        r'bin\x64\Debug\mylib.dll',
+      ]),
     );
 
     // 生成目录 / 隐藏目录被忽略。
@@ -103,6 +115,13 @@ void main() {
     expect(
       globs,
       contains(r'src\v8wrap\*.cpp -> build\native\src\v8\src\v8wrap'),
+    );
+    // C++ Module 与源码同策略（target 前缀同为 build\native\src）。
+    expect(globs, contains(r'src\mod\*.cppm -> build\native\src\v8\src\mod'));
+    // .dll 数据映射（位于配置目录）随库/配置映射到平台×配置目录。
+    expect(
+      globs,
+      contains(r'bin\x64\Debug\*.dll -> build\native\lib\x64\Debug'),
     );
   });
 
@@ -171,6 +190,71 @@ void main() {
     test('目录不存在或未找到图标时返回 null', () {
       expect(findIconFile(joinPath([tempRoot.path, 'nope'])), isNull);
       expect(findIconFile(sourceDir.path), isNull);
+    });
+  });
+
+  group('映射刷新变化检测', () {
+    ScanResult scanWithGlobs(List<String> globs) {
+      return ScanResult(
+        headers: const [],
+        sources: const [],
+        libraries: const [],
+        dataFiles: const [],
+        suggestedMappings: [
+          for (final glob in globs) FileMapping(srcGlob: glob, target: 't'),
+        ],
+      );
+    }
+
+    test('目录无变化（文件集合相同）返回 false', () {
+      final current = [
+        FileMapping(srcGlob: '*.h', target: 'v8'),
+        FileMapping(srcGlob: r'src\*.cpp'),
+      ];
+      final scan = scanWithGlobs(['*.h', r'src\*.cpp']);
+      expect(hasMappingChanged(current, scan), isFalse);
+    });
+
+    test('新增文件类条目返回 true', () {
+      final current = [FileMapping(srcGlob: '*.h')];
+      final scan = scanWithGlobs(['*.h', r'src\*.cpp']);
+      expect(hasMappingChanged(current, scan), isTrue);
+    });
+
+    test('移除文件类条目返回 true', () {
+      final current = [
+        FileMapping(srcGlob: '*.h'),
+        FileMapping(srcGlob: '*.cpp'),
+      ];
+      final scan = scanWithGlobs(['*.h']);
+      expect(hasMappingChanged(current, scan), isTrue);
+    });
+
+    test('大小写/分隔符归一化视为同一文件条目', () {
+      final current = [FileMapping(srcGlob: r'SRC\A.H')];
+      final scan = scanWithGlobs([r'src\a.h']);
+      expect(hasMappingChanged(current, scan), isFalse);
+    });
+
+    test('mergeMappingConditions 保留同 glob 旧条件，新条目默认空', () {
+      final old = [
+        FileMapping(
+          srcGlob: '*.h',
+          target: 'v8',
+          platforms: ['x64'],
+          configurations: ['Debug'],
+        ),
+        FileMapping(srcGlob: r'src\*.cpp'),
+      ];
+      final scan = scanWithGlobs(['*.h', r'src\*.cpp', r'data\*.dat']);
+      final merged = mergeMappingConditions(old, scan.suggestedMappings);
+
+      expect(merged[0].platforms, ['x64']);
+      expect(merged[0].configurations, ['Debug']);
+      expect(merged[1].platforms, isEmpty);
+      expect(merged[1].configurations, isEmpty);
+      expect(merged[2].platforms, isEmpty);
+      expect(merged[2].configurations, isEmpty);
     });
   });
 }

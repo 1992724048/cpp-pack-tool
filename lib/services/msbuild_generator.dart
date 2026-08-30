@@ -8,8 +8,8 @@
 /// - 分配置的预处理宏展开 + `%(PreprocessorDefinitions)` 追加。
 /// - 包含路径（`$(MSBuildThisFileDirectory)include` 及映射目标派生的子路径）。
 /// - 平台/配置检查 Target 与 `{id}_LibDir` 组合属性。
-/// - 链接依赖与源码注入（BeforeTargets="SelectClCompile" + 防重复标志），源码条目
-///   来自 `fileKind == 'source'` 的映射。
+/// - 链接依赖与源码/模块注入（BeforeTargets="SelectClCompile" + 防重复标志），条目
+///   来自 `isSourceMapping`（`fileKind == 'source' || 'module'`）的映射。
 /// - 数据文件硬链接 Target 到 `$(OutDir)`（`mklink /H` 优先 + 防重复标志），条目来自
 ///   `fileKind == 'data'` 的映射。
 library;
@@ -178,9 +178,11 @@ void _appendConfigCheck(StringBuffer sb, PackProject project, String prefix) {
 
 /// 追加注入源码 Target（BeforeTargets="SelectClCompile" + 每个文件防重复标志）。
 ///
-/// 遍历全部源码目录中 `fileKind == 'source'` 的映射，为其生成 `<ClCompile>`
-/// 注入（引用 `$(MSBuildThisFileDirectory)src\{相对段}\{glob}\`）；target 若已带
-/// `build\native\src` 前缀则剥离，避免与 `$(MSBuildThisFileDirectory)` 重复。
+/// 遍历全部源码目录中 `isSourceMapping`（`fileKind == 'source' || 'module'`）的映射，
+/// 为其生成 `<ClCompile>` 注入（引用 `$(MSBuildThisFileDirectory)src\{相对段}\{glob}\`）；
+/// target 若已带 `build\native\src` 前缀则剥离，避免与 `$(MSBuildThisFileDirectory)` 重复。
+/// C++ Module（.ixx/.cppm/.mpp）与源码共用注入逻辑，无额外 MSBuild 属性——模块语义由
+/// 编译器 `/std:c++20` 或 `/std:c++latest` 按扩展名解析（`.ixx` 模块接口单元尤其如此）。
 void _appendInjectedSources(
   StringBuffer sb,
   PackProject project,
@@ -190,7 +192,7 @@ void _appendInjectedSources(
   final sourceMappings = <FileMapping>[];
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
-      if (mapping.fileKind == 'source') sourceMappings.add(mapping);
+      if (mapping.isSourceMapping) sourceMappings.add(mapping);
     }
   }
   if (sourceMappings.isEmpty) return;

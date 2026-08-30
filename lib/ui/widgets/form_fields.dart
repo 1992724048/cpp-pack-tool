@@ -88,6 +88,11 @@ class FileKindBadge extends StatelessWidget {
         '头文件：展开到 include 路径（#include <目标>）',
       ),
       'source' => ('源码', AppColors.success, '源码：自动注入消费方编译（ClCompile）'),
+      'module' => (
+        '模块',
+        AppColors.warn,
+        '模块：注入编译；需 C++20 或 Latest 标准（/std:c++latest）',
+      ),
       'data' => ('数据', AppColors.textSemantic, '数据：自动硬链接到消费方输出目录'),
       'library' => ('库', AppColors.accent, '库：参与链接依赖'),
       _ => ('其他', AppColors.textDisabled, '其他：按包内目标路径输出'),

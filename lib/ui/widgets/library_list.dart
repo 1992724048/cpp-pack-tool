@@ -23,6 +23,8 @@ class LibraryList extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onSettings,
+    required this.onRefresh,
+    required this.refreshing,
   });
 
   final List<PackProject> projects;
@@ -37,6 +39,12 @@ class LibraryList extends StatelessWidget {
 
   /// 点击顶部设置按钮的回调（由 MainShell 打开设置对话框）。
   final VoidCallback onSettings;
+
+  /// 点击某库项目行「刷新映射」按钮的回调（由 MainShell 重新扫描源目录并生成映射）。
+  final void Function(int index) onRefresh;
+
+  /// 是否有库项目正在刷新映射（用于在对应行展示处理中状态）。
+  final bool refreshing;
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +123,8 @@ class LibraryList extends StatelessWidget {
           onTap: () => onSelect(index),
           onRename: () => onRename(index),
           onDelete: () => onDelete(index),
+          onRefresh: () => onRefresh(index),
+          refreshing: refreshing && index == selectedIndex,
         );
       },
     );
@@ -129,6 +139,8 @@ class _ProjectRow extends StatefulWidget {
     required this.onTap,
     required this.onRename,
     required this.onDelete,
+    required this.onRefresh,
+    required this.refreshing,
   });
 
   final PackProject project;
@@ -139,6 +151,12 @@ class _ProjectRow extends StatefulWidget {
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
+
+  /// 点击「刷新映射」按钮的回调（仅选中项目时可用）。
+  final VoidCallback onRefresh;
+
+  /// 该行是否处于刷新映射处理中（显示加载指示）。
+  final bool refreshing;
 
   @override
   State<_ProjectRow> createState() => _ProjectRowState();
@@ -199,11 +217,33 @@ class _ProjectRowState extends State<_ProjectRow> {
                   ],
                 ),
               ),
+              _refreshButton(),
               _menuButton(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 「刷新映射」按钮：仅选中项目可用；刷新期间该行显示加载指示。
+  Widget _refreshButton() {
+    if (widget.refreshing) {
+      return const SizedBox(
+        width: 32,
+        height: 32,
+        child: Padding(
+          padding: EdgeInsets.all(8),
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return IconButton(
+      onPressed: widget.selected ? widget.onRefresh : null,
+      tooltip: '刷新映射',
+      icon: const Icon(Icons.refresh, size: 16),
+      iconSize: 16,
+      color: widget.selected ? AppColors.textSemantic : AppColors.textDisabled,
     );
   }
 

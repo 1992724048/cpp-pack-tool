@@ -20,12 +20,29 @@ const Set<String> kHeaderExtensions = {'.h', '.hpp', '.hh', '.hxx'};
 const Set<String> kSourceExtensions = {'.cpp', '.cc', '.cxx', '.c'};
 
 /// 库文件扩展名（[FileMapping.fileKind] == 'library'）。
-const Set<String> kLibraryExtensions = {'.lib', '.a', '.dll', '.so', '.dylib'};
+///
+/// 注意：`.dll` 属动态链接库，装入 [kDataExtensions]（打包后硬链接到消费方
+/// `$(OutDir)`），而非作为链接依赖参与 `AdditionalDependencies`。
+const Set<String> kLibraryExtensions = {'.lib', '.a', '.so', '.dylib'};
 
 /// 数据文件扩展名（[FileMapping.fileKind] == 'data'）。
 ///
 /// 数据映射打包后自动硬链接到消费者 `$(OutDir)`（见 `msbuild_generator` 的拷贝 Target）。
-const Set<String> kDataExtensions = {'.dat', '.json', '.bin', '.txt', '.xml'};
+/// `.dll` 动态库按数据文件处理：打包后自动落盘到消费方输出目录。
+const Set<String> kDataExtensions = {
+  '.dat',
+  '.json',
+  '.bin',
+  '.txt',
+  '.xml',
+  '.dll',
+};
+
+/// C++ Module 文件扩展名（[FileMapping.fileKind] == 'module'）。
+///
+/// `.ixx` 为模块接口单元；模块映射与源码映射同策略，打包后自动注入消费方
+/// ClCompile（由编译器语言标准 `/std:c++20` 或 `/std:c++latest` 解析模块语义）。
+const Set<String> kModuleExtensions = {'.cppm', '.ixx', '.mpp'};
 
 /// 从路径串提取目录/文件名（兼容 `\` 与 `/`）。
 String _basenameOf(String path) {
@@ -319,13 +336,16 @@ class FileMapping {
   /// 适用配置；空表示全部。
   List<String> configurations;
 
-  /// 按 `srcGlob` 扩展名命分类，返回 'header'/'source'/'data'/'library'/'other' 之一。
+  /// 按 `srcGlob` 扩展名命分类，返回
+  /// 'header'/'source'/'module'/'data'/'library'/'other' 之一。
   ///
   /// 分类决定了该映射在 nuspec/targets 中的处理方式：
   /// - `header`：target 为「最终 `#include` 路径」（不含 `build\native\include\` 前缀），
   ///   nuspec 自动拼 `build\native\include\`，msbuild 派生 include 子目录。
   /// - `source`：target 为包内 `build\native\src\...` 相对段，nuspec 自动拼前缀，
   ///   msbuild 生成 ClCompile 注入 Target。
+  /// - `module`：与 `source` 同策略（target 前缀 `build\native\src\` 并注入 ClCompile），
+  ///   由编译器语言标准解析模块语义。
   /// - `library`：target 为包内路径（如 `build\native\lib\x64\Debug`），生成链接依赖。
   /// - `data`：target 为包内目录，msbuild 生成硬链接到 `$(OutDir)` 的 Target。
   /// - `other`：未识别扩展名，target 原样输出为包内路径。
@@ -335,6 +355,7 @@ class FileMapping {
     final ext = _extensionOf(glob);
     if (kHeaderExtensions.contains(ext)) return 'header';
     if (kSourceExtensions.contains(ext)) return 'source';
+    if (kModuleExtensions.contains(ext)) return 'module';
     if (kLibraryExtensions.contains(ext)) return 'library';
     if (kDataExtensions.contains(ext)) return 'data';
     return 'other';
@@ -342,6 +363,12 @@ class FileMapping {
 
   /// 是否为头文件映射（`fileKind == 'header'`）。
   bool get isHeaderMapping => fileKind == 'header';
+
+  /// 是否为会自动注入消费方编译的映射（源文件或 C++ Module，`fileKind == 'source' || 'module'`）。
+  ///
+  /// 生成器（`msbuild_generator`）据此生成 ClCompile 注入 Target；两种类型共用
+  /// `build\native\src\` 目标前缀与同一注入逻辑。
+  bool get isSourceMapping => fileKind == 'source' || fileKind == 'module';
 
   /// 返回部分更新后的副本；未提供的字段保持不变。
   FileMapping copyWith({

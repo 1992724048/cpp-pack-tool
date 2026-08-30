@@ -11,6 +11,7 @@ import '../../services/scanner.dart';
 import '../tokens.dart';
 import '../io_picker.dart';
 import 'form_fields.dart';
+import 'mapping_suggestion_list.dart';
 
 /// 平台候选。
 const List<String> _kPlatforms = <String>['x64', 'x86', 'arm64'];
@@ -318,43 +319,10 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
         ),
       );
     }
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.borderStrong),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-      ),
-      child: ListView.builder(
-        shrinkWrap: true,
-        itemCount: result.suggestedMappings.length,
-        itemBuilder: (context, index) {
-          final mapping = result.suggestedMappings[index];
-          return InkWell(
-            onTap: () => _toggle(index),
-            child: Row(
-              children: [
-                Checkbox(
-                  value: _checked.contains(index),
-                  onChanged: (_) => _toggle(index),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(mapping.srcGlob, style: monoTextStyle()),
-                      Text(
-                        '→ ${mapping.target}',
-                        style: monoTextStyle(color: AppColors.textSemantic),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.s1),
-                FileKindBadge(kind: mapping.fileKind),
-              ],
-            ),
-          );
-        },
-      ),
+    return MappingSuggestionList(
+      suggestions: result.suggestedMappings,
+      checked: _checked,
+      onToggle: _toggle,
     );
   }
 

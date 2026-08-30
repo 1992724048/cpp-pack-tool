@@ -204,7 +204,10 @@ void _walk({
       final ext = _extensionOf(name);
       if (kHeaderExtensions.contains(ext)) {
         headers.add(rel);
-      } else if (kSourceExtensions.contains(ext)) {
+      } else if (kSourceExtensions.contains(ext) ||
+          kModuleExtensions.contains(ext)) {
+        // C++ Module（.cppm/.ixx/.mpp）与源码同策略：并入 sources，统一生成
+        // `build\native\src\...` 建议映射并注入 ClCompile（由语言标准解析模块语义）。
         sources.add(rel);
       } else if (kLibraryExtensions.contains(ext)) {
         libraries.add(rel);
@@ -364,6 +367,54 @@ String _canonicalPath(String path) {
   } on FileSystemException {
     return path;
   }
+}
+
+/// 归一化 `srcGlob` 用作变化检测/条件合并的键：统一分隔符、去首尾空白、转小写。
+///
+/// 扫描器生成的 glob 与用户手输的 glob 可能分隔符/大小写不同（如 `src\A.H` 与
+/// `src/a.h`），归一化后视为同一文件类条目。
+String normalizeMappingGlob(String srcGlob) =>
+    normalizeSeparators(srcGlob.trim()).toLowerCase();
+
+/// 映射的归一化键：`srcGlob + fileKind`（fileKind 派生自扩展名，随 srcGlob 确定）。
+String _mappingKey(FileMapping mapping) =>
+    '${normalizeMappingGlob(mapping.srcGlob)}|${mapping.fileKind}';
+
+/// 判断扫描结果与现有映射是否存在「文件类条目」差异（新增/删除）。
+///
+/// 对比 [current] 与 [scan].suggestedMappings 的归一化键集合（srcGlob+fileKind）。
+/// 仅当文件集合发生变化（新增或移除 glob）时返回 true；纯条件/目标路径调整不算
+/// 变化（不触发重生成，由用户自行编辑）。
+bool hasMappingChanged(List<FileMapping> current, ScanResult scan) {
+  final currentKeys = current.map(_mappingKey).toSet();
+  final scanKeys = scan.suggestedMappings.map(_mappingKey).toSet();
+  return currentKeys.length != scanKeys.length ||
+      !currentKeys.containsAll(scanKeys);
+}
+
+/// 合并旧字段条件（platforms/configurations）到新的建议映射。
+///
+/// 对 [newMappings] 中「归一化 srcGlob 与 [oldMappings] 相同」的条目，沿用旧映射的
+/// platforms/configurations 条件；其余条目保持扫描建议默认（空 = 全部）。
+List<FileMapping> mergeMappingConditions(
+  List<FileMapping> oldMappings,
+  List<FileMapping> newMappings,
+) {
+  final oldByGlob = <String, FileMapping>{};
+  for (final mapping in oldMappings) {
+    oldByGlob[normalizeMappingGlob(mapping.srcGlob)] = mapping;
+  }
+  return [
+    for (final mapping in newMappings)
+      mapping.copyWith(
+        platforms:
+            oldByGlob[normalizeMappingGlob(mapping.srcGlob)]?.platforms ??
+            const <String>[],
+        configurations:
+            oldByGlob[normalizeMappingGlob(mapping.srcGlob)]?.configurations ??
+            const <String>[],
+      ),
+  ];
 }
 
 /// 库图标候选文件名（按优先级排序；匹配时大小写不敏感）。

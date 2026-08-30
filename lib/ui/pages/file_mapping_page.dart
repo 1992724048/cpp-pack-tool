@@ -7,12 +7,29 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../models/pack_project.dart';
+import '../../services/scanner.dart';
+import '../io_picker.dart';
 import '../tokens.dart';
 import '../widgets/app_dialogs.dart';
 import '../widgets/form_fields.dart';
+import '../widgets/mapping_suggestion_list.dart';
 
 const List<String> _kPlatforms = <String>['x64', 'x86', 'arm64'];
 const List<String> _kConfigs = <String>['Debug', 'Release'];
+
+/// 「添加映射」对话框返回结果：新增的映射列表 + 是否来自目录扫描。
+///
+/// 手动输入恒为单条（[fromScan] false）；扫描目录可批量（[fromScan] true），
+/// 供调用方记录「从目录扫描添加 N 条映射」日志。
+class MappingAddResult {
+  const MappingAddResult({required this.mappings, required this.fromScan});
+
+  /// 新增的映射列表。
+  final List<FileMapping> mappings;
+
+  /// 是否来自目录扫描（批量）。
+  final bool fromScan;
+}
 
 /// 文件映射页。
 class FileMappingPage extends StatefulWidget {
@@ -21,6 +38,7 @@ class FileMappingPage extends StatefulWidget {
     required this.project,
     required this.onChanged,
     required this.onAddSourceDir,
+    this.onLogInfo,
   });
 
   final PackProject? project;
@@ -29,6 +47,10 @@ class FileMappingPage extends StatefulWidget {
   /// 点击「添加源目录」的回调（由 MainShell 打开对话框并把新目录加入当前项目）；
   /// 返回新源目录下标，便于页面切换到新目录。
   final Future<int?> Function() onAddSourceDir;
+
+  /// 追加 info 级日志的回调（由 MainShell 绑定到日志控制器）。用于记录
+  /// 「从目录扫描添加 N 条映射」等来源信息；为 null 时静默跳过。
+  final ValueChanged<String>? onLogInfo;
 
   @override
   State<FileMappingPage> createState() => _FileMappingPageState();
@@ -204,15 +226,26 @@ class _FileMappingPageState extends State<FileMappingPage> {
 
   Future<void> _addMapping(PackProject project, int sourceIndex) async {
     final sourceDir = project.sourceDirs[sourceIndex];
-    final mapping = await showDialog<FileMapping>(
+    final result = await showDialog<MappingAddResult>(
       context: context,
       builder: (_) => const MappingEditDialog(),
     );
-    if (mapping == null) return;
+    if (result == null || result.mappings.isEmpty) return;
     final updated = sourceDir.copyWith(
-      mappings: [...sourceDir.mappings, mapping],
+      mappings: [...sourceDir.mappings, ...result.mappings],
     );
     _commit(project, sourceIndex, updated);
+    _logAddSource(result);
+  }
+
+  void _logAddSource(MappingAddResult result) {
+    final onLogInfo = widget.onLogInfo;
+    if (onLogInfo == null) return;
+    if (result.fromScan) {
+      onLogInfo('从目录扫描添加 ${result.mappings.length} 条映射');
+    } else {
+      onLogInfo('添加映射：${result.mappings.map((m) => m.srcGlob).join('，')}');
+    }
   }
 
   Future<void> _editMapping(
@@ -222,13 +255,13 @@ class _FileMappingPageState extends State<FileMappingPage> {
   ) async {
     final sourceDir = project.sourceDirs[sourceIndex];
     final current = sourceDir.mappings[mappingIndex];
-    final mapping = await showDialog<FileMapping>(
+    final result = await showDialog<MappingAddResult>(
       context: context,
       builder: (_) => MappingEditDialog(initial: current),
     );
-    if (mapping == null) return;
+    if (result == null || result.mappings.isEmpty) return;
     final nextMappings = List<FileMapping>.of(sourceDir.mappings);
-    nextMappings[mappingIndex] = mapping;
+    nextMappings[mappingIndex] = result.mappings.first;
     _commit(project, sourceIndex, sourceDir.copyWith(mappings: nextMappings));
   }
 
@@ -361,7 +394,17 @@ class _MappingRowState extends State<_MappingRow> {
   }
 }
 
+/// 「添加映射」模式：手动输入单条，或扫描目录批量添加。
+enum _AddMappingMode { manual, scan }
+
 /// 映射编辑对话框（新增/编辑共用）。
+///
+/// 新增（[initial] 为 null）时支持两种模式（见 [_AddMappingMode]）：
+/// - 「手动输入」：填写单条源 glob/目标路径；
+/// - 「扫描目录」：选择目录后复用 [scanSourceDir] 扫描，勾选建议映射批量添加
+///   （扫描目录本身不会作为新源目录，仅把文件映射追加到映射表）。
+/// 编辑（[initial] 非 null）恒为单条手动编辑。
+/// 结果统一为 `List<FileMapping>`（手动=单元素；扫描=勾选的多条）；取消返回 null。
 class MappingEditDialog extends StatefulWidget {
   const MappingEditDialog({super.key, this.initial});
 
@@ -372,16 +415,28 @@ class MappingEditDialog extends StatefulWidget {
 }
 
 class _MappingEditDialogState extends State<MappingEditDialog> {
+  late _AddMappingMode _mode;
   late TextEditingController _srcGlob;
   late TextEditingController _target;
+  late TextEditingController _scanDirController;
   late Set<String> _platforms;
   late Set<String> _configs;
+
+  String? _scanDir;
+  bool _scanning = false;
+  String? _scanError;
+  ScanResult? _scanResult;
+  Set<int> _scanChecked = <int>{};
+
+  bool get _isAdd => widget.initial == null;
 
   @override
   void initState() {
     super.initState();
+    _mode = _AddMappingMode.manual;
     _srcGlob = TextEditingController(text: widget.initial?.srcGlob ?? '');
     _target = TextEditingController(text: widget.initial?.target ?? '');
+    _scanDirController = TextEditingController();
     _platforms = (widget.initial?.platforms ?? const <String>[]).toSet();
     _configs = (widget.initial?.configurations ?? const <String>[]).toSet();
   }
@@ -390,48 +445,25 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
   void dispose() {
     _srcGlob.dispose();
     _target.dispose();
+    _scanDirController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final scanMode = _isAdd && _mode == _AddMappingMode.scan;
     return ActionDialog(
-      title: widget.initial == null ? '添加映射' : '编辑映射',
+      title: _isAdd ? '添加映射' : '编辑映射',
       onConfirm: _save,
+      confirmLabel: scanMode ? '添加选中' : '保存',
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            LabeledFormField(
-              label: '源文件模式',
-              child: TextField(
-                controller: _srcGlob,
-                style: monoTextStyle(),
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  hintText: '如 include/**/*.h 或 x64/Release/*.lib',
-                ),
-              ),
-            ),
+            if (_isAdd) _modeBar(),
             const SizedBox(height: AppSpacing.s2),
-            LabeledFormField(
-              label: '#include 路径（头文件）/ 包内路径（其他）',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: _target,
-                    style: monoTextStyle(),
-                    decoration: const InputDecoration(
-                      hintText: '头文件如 v8\\cppgc（#include <v8\\cppgc/x.h>）；库/数据文件如 lib\\x64\\Debug',
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  _autoHandlingNote(),
-                ],
-              ),
-            ),
+            if (scanMode) ..._scanFields() else ..._manualFields(),
             const SizedBox(height: AppSpacing.s2),
             _chipGroupLabel('平台（空 = 全部）'),
             _chipGroup(_kPlatforms, _platforms),
@@ -442,6 +474,188 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
         ),
       ),
     );
+  }
+
+  /// 顶部分组工具条：扫描目录按钮 + （扫描模式下）返回手动输入的切换。
+  Widget _modeBar() {
+    return Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: () => setState(() => _mode = _AddMappingMode.scan),
+          icon: const Icon(Icons.folder_open, size: 16),
+          label: const Text('扫描目录'),
+        ),
+        const SizedBox(width: AppSpacing.s1),
+        if (_mode == _AddMappingMode.scan)
+          TextButton(
+            onPressed: () => setState(() => _mode = _AddMappingMode.manual),
+            child: const Text('手动输入'),
+          ),
+      ],
+    );
+  }
+
+  List<Widget> _manualFields() {
+    return [
+      LabeledFormField(
+        label: '源文件模式',
+        child: TextField(
+          controller: _srcGlob,
+          style: monoTextStyle(),
+          onChanged: (_) => setState(() {}),
+          decoration: const InputDecoration(
+            hintText: '如 include/**/*.h 或 x64/Release/*.lib',
+          ),
+        ),
+      ),
+      const SizedBox(height: AppSpacing.s2),
+      LabeledFormField(
+        label: '#include 路径（头文件）/ 包内路径（其他）',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _target,
+              style: monoTextStyle(),
+              decoration: const InputDecoration(
+                hintText:
+                    '头文件如 v8\\cppgc（#include <v8\\cppgc/x.h>）；'
+                    '库/数据文件如 lib\\x64\\Debug',
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _autoHandlingNote(),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _scanFields() {
+    return [
+      LabeledFormField(
+        label: '扫描目录（仅添加文件映射，不加入源目录）',
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                readOnly: true,
+                controller: _scanDirController,
+                onTap: _pickAndScan,
+                style: monoTextStyle(),
+                decoration: const InputDecoration(hintText: '点击选择要扫描的目录'),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s1),
+            OutlinedButton.icon(
+              onPressed: _pickAndScan,
+              icon: const Icon(Icons.folder_open, size: 16),
+              label: const Text('浏览'),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: AppSpacing.s2),
+      _scanStatus(),
+      if (_scanResult != null) ...[
+        const SizedBox(height: AppSpacing.s2),
+        MappingSuggestionList(
+          suggestions: _scanResult!.suggestedMappings,
+          checked: _scanChecked,
+          onToggle: _toggleScan,
+        ),
+      ],
+    ];
+  }
+
+  Widget _scanStatus() {
+    if (_scanning) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: AppSpacing.s1),
+          Text(
+            '正在扫描目录…',
+            style: TextStyle(
+              color: AppColors.textSemantic,
+              fontSize: AppFontSizes.small,
+            ),
+          ),
+        ],
+      );
+    }
+    if (_scanError != null) {
+      return Text(
+        _scanError!,
+        style: const TextStyle(
+          color: AppColors.error,
+          fontSize: AppFontSizes.small,
+        ),
+      );
+    }
+    if (_scanResult != null) {
+      final count = _scanChecked.length;
+      return Text(
+        '扫描完成，勾选 $count 条映射将追加到当前映射表；'
+        '「其他」类文件默认不加入建议。',
+        style: const TextStyle(
+          color: AppColors.success,
+          fontSize: AppFontSizes.small,
+        ),
+      );
+    }
+    return const Text(
+      '选择目录后将自动扫描并列出映射建议。',
+      style: TextStyle(
+        color: AppColors.textSemantic,
+        fontSize: AppFontSizes.small,
+      ),
+    );
+  }
+
+  Future<void> _pickAndScan() async {
+    final path = await pickDirectory(initialDirectory: _scanDir);
+    if (path == null || !mounted) return;
+    setState(() {
+      _scanDir = path;
+      _scanDirController.text = path;
+      _scanning = true;
+      _scanError = null;
+      _scanResult = null;
+      _scanChecked = <int>{};
+    });
+    try {
+      final result = await Future<ScanResult>(() => scanSourceDir(path));
+      if (!mounted) return;
+      setState(() {
+        _scanning = false;
+        _scanResult = result;
+        _scanChecked = {
+          for (var i = 0; i < result.suggestedMappings.length; i++) i,
+        };
+      });
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _scanning = false;
+        _scanResult = null;
+        _scanError = '扫描失败：$e';
+      });
+    }
+  }
+
+  void _toggleScan(int index) {
+    setState(() {
+      if (_scanChecked.contains(index)) {
+        _scanChecked.remove(index);
+      } else {
+        _scanChecked.add(index);
+      }
+    });
   }
 
   Widget _chipGroupLabel(String text) {
@@ -498,6 +712,9 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
       'source' =>
         '源码：该值为包内相对 src 段（如 v8wrap）或完整 build\\native\\src\\...；'
             '打包后自动注入消费方编译。',
+      'module' =>
+        '模块（C++20）：该值为包内相对 src 段（同源码）；打包后自动注入消费方编译，'
+            '需 C++20 或 Latest 标准（/std:c++latest）解析模块语义。',
       'data' =>
         '数据：该值为包内目录（如 build\\native\\lib\\x64\\Debug）；'
             '打包后自动硬链接到消费方输出目录。',
@@ -514,17 +731,46 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
   }
 
   void _save() {
+    if (_isAdd && _mode == _AddMappingMode.scan) {
+      _saveScanned();
+      return;
+    }
     final base = widget.initial ?? FileMapping();
     final platforms = _platforms.toList()..sort();
     final configs = _configs.toList()..sort();
     Navigator.of(context).pop(
-      base.copyWith(
-        srcGlob: _srcGlob.text.trim(),
-        target: _target.text.trim(),
-        platforms: platforms,
-        configurations: configs,
+      MappingAddResult(
+        mappings: [
+          base.copyWith(
+            srcGlob: _srcGlob.text.trim(),
+            target: _target.text.trim(),
+            platforms: platforms,
+            configurations: configs,
+          ),
+        ],
+        fromScan: false,
       ),
     );
+  }
+
+  void _saveScanned() {
+    final result = _scanResult;
+    if (result == null) return;
+    final platforms = _platforms.toList()..sort();
+    final configs = _configs.toList()..sort();
+    final picked = <FileMapping>[];
+    for (final index in _scanChecked) {
+      if (index < 0 || index >= result.suggestedMappings.length) continue;
+      picked.add(
+        result.suggestedMappings[index].copyWith(
+          platforms: platforms.isEmpty ? const <String>[] : platforms,
+          configurations: configs.isEmpty ? const <String>[] : configs,
+        ),
+      );
+    }
+    if (picked.isEmpty) return;
+    Navigator.of(context)
+        .pop(MappingAddResult(mappings: picked, fromScan: true));
   }
 }
 
