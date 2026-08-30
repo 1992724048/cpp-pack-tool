@@ -12,6 +12,15 @@ on:
         description: 'Release 版本号（如 1.0.0；留空用日期）'
         required: false
         default: ''
+      publish:
+        description: '是否发布 Release 与 上传资产（手动触发需要显式同意，默认 false）'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
 
 jobs:
   ci:
@@ -48,10 +57,12 @@ jobs:
 
   release:
     name: 发布 Release
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
-    permissions:
-      contents: write
+    needs: ci
+    # 仅在 tag（refs/tags/v*）或者手动触发且 publish=true 时运行
+    if: >
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -68,17 +79,33 @@ jobs:
       - name: 构建 Windows Release
         run: flutter build windows --release
 
-      - name: 打包为 zip
+      - name: 打包为 zip 并导出路径/版本到 env
         shell: pwsh
         run: |
-          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            if ("${{ github.event.inputs.version }}" -ne "") { "${{ github.event.inputs.version }}" } else { Get-Date -Format "yyyyMMdd" }
-          } else { "${{ github.ref_name }}".TrimStart('v') }
-          $out = "dist/cpp_nuget_pack-$version-windows-x64.zip"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            if ("${{ github.event.inputs.version }}" -ne "") {
+              $version = "${{ github.event.inputs.version }}"
+            } else {
+              $version = (Get-Date -Format "yyyyMMdd")
+            }
+          } else {
+            # 当由 tag 触发时，github.ref_name 是 tag 名称（例如 v1.2.3）
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+
           New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $out = "dist/cpp_nuget_pack-$version-windows-x64.zip"
+          if (Test-Path $out) { Remove-Item $out -Force }
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out -CompressionLevel Optimal
-          Write-Output "ASSET_PATH=$out"
+
+          # 将变量导出为后续 steps 可用的环境变量
           Write-Output "VERSION=$version" >> $env:GITHUB_ENV
+          Write-Output "ASSET_PATH=$out" >> $env:GITHUB_ENV
+
+      - name: 显示打包信息
+        run: |
+          echo "Will create release for tag: v${{ env.VERSION }}"
+          echo "Asset path: ${{ env.ASSET_PATH }}"
 
       - name: 创建 GitHub Release 并上传资产
         uses: softprops/action-gh-release@v2
@@ -94,4 +121,4 @@ jobs:
             - 构建链路：`flutter analyze`（0 issues）→ `flutter test`（全部通过）→ `flutter build windows --release`
           draft: false
           prerelease: false
-          files: dist/cpp_nuget_pack-*-windows-x64.zip
+          files: ${{ env.ASSET_PATH }}
