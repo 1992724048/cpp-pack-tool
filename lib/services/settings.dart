@@ -12,11 +12,15 @@ import 'dart:io';
 
 import 'path_utils.dart';
 
+/// 默认的 NuGet 全局包缓存目录（原始字符串，使用时展开环境变量）。
+const String kDefaultNugetGlobalCacheDir = r'%USERPROFILE%\.nuget\packages';
+
 /// 应用设置。
 class AppSettings {
   AppSettings({
     this.nugetExePath,
     this.defaultOutputDir = '',
+    this.nugetGlobalCacheDir = kDefaultNugetGlobalCacheDir,
     List<String>? recentProjects,
   }) : recentProjects = recentProjects ?? [];
 
@@ -26,6 +30,9 @@ class AppSettings {
   /// 默认输出目录。
   String defaultOutputDir;
 
+  /// 消费方 `nuget.config` 的全局包缓存目录（原始字符串，使用时展开环境变量）。
+  String nugetGlobalCacheDir;
+
   /// 最近打开的项目文件路径列表（最近在前，最多保留 10 条）。
   List<String> recentProjects;
 
@@ -33,11 +40,13 @@ class AppSettings {
   AppSettings copyWith({
     String? nugetExePath,
     String? defaultOutputDir,
+    String? nugetGlobalCacheDir,
     List<String>? recentProjects,
   }) {
     return AppSettings(
       nugetExePath: nugetExePath ?? this.nugetExePath,
       defaultOutputDir: defaultOutputDir ?? this.defaultOutputDir,
+      nugetGlobalCacheDir: nugetGlobalCacheDir ?? this.nugetGlobalCacheDir,
       recentProjects: recentProjects ?? List.of(this.recentProjects),
     );
   }
@@ -56,6 +65,7 @@ class AppSettings {
   Map<String, dynamic> toJson() => {
     'nugetExePath': nugetExePath,
     'defaultOutputDir': defaultOutputDir,
+    'nugetGlobalCacheDir': nugetGlobalCacheDir,
     'recentProjects': List.of(recentProjects),
   };
 
@@ -71,6 +81,9 @@ class AppSettings {
       defaultOutputDir: json['defaultOutputDir'] is String
           ? json['defaultOutputDir'] as String
           : '',
+      nugetGlobalCacheDir: json['nugetGlobalCacheDir'] is String
+          ? json['nugetGlobalCacheDir'] as String
+          : kDefaultNugetGlobalCacheDir,
       recentProjects: recent,
     );
   }
@@ -78,6 +91,7 @@ class AppSettings {
   @override
   String toString() =>
       'AppSettings(nugetExePath: $nugetExePath, defaultOutputDir: $defaultOutputDir, '
+      'nugetGlobalCacheDir: $nugetGlobalCacheDir, '
       'recentProjects: ${recentProjects.length})';
 }
 

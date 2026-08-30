@@ -96,4 +96,62 @@ void main() {
       expect(parseNupkgOutputPath('nothing here'), isNull);
     });
   });
+
+  group('generateConsumerNugetConfig', () {
+    test('包含全局包缓存目录与本地包源', () {
+      final content = generateConsumerNugetConfig(
+        outputDir: r'C:\out\packages',
+        globalCacheDir: r'C:\nuget\global\packages',
+      );
+      expect(content, contains('<configuration>'));
+      expect(content, contains('<config>'));
+      expect(
+        content,
+        contains(
+          '<add key="globalPackagesFolder" value="C:\\nuget\\global\\packages" />',
+        ),
+      );
+      expect(content, contains('<add key="本地包源" value="C:\\out\\packages" />'));
+      expect(content, isNot(contains('<clear/>')));
+    });
+
+    test('展开 %USERPROFILE% 环境变量（Windows 宿主）', () {
+      final content = generateConsumerNugetConfig(
+        outputDir: r'C:\out\packages',
+        globalCacheDir: r'%USERPROFILE%\.nuget\packages',
+      );
+      expect(content, isNot(contains('%USERPROFILE%')));
+      expect(content, contains('.nuget\\packages" />'));
+    });
+
+    test('globalCacheDir 为空时省略 config 段', () {
+      final content = generateConsumerNugetConfig(
+        outputDir: r'D:\pkg\out',
+        globalCacheDir: '',
+      );
+      expect(content, isNot(contains('<config>')));
+      expect(content, isNot(contains('globalPackagesFolder')));
+      expect(content, contains('<add key="本地包源" value="D:\\pkg\\out" />'));
+    });
+
+    test('globalCacheDir 为 null 时省略 config 段', () {
+      final content = generateConsumerNugetConfig(
+        outputDir: r'D:\pkg\out',
+        globalCacheDir: null,
+      );
+      expect(content, isNot(contains('<config>')));
+    });
+
+    test('路径中的 XML 特殊字符被转义', () {
+      final content = generateConsumerNugetConfig(
+        outputDir: r'C:\a&b\out<c>',
+        globalCacheDir: r'C:\x"y',
+      );
+      expect(
+        content,
+        contains('<add key="本地包源" value="C:\\a&amp;b\\out&lt;c&gt;" />'),
+      );
+      expect(content, contains('value="C:\\x&quot;y" />'));
+    });
+  });
 }

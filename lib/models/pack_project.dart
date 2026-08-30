@@ -47,6 +47,8 @@ class PackProject {
     this.tags = '',
     this.license = '',
     this.repository = '',
+    this.preBuildCommand = '',
+    this.postBuildCommand = '',
     List<SourceDir>? sourceDirs,
     List<String>? platforms,
     List<String>? configurations,
@@ -79,6 +81,12 @@ class PackProject {
 
   /// 仓库地址（可为空，空则不写入 nuspec）。
   String repository;
+
+  /// 打包前执行的构建脚本（如 `clean.bat` 或 `.\sign.ps1`）；空表示跳过。
+  String preBuildCommand;
+
+  /// 打包成功后执行的构建脚本；空表示跳过，失败仅记录警告。
+  String postBuildCommand;
 
   /// 需要打包的源码目录列表。
   List<SourceDir> sourceDirs;
@@ -125,6 +133,8 @@ class PackProject {
     String? tags,
     String? license,
     String? repository,
+    String? preBuildCommand,
+    String? postBuildCommand,
     List<SourceDir>? sourceDirs,
     List<String>? platforms,
     List<String>? configurations,
@@ -139,6 +149,8 @@ class PackProject {
       tags: tags ?? this.tags,
       license: license ?? this.license,
       repository: repository ?? this.repository,
+      preBuildCommand: preBuildCommand ?? this.preBuildCommand,
+      postBuildCommand: postBuildCommand ?? this.postBuildCommand,
       sourceDirs: sourceDirs != null
           ? sourceDirs.map((e) => e.copyWith()).toList()
           : List.of(this.sourceDirs),
@@ -158,6 +170,8 @@ class PackProject {
     'tags': tags,
     'license': license,
     'repository': repository,
+    'preBuildCommand': preBuildCommand,
+    'postBuildCommand': postBuildCommand,
     'sourceDirs': sourceDirs.map((e) => e.toJson()).toList(),
     'platforms': List.of(platforms),
     'configurations': List.of(configurations),
@@ -175,6 +189,8 @@ class PackProject {
       tags: _jsonString(json['tags']),
       license: _jsonString(json['license']),
       repository: _jsonString(json['repository']),
+      preBuildCommand: _jsonString(json['preBuildCommand']),
+      postBuildCommand: _jsonString(json['postBuildCommand']),
       sourceDirs: _jsonList(json['sourceDirs'], SourceDir.fromJson),
       platforms: _jsonStringList(json['platforms']),
       configurations: _jsonStringList(json['configurations']),

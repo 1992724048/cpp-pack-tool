@@ -17,3 +17,14 @@ Future<String?> pickExecutable() async {
   final file = await openFile(acceptedTypeGroups: <XTypeGroup>[typeGroup]);
   return file?.path;
 }
+
+/// 弹出系统文件选择器（限定 .bat/.cmd/.ps1/.exe），用于构建前/后脚本；
+/// 返回选中文件路径；取消返回 null。
+Future<String?> pickScript() async {
+  const typeGroup = XTypeGroup(
+    label: '脚本/可执行文件',
+    extensions: <String>['bat', 'cmd', 'ps1', 'exe'],
+  );
+  final file = await openFile(acceptedTypeGroups: <XTypeGroup>[typeGroup]);
+  return file?.path;
+}

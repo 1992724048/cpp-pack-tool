@@ -15,6 +15,8 @@ void main() {
         tags: 'v8, native',
         license: 'MIT',
         repository: 'https://example.com/repo',
+        preBuildCommand: 'clean.bat',
+        postBuildCommand: 'sign.ps1',
         sourceDirs: [
           SourceDir(
             path: r'C:\src\v8',
@@ -44,6 +46,8 @@ void main() {
       expect(restored.tags, 'v8, native');
       expect(restored.license, 'MIT');
       expect(restored.repository, 'https://example.com/repo');
+      expect(restored.preBuildCommand, 'clean.bat');
+      expect(restored.postBuildCommand, 'sign.ps1');
       expect(restored.platforms, ['x64', 'arm64']);
       expect(restored.configurations, ['Debug', 'Release']);
       expect(restored.sourceDirs, hasLength(1));
@@ -88,6 +92,20 @@ void main() {
 
       expect(updated.packageId, 'A.B');
       expect(updated.version, '2.0.0');
+      expect(updated.preBuildCommand, '');
+      expect(updated.postBuildCommand, '');
+    });
+
+    test('copyWith syncs pre/post build commands', () {
+      final project = PackProject(packageId: 'A.B', version: '1.0.0');
+      final updated = project.copyWith(
+        preBuildCommand: 'clean.bat',
+        postBuildCommand: 'sign.ps1',
+      );
+
+      expect(updated.preBuildCommand, 'clean.bat');
+      expect(updated.postBuildCommand, 'sign.ps1');
+      expect(updated.packageId, 'A.B');
     });
 
     test('validate throws for empty or illegal package id', () {

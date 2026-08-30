@@ -4,6 +4,8 @@
 /// 对照 `docs/ui-spec.md` §3.2 与 §4.3 空态。
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../models/pack_project.dart';
@@ -15,6 +17,7 @@ class LibraryList extends StatelessWidget {
     super.key,
     required this.projects,
     required this.selectedIndex,
+    required this.iconPaths,
     required this.onSelect,
     required this.onAdd,
     required this.onRename,
@@ -24,6 +27,9 @@ class LibraryList extends StatelessWidget {
 
   final List<PackProject> projects;
   final int? selectedIndex;
+
+  /// 按 packageId 索引的库图标路径；缺失或 null 时显示默认 [Icons.package]。
+  final Map<String, String?> iconPaths;
   final ValueChanged<int> onSelect;
   final VoidCallback onAdd;
   final void Function(int index) onRename;
@@ -105,6 +111,7 @@ class LibraryList extends StatelessWidget {
         return _ProjectRow(
           project: projects[index],
           selected: index == selectedIndex,
+          iconPath: iconPaths[projects[index].packageId],
           onTap: () => onSelect(index),
           onRename: () => onRename(index),
           onDelete: () => onDelete(index),
@@ -118,6 +125,7 @@ class _ProjectRow extends StatefulWidget {
   const _ProjectRow({
     required this.project,
     required this.selected,
+    required this.iconPath,
     required this.onTap,
     required this.onRename,
     required this.onDelete,
@@ -125,6 +133,9 @@ class _ProjectRow extends StatefulWidget {
 
   final PackProject project;
   final bool selected;
+
+  /// 库图标完整路径；null 或空表示未找到，显示默认 [Icons.package]。
+  final String? iconPath;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
@@ -156,11 +167,7 @@ class _ProjectRowState extends State<_ProjectRow> {
                 color: widget.selected ? AppColors.accent : Colors.transparent,
               ),
               const SizedBox(width: AppSpacing.s2),
-              const Icon(
-                Icons.library_books_outlined,
-                size: 18,
-                color: AppColors.textSemantic,
-              ),
+              _icon(),
               const SizedBox(width: AppSpacing.s1),
               Expanded(
                 child: Column(
@@ -197,6 +204,24 @@ class _ProjectRowState extends State<_ProjectRow> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 库项目图标：找到 icon.* 时用 [Image.file] 加载（含 ico，解码失败走兜底），
+  /// 否则显示默认 [Icons.inventory_2]。
+  Widget _icon() {
+    final path = widget.iconPath;
+    final fallback = const Icon(
+      Icons.inventory_2,
+      size: 24,
+      color: AppColors.textSemantic,
+    );
+    if (path == null || path.trim().isEmpty) return fallback;
+    return Image.file(
+      File(path),
+      width: 24,
+      height: 24,
+      errorBuilder: (_, _, _) => fallback,
     );
   }
 

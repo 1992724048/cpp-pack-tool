@@ -85,6 +85,8 @@ class _PackPageState extends State<PackPage> {
           _outputDirField(),
           const SizedBox(height: AppSpacing.s2),
           _nugetField(),
+          const SizedBox(height: AppSpacing.s2),
+          _buildScriptSection(project),
           const SizedBox(height: AppSpacing.s3),
           _packButton(project, enabled),
           const SizedBox(height: AppSpacing.s2),
@@ -132,6 +134,15 @@ class _PackPageState extends State<PackPage> {
             icon: const Icon(Icons.settings_outlined, size: 18),
             iconSize: 18,
             color: AppColors.textSemantic,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s1),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: _generateConsumerConfig,
+            icon: const Icon(Icons.settings_ethernet, size: 16),
+            label: const Text('生成消费方 nuget.config'),
           ),
         ),
       ],
@@ -208,6 +219,83 @@ class _PackPageState extends State<PackPage> {
     );
   }
 
+  /// 构建脚本区：构建前/构建后两个输入框（含浏览按钮）。
+  Widget _buildScriptSection(PackProject project) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '构建脚本',
+          style: TextStyle(
+            color: AppColors.textSemantic,
+            fontSize: AppFontSizes.small,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _SyncedField(
+          value: project.preBuildCommand,
+          readOnly: false,
+          hint: '构建前执行，如 clean.bat 或 .\\sign.ps1',
+          mono: true,
+          onChanged: (value) =>
+              _updateProject(project.copyWith(preBuildCommand: value)),
+          suffix: TextButton(
+            onPressed: () => _pickScript(project, pre: true),
+            child: const Text('浏览'),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        _SyncedField(
+          value: project.postBuildCommand,
+          readOnly: false,
+          hint: '构建后执行，如 .\\sign.ps1',
+          mono: true,
+          onChanged: (value) =>
+              _updateProject(project.copyWith(postBuildCommand: value)),
+          suffix: TextButton(
+            onPressed: () => _pickScript(project, pre: false),
+            child: const Text('浏览'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickScript(PackProject project, {required bool pre}) async {
+    final path = await pickScript();
+    if (path == null || path.trim().isEmpty) return;
+    if (pre) {
+      _updateProject(project.copyWith(preBuildCommand: path.trim()));
+    } else {
+      _updateProject(project.copyWith(postBuildCommand: path.trim()));
+    }
+  }
+
+  void _updateProject(PackProject project) => widget.onChanged(project);
+
+  /// 在全局输出目录生成消费方 `nuget.config`。
+  Future<void> _generateConsumerConfig() async {
+    final outputDir = widget.settings.defaultOutputDir.trim();
+    if (outputDir.isEmpty) {
+      widget.log.error('输出目录未设置，无法生成消费方 nuget.config');
+      widget.onNotify('输出目录未设置', isError: true);
+      return;
+    }
+    try {
+      final content = generateConsumerNugetConfig(
+        outputDir: outputDir,
+        globalCacheDir: widget.settings.nugetGlobalCacheDir,
+      );
+      final path = joinPath([outputDir, 'nuget.config']);
+      File(path).writeAsStringSync(content);
+      widget.log.info('已生成消费方 nuget.config：$path');
+      widget.onNotify('已生成 nuget.config：$path');
+    } on Object catch (e) {
+      widget.log.error('生成 nuget.config 失败：$e');
+      widget.onNotify('生成 nuget.config 失败', isError: true);
+    }
+  }
+
   Widget _packButton(PackProject project, bool enabled) {
     final label = _mode == PackMode.pack ? '打包' : '生成文件';
     return SizedBox(
@@ -266,11 +354,16 @@ class _PackPageState extends State<PackPage> {
     setState(() => _busy = true);
     try {
       _warnMissingFiles(project);
+      // 构建前脚本：失败即中止，不进入生成/打包流程。
+      if (!await _runPreBuild(project)) return;
       final paths = await _generateFiles(project);
       widget.log.info('已生成：${paths.join('；')}');
       if (_mode == PackMode.pack) {
         final packed = await _packWithNuget(project);
-        if (packed) widget.onPacked(project);
+        if (packed) {
+          widget.onPacked(project);
+          await _runPostBuild(project);
+        }
       } else {
         widget.onNotify('文件已生成到输出目录');
       }
@@ -280,6 +373,82 @@ class _PackPageState extends State<PackPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 执行构建前脚本（`cmd /c`）。成功返回 true；失败或异常返回 false（中止打包）。
+  Future<bool> _runPreBuild(PackProject project) async {
+    final command = project.preBuildCommand.trim();
+    if (command.isEmpty) return true;
+    final workingDir = _commandWorkingDir(project);
+    widget.log.info('执行构建前脚本：$command');
+    try {
+      final result = await Process.run('cmd', [
+        '/c',
+        command,
+      ], workingDirectory: workingDir.isEmpty ? null : workingDir);
+      _logProcessOutput(result);
+      if (result.exitCode != 0) {
+        final message = '构建前脚本失败（退出码 ${result.exitCode}），已中止打包';
+        widget.log.error(message);
+        widget.onNotify('构建前脚本失败，已中止', isError: true);
+        return false;
+      }
+      widget.log.info('构建前脚本执行完成');
+      return true;
+    } on ProcessException catch (e) {
+      widget.log.error('无法执行构建前脚本：${e.message}');
+      widget.onNotify('无法执行构建前脚本', isError: true);
+      return false;
+    }
+  }
+
+  /// 执行构建后脚本（`cmd /c`）。失败仅记录 warn 日志，不改变打包结果。
+  Future<void> _runPostBuild(PackProject project) async {
+    final command = project.postBuildCommand.trim();
+    if (command.isEmpty) return;
+    final workingDir = _commandWorkingDir(project);
+    widget.log.info('执行构建后脚本：$command');
+    try {
+      final result = await Process.run('cmd', [
+        '/c',
+        command,
+      ], workingDirectory: workingDir.isEmpty ? null : workingDir);
+      _logProcessOutput(result);
+      if (result.exitCode != 0) {
+        widget.log.warn('构建后脚本失败（退出码 ${result.exitCode}），打包已完成');
+      } else {
+        widget.log.info('构建后脚本执行完成');
+      }
+    } on ProcessException catch (e) {
+      widget.log.warn('无法执行构建后脚本：${e.message}（打包已完成）');
+    }
+  }
+
+  /// 构建脚本工作目录：首个存在的源目录，否则用全局输出目录。
+  String _commandWorkingDir(PackProject project) {
+    for (final sourceDir in project.sourceDirs) {
+      final path = sourceDir.path.trim();
+      if (path.isNotEmpty && Directory(path).existsSync()) return path;
+    }
+    return widget.settings.defaultOutputDir.trim();
+  }
+
+  /// 将脚本进程的 stdout/stderr 截断前 2000 字符，stdout→info、stderr→warn。
+  void _logProcessOutput(ProcessResult result) {
+    final stdout = _truncate(_resultText(result.stdout));
+    final stderr = _truncate(_resultText(result.stderr));
+    if (stdout.trim().isNotEmpty) widget.log.info(stdout);
+    if (stderr.trim().isNotEmpty) widget.log.warn(stderr);
+  }
+
+  String _truncate(String value) =>
+      value.length <= 2000 ? value : '${value.substring(0, 2000)}…（已截断）';
+
+  String _resultText(dynamic value) {
+    if (value == null) return '';
+    if (value is String) return value;
+    if (value is List<int>) return systemEncoding.decode(value);
+    return value.toString();
   }
 
   /// 生成 nuspec/props/targets 并写入全局输出目录；返回写入的文件路径列表。

@@ -4,10 +4,14 @@
 /// 输出目录注册表恢复已打包的库项目（见 `package_registry.dart`）。
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/pack_project.dart';
 import '../services/package_registry.dart';
+import '../services/path_utils.dart';
+import '../services/scanner.dart';
 import '../services/settings.dart';
 import 'log_controller.dart';
 import 'pages/build_config_page.dart';
@@ -58,6 +62,9 @@ class _MainShellState extends State<MainShell>
   /// 已注册到输出目录注册表的 packageId 集合（用于删除时同步移除注册表条目）。
   final Set<String> _registeredIds = <String>{};
 
+  /// 按 packageId 索引的库图标路径（来源：每个项目首个源目录顶层的 icon.*）。
+  Map<String, String?> _iconPaths = <String, String?>{};
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +78,7 @@ class _MainShellState extends State<MainShell>
     } else {
       _loadRegistryProjects();
     }
+    _refreshIconPaths();
     _log.info('应用已启动，加载设置：$_settings');
   }
 
@@ -100,6 +108,7 @@ class _MainShellState extends State<MainShell>
                 LibraryList(
                   projects: _projects,
                   selectedIndex: _selectedIndex,
+                  iconPaths: _iconPaths,
                   onSelect: _selectProject,
                   onAdd: _openAddSourceDir,
                   onRename: _renameProject,
@@ -226,6 +235,7 @@ class _MainShellState extends State<MainShell>
           sourceDirs: <SourceDir>[...current.sourceDirs, sourceDir],
         );
       }
+      _refreshIconPaths();
     });
     _tabController.animateTo(0);
     _log.info('已添加源目录：${sourceDir.path}，映射 ${sourceDir.mappings.length} 条');
@@ -246,20 +256,40 @@ class _MainShellState extends State<MainShell>
       if (_registeredIds.remove(project.packageId)) {
         _registeredIds.add(newId);
       }
+      _refreshIconPaths();
     });
     _log.info('已将库项目重命名为 $newId');
   }
 
   Future<void> _deleteProject(int index) async {
+    if (index < 0 || index >= _projects.length) return;
     final project = _projects[index];
-    final confirmed = await confirmDelete(
+    final options = await confirmDeleteProject(
       context,
-      title: '删除确认',
-      message: '确定删除库项目「${project.packageId}」吗？该项目的包元数据与映射将一并移除。',
+      packageId: project.packageId,
+      inRegistry: _registeredIds.contains(project.packageId),
     );
-    if (!confirmed || !mounted) return;
-    if (_registeredIds.contains(project.packageId)) {
+    if (options == null || !mounted) return;
+    _performDelete(index, project, options);
+  }
+
+  /// 按勾选项执行删除：注册表移除、源目录包配置删除、当前版本 nupkg 删除。
+  ///
+  /// 单项失败仅记录 warn 日志（不中断其余删除）；成功后记录 info 日志。
+  void _performDelete(
+    int index,
+    PackProject project,
+    DeleteProjectOptions options,
+  ) {
+    if (options.removeFromRegistry &&
+        _registeredIds.contains(project.packageId)) {
       _removeFromRegistry(project.packageId);
+    }
+    if (options.deleteSourceDirConfig) {
+      _deleteSourceDirConfigs(project);
+    }
+    if (options.deleteNupkg) {
+      _deleteNupkg(project);
     }
     setState(() {
       _registeredIds.remove(project.packageId);
@@ -270,8 +300,58 @@ class _MainShellState extends State<MainShell>
       } else if (selected > index) {
         _selectedIndex = selected - 1;
       }
+      _refreshIconPaths();
     });
     _log.info('已删除库项目：${project.packageId}');
+  }
+
+  /// 删除该项目所有源目录下的 `.cpp_nuget_pack.json`（存在才删）。
+  void _deleteSourceDirConfigs(PackProject project) {
+    for (final sourceDir in project.sourceDirs) {
+      final path = sourceDir.path.trim();
+      if (path.isEmpty) continue;
+      final file = File(joinPath([path, kSourceDirConfigFileName]));
+      if (!file.existsSync()) continue;
+      try {
+        file.deleteSync();
+        _log.info('已删除源目录包配置文件：${file.path}');
+      } on FileSystemException catch (e) {
+        _log.warn('删除源目录包配置文件失败：${file.path}（${e.message}）');
+      }
+    }
+  }
+
+  /// 删除输出目录下当前版本 `.nupkg`（仅精确匹配当前版本，避免误删历史版本）。
+  void _deleteNupkg(PackProject project) {
+    final outputDir = _registryOutputDir;
+    if (outputDir.isEmpty) return;
+    final id = project.packageId.trim();
+    if (id.isEmpty) return;
+    final file = File(joinPath([outputDir, '$id.${project.version}.nupkg']));
+    if (!file.existsSync()) return;
+    try {
+      file.deleteSync();
+      _log.info('已删除已输出的 NuGet 包：${file.path}');
+    } on FileSystemException catch (e) {
+      _log.warn('删除 NuGet 包失败：${file.path}（${e.message}）');
+    }
+  }
+
+  /// 为当前全部项目重建图标路径缓存（每个项目首个源目录顶层的 icon.*）。
+  void _refreshIconPaths() {
+    final map = <String, String?>{};
+    for (final project in _projects) {
+      final sourceDirs = project.sourceDirs;
+      String? icon;
+      if (sourceDirs.isNotEmpty) {
+        final firstDir = sourceDirs.first.path.trim();
+        if (firstDir.isNotEmpty) {
+          icon = findIconFile(firstDir);
+        }
+      }
+      map[project.packageId] = icon;
+    }
+    _iconPaths = map;
   }
 
   /// 从输出目录注册表移除 packageId；失败时记录日志并提示。

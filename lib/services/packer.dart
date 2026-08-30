@@ -260,3 +260,56 @@ class PackResult {
   factory PackResult.success({required String message, String? outputPath}) =>
       PackResult(success: true, message: message, outputPath: outputPath);
 }
+
+/// 扩展字符串中的 `%VAR%` 环境变量引用；未定义的环境变量保留原样。
+String _expandEnvironmentVars(String input) {
+  if (input.isEmpty) return input;
+  final env = Platform.environment;
+  final regex = RegExp(r'%([^%]+)%');
+  return input.replaceAllMapped(regex, (match) {
+    final name = match.group(1)!;
+    return env[name] ?? match.group(0)!;
+  });
+}
+
+/// XML 转义文本（用于属性值）。
+String _xmlEscape(String value) {
+  return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&apos;');
+}
+
+/// 生成消费方 `nuget.config` 文件内容。
+///
+/// 将 [globalCacheDir]（原始字符串，含 `%VAR%` 时展开环境变量）作为
+/// `globalPackagesFolder`，并将 [outputDir] 作为本地包源。不添加 `<clear/>`，
+/// 保留官方包源。[globalCacheDir] 为空时省略 `<config>` 段。路径均做 XML 转义。
+String generateConsumerNugetConfig({
+  required String outputDir,
+  String? globalCacheDir,
+}) {
+  final out = _xmlEscape(outputDir.trim());
+  final cache = (globalCacheDir ?? '').trim();
+  final buffer = StringBuffer()
+    ..write('<?xml version="1.0" encoding="utf-8"?>\n')
+    ..write('<configuration>\n');
+  if (cache.isNotEmpty) {
+    buffer
+      ..write('  <config>\n')
+      ..write('    <add key="globalPackagesFolder" value="')
+      ..write(_xmlEscape(_expandEnvironmentVars(cache)))
+      ..write('" />\n')
+      ..write('  </config>\n');
+  }
+  buffer
+    ..write('  <packageSources>\n')
+    ..write('    <add key="本地包源" value="')
+    ..write(out)
+    ..write('" />\n')
+    ..write('  </packageSources>\n')
+    ..write('</configuration>\n');
+  return buffer.toString();
+}

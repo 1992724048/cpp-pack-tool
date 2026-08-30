@@ -417,6 +417,111 @@ Future<bool> confirmDelete(
   return result ?? false;
 }
 
+/// 删除库项目时的可选清理项。
+class DeleteProjectOptions {
+  const DeleteProjectOptions({
+    required this.removeFromRegistry,
+    required this.deleteSourceDirConfig,
+    required this.deleteNupkg,
+  });
+
+  /// 是否从输出目录包注册表移除。
+  final bool removeFromRegistry;
+
+  /// 是否删除各源目录下的 `.cpp_nuget_pack.json` 包配置文件。
+  final bool deleteSourceDirConfig;
+
+  /// 是否删除输出目录下当前版本的 `.nupkg` 文件。
+  final bool deleteNupkg;
+}
+
+/// 删除库项目确认对话框；用户取消返回 null。
+///
+/// 默认三个清理项全部勾选。「从输出目录包注册表移除」仅在 [inRegistry] 为真时
+/// 可用（否则置灰且不可选），其余两项始终可用。
+Future<DeleteProjectOptions?> confirmDeleteProject(
+  BuildContext context, {
+  required String packageId,
+  required bool inRegistry,
+}) async {
+  var removeFromRegistry = inRegistry;
+  var deleteSourceDirConfig = true;
+  var deleteNupkg = true;
+
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        return AlertDialog(
+          title: const Text('删除库项目'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '确定删除库项目「$packageId」吗？源文件不会被删除，'
+                  '仅移除应用内的项目配置与对应产物。',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: AppFontSizes.body,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.s2),
+                CheckboxListTile(
+                  value: removeFromRegistry,
+                  onChanged: inRegistry
+                      ? (v) => setState(() => removeFromRegistry = v ?? false)
+                      : null,
+                  title: const Text('从输出目录包注册表移除'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                CheckboxListTile(
+                  value: deleteSourceDirConfig,
+                  onChanged: (v) =>
+                      setState(() => deleteSourceDirConfig = v ?? false),
+                  title: const Text('删除源目录包配置文件'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                CheckboxListTile(
+                  value: deleteNupkg,
+                  onChanged: (v) => setState(() => deleteNupkg = v ?? false),
+                  title: const Text('删除已输出的 NuGet 包'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+  if (result != true) return null;
+  return DeleteProjectOptions(
+    removeFromRegistry: removeFromRegistry,
+    deleteSourceDirConfig: deleteSourceDirConfig,
+    deleteNupkg: deleteNupkg,
+  );
+}
+
 /// 文本输入对话框，确认返回输入文本，取消返回 null。
 Future<String?> promptTextInput(
   BuildContext context, {

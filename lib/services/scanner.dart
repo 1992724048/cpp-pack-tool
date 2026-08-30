@@ -330,3 +330,41 @@ String _canonicalPath(String path) {
     return path;
   }
 }
+
+/// 库图标候选文件名（按优先级排序；匹配时大小写不敏感）。
+const List<String> kIconCandidateNames = <String>[
+  'icon.png',
+  'icon.jpg',
+  'icon.jpeg',
+  'icon.ico',
+];
+
+/// 在 [sourceDir] 顶层查找库图标文件。
+///
+/// 按 `icon.png` > `icon.jpg` > `icon.jpeg` > `icon.ico`（大小写不敏感）返回
+/// 第一个存在的完整路径；[sourceDir] 不存在或未找到时返回 null。仅查顶层
+/// （不递归），与 [scanSourceDir] 的递归行为不同。
+String? findIconFile(String sourceDir) {
+  final dir = sourceDir.trim();
+  if (dir.isEmpty) return null;
+  final directory = Directory(dir);
+  if (!directory.existsSync()) return null;
+
+  final lowerToPath = <String, String>{};
+  List<FileSystemEntity> entries;
+  try {
+    entries = directory.listSync(followLinks: false);
+  } on FileSystemException {
+    return null;
+  }
+  for (final entry in entries) {
+    if (entry is File) {
+      lowerToPath[basenameOf(entry.path).toLowerCase()] = entry.path;
+    }
+  }
+  for (final name in kIconCandidateNames) {
+    final found = lowerToPath[name];
+    if (found != null) return found;
+  }
+  return null;
+}

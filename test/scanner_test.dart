@@ -134,4 +134,34 @@ void main() {
 
     expect(result.headers, unorderedEquals(['real.h']));
   });
+
+  group('findIconFile', () {
+    File writeIcon(String name, [String? dir]) {
+      final file = File(joinPath([dir ?? sourceDir.path, name]))
+        ..writeAsStringSync('x');
+      return file;
+    }
+
+    test('返回顶层 icon.png 的完整路径', () {
+      final icon = writeIcon('icon.png');
+      expect(findIconFile(sourceDir.path), icon.path);
+    });
+
+    test('按优先级 icon.png > icon.jpg > icon.ico', () {
+      writeIcon('icon.ico');
+      writeIcon('icon.jpg');
+      final png = writeIcon('icon.png');
+      expect(findIconFile(sourceDir.path), png.path);
+    });
+
+    test('文件名大小写不敏感', () {
+      final icon = writeIcon('ICON.PNG');
+      expect(findIconFile(sourceDir.path), icon.path);
+    });
+
+    test('目录不存在或未找到图标时返回 null', () {
+      expect(findIconFile(joinPath([tempRoot.path, 'nope'])), isNull);
+      expect(findIconFile(sourceDir.path), isNull);
+    });
+  });
 }

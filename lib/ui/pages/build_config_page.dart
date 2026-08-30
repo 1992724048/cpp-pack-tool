@@ -1,4 +1,4 @@
-/// 编译配置 Tab：C++ 标准、全局宏、分配置宏表、附加包含/库目录、附加依赖、
+/// 编译配置 Tab：C++ 标准、全局宏、分配置宏折叠列表、附加包含/库目录、附加依赖、
 /// 数据文件拷贝清单、消费者源码注入清单。
 ///
 /// 对照 `docs/ui-spec.md` §3.4 与任务清单「编译配置表单」。路径/宏等数据
@@ -39,47 +39,6 @@ class BuildConfigPage extends StatefulWidget {
 }
 
 class _BuildConfigPageState extends State<BuildConfigPage> {
-  final Map<String, TextEditingController> _configControllers =
-      <String, TextEditingController>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _syncConfigControllers();
-  }
-
-  @override
-  void didUpdateWidget(BuildConfigPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncConfigControllers();
-  }
-
-  @override
-  void dispose() {
-    for (final controller in _configControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  void _syncConfigControllers() {
-    final configs = widget.project?.configurations ?? const <String>[];
-    final wanted = configs.toSet();
-    final stale = _configControllers.keys
-        .where((c) => !wanted.contains(c))
-        .toList();
-    for (final key in stale) {
-      _configControllers.remove(key)?.dispose();
-    }
-    for (final config in configs) {
-      if (!_configControllers.containsKey(config)) {
-        _configControllers[config] = TextEditingController(
-          text: widget.project?.compileConfig.configDefines[config] ?? '',
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final project = widget.project;
@@ -248,46 +207,84 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
         for (final config in project.configurations)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.s1),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 80,
-                  child: Text(
-                    config,
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: AppFontSizes.body,
-                    ),
-                  ),
+            child: Theme(
+              data: Theme.of(context)
+                  .copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                tilePadding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.s1,
                 ),
-                Expanded(
-                  child: TextFormField(
-                    controller: _configController(config),
-                    style: monoTextStyle(),
-                    onChanged: (value) => _update(
-                      project.copyWith(
-                        compileConfig: compile.copyWith(
-                          configDefines: {
-                            ...compile.configDefines,
-                            config: value,
-                          },
+                shape: const Border(),
+                collapsedShape: const Border(),
+                title: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '$config 宏',
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: AppFontSizes.body,
                         ),
                       ),
                     ),
-                    decoration: const InputDecoration(
-                      hintText: '该配置追加的宏，如 V8_ENABLE_CHECKS',
+                    const SizedBox(width: AppSpacing.s1),
+                    _configBadge(config, compile),
+                  ],
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      left: AppSpacing.s2,
+                      right: AppSpacing.s2,
+                      bottom: AppSpacing.s2,
+                    ),
+                    child: StringListEditor(
+                      values: _splitSemis(compile.configDefines[config] ?? ''),
+                      hint: '该配置追加的宏，如 V8_ENABLE_CHECKS',
+                      onChanged: (values) => _update(
+                        project.copyWith(
+                          compileConfig: compile.copyWith(
+                            configDefines: {
+                              ...compile.configDefines,
+                              config: _joinSemis(values),
+                            },
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
       ],
     );
   }
 
-  TextEditingController _configController(String config) =>
-      _configControllers[config]!;
+  /// 分配置宏折叠块左侧的已配置数量徽标；未配置显示「未配置」。
+  Widget _configBadge(String config, CompileConfig compile) {
+    final count = _splitSemis(compile.configDefines[config] ?? '').length;
+    final label = count == 0 ? '未配置' : '$count 项';
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s1,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.textSemantic,
+          fontSize: AppFontSizes.caption,
+        ),
+      ),
+    );
+  }
 
   /// 按 `;` 拆分并去除空项（用于编辑分号分隔字符串的列表）。
   List<String> _splitSemis(String value) =>
@@ -430,6 +427,13 @@ class _StringListEditorState extends State<StringListEditor> {
           ),
           const SizedBox(width: AppSpacing.s1),
           IconButton(
+            onPressed: () => _editItemDialog(index),
+            tooltip: '修改',
+            icon: const Icon(Icons.edit_outlined, size: 16),
+            iconSize: 16,
+            color: AppColors.textSemantic,
+          ),
+          IconButton(
             onPressed: () => _removeAt(index),
             tooltip: '移除',
             icon: const Icon(Icons.close, size: 16),
@@ -445,6 +449,66 @@ class _StringListEditorState extends State<StringListEditor> {
     final next = List<String>.of(widget.values);
     next[index] = value;
     widget.onChanged(_cleaned(next));
+  }
+
+  /// 打开单行输入对话框修改第 [index] 条；空值不保存并提示。
+  Future<void> _editItemDialog(int index) async {
+    final current = widget.values[index];
+    final newValue = await _promptEditValue(
+      context,
+      initial: current,
+      hint: widget.hint,
+    );
+    if (newValue == null || !mounted) return;
+    if (!widget.allowDuplicates && widget.values.contains(newValue)) {
+      return;
+    }
+    final next = List<String>.of(widget.values);
+    next[index] = newValue;
+    widget.onChanged(_cleaned(next));
+  }
+
+  Future<String?> _promptEditValue(
+    BuildContext context, {
+    required String initial,
+    required String hint,
+  }) async {
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('修改'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: monoTextStyle(),
+          decoration: InputDecoration(hintText: hint),
+          onSubmitted: (value) => _submitEdit(ctx, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => _submitEdit(ctx, controller.text),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  void _submitEdit(BuildContext dialogContext, String rawValue) {
+    final value = rawValue.trim();
+    if (value.isEmpty) {
+      ScaffoldMessenger.of(dialogContext)
+          .showSnackBar(const SnackBar(content: Text('内容不能为空')));
+      return;
+    }
+    Navigator.of(dialogContext).pop(value);
   }
 
   void _add() {
