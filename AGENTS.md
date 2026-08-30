@@ -30,6 +30,7 @@ Flutter Windows 桌面应用，用于将 C/C++ 库（头文件 + 预编译库 + 
 ## Source Tree
 
 ```
+README.md          项目文档（功能/快速开始/输出目录结构/开发）
 lib/
   main.dart         应用入口（MaterialApp + buildDarkTheme + MainShell）
   models/pack_project.dart
