@@ -376,6 +376,8 @@ List<FileMapping> _buildLibraryAndDataMappings(
         FileMapping(
           srcGlob: parent.isEmpty ? '*$ext' : '$parent$pathSeparator*$ext',
           target: target,
+          platforms: config != null ? [platform] : const <String>[],
+          configurations: config != null ? [config] : const <String>[],
         ),
       );
     }
