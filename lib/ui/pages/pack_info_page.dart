@@ -1,13 +1,16 @@
-/// 包信息 Tab：id/version/description/authors/owners/tags/license/
-/// repository/outputDirectory 表单。
+/// 包信息 Tab：id/version/description/authors/owners/tags/license/repository 表单。
 ///
 /// 字段以 controller 承载，onChanged 同步回 [PackProject]；表单校验以内联
-/// errorText 呈现（不弹窗打断）。对照 `docs/ui-spec.md` §3.4。
+/// errorText 呈现（不弹窗打断）。输出目录为全局设置（见打包页），此处不再出现。
+/// 对照 `docs/ui-spec.md` §3.4。
 library;
+
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
 import '../../models/pack_project.dart';
+import '../../services/path_utils.dart';
 import '../tokens.dart';
 import '../widgets/form_fields.dart';
 
@@ -38,7 +41,10 @@ class _PackInfoPageState extends State<PackInfoPage> {
   late TextEditingController _tags;
   late TextEditingController _license;
   late TextEditingController _repository;
-  late TextEditingController _outputDirectory;
+
+  /// 已尝试自动读取描述/许可证默认值的源目录集合（避免重复读取与循环触发）。
+  final Set<String> _descriptionReadAttempted = <String>{};
+  final Set<String> _licenseReadAttempted = <String>{};
 
   @override
   void initState() {
@@ -52,7 +58,7 @@ class _PackInfoPageState extends State<PackInfoPage> {
     _tags = TextEditingController(text: p?.tags ?? '');
     _license = TextEditingController(text: p?.license ?? '');
     _repository = TextEditingController(text: p?.repository ?? '');
-    _outputDirectory = TextEditingController(text: p?.outputDirectory ?? '');
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFillDefaults());
   }
 
   @override
@@ -90,11 +96,7 @@ class _PackInfoPageState extends State<PackInfoPage> {
       _repository,
       oldWidget.project?.repository,
     );
-    _syncController(
-      widget.project?.outputDirectory,
-      _outputDirectory,
-      oldWidget.project?.outputDirectory,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFillDefaults());
   }
 
   @override
@@ -107,7 +109,6 @@ class _PackInfoPageState extends State<PackInfoPage> {
     _tags.dispose();
     _license.dispose();
     _repository.dispose();
-    _outputDirectory.dispose();
     super.dispose();
   }
 
@@ -120,6 +121,123 @@ class _PackInfoPageState extends State<PackInfoPage> {
     if (next != controller.text && next != oldValue) {
       controller.text = next;
     }
+  }
+
+  /// 加载/新建包时的默认值回填：首个源目录下的 README/LICENSE 作为空的
+  /// description/license 默认值；读取失败静默跳过（不报错、不崩溃）。
+  void _maybeFillDefaults() {
+    final project = widget.project;
+    if (project == null) return;
+    final sourceDirs = project.sourceDirs;
+    if (sourceDirs.isEmpty) return;
+    final firstPath = sourceDirs.first.path;
+
+    String? description;
+    if (project.description.trim().isEmpty &&
+        !_descriptionReadAttempted.contains(firstPath)) {
+      _descriptionReadAttempted.add(firstPath);
+      description = _readDefaultDescription(firstPath);
+    }
+    String? license;
+    if (project.license.trim().isEmpty &&
+        !_licenseReadAttempted.contains(firstPath)) {
+      _licenseReadAttempted.add(firstPath);
+      license = _readDefaultLicense(firstPath);
+    }
+
+    final filledDescription = (description != null && description.isNotEmpty)
+        ? description
+        : null;
+    final filledLicense = (license != null && license.isNotEmpty)
+        ? license
+        : null;
+    if (filledDescription != null || filledLicense != null) {
+      // 一次 copyWith 同时应用两个默认值，避免多次 onChanged 覆盖彼此。
+      widget.onChanged(
+        project.copyWith(
+          description: filledDescription,
+          license: filledLicense,
+        ),
+      );
+    }
+  }
+
+  /// 从源目录下读取 README（优先 .md，大小写不敏感）前若干字符；无则返回 null。
+  String? _readDefaultDescription(String sourceDirPath) {
+    final file = _findFirstCandidate(sourceDirPath, const [
+      'README.md',
+      'README.txt',
+    ]);
+    if (file == null) return null;
+    return _firstChars(_readFileSilently(file), 300);
+  }
+
+  /// 从源目录下读取 LICENSE（大小写不敏感）首行（或前 80 字符）；无则返回 null。
+  String? _readDefaultLicense(String sourceDirPath) {
+    final file = _findFirstCandidate(sourceDirPath, const [
+      'LICENSE',
+      'LICENSE.txt',
+      'LICENSE.md',
+    ]);
+    if (file == null) return null;
+    return _firstLine(_readFileSilently(file), 80);
+  }
+
+  /// 在 [sourceDirPath] 顶层按优先级找第一个匹配的（大小写不敏感）文件名。
+  String? _findFirstCandidate(String sourceDirPath, List<String> names) {
+    final dir = Directory(sourceDirPath);
+    if (!dir.existsSync()) return null;
+    List<FileSystemEntity> entries;
+    try {
+      entries = dir.listSync();
+    } on FileSystemException {
+      return null;
+    }
+    final wanted = names.map((n) => n.toLowerCase()).toSet();
+    final candidates = <String>[];
+    for (final entry in entries) {
+      if (FileSystemEntity.typeSync(entry.path, followLinks: false) !=
+          FileSystemEntityType.file) {
+        continue;
+      }
+      if (wanted.contains(basenameOf(entry.path).toLowerCase())) {
+        candidates.add(entry.path);
+      }
+    }
+    if (candidates.isEmpty) return null;
+    // 按传入优先级（如 .md 优先）匹配，未命中时退回首个候选。
+    for (final name in names) {
+      for (final path in candidates) {
+        if (basenameOf(path).toLowerCase() == name.toLowerCase()) {
+          return path;
+        }
+      }
+    }
+    return candidates.first;
+  }
+
+  /// 读取文件全部内容；失败返回空串（读取失败按需求静默跳过、不报错）。
+  String _readFileSilently(String path) {
+    try {
+      return File(path).readAsStringSync();
+    } on Object {
+      return '';
+    }
+  }
+
+  /// 取内容前 [maxLen] 个字符（去首尾空白）。
+  String _firstChars(String content, int maxLen) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) return '';
+    return trimmed.length <= maxLen ? trimmed : trimmed.substring(0, maxLen);
+  }
+
+  /// 取内容首行（去首尾空白），超长时截取前 [maxLen] 个字符。
+  String _firstLine(String content, int maxLen) {
+    final newline = content.indexOf('\n');
+    final line = (newline < 0 ? content : content.substring(0, newline)).trim();
+    if (line.isEmpty) return '';
+    return line.length <= maxLen ? line : line.substring(0, maxLen);
   }
 
   @override
@@ -243,34 +361,14 @@ class _PackInfoPageState extends State<PackInfoPage> {
             ],
           ),
           const SizedBox(height: AppSpacing.s2),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: LabeledFormField(
-                  label: '仓库地址',
-                  child: TextFormField(
-                    controller: _repository,
-                    onChanged: (value) =>
-                        _update(project.copyWith(repository: value)),
-                    decoration: const InputDecoration(hintText: '可空，仓库 URL'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.s3),
-              Expanded(
-                child: LabeledFormField(
-                  label: '输出目录',
-                  child: TextFormField(
-                    controller: _outputDirectory,
-                    onChanged: (value) =>
-                        _update(project.copyWith(outputDirectory: value)),
-                    style: monoTextStyle(),
-                    decoration: const InputDecoration(hintText: '打包产物输出目录'),
-                  ),
-                ),
-              ),
-            ],
+          LabeledFormField(
+            label: '仓库地址',
+            child: TextFormField(
+              controller: _repository,
+              onChanged: (value) =>
+                  _update(project.copyWith(repository: value)),
+              decoration: const InputDecoration(hintText: '可空，仓库 URL'),
+            ),
           ),
         ],
       ),

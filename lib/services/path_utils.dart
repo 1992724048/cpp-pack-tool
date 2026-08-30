@@ -8,6 +8,37 @@ library;
 /// 平台路径分隔符（Windows 上为 `\`）。
 String get pathSeparator => '\\';
 
+/// MSBuild 头文件 include 根目录（包内路径前缀）。
+///
+/// 头文件映射的 `FileMapping.target` 在新语义下为「最终 `#include` 路径」
+/// （不含此前缀）；生成 nuspec 的 `<file>` target 时自动拼上此前缀。
+const String kMsBuildIncludeRoot = 'build\\native\\include';
+
+/// 判断 [path] 是否已带 `build\native\include` 前缀（忽略大小写与分隔符差异）。
+///
+/// 用于向后兼容旧配置：旧配置中头文件映射的 target 直接存的是含此前缀的
+/// 包内路径，检测到前缀时不再重复添加。
+bool startsWithMsBuildIncludeRoot(String path) {
+  final normalized = normalizeSeparators(path.trim().toLowerCase());
+  final prefix = kMsBuildIncludeRoot.toLowerCase();
+  return normalized == prefix || normalized.startsWith('$prefix\\');
+}
+
+/// 剥离 `build\native\include` 前缀，返回剩余子路径；无前缀时返回原路径。
+///
+/// 用于 MSBuild include 子目录派生；旧配置头文件映射含此前缀时先剥离再用于
+/// `include\{target}`。
+String stripMsBuildIncludeRoot(String path) {
+  final normalized = normalizeSeparators(path.trim());
+  final lowered = normalized.toLowerCase();
+  final prefix = kMsBuildIncludeRoot.toLowerCase();
+  if (lowered == prefix) return '';
+  if (lowered.startsWith('$prefix\\')) {
+    return normalized.substring(prefix.length + 1);
+  }
+  return normalized;
+}
+
 /// 规范化路径分隔符（`/` 与 `\` 统一为 `\`）。
 String normalizeSeparators(String path) => path.replaceAll('/', pathSeparator);
 

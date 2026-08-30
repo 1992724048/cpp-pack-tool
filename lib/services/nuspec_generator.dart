@@ -21,10 +21,12 @@ String xmlEscape(String value) => value
 
 /// 将 [PackProject] 生成为 nuspec 文本。
 ///
-/// src 路径相对包工作目录（取 [PackProject.outputDirectory]）解析：
+/// src 路径相对包工作目录（`baseDir`，由调用方传入，通常为打包输出目录）解析：
 /// - 若 `srcGlob` 为绝对路径或已带 `..` 前导（即已是包相对路径），则原样使用；
-/// - 否则若 `SourceDir.path` 在包目录之外，用 `..` 相对路径拼接。
-String generate(PackProject project) {
+/// - 否则若 `SourceDir.path` 在 `baseDir` 之外，用 `..` 相对路径拼接。
+///
+/// [baseDir] 为 null 或空时不做相对化，`srcGlob` 原样输出（按 nuspec 工作目录解析）。
+String generate(PackProject project, {String? baseDir}) {
   final sb = StringBuffer();
   sb.writeln('<?xml version="1.0" encoding="utf-8"?>');
   sb.writeln(
@@ -51,10 +53,10 @@ String generate(PackProject project) {
   _appendMsBuildEntries(sb, project.packageId.trim());
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
-      final src = _resolveSrc(project, sourceDir, mapping);
+      final src = _resolveSrc(baseDir, sourceDir, mapping);
       if (src.isEmpty) continue;
       sb.writeln(
-        '    <file src="${xmlEscape(src)}" target="${xmlEscape(mapping.target)}" />',
+        '    <file src="${xmlEscape(src)}" target="${xmlEscape(_resolveTarget(mapping))}" />',
       );
     }
   }
@@ -81,18 +83,14 @@ String _normalizeTags(String tags) =>
     tags.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).join(' ');
 
 /// 解析某条文件映射在 nuspec 中的 src 值。
-String _resolveSrc(
-  PackProject project,
-  SourceDir sourceDir,
-  FileMapping mapping,
-) {
+String _resolveSrc(String? baseDir, SourceDir sourceDir, FileMapping mapping) {
   final glob = mapping.srcGlob.trim();
   if (glob.isEmpty) return '';
   if (_isAbsolute(glob) || _startsWithParentSegment(glob)) {
     return glob;
   }
 
-  final base = project.outputDirectory.trim();
+  final base = baseDir?.trim() ?? '';
   final sourcePath = sourceDir.path.trim();
   if (base.isEmpty || sourcePath.isEmpty) {
     return glob;
@@ -113,4 +111,19 @@ bool _isAbsolute(String path) {
 bool _startsWithParentSegment(String path) {
   final first = normalizeSeparators(path).split(pathSeparator).first;
   return first == '..';
+}
+
+/// 解析文件映射在 nuspec `<file>` 中的 target（包内路径）。
+///
+/// - 头文件映射（`mapping.isHeaderMapping`）的 target 语义为「最终 `#include`
+///   路径」，此处展开为 `build\native\include\{target}`；
+/// - 其余映射 target 原样输出。
+/// - 向后兼容：若目标已带 `build\native\include\...` 前缀（旧配置），原样保留，
+///   不重复添加前缀。
+String _resolveTarget(FileMapping mapping) {
+  final target = mapping.target.trim();
+  if (target.isEmpty) return target;
+  if (!mapping.isHeaderMapping) return target;
+  if (startsWithMsBuildIncludeRoot(target)) return target;
+  return joinPath(['build', 'native', 'include', target]);
 }

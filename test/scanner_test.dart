@@ -77,10 +77,10 @@ void main() {
     final globs = result.suggestedMappings.map(
       (m) => '${m.srcGlob} -> ${m.target}',
     );
-    // 头文件：按父目录簇分组，按扩展名各生成一条 glob。
-    expect(globs, contains(r'*.h -> build\native\include\v8'));
-    expect(globs, contains(r'*.hxx -> build\native\include\v8'));
-    expect(globs, contains(r'cppgc\*.h -> build\native\include\v8\cppgc'));
+    // 头文件：按父目录簇分组，按扩展名各生成一条 glob（目标为最终 #include 路径）。
+    expect(globs, contains(r'*.h -> v8'));
+    expect(globs, contains(r'*.hxx -> v8'));
+    expect(globs, contains(r'cppgc\*.h -> v8\cppgc'));
     // 库文件：按配置识别，映射到平台×配置目录。
     expect(
       globs,

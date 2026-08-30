@@ -14,15 +14,11 @@ PackProject buildProject() {
     tags: 'v8, native',
     license: 'MIT',
     repository: 'https://example.com/repo',
-    outputDirectory: r'C:\pkg\out',
     sourceDirs: [
       SourceDir(
         path: r'C:\src\v8',
         mappings: [
-          FileMapping(
-            srcGlob: r'..\v8\*.h',
-            target: r'build\native\include\v8',
-          ),
+          FileMapping(srcGlob: r'..\v8\*.h', target: r'v8'),
           FileMapping(srcGlob: r'*.lib', target: r'build\native\lib\x64\Debug'),
         ],
       ),
@@ -32,6 +28,7 @@ PackProject buildProject() {
       configDefines: {'Debug': 'V8_ENABLE_CHECKS'},
       additionalLibraryDirectories: r'extra\lib',
       additionalDependencies: 'ws2_32.lib;ntdll.lib',
+      clanguageStandard: 'c17',
       dataFilesToCopy: ['icudtl.dat'],
       injectedSources: [r'src\v8wrap\win32.cpp'],
     ),
@@ -40,7 +37,7 @@ PackProject buildProject() {
 
 void main() {
   group('nuspec 生成', () {
-    final nuspec = generate(buildProject());
+    final nuspec = generate(buildProject(), baseDir: r'C:\pkg\out');
 
     test('含 XML 声明与命名空间', () {
       expect(nuspec, startsWith(r'<?xml version="1.0" encoding="utf-8"?>'));
@@ -140,6 +137,29 @@ void main() {
       );
     });
 
+    test('C 语言标准非空时输出 CLanguageStandard', () {
+      expect(
+        props,
+        contains(
+          "    <CLanguageStandard Condition=\"'\$(CLanguageStandard)' == ''\">c17</CLanguageStandard>",
+        ),
+      );
+    });
+
+    test('C++ 标准最新（stdcpplatest）映射正确', () {
+      final latest = buildProject().copyWith(
+        compileConfig: buildProject().compileConfig.copyWith(
+          languageStandard: 'stdcpplatest',
+        ),
+      );
+      expect(
+        generateProps(latest),
+        contains(
+          "    <LanguageStandard Condition=\"'\$(LanguageStandard)' == ''\">stdcpplatest</LanguageStandard>",
+        ),
+      );
+    });
+
     test('生成 packageId 前缀的跳过宏标志', () {
       expect(
         props,
@@ -230,12 +250,12 @@ void main() {
       );
     });
 
-    test('数据文件拷贝 Target 带防重复标志', () {
+    test('数据文件拷贝 Target 用硬链接优先并带防重复标志', () {
       expect(targets, contains('<Target Name="V8_NativeCopyicudtl_dat"'));
       expect(
         targets,
         contains(
-          r'<Copy SourceFiles="$(V8_Native_LibDir)\icudtl.dat" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />',
+          r'''<Exec Command="cmd /c mklink /H &quot;$(OutDir)\icudtl.dat&quot; &quot;$(V8_Native_LibDir)\icudtl.dat&quot; 2&gt;nul || copy /y &quot;$(V8_Native_LibDir)\icudtl.dat&quot; &quot;$(OutDir)\icudtl.dat&quot; &gt;nul" Condition="!Exists('$(OutDir)\icudtl.dat')" />''',
         ),
       );
       expect(

@@ -56,7 +56,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
             _nugetPathField(),
             const SizedBox(height: AppSpacing.s2),
             const Text(
-              '设置会保存到 %APPDATA%\\cpp_nuget_pack\\settings.json，默认输出目录仅作为新项目的初始值使用。',
+              '设置会保存到 %APPDATA%\\cpp_nuget_pack\\settings.json，默认输出目录作为打包输出目录。',
               style: TextStyle(
                 color: AppColors.textSemantic,
                 fontSize: AppFontSizes.caption,

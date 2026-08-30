@@ -1,5 +1,6 @@
 /// 左侧库项目列表：选中高亮、悬停、空态、新增/重命名/删除。
 ///
+/// 顶部行为 `[设置] [＋ 添加]`：设置按钮（[onSettings]）在最左、添加按钮在右。
 /// 对照 `docs/ui-spec.md` §3.2 与 §4.3 空态。
 library;
 
@@ -18,6 +19,7 @@ class LibraryList extends StatelessWidget {
     required this.onAdd,
     required this.onRename,
     required this.onDelete,
+    required this.onSettings,
   });
 
   final List<PackProject> projects;
@@ -26,6 +28,9 @@ class LibraryList extends StatelessWidget {
   final VoidCallback onAdd;
   final void Function(int index) onRename;
   final void Function(int index) onDelete;
+
+  /// 点击顶部设置按钮的回调（由 MainShell 打开设置对话框）。
+  final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -46,16 +51,15 @@ class LibraryList extends StatelessWidget {
   Widget _header() {
     return Container(
       height: AppDims.logHeaderHeight,
-      padding: const EdgeInsets.only(left: AppSpacing.s3),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
       child: Row(
         children: [
-          const Text(
-            '库项目',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: AppFontSizes.h3,
-              fontWeight: FontWeight.w600,
-            ),
+          IconButton(
+            onPressed: onSettings,
+            tooltip: '设置',
+            icon: const Icon(Icons.settings_outlined, size: 18),
+            color: AppColors.textSemantic,
+            iconSize: 18,
           ),
           const Spacer(),
           IconButton(

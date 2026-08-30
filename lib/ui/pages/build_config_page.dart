@@ -17,7 +17,11 @@ const List<String> _kLanguageStandards = <String>[
   'stdcpp17',
   'stdcpp20',
   'stdcpp23',
+  'stdcpplatest',
 ];
+
+/// C 语言标准可选值（空 = 不设置）。
+const List<String> _kCLanguageStandards = <String>['', 'c11', 'c17'];
 
 /// 编译配置页。
 class BuildConfigPage extends StatefulWidget {
@@ -35,25 +39,12 @@ class BuildConfigPage extends StatefulWidget {
 }
 
 class _BuildConfigPageState extends State<BuildConfigPage> {
-  late TextEditingController _defines;
-  late TextEditingController _includeDirs;
-  late TextEditingController _libDirs;
-  late TextEditingController _deps;
   final Map<String, TextEditingController> _configControllers =
       <String, TextEditingController>{};
 
   @override
   void initState() {
     super.initState();
-    final compile = widget.project?.compileConfig;
-    _defines = TextEditingController(text: compile?.preprocessorDefines ?? '');
-    _includeDirs = TextEditingController(
-      text: compile?.additionalIncludeDirectories ?? '',
-    );
-    _libDirs = TextEditingController(
-      text: compile?.additionalLibraryDirectories ?? '',
-    );
-    _deps = TextEditingController(text: compile?.additionalDependencies ?? '');
     _syncConfigControllers();
   }
 
@@ -61,49 +52,14 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
   void didUpdateWidget(BuildConfigPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncConfigControllers();
-    _syncText(
-      widget.project?.compileConfig.preprocessorDefines,
-      _defines,
-      oldWidget.project?.compileConfig.preprocessorDefines,
-    );
-    _syncText(
-      widget.project?.compileConfig.additionalIncludeDirectories,
-      _includeDirs,
-      oldWidget.project?.compileConfig.additionalIncludeDirectories,
-    );
-    _syncText(
-      widget.project?.compileConfig.additionalLibraryDirectories,
-      _libDirs,
-      oldWidget.project?.compileConfig.additionalLibraryDirectories,
-    );
-    _syncText(
-      widget.project?.compileConfig.additionalDependencies,
-      _deps,
-      oldWidget.project?.compileConfig.additionalDependencies,
-    );
   }
 
   @override
   void dispose() {
-    _defines.dispose();
-    _includeDirs.dispose();
-    _libDirs.dispose();
-    _deps.dispose();
     for (final controller in _configControllers.values) {
       controller.dispose();
     }
     super.dispose();
-  }
-
-  void _syncText(
-    String? value,
-    TextEditingController controller,
-    String? oldValue,
-  ) {
-    final next = value ?? '';
-    if (next != controller.text && next != oldValue) {
-      controller.text = next;
-    }
   }
 
   void _syncConfigControllers() {
@@ -140,57 +96,58 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
           const SectionTitle(title: '编译配置'),
           _standardField(project, compile),
           const SizedBox(height: AppSpacing.s2),
-          LabeledFormField(
-            label: '全局宏（分号分隔）',
-            child: TextFormField(
-              controller: _defines,
-              style: monoTextStyle(),
-              onChanged: (value) => _update(
-                project.copyWith(
-                  compileConfig: compile.copyWith(preprocessorDefines: value),
+          _cStandardField(project, compile),
+          const SizedBox(height: AppSpacing.s2),
+          _listEditorSection(
+            label: '全局宏',
+            values: _splitSemis(compile.preprocessorDefines),
+            hint: '如 NOMINMAX、V8_ENABLE_WEBASSEMBLY',
+            onChanged: (values) => _update(
+              project.copyWith(
+                compileConfig: compile.copyWith(
+                  preprocessorDefines: _joinSemis(values),
                 ),
-              ),
-              decoration: const InputDecoration(
-                hintText: '如 NOMINMAX;V8_ENABLE_WEBASSEMBLY',
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
           _configDefinesSection(project, compile),
           const SizedBox(height: AppSpacing.s2),
-          _pathSection(
-            label: '附加包含目录（分号分隔）',
-            controller: _includeDirs,
-            hint: '如 \$(MSBuildThisFileDirectory)include;..\\include',
-            onChanged: (value) => _update(
+          _listEditorSection(
+            label: '附加包含目录',
+            values: _splitSemis(compile.additionalIncludeDirectories),
+            hint: '如 \$(MSBuildThisFileDirectory)include、..\\include',
+            onChanged: (values) => _update(
               project.copyWith(
                 compileConfig: compile.copyWith(
-                  additionalIncludeDirectories: value,
+                  additionalIncludeDirectories: _joinSemis(values),
                 ),
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
-          _pathSection(
-            label: '附加库目录（分号分隔）',
-            controller: _libDirs,
+          _listEditorSection(
+            label: '附加库目录',
+            values: _splitSemis(compile.additionalLibraryDirectories),
             hint: '如 ..\\lib\\x64',
-            onChanged: (value) => _update(
+            onChanged: (values) => _update(
               project.copyWith(
                 compileConfig: compile.copyWith(
-                  additionalLibraryDirectories: value,
+                  additionalLibraryDirectories: _joinSemis(values),
                 ),
               ),
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
-          _pathSection(
-            label: '附加依赖（分号分隔）',
-            controller: _deps,
-            hint: '如 ws2_32.lib;ntdll.lib',
-            onChanged: (value) => _update(
+          _listEditorSection(
+            label: '附加依赖',
+            values: _splitSemis(compile.additionalDependencies),
+            hint: '如 ws2_32.lib、ntdll.lib',
+            onChanged: (values) => _update(
               project.copyWith(
-                compileConfig: compile.copyWith(additionalDependencies: value),
+                compileConfig: compile.copyWith(
+                  additionalDependencies: _joinSemis(values),
+                ),
               ),
             ),
           ),
@@ -228,7 +185,10 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
         initialValue: compile.languageStandard,
         items: [
           for (final standard in _kLanguageStandards)
-            DropdownMenuItem(value: standard, child: Text(standard)),
+            DropdownMenuItem(
+              value: standard,
+              child: Text(_standardLabel(standard)),
+            ),
         ],
         onChanged: (value) {
           if (value == null) return;
@@ -241,6 +201,36 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
         decoration: const InputDecoration(),
       ),
     );
+  }
+
+  Widget _cStandardField(PackProject project, CompileConfig compile) {
+    return LabeledFormField(
+      label: 'C 语言标准',
+      child: DropdownButtonFormField<String>(
+        initialValue: compile.clanguageStandard,
+        items: [
+          for (final standard in _kCLanguageStandards)
+            DropdownMenuItem(
+              value: standard,
+              child: Text(standard.isEmpty ? '不设置' : standard),
+            ),
+        ],
+        onChanged: (value) {
+          if (value == null) return;
+          _update(
+            project.copyWith(
+              compileConfig: compile.copyWith(clanguageStandard: value),
+            ),
+          );
+        },
+        decoration: const InputDecoration(),
+      ),
+    );
+  }
+
+  String _standardLabel(String value) {
+    if (value == 'stdcpplatest') return 'Latest（最新）';
+    return value;
   }
 
   Widget _configDefinesSection(PackProject project, CompileConfig compile) {
@@ -299,22 +289,13 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
   TextEditingController _configController(String config) =>
       _configControllers[config]!;
 
-  Widget _pathSection({
-    required String label,
-    required TextEditingController controller,
-    required String hint,
-    required ValueChanged<String> onChanged,
-  }) {
-    return LabeledFormField(
-      label: label,
-      child: TextFormField(
-        controller: controller,
-        style: monoTextStyle(),
-        onChanged: onChanged,
-        decoration: InputDecoration(hintText: hint),
-      ),
-    );
-  }
+  /// 按 `;` 拆分并去除空项（用于编辑分号分隔字符串的列表）。
+  List<String> _splitSemis(String value) =>
+      value.split(';').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
+
+  /// 用 `;` 连接已拆分的非空项。
+  String _joinSemis(Iterable<String> parts) =>
+      parts.where((t) => t.trim().isNotEmpty).join(';');
 
   Widget _listEditorSection({
     required String label,
@@ -331,18 +312,23 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
   void _update(PackProject project) => widget.onChanged(project);
 }
 
-/// 字符串列表编辑器（数据拷贝清单 / 注入源码清单共用）。
+/// 字符串列表编辑器（分号分隔字段 / 数据拷贝清单 / 注入源码清单共用）。
+///
+/// 每条目为「单行输入 + 删除按钮」，底部为新增输入框；[onChanged] 收到的是去空项
+/// 后的列表（不保留空串）。[allowDuplicates] 为 false 时新增同名条目被忽略。
 class StringListEditor extends StatefulWidget {
   const StringListEditor({
     super.key,
     required this.values,
     required this.hint,
     required this.onChanged,
+    this.allowDuplicates = true,
   });
 
   final List<String> values;
   final String hint;
   final ValueChanged<List<String>> onChanged;
+  final bool allowDuplicates;
 
   @override
   State<StringListEditor> createState() => _StringListEditorState();
@@ -350,11 +336,46 @@ class StringListEditor extends StatefulWidget {
 
 class _StringListEditorState extends State<StringListEditor> {
   final TextEditingController _input = TextEditingController();
+  final List<TextEditingController> _itemControllers =
+      <TextEditingController>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncItemControllers();
+  }
+
+  @override
+  void didUpdateWidget(StringListEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncItemControllers();
+  }
 
   @override
   void dispose() {
     _input.dispose();
+    for (final controller in _itemControllers) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  /// 使条目控制器数量与 [widget.values] 对齐并同步文本（仅文本不同才重置，
+  /// 避免打字输入时光标跳回起点）。
+  void _syncItemControllers() {
+    final count = widget.values.length;
+    while (_itemControllers.length < count) {
+      _itemControllers.add(TextEditingController(text: ''));
+    }
+    while (_itemControllers.length > count) {
+      _itemControllers.removeLast().dispose();
+    }
+    for (var i = 0; i < count; i++) {
+      final value = widget.values[i];
+      if (_itemControllers[i].text != value) {
+        _itemControllers[i].text = value;
+      }
+    }
   }
 
   @override
@@ -362,6 +383,7 @@ class _StringListEditorState extends State<StringListEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.values.isEmpty) _emptyPlaceholder(),
         for (var i = 0; i < widget.values.length; i++) _itemRow(i),
         Row(
           children: [
@@ -381,18 +403,32 @@ class _StringListEditorState extends State<StringListEditor> {
     );
   }
 
+  Widget _emptyPlaceholder() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.s1),
+      child: Text(
+        '未配置',
+        style: const TextStyle(
+          color: AppColors.textDisabled,
+          fontSize: AppFontSizes.small,
+        ),
+      ),
+    );
+  }
+
   Widget _itemRow(int index) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              widget.values[index],
+            child: TextField(
+              controller: _itemControllers[index],
               style: monoTextStyle(),
-              overflow: TextOverflow.ellipsis,
+              onChanged: (value) => _editItem(index, value),
             ),
           ),
+          const SizedBox(width: AppSpacing.s1),
           IconButton(
             onPressed: () => _removeAt(index),
             tooltip: '移除',
@@ -405,17 +441,30 @@ class _StringListEditorState extends State<StringListEditor> {
     );
   }
 
+  void _editItem(int index, String value) {
+    final next = List<String>.of(widget.values);
+    next[index] = value;
+    widget.onChanged(_cleaned(next));
+  }
+
   void _add() {
     final text = _input.text.trim();
     if (text.isEmpty) return;
-    widget.onChanged([...widget.values, text]);
+    if (!widget.allowDuplicates && widget.values.contains(text)) {
+      _input.clear();
+      return;
+    }
+    widget.onChanged(_cleaned([...widget.values, text]));
     _input.clear();
   }
 
   void _removeAt(int index) {
     final next = List<String>.of(widget.values)..removeAt(index);
-    widget.onChanged(next);
+    widget.onChanged(_cleaned(next));
   }
+
+  List<String> _cleaned(List<String> values) =>
+      values.where((t) => t.trim().isNotEmpty).toList();
 }
 
 class _ConfigPlaceholder extends StatelessWidget {

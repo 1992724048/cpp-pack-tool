@@ -35,12 +35,18 @@ String generateProps(PackProject project) {
     '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
   );
 
-  // 语言标准：仅在消费者未指定时设置。
+  // 语言标准：仅在消费者未指定时设置。C 语言标准（如有）与 LanguageStandard 并列。
   sb.writeln('  <PropertyGroup>');
   sb.writeln(
     '    <LanguageStandard Condition="\'\$(LanguageStandard)\' == \'\'">'
     '${xmlEscape(compile.languageStandard)}</LanguageStandard>',
   );
+  if (compile.clanguageStandard.trim().isNotEmpty) {
+    sb.writeln(
+      '    <CLanguageStandard Condition="\'\$(CLanguageStandard)\' == \'\'">'
+      '${xmlEscape(compile.clanguageStandard)}</CLanguageStandard>',
+    );
+  }
   sb.writeln('  </PropertyGroup>');
 
   // 跳过宏标志：当消费者已含本包首个全局宏时，跳过预处理定义注入。
@@ -203,6 +209,9 @@ void _appendInjectedSources(
 }
 
 /// 追加数据文件拷贝 Target（拷贝到 `$(OutDir)` + 防重复标志）。
+///
+/// 采用硬链接优先（`mklink /H`），失败时回退到 `copy /y`（`||` 链），并仅当目标
+/// 不存在时才执行（`!Exists(...)` 条件 + 防重复标志）。
 void _appendDataCopyTargets(
   StringBuffer sb,
   PackProject project,
@@ -214,14 +223,18 @@ void _appendDataCopyTargets(
 
   for (final file in files) {
     final fileId = _uniqueFileId(basenameOf(file), usedIds);
+    final fileName = basenameOf(file);
+    final dst = '\$(OutDir)\\${xmlEscape(fileName)}';
+    final src = '\$(${prefix}_LibDir)\\${xmlEscape(file)}';
     sb.writeln(
       '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
       "Condition=\"'\$(${prefix}_LibDir)' != '' and "
       "'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
     );
     sb.writeln(
-      '    <Copy SourceFiles="\$(${prefix}_LibDir)\\$file" '
-      'DestinationFolder="\$(OutDir)" SkipUnchangedFiles="true" />',
+      '    <Exec Command="cmd /c mklink /H &quot;$dst&quot; &quot;$src&quot; 2&gt;nul '
+      '|| copy /y &quot;$src&quot; &quot;$dst&quot; &gt;nul" '
+      "Condition=\"!Exists('$dst')\" />",
     );
     sb.writeln('    <PropertyGroup>');
     sb.writeln(
@@ -249,7 +262,7 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
   final dirs = <String>['include'];
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
-      final sub = _includeSubPath(mapping.target);
+      final sub = _includeSubPath(mapping);
       if (sub != null) dirs.add(sub);
     }
   }
@@ -262,15 +275,17 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
   return _joinSemis(parts);
 }
 
-/// 从文件映射目标提取 `include\...` 子路径；非头文件目标返回 null。
-String? _includeSubPath(String target) {
-  const headerRoot = 'build\\native\\include';
-  if (!target.startsWith(headerRoot)) return null;
-  final rest = target.length == headerRoot.length
-      ? ''
-      : target.substring(headerRoot.length + 1);
-  if (rest.isEmpty) return 'include';
-  return 'include\\$rest';
+/// 从文件映射目标提取 `include\...` 子路径；非头文件映射返回 null。
+///
+/// 基于新语义：头文件映射（`mapping.isHeaderMapping`）的 target 即为「最终
+/// `#include` 路径」，子路径 = `include\{target}`（含 `build\native\include\`
+/// 前缀的旧配置自动剥离以免重复）。
+String? _includeSubPath(FileMapping mapping) {
+  if (!mapping.isHeaderMapping) return null;
+  var target = mapping.target.trim();
+  if (target.isEmpty) return 'include';
+  target = stripMsBuildIncludeRoot(target);
+  return 'include\\$target';
 }
 
 /// 首个全局宏（用于跳过宏标志的哨兵），无则返回 null。

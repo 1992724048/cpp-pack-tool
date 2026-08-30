@@ -1,4 +1,4 @@
-/// 文件映射 Tab：映射表（源 glob/目标路径/平台·配置条件/操作）+ 增删改 + 空态。
+/// 文件映射 Tab：映射表（源文件模式/目标路径/平台·配置条件/操作）+ 增删改 + 空态。
 ///
 /// 对照 `docs/ui-spec.md` §3.5。行级技术列用等宽字体；删除为危险操作，
 /// 删除前用确认弹窗（见 `confirmDelete`）。按钮 disabled 时整表占位。
@@ -108,7 +108,7 @@ class _FileMappingPageState extends State<FileMappingPage> {
       color: AppColors.bgSurface,
       child: Row(
         children: [
-          _headerText('源 glob', flex: 3),
+          _headerText('源文件模式', flex: 3),
           _headerText('目标路径', flex: 3),
           _headerText('平台 · 配置', flex: 2),
           const SizedBox(width: 88),
@@ -377,7 +377,7 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             LabeledFormField(
-              label: '源 glob',
+              label: '源文件模式',
               child: TextField(
                 controller: _srcGlob,
                 style: monoTextStyle(),
@@ -388,13 +388,27 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
             ),
             const SizedBox(height: AppSpacing.s2),
             LabeledFormField(
-              label: '目标路径',
-              child: TextField(
-                controller: _target,
-                style: monoTextStyle(),
-                decoration: const InputDecoration(
-                  hintText: '如 build\\native\\lib\\x64\\Debug',
-                ),
+              label: '#include 路径（头文件）/ 包内路径（其他）',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _target,
+                    style: monoTextStyle(),
+                    decoration: const InputDecoration(
+                      hintText: '头文件如 v8\\cppgc（#include <v8\\cppgc/x.h>）；库/数据文件如 lib\\x64\\Debug',
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  const Text(
+                    '按源文件扩展名区分：头文件（.h/.hpp/.hh/.hxx）的该值为最终 #include 路径，'
+                    '其余视为包内目标路径。',
+                    style: TextStyle(
+                      color: AppColors.textSemantic,
+                      fontSize: AppFontSizes.caption,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: AppSpacing.s2),

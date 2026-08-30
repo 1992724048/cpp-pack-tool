@@ -1,7 +1,10 @@
-/// 打包 Tab：模式切换（一键/仅生成文件）、输出目录、nuget 路径、打包按钮状态机。
+/// 打包 Tab：模式切换（一键/仅生成文件）、全局输出目录（只读显示）、nuget 路径、
+/// 打包按钮状态机。
 ///
-/// 对照 `docs/ui-spec.md` §3.6 与 §5.2。打包采用 UI 侧独立 `Process.start`
-/// 流式输出到日志面板（不改 `packer.dart`，仅复用其 `buildPackArgs`）。
+/// 输出目录统一取自全局设置 [AppSettings.defaultOutputDir]（仅设置对话框可改）；
+/// 此处只读显示，点击跳转设置。对照 `docs/ui-spec.md` §3.6 与 §5.2。打包采用
+/// UI 侧独立 `Process.start` 流式输出到日志面板（不改 `packer.dart`，仅复用其
+/// `buildPackArgs`）。
 library;
 
 import 'dart:async';
@@ -32,18 +35,26 @@ class PackPage extends StatefulWidget {
     required this.onChanged,
     required this.settings,
     required this.onSettingsChanged,
+    required this.onOpenSettings,
     required this.log,
     required this.onNotify,
+    required this.onPacked,
   });
 
   final PackProject? project;
   final ValueChanged<PackProject> onChanged;
   final AppSettings settings;
   final ValueChanged<AppSettings> onSettingsChanged;
+
+  /// 点击输出目录（或跳设置入口）时打开设置对话框。
+  final VoidCallback onOpenSettings;
   final LogController log;
 
   /// 一次性操作结果提示（SnackBar 文案）。
   final void Function(String message, {bool isError}) onNotify;
+
+  /// 一键打包成功后回调（用于登记输出目录注册表）。
+  final void Function(PackProject project) onPacked;
 
   @override
   State<PackPage> createState() => _PackPageState();
@@ -71,7 +82,7 @@ class _PackPageState extends State<PackPage> {
           const SectionTitle(title: '打包'),
           _modeSelector(),
           const SizedBox(height: AppSpacing.s3),
-          _outputDirField(project),
+          _outputDirField(),
           const SizedBox(height: AppSpacing.s2),
           _nugetField(),
           const SizedBox(height: AppSpacing.s3),
@@ -96,29 +107,35 @@ class _PackPageState extends State<PackPage> {
     );
   }
 
-  Widget _outputDirField(PackProject project) {
-    return _SyncedField(
-      value: project.outputDirectory,
-      readOnly: true,
-      hint: '未选择',
-      mono: true,
-      onTap: _pickOutputDir,
-      suffix: IconButton(
-        onPressed: _pickOutputDir,
-        tooltip: '选择输出目录',
-        icon: const Icon(Icons.folder_open, size: 18),
-        iconSize: 18,
-        color: AppColors.textSemantic,
-      ),
+  Widget _outputDirField() {
+    final outputDir = widget.settings.defaultOutputDir.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '输出目录',
+          style: TextStyle(
+            color: AppColors.textSemantic,
+            fontSize: AppFontSizes.small,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _SyncedField(
+          value: outputDir,
+          readOnly: true,
+          hint: '未设置，点击设置',
+          mono: true,
+          onTap: widget.onOpenSettings,
+          suffix: IconButton(
+            onPressed: widget.onOpenSettings,
+            tooltip: '设置',
+            icon: const Icon(Icons.settings_outlined, size: 18),
+            iconSize: 18,
+            color: AppColors.textSemantic,
+          ),
+        ),
+      ],
     );
-  }
-
-  Future<void> _pickOutputDir() async {
-    final project = widget.project;
-    if (project == null) return;
-    final path = await pickDirectory(initialDirectory: project.outputDirectory);
-    if (path == null || path.trim().isEmpty) return;
-    widget.onChanged(project.copyWith(outputDirectory: path.trim()));
   }
 
   Widget _nugetField() {
@@ -235,8 +252,8 @@ class _PackPageState extends State<PackPage> {
     if (project.version.trim().isEmpty) {
       missing.add('版本未填写');
     }
-    if (project.outputDirectory.trim().isEmpty) {
-      missing.add('输出目录未选择');
+    if (widget.settings.defaultOutputDir.trim().isEmpty) {
+      missing.add('输出目录未设置');
     }
     if (_mode == PackMode.pack &&
         (widget.settings.nugetExePath ?? '').trim().isEmpty) {
@@ -248,10 +265,12 @@ class _PackPageState extends State<PackPage> {
   Future<void> _run(PackProject project) async {
     setState(() => _busy = true);
     try {
+      _warnMissingFiles(project);
       final paths = await _generateFiles(project);
       widget.log.info('已生成：${paths.join('；')}');
       if (_mode == PackMode.pack) {
-        await _packWithNuget(project);
+        final packed = await _packWithNuget(project);
+        if (packed) widget.onPacked(project);
       } else {
         widget.onNotify('文件已生成到输出目录');
       }
@@ -263,11 +282,11 @@ class _PackPageState extends State<PackPage> {
     }
   }
 
-  /// 生成 nuspec/props/targets 并写入输出目录；返回写入的文件路径列表。
+  /// 生成 nuspec/props/targets 并写入全局输出目录；返回写入的文件路径列表。
   Future<List<String>> _generateFiles(PackProject project) async {
-    final outputDir = project.outputDirectory.trim();
+    final outputDir = widget.settings.defaultOutputDir.trim();
     if (outputDir.isEmpty) {
-      throw const FormatException('输出目录为空');
+      throw const FormatException('输出目录未设置');
     }
     final id = project.packageId.trim();
     final buildNativeDir = joinPath([outputDir, 'build', 'native']);
@@ -279,7 +298,7 @@ class _PackPageState extends State<PackPage> {
 
     // `generate` 已在 files 段头部输出 props/targets 的 `<file>` 条目，
     // 此处直接使用其结果，避免重复追加导致 nuget pack 异常。
-    final nuspec = generate(project);
+    final nuspec = generate(project, baseDir: outputDir);
     File(nuspecPath).writeAsStringSync(nuspec);
     File(propsPath).writeAsStringSync(generateProps(project));
     File(targetsPath).writeAsStringSync(generateTargets(project));
@@ -287,12 +306,75 @@ class _PackPageState extends State<PackPage> {
     return <String>[nuspecPath, propsPath, targetsPath];
   }
 
-  Future<void> _packWithNuget(PackProject project) async {
+  /// 打包/仅生成文件前的存在性校验：对每条映射按源目录解析实际路径，
+  /// 缺失的文件逐条向日志面板追加 warn 级日志并继续执行（不中断）。
+  void _warnMissingFiles(PackProject project) {
+    for (final sourceDir in project.sourceDirs) {
+      final sourcePath = sourceDir.path.trim();
+      if (sourcePath.isEmpty) continue;
+      for (final mapping in sourceDir.mappings) {
+        final glob = mapping.srcGlob.trim();
+        if (glob.isEmpty) continue;
+        final resolved = _joinSourceGlob(sourcePath, glob);
+        if (!_pathExists(resolved)) {
+          widget.log.warn('警告：文件不存在，将影响打包：$resolved');
+        }
+      }
+    }
+  }
+
+  /// 拼接源目录与映射 glob（归一化分隔符，避免重复斜杠）。
+  String _joinSourceGlob(String dir, String glob) {
+    final dirNorm = normalizeSeparators(dir.trim());
+    final globNorm = normalizeSeparators(glob.trim());
+    if (dirNorm.isEmpty) return globNorm;
+    if (globNorm.isEmpty) return dirNorm;
+    if (dirNorm.endsWith(pathSeparator)) return '$dirNorm$globNorm';
+    return '$dirNorm$pathSeparator$globNorm';
+  }
+
+  /// 判断 [candidate] 是否存在。
+  ///
+  /// glob 含通配符（`*`/`?`）时做目录存在性探测（取通配符前的静态前缀目录）；
+  /// 否则做精确文件存在性检查。
+  bool _pathExists(String candidate) {
+    final normalized = normalizeSeparators(candidate);
+    final wildcardIdx = _firstWildcard(normalized);
+    if (wildcardIdx >= 0) {
+      final dir = _probeDirectory(normalized, wildcardIdx);
+      return Directory(dir).existsSync();
+    }
+    return File(normalized).existsSync();
+  }
+
+  /// 取通配符前的静态前缀目录（用于目录存在性探测）。
+  String _probeDirectory(String normalized, int wildcardIdx) {
+    final prefix = normalized.substring(0, wildcardIdx);
+    if (prefix.endsWith(pathSeparator)) {
+      final trimmed = prefix.replaceAll(RegExp(r'[\\/]+$'), '');
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    final dir = dirnameOf(prefix);
+    if (dir.isNotEmpty) return dir;
+    return dirnameOf(normalized);
+  }
+
+  /// 返回字符串中首个通配符位置；无通配符返回 -1。
+  int _firstWildcard(String value) {
+    final star = value.indexOf('*');
+    final question = value.indexOf('?');
+    if (star < 0) return question;
+    if (question < 0) return star;
+    return star < question ? star : question;
+  }
+
+  /// 执行一键打包；返回是否成功（退出码 0）。
+  Future<bool> _packWithNuget(PackProject project) async {
     final nugetExe = (widget.settings.nugetExePath ?? '').trim();
     if (nugetExe.isEmpty) {
       throw const FormatException('nuget.exe 路径未配置');
     }
-    final outputDir = project.outputDirectory.trim();
+    final outputDir = widget.settings.defaultOutputDir.trim();
     final id = project.packageId.trim();
     final nuspecPath = joinPath([outputDir, '$id.nuspec']);
 
@@ -319,21 +401,28 @@ class _PackPageState extends State<PackPage> {
         } else {
           widget.onNotify('打包成功');
         }
+        return true;
       } else {
         widget.log.error('nuget pack 退出码 $exitCode');
         widget.onNotify('nuget pack 失败（退出码 $exitCode）', isError: true);
+        return false;
       }
     } on ProcessException catch (e) {
       widget.log.error('无法启动 nuget.exe：${e.message}');
       widget.onNotify('无法启动 nuget.exe', isError: true);
+      return false;
     }
   }
 
   String? _lastNupkgPath;
 
   Future<void> _forwardStream(Stream<List<int>> stream, LogLevel level) {
+    // Windows 中文系统下 nuget.exe 的 stdout/stderr 为系统 ANSI（GBK）编码，
+    // 且 chunk 边界可能截断多字节序列——若按 UTF-8 解码会抛出
+    // FormatException 导致打包崩溃。改用 `systemEncoding.decoder`（系统代码页），
+    // 并对整体解码链路追加兜底 catch，异常只记日志、不中断打包。
     return stream
-        .transform(utf8.decoder)
+        .transform(systemEncoding.decoder)
         .transform(const LineSplitter())
         .forEach((line) {
           final trimmed = line.trimRight();
@@ -345,6 +434,9 @@ class _PackPageState extends State<PackPage> {
             final parsed = parseNupkgOutputPath(trimmed);
             if (parsed != null) _lastNupkgPath = parsed;
           }
+        })
+        .catchError((Object e) {
+          widget.log.warn('解码打包输出时出错：$e');
         });
   }
 }

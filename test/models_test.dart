@@ -15,7 +15,6 @@ void main() {
         tags: 'v8, native',
         license: 'MIT',
         repository: 'https://example.com/repo',
-        outputDirectory: r'C:\pkg\out',
         sourceDirs: [
           SourceDir(
             path: r'C:\src\v8',
@@ -27,6 +26,8 @@ void main() {
         platforms: ['x64', 'arm64'],
         configurations: ['Debug', 'Release'],
         compileConfig: CompileConfig(
+          languageStandard: 'stdcpplatest',
+          clanguageStandard: 'c17',
           configDefines: {'Debug': 'V8_ENABLE_CHECKS'},
           injectedSources: [r'src\win32.cpp'],
           dataFilesToCopy: ['icudtl.dat'],
@@ -43,7 +44,6 @@ void main() {
       expect(restored.tags, 'v8, native');
       expect(restored.license, 'MIT');
       expect(restored.repository, 'https://example.com/repo');
-      expect(restored.outputDirectory, r'C:\pkg\out');
       expect(restored.platforms, ['x64', 'arm64']);
       expect(restored.configurations, ['Debug', 'Release']);
       expect(restored.sourceDirs, hasLength(1));
@@ -57,6 +57,8 @@ void main() {
       expect(restored.compileConfig.configDefines['Debug'], 'V8_ENABLE_CHECKS');
       expect(restored.compileConfig.injectedSources, [r'src\win32.cpp']);
       expect(restored.compileConfig.dataFilesToCopy, ['icudtl.dat']);
+      expect(restored.compileConfig.languageStandard, 'stdcpplatest');
+      expect(restored.compileConfig.clanguageStandard, 'c17');
     });
 
     test('copy() produces an independent deep copy', () {

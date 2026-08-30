@@ -64,6 +64,7 @@ ThemeData buildDarkTheme() {
       textStyle: const TextStyle(
         color: AppColors.textPrimary,
         fontSize: AppFontSizes.small,
+        fontFamily: AppFonts.body,
       ),
       waitDuration: const Duration(milliseconds: 400),
     ),
@@ -82,6 +83,7 @@ ThemeData buildDarkTheme() {
       contentTextStyle: const TextStyle(
         color: AppColors.textPrimary,
         fontSize: AppFontSizes.body,
+        fontFamily: AppFonts.body,
       ),
       actionTextColor: AppColors.textAccent,
       behavior: SnackBarBehavior.floating,
@@ -95,6 +97,7 @@ ThemeData buildDarkTheme() {
       textStyle: const TextStyle(
         color: AppColors.textPrimary,
         fontSize: AppFontSizes.body,
+        fontFamily: AppFonts.body,
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.md),
@@ -270,10 +273,12 @@ DialogThemeData _dialogTheme() {
       color: AppColors.textPrimary,
       fontSize: AppFontSizes.h3,
       fontWeight: FontWeight.w600,
+      fontFamily: AppFonts.body,
     ),
     contentTextStyle: const TextStyle(
       color: AppColors.textPrimary,
       fontSize: AppFontSizes.body,
+      fontFamily: AppFonts.body,
     ),
   );
 }
@@ -285,8 +290,14 @@ TabBarThemeData _tabBarTheme() {
     indicatorColor: AppColors.accent,
     indicatorSize: TabBarIndicatorSize.tab,
     dividerColor: AppColors.border,
-    labelStyle: const TextStyle(fontSize: AppFontSizes.body),
-    unselectedLabelStyle: const TextStyle(fontSize: AppFontSizes.body),
+    labelStyle: const TextStyle(
+      fontSize: AppFontSizes.body,
+      fontFamily: AppFonts.body,
+    ),
+    unselectedLabelStyle: const TextStyle(
+      fontSize: AppFontSizes.body,
+      fontFamily: AppFonts.body,
+    ),
     overlayColor: WidgetStatePropertyAll<Color>(AppColors.bgHover),
   );
 }
@@ -298,10 +309,12 @@ DataTableThemeData _dataTableTheme() {
       color: AppColors.textSemantic,
       fontSize: AppFontSizes.small,
       fontWeight: FontWeight.w600,
+      fontFamily: AppFonts.body,
     ),
     dataTextStyle: const TextStyle(
       color: AppColors.textPrimary,
       fontSize: AppFontSizes.body,
+      fontFamily: AppFonts.body,
     ),
     dataRowColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       if (states.contains(WidgetState.hovered)) {

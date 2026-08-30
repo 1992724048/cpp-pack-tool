@@ -213,8 +213,9 @@ void _walk({
 /// 根据头文件相对路径按父目录分组，生成建议映射。
 ///
 /// 每个直接包含头文件的父目录，按实际存在的扩展名各产生一条映射：
-/// glob 为该目录下的 `*.ext`，目标为 `build\native\include\<源目录名>\<子目录>`。
-/// 非递归、不重叠，可完整保留包内相对结构。
+/// glob 为该目录下的 `*.ext`，目标为「最终 `#include` 路径」——即消费者
+/// 代码中 `#include <{target}/xxx.h>` 的路径前缀（不含 `build\native\include\`
+/// 前缀），如 `v8`、`v8\cppgc`。非递归、不重叠，可完整保留包内相对结构。
 List<FileMapping> _buildHeaderMappings(String dirPath, List<String> headers) {
   if (headers.isEmpty) return const [];
   final clusterName = basenameOf(dirPath);
@@ -228,9 +229,6 @@ List<FileMapping> _buildHeaderMappings(String dirPath, List<String> headers) {
   final mappings = <FileMapping>[];
   for (final parent in byDir.keys) {
     final targetSegments = <String>[
-      'build',
-      'native',
-      'include',
       clusterName,
       ...(parent.isEmpty ? const <String>[] : parent.split(pathSeparator)),
     ];

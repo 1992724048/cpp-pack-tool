@@ -11,6 +11,12 @@ library;
 /// 不允许连续分隔符，也不允许以分隔符开头或结尾。
 final RegExp _nugetIdPattern = RegExp(r'^\w+([._-]\w+)*$');
 
+/// 被认定为「头文件映射」的扩展名集合。
+///
+/// 头文件映射的 [FileMapping.target] 语义为「最终 `#include` 路径」
+/// （不含 `build\native\include\` 前缀）；其余映射的 target 为包内目标路径。
+const Set<String> _headerExtensions = {'.h', '.hpp', '.hh', '.hxx'};
+
 /// 从路径串提取目录/文件名（兼容 `\` 与 `/`）。
 String _basenameOf(String path) {
   final trimmed = path.trim();
@@ -41,7 +47,6 @@ class PackProject {
     this.tags = '',
     this.license = '',
     this.repository = '',
-    this.outputDirectory = '',
     List<SourceDir>? sourceDirs,
     List<String>? platforms,
     List<String>? configurations,
@@ -74,9 +79,6 @@ class PackProject {
 
   /// 仓库地址（可为空，空则不写入 nuspec）。
   String repository;
-
-  /// 打包输出目录。
-  String outputDirectory;
 
   /// 需要打包的源码目录列表。
   List<SourceDir> sourceDirs;
@@ -123,7 +125,6 @@ class PackProject {
     String? tags,
     String? license,
     String? repository,
-    String? outputDirectory,
     List<SourceDir>? sourceDirs,
     List<String>? platforms,
     List<String>? configurations,
@@ -138,7 +139,6 @@ class PackProject {
       tags: tags ?? this.tags,
       license: license ?? this.license,
       repository: repository ?? this.repository,
-      outputDirectory: outputDirectory ?? this.outputDirectory,
       sourceDirs: sourceDirs != null
           ? sourceDirs.map((e) => e.copyWith()).toList()
           : List.of(this.sourceDirs),
@@ -158,7 +158,6 @@ class PackProject {
     'tags': tags,
     'license': license,
     'repository': repository,
-    'outputDirectory': outputDirectory,
     'sourceDirs': sourceDirs.map((e) => e.toJson()).toList(),
     'platforms': List.of(platforms),
     'configurations': List.of(configurations),
@@ -176,7 +175,6 @@ class PackProject {
       tags: _jsonString(json['tags']),
       license: _jsonString(json['license']),
       repository: _jsonString(json['repository']),
-      outputDirectory: _jsonString(json['outputDirectory']),
       sourceDirs: _jsonList(json['sourceDirs'], SourceDir.fromJson),
       platforms: _jsonStringList(json['platforms']),
       configurations: _jsonStringList(json['configurations']),
@@ -288,6 +286,19 @@ class FileMapping {
   /// 适用配置；空表示全部。
   List<String> configurations;
 
+  /// 是否为头文件映射：`srcGlob` 的扩展名属于 `.h`/`.hpp`/`.hh`/`.hxx`。
+  ///
+  /// 头文件映射的 [target] 语义为「最终 `#include` 路径」（不含
+  /// `build\native\include\` 前缀），例如 `v8\cppgc`；其余（库/数据）映射的
+  /// [target] 仍为包内目标路径（如 `build\native\lib\x64\Debug`）。
+  bool get isHeaderMapping {
+    final glob = srcGlob.trim().toLowerCase();
+    if (glob.isEmpty) return false;
+    final dot = glob.lastIndexOf('.');
+    if (dot < 0) return false;
+    return _headerExtensions.contains(glob.substring(dot));
+  }
+
   /// 返回部分更新后的副本；未提供的字段保持不变。
   FileMapping copyWith({
     String? srcGlob,
@@ -328,6 +339,7 @@ class CompileConfig {
   /// 创建编译配置，采用默认语言标准 `stdcpp23`。
   CompileConfig({
     this.languageStandard = 'stdcpp23',
+    this.clanguageStandard = '',
     this.preprocessorDefines = '',
     Map<String, String>? configDefines,
     this.additionalIncludeDirectories = '',
@@ -341,6 +353,9 @@ class CompileConfig {
 
   /// 语言标准，如 `stdcpp23`、`stdcpp20`。
   String languageStandard;
+
+  /// C 语言标准，如 `c11`、`c17`；空表示不设置（不写入 MSBuild）。
+  String clanguageStandard;
 
   /// 全局预处理宏，分号分隔（如 `NOMINMAX;V8_ENABLE_WEBASSEMBLY`）。
   String preprocessorDefines;
@@ -366,6 +381,7 @@ class CompileConfig {
   /// 返回部分更新后的副本；未提供的字段保持不变。
   CompileConfig copyWith({
     String? languageStandard,
+    String? clanguageStandard,
     String? preprocessorDefines,
     Map<String, String>? configDefines,
     String? additionalIncludeDirectories,
@@ -376,6 +392,7 @@ class CompileConfig {
   }) {
     return CompileConfig(
       languageStandard: languageStandard ?? this.languageStandard,
+      clanguageStandard: clanguageStandard ?? this.clanguageStandard,
       preprocessorDefines: preprocessorDefines ?? this.preprocessorDefines,
       configDefines: configDefines != null
           ? Map<String, String>.from(configDefines)
@@ -393,6 +410,7 @@ class CompileConfig {
 
   Map<String, dynamic> toJson() => {
     'languageStandard': languageStandard,
+    'clanguageStandard': clanguageStandard,
     'preprocessorDefines': preprocessorDefines,
     'configDefines': Map<String, String>.from(configDefines),
     'additionalIncludeDirectories': additionalIncludeDirectories,
@@ -414,6 +432,7 @@ class CompileConfig {
     }
     return CompileConfig(
       languageStandard: _jsonString(json['languageStandard']),
+      clanguageStandard: _jsonString(json['clanguageStandard']),
       preprocessorDefines: _jsonString(json['preprocessorDefines']),
       configDefines: configDefinesMap,
       additionalIncludeDirectories: _jsonString(
@@ -431,6 +450,7 @@ class CompileConfig {
   @override
   String toString() {
     return 'CompileConfig(languageStandard: $languageStandard, '
+        'clanguageStandard: $clanguageStandard, '
         'configDefines: $configDefines, injectedSources: $injectedSources)';
   }
 }
