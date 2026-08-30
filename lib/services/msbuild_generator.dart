@@ -455,20 +455,10 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
     }
   }
   final parts = <String>[
-    for (final dir in dirs) _relativeIncludeRef(dir),
-    ..._splitVerbatimSemis(compile.additionalIncludeDirectories),
+    '\$(MSBuildThisFileDirectory)',
     '%(AdditionalIncludeDirectories)',
   ];
   return _joinSemis(parts);
-}
-
-/// 为映射派生的包含目录生成 MSBuild 引用。
-///
-/// 宏引用或绝对路径（[`_isVerbatimValue`]）原样输出（不做前缀/剥斜杠）；否则统一加
-/// `$(MSBuildThisFileDirectory)` 前缀并去除尾部斜杠。
-String _relativeIncludeRef(String dir) {
-  if (_isVerbatimValue(dir)) return dir;
-  return '\$(MSBuildThisFileDirectory)${_stripTrailingSlash(dir)}';
 }
 
 /// 从文件映射目标提取 `include\...` 子路径；非头文件映射返回 null。
