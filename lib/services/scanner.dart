@@ -82,7 +82,7 @@ class ScanResult {
 /// 当 [dirPath] 不存在或不是目录时抛出 [FileSystemException]。
 ScanResult scanSourceDir(
   String dirPath, {
-  int maxDepth = 4,
+  int maxDepth = 8,
   int maxFilesPerDir = 5000,
 }) {
   final dir = Directory(dirPath);
