@@ -1,0 +1,97 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [dev, master]
+    tags: ['v*']
+  pull_request:
+    branches: [dev, master]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release 版本号（如 1.0.0；留空用日期）'
+        required: false
+        default: ''
+
+jobs:
+  ci:
+    name: 分析与测试
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 获取依赖
+        run: flutter pub get
+
+      - name: 静态分析
+        run: flutter analyze
+
+      - name: 单元与组件测试
+        run: flutter test
+
+      - name: 构建 Windows Release
+        run: flutter build windows --release
+
+      - name: 上传构建产物（调试留存）
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-nuget-pack-windows-${{ github.sha }}
+          path: build/windows/x64/runner/Release
+          if-no-files-found: error
+
+  release:
+    name: 发布 Release
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: 获取依赖
+        run: flutter pub get
+
+      - name: 构建 Windows Release
+        run: flutter build windows --release
+
+      - name: 打包为 zip
+        shell: pwsh
+        run: |
+          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            if ("${{ github.event.inputs.version }}" -ne "") { "${{ github.event.inputs.version }}" } else { Get-Date -Format "yyyyMMdd" }
+          } else { "${{ github.ref_name }}".TrimStart('v') }
+          $out = "dist/cpp_nuget_pack-$version-windows-x64.zip"
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out -CompressionLevel Optimal
+          Write-Output "ASSET_PATH=$out"
+          Write-Output "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: 创建 GitHub Release 并上传资产
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          body: |
+            ## cpp_nuget_pack v${{ env.VERSION }}
+
+            基于 GitHub Actions 自动构建的 Windows x64 Release 版本。
+
+            - 含完整运行时（exe + data + 依赖），解压后直接运行
+            - 构建链路：`flutter analyze`（0 issues）→ `flutter test`（全部通过）→ `flutter build windows --release`
+          draft: false
+          prerelease: false
+          files: dist/cpp_nuget_pack-*-windows-x64.zip

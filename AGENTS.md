@@ -50,6 +50,7 @@ docs/
 - Get: `flutter pub get`
 - Build: `flutter build windows`（Release 桌面产物）
 - Analyze: `flutter analyze`
+- CI/CD: `.github/workflows/ci.yml`（GitHub Actions，windows-latest）：push dev/master 与 PR 触发 ci job（analyze + test + build + 留档产物）；`v*` tag 或手动 workflow_dispatch 触发 release job（构建 zip 并发布 GitHub Release，版本号取 tag 或输入参数）。**主开发分支为 `dev`**（master 仅用于稳定发布）
 
 ## Test
 
