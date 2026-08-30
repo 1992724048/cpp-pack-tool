@@ -28,6 +28,10 @@ const Set<String> kIgnoredDirectoryNames = {
   'cmakefiles',
 };
 
+const Set<String> kIgnoredFileNames = {
+  '.cpp_nuget_pack.json',
+};
+
 /// 扫描结果：分类后的相对路径列表与建议映射。
 class ScanResult {
   ScanResult({
@@ -226,6 +230,10 @@ void _walk({
     }
 
     if (type == FileSystemEntityType.file) {
+      if (kIgnoredFileNames.contains(name.toLowerCase())) {
+        warnings.add('忽略文件: ${entry.path}');
+        continue;
+      }
       final ext = _extensionOf(name);
       if (kHeaderExtensions.contains(ext)) {
         headers.add(rel);
