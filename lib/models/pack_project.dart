@@ -482,7 +482,11 @@ class CompileConfig {
     this.additionalIncludeDirectories = '',
     this.additionalLibraryDirectories = '',
     this.additionalDependencies = '',
-  }) : configDefines = configDefines ?? {};
+    List<String>? preBuildCommands,
+    List<String>? postBuildCommands,
+  }) : configDefines = configDefines ?? {},
+       preBuildCommands = preBuildCommands ?? [],
+       postBuildCommands = postBuildCommands ?? [];
 
   /// 语言标准，如 `stdcpp23`、`stdcpp20`。
   String languageStandard;
@@ -505,6 +509,20 @@ class CompileConfig {
   /// 额外的链接依赖，分号分隔，如 `ws2_32.lib;ntdll.lib`。
   String additionalDependencies;
 
+  /// 编译前命令序列（在消费方构建前、`BeforeTargets="Build"` 顺序执行）。
+  ///
+  /// 与 [PackProject.preBuildCommand]（工具侧打包前脚本）不同：本列表被
+  /// `msbuild_generator` 生成进 targets，由**消费方构建时**执行。共享项目导入的
+  /// `<PreBuildEvent><Command>` 命令会合入此列表（去重）。每条命令生成一个独立
+  /// Exec Target，工作目录为包安装目录（`$(MSBuildThisFileDirectory)`）。
+  final List<String> preBuildCommands;
+
+  /// 编译后命令序列（在消费方构建后、`AfterTargets="Build"` 顺序执行）。
+  ///
+  /// 语义与 [preBuildCommands] 对仗：生成进 targets，由消费方构建后执行；共享项目
+  /// 导入的 `<PostBuildEvent><Command>` 命令会合入此列表（去重）。
+  final List<String> postBuildCommands;
+
   /// 返回部分更新后的副本；未提供的字段保持不变。
   CompileConfig copyWith({
     String? languageStandard,
@@ -514,6 +532,8 @@ class CompileConfig {
     String? additionalIncludeDirectories,
     String? additionalLibraryDirectories,
     String? additionalDependencies,
+    List<String>? preBuildCommands,
+    List<String>? postBuildCommands,
   }) {
     return CompileConfig(
       languageStandard: languageStandard ?? this.languageStandard,
@@ -528,6 +548,12 @@ class CompileConfig {
           additionalLibraryDirectories ?? this.additionalLibraryDirectories,
       additionalDependencies:
           additionalDependencies ?? this.additionalDependencies,
+      preBuildCommands: preBuildCommands != null
+          ? List.of(preBuildCommands)
+          : List.of(this.preBuildCommands),
+      postBuildCommands: postBuildCommands != null
+          ? List.of(postBuildCommands)
+          : List.of(this.postBuildCommands),
     );
   }
 
@@ -539,6 +565,8 @@ class CompileConfig {
     'additionalIncludeDirectories': additionalIncludeDirectories,
     'additionalLibraryDirectories': additionalLibraryDirectories,
     'additionalDependencies': additionalDependencies,
+    'preBuildCommands': List.of(preBuildCommands),
+    'postBuildCommands': List.of(postBuildCommands),
   };
 
   factory CompileConfig.fromJson(Map<String, dynamic> json) {
@@ -565,6 +593,8 @@ class CompileConfig {
         json['additionalLibraryDirectories'],
       ),
       additionalDependencies: _jsonString(json['additionalDependencies']),
+      preBuildCommands: _jsonStringList(json['preBuildCommands']),
+      postBuildCommands: _jsonStringList(json['postBuildCommands']),
     );
   }
 

@@ -17,6 +17,9 @@ import '../widgets/mapping_suggestion_list.dart';
 const List<String> _kPlatforms = <String>['x64', 'x86', 'arm64'];
 const List<String> _kConfigs = <String>['Debug', 'Release'];
 
+/// 映射表可排序列。
+enum _SortColumn { srcGlob, target, fileKind }
+
 /// 「添加映射」对话框返回结果：新增的映射列表 + 是否来自目录扫描。
 ///
 /// 手动输入恒为单条（[fromScan] false）；扫描目录可批量（[fromScan] true），
@@ -53,6 +56,41 @@ class FileMappingPage extends StatefulWidget {
 
 class _FileMappingPageState extends State<FileMappingPage> {
   int _sourceIndex = 0;
+
+  /// 当前排序列；默认按源文件模式升序。
+  _SortColumn _sortColumn = _SortColumn.srcGlob;
+
+  /// 是否升序。
+  bool _sortAscending = true;
+
+  /// 按当前排序列与方向对映射列表排序（返回 `(原始下标, 映射)` 对，仅影响显示，
+  /// 不修改底层数据；编辑/删除仍按原始下标定位）。
+  List<(int, FileMapping)> _sortedMappings(SourceDir sourceDir) {
+    final indexed = <(int, FileMapping)>[
+      for (var i = 0; i < sourceDir.mappings.length; i++)
+        (i, sourceDir.mappings[i]),
+    ];
+    indexed.sort((a, b) {
+      final int comparison = switch (_sortColumn) {
+        _SortColumn.srcGlob => a.$2.srcGlob.compareTo(b.$2.srcGlob),
+        _SortColumn.target => a.$2.target.compareTo(b.$2.target),
+        _SortColumn.fileKind => a.$2.fileKind.compareTo(b.$2.fileKind),
+      };
+      return _sortAscending ? comparison : -comparison;
+    });
+    return indexed;
+  }
+
+  void _toggleSort(_SortColumn column) {
+    setState(() {
+      if (_sortColumn == column) {
+        _sortAscending = !_sortAscending;
+      } else {
+        _sortColumn = column;
+        _sortAscending = true;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -130,12 +168,45 @@ class _FileMappingPageState extends State<FileMappingPage> {
       color: AppColors.bgSurface,
       child: Row(
         children: [
-          _headerText('源文件模式', flex: 3),
-          _headerText('目标路径', flex: 3),
-          _headerText('类型', flex: 2),
+          _sortableHeader(_SortColumn.srcGlob, '源文件模式', flex: 3),
+          _sortableHeader(_SortColumn.target, '目标路径', flex: 3),
+          _sortableHeader(_SortColumn.fileKind, '类型', flex: 2),
           _headerText('平台 · 配置', flex: 2),
           const SizedBox(width: 88),
         ],
+      ),
+    );
+  }
+
+  /// 可排序的表头：点击切换排序列；再次点击切换升降序，当前列显示箭头指示。
+  Widget _sortableHeader(_SortColumn column, String text, {int flex = 1}) {
+    final active = _sortColumn == column;
+    final arrow = !active
+        ? null
+        : (_sortAscending ? Icons.arrow_upward : Icons.arrow_downward);
+    return Expanded(
+      flex: flex,
+      child: InkWell(
+        onTap: () => _toggleSort(column),
+        child: Row(
+          children: [
+            Flexible(
+              child: Text(
+                text,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: active ? AppColors.textAccent : AppColors.textSemantic,
+                  fontSize: AppFontSizes.small,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (arrow != null) ...[
+              const SizedBox(width: AppSpacing.sm),
+              Icon(arrow, size: 12, color: AppColors.textAccent),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -159,13 +230,15 @@ class _FileMappingPageState extends State<FileMappingPage> {
     int sourceIndex,
     SourceDir sourceDir,
   ) {
+    final sorted = _sortedMappings(sourceDir);
     return ListView.builder(
-      itemCount: sourceDir.mappings.length,
+      itemCount: sorted.length,
       itemBuilder: (context, index) {
+        final item = sorted[index];
         return _MappingRow(
-          mapping: sourceDir.mappings[index],
-          onEdit: () => _editMapping(project, sourceIndex, index),
-          onDelete: () => _deleteMapping(project, sourceIndex, index),
+          mapping: item.$2,
+          onEdit: () => _editMapping(project, sourceIndex, item.$1),
+          onDelete: () => _deleteMapping(project, sourceIndex, item.$1),
         );
       },
     );

@@ -119,6 +119,7 @@ class _MainShellState extends State<MainShell>
                   onDelete: _deleteProject,
                   onSettings: _openSettings,
                   onRefresh: _refreshMappings,
+                  onHistory: _showHistory,
                   refreshing: _refreshing,
                 ),
                 Container(width: 1, color: AppColors.borderStrong),
@@ -384,6 +385,17 @@ class _MainShellState extends State<MainShell>
       _refreshIconPaths();
     });
     _log.info('已将库项目重命名为 $newId');
+  }
+
+  /// 打开某库项目的打包历史时间线对话框。
+  Future<void> _showHistory(int index) async {
+    if (index < 0 || index >= _projects.length) return;
+    final project = _projects[index];
+    await packHistoryDialog(
+      context,
+      project: project,
+      outputDir: _registryOutputDir,
+    );
   }
 
   Future<void> _deleteProject(int index) async {

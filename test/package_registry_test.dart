@@ -213,4 +213,218 @@ void main() {
       expect(result.project, isNull);
     });
   });
+
+  group('打包历史', () {
+    test('打包时追加 history 条目（version=pkg.version, packedAt=lastPackedAt）', () {
+      final pkg = RegisteredPackage(
+        project: buildProject('Hist.A'),
+        lastPackedAt: DateTime.parse('2026-08-27T12:00:00'),
+      );
+      expect(upsertPackage(outputDir, pkg), isTrue);
+      final loaded = loadRegistry(outputDir).packages.single;
+      expect(loaded.history, hasLength(1));
+      expect(loaded.history.single.version, '1.2.3');
+      expect(
+        loaded.history.single.packedAt.toIso8601String(),
+        '2026-08-27T12:00:00.000',
+      );
+    });
+
+    test('相同版本再次打包仅更新最新条目的 packedAt（去重）', () {
+      final first = RegisteredPackage(
+        project: buildProject('Hist.B'),
+        lastPackedAt: DateTime.parse('2026-08-27T12:00:00'),
+      );
+      final second = RegisteredPackage(
+        project: buildProject('Hist.B'),
+        lastPackedAt: DateTime.parse('2026-09-01T08:00:00'),
+      );
+      expect(upsertPackage(outputDir, first), isTrue);
+      expect(upsertPackage(outputDir, second), isTrue);
+      final loaded = loadRegistry(outputDir).packages.single;
+      expect(loaded.history, hasLength(1));
+      expect(
+        loaded.history.single.packedAt.toIso8601String(),
+        '2026-09-01T08:00:00.000',
+      );
+    });
+
+    test('版本变化时追加新条目不覆盖旧条目', () {
+      expect(
+        upsertPackage(
+          outputDir,
+          RegisteredPackage(
+            project: buildProject('Hist.C').copyWith(version: '1.2.3'),
+            lastPackedAt: DateTime.parse('2026-08-27T12:00:00'),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        upsertPackage(
+          outputDir,
+          RegisteredPackage(
+            project: buildProject('Hist.C').copyWith(version: '1.2.4'),
+            lastPackedAt: DateTime.parse('2026-09-01T08:00:00'),
+          ),
+        ),
+        isTrue,
+      );
+      final loaded = loadRegistry(outputDir).packages.single;
+      expect(loaded.history, hasLength(2));
+      expect(loaded.history.map((e) => e.version), ['1.2.3', '1.2.4']);
+    });
+
+    test('packageHistory 按 packedAt 倒序返回', () {
+      expect(
+        upsertPackage(
+          outputDir,
+          RegisteredPackage(
+            project: buildProject('Hist.D').copyWith(version: '1.0.0'),
+            lastPackedAt: DateTime.parse('2026-08-27T12:00:00'),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        upsertPackage(
+          outputDir,
+          RegisteredPackage(
+            project: buildProject('Hist.D').copyWith(version: '1.0.1'),
+            lastPackedAt: DateTime.parse('2026-09-01T08:00:00'),
+          ),
+        ),
+        isTrue,
+      );
+      final history = packageHistory(outputDir, 'Hist.D');
+      expect(history, hasLength(2));
+      expect(history.first.version, '1.0.1');
+      expect(history.last.version, '1.0.0');
+    });
+
+    test('fromJson 旧数据无 history → 空列表（时间线延迟到首次打包）', () {
+      final restored = RegisteredPackage.fromJson(<String, dynamic>{
+        'project': buildProject('Old.1').toJson(),
+        'lastPackedAt': '2026-08-27T12:00:00.000',
+      });
+      expect(restored.history, isEmpty);
+      expect(restored.lastPackedAt, isNotNull);
+    });
+  });
+
+  group('isPackagePresent', () {
+    test('包未登记时返回 false', () {
+      expect(isPackagePresent(outputDir, 'Nope'), isFalse);
+    });
+
+    test('空输出目录返回 false', () {
+      expect(isPackagePresent('', 'X'), isFalse);
+    });
+
+    test('包已登记时返回 true', () {
+      expect(
+        upsertPackage(
+          outputDir,
+          RegisteredPackage(project: buildProject('Present.A')),
+        ),
+        isTrue,
+      );
+      expect(isPackagePresent(outputDir, 'Present.A'), isTrue);
+    });
+  });
+
+  group('suggestVersion', () {
+    test('manual：返回输入原值（可非语义化）', () {
+      expect(
+        suggestVersion(
+          currentVersion: '1.2.3',
+          registeredVersions: const [],
+          strategy: 'manual',
+        ),
+        '1.2.3',
+      );
+      expect(
+        suggestVersion(
+          currentVersion: 'my.custom',
+          registeredVersions: const [],
+          strategy: 'manual',
+        ),
+        'my.custom',
+      );
+    });
+
+    test('timestamp：以输入主干生成 prerelease 时间戳版本', () {
+      final result = suggestVersion(
+        currentVersion: '1.2.3-rc.1',
+        registeredVersions: const [],
+        strategy: 'timestamp',
+      );
+      expect(result, startsWith('1.2.3-'));
+      final suffix = result!.substring('1.2.3-'.length);
+      expect(RegExp(r'^\d{12}$').hasMatch(suffix), isTrue);
+    });
+
+    test('bump：输入 patch+1 作为基线', () {
+      expect(
+        suggestVersion(
+          currentVersion: '1.2.3',
+          registeredVersions: const ['1.2.0', '1.2.1'],
+          strategy: 'bump',
+        ),
+        '1.2.4',
+      );
+    });
+
+    test('bump：历史存在更高 patch 时取历史+1', () {
+      expect(
+        suggestVersion(
+          currentVersion: '1.2.3',
+          registeredVersions: const ['1.2.7', '1.2.5'],
+          strategy: 'bump',
+        ),
+        '1.2.8',
+      );
+    });
+
+    test('bump：仅比较同 major.minor 的历史版本', () {
+      expect(
+        suggestVersion(
+          currentVersion: '1.2.3',
+          registeredVersions: const ['2.0.9', '1.9.1'],
+          strategy: 'bump',
+        ),
+        '1.2.4',
+      );
+    });
+
+    test('解析失败返回 null', () {
+      expect(
+        suggestVersion(
+          currentVersion: 'not.a.version',
+          registeredVersions: const [],
+          strategy: 'timestamp',
+        ),
+        isNull,
+      );
+      expect(
+        suggestVersion(
+          currentVersion: 'not.a.version',
+          registeredVersions: const [],
+          strategy: 'bump',
+        ),
+        isNull,
+      );
+    });
+
+    test('未知策略返回 null', () {
+      expect(
+        suggestVersion(
+          currentVersion: '1.2.3',
+          registeredVersions: const [],
+          strategy: 'unknown',
+        ),
+        isNull,
+      );
+    });
+  });
 }

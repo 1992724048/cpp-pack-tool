@@ -163,4 +163,54 @@ void main() {
     // 不再显示空态文案。
     expect(find.text('尚未添加库项目'), findsNothing);
   });
+
+  testWidgets('打包页包含预览/生成 CMake 包/版本策略控件', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      initialPackages: [PackProject(packageId: 'V8.Native', version: '1.0.0')],
+    );
+
+    await tester.tap(find.text('打包'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('版本策略'), findsOneWidget);
+    expect(find.text('预览'), findsOneWidget);
+    expect(find.text('生成 CMake 包'), findsOneWidget);
+    // 预览按钮带图标与 tooltip。
+    expect(find.byTooltip('预览生成文件'), findsOneWidget);
+  });
+
+  testWidgets('依赖页「添加依赖」对话框可打开', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      initialPackages: [PackProject(packageId: 'V8.Native', version: '1.0.0')],
+    );
+
+    await tester.tap(find.text('依赖管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('添加依赖'));
+    await tester.pumpAndSettle();
+
+    // 输出目录为空时无候选包，对话框显示手动输入提示。
+    expect(find.text('输出目录暂无已打包的包，请手动输入依赖'), findsOneWidget);
+    expect(find.text('手动输入'), findsNothing); // 无候选时不显示「或手动输入」。
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('添加依赖'), findsOneWidget); // 关闭后仅剩按钮标签。
+  });
+
+  testWidgets('库项目行菜单包含「打包历史」项', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      initialPackages: [PackProject(packageId: 'V8.Native', version: '1.0.0')],
+    );
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('打包历史'), findsOneWidget);
+    expect(find.text('重命名'), findsOneWidget);
+    expect(find.text('删除库项目'), findsOneWidget);
+  });
 }

@@ -150,4 +150,134 @@ void main() {
     // 既有语言标准等保持不变。
     expect(merged.languageStandard, base.languageStandard);
   });
+
+  test(r'解析含 $(MSBuildThisFileDirectory) 的 ClInclude 剥离宏前缀为相对路径', () {
+    final file = writeFile('Shared.vcxitems', r'''
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <ItemGroup>
+    <ClInclude Include="$(MSBuildThisFileDirectory)mimalloc\mimalloc-new-delete.h" />
+    <ClInclude Include="$(MSBuildThisFileDirectory)mimalloc\mimalloc.h" />
+  </ItemGroup>
+</Project>
+''');
+    final info = parseSharedProject(file.path);
+
+    // 不再出现字面 $(MSBuildThisFileDirectory) 前缀（否则会变成 bogus srcGlob）。
+    expect(info.headerGlobs, [
+      r'mimalloc\mimalloc-new-delete.h',
+      r'mimalloc\mimalloc.h',
+    ]);
+    expect(info.headerGlobs.any((g) => g.contains(r'$(')), isFalse);
+    // 派生映射 srcGlob 相对源目录，可被后续打包路径拼接。
+    final mappings = buildMappingsFromSharedProject(info, 'mimalloc');
+    expect(
+      mappings.any(
+        (m) =>
+            m.srcGlob == r'mimalloc\mimalloc-new-delete.h' &&
+            m.target == 'mimalloc',
+      ),
+      isTrue,
+    );
+  });
+
+  test('含宏的包含目录/依赖/宏在 macro* 列表与原列表中都保留', () {
+    final file = writeFile('Shared.vcxitems', r'''
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <AdditionalIncludeDirectories>include;$(MSBuildThisFileDirectory)extra;$(SolutionDir)inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    <AdditionalDependencies>ws2_32.lib;$(BuildDir)\foo.lib</AdditionalDependencies>
+    <PreprocessorDefinitions>NOMINMAX;$(BaseDefines);USE_$(Platform)</PreprocessorDefinitions>
+  </PropertyGroup>
+</Project>
+''');
+    final info = parseSharedProject(file.path);
+
+    // 原列表保留全部（含宏），与既有语义兼容。
+    expect(info.additionalIncludeDirectories, [
+      'include',
+      r'$(MSBuildThisFileDirectory)extra',
+      r'$(SolutionDir)inc',
+      '%(AdditionalIncludeDirectories)',
+    ]);
+    expect(info.additionalDependencies, ['ws2_32.lib', r'$(BuildDir)\foo.lib']);
+    expect(info.preprocessorDefinitions, [
+      'NOMINMAX',
+      r'$(BaseDefines)',
+      r'USE_$(Platform)',
+    ]);
+
+    // macro* 列表只含 MSBuild 引用条目（$(...) 与 %(...)）。
+    expect(info.macroIncludeDirectories, [
+      r'$(MSBuildThisFileDirectory)extra',
+      r'$(SolutionDir)inc',
+      '%(AdditionalIncludeDirectories)',
+    ]);
+    expect(info.macroDependencies, [r'$(BuildDir)\foo.lib']);
+    expect(info.macroPreprocessorDefinitions, [
+      r'$(BaseDefines)',
+      r'USE_$(Platform)',
+    ]);
+  });
+
+  test('解析 PreBuildEvent/PostBuildEvent 命令并去空去重', () {
+    final file = writeFile('Shared.vcxitems', r'''
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <PreBuildEvent>
+      <Command>echo pre one
+echo pre two</Command>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>copy /y a b</Command>
+    </PostBuildEvent>
+  </PropertyGroup>
+</Project>
+''');
+    final info = parseSharedProject(file.path);
+
+    expect(info.preBuildCommands, ['echo pre one', 'echo pre two']);
+    expect(info.postBuildCommands, ['copy /y a b']);
+  });
+
+  test('mergeCompileConfigFromSharedProject 合并编译前/后命令（去重）', () {
+    final base = CompileConfig(
+      preBuildCommands: ['echo base'],
+      postBuildCommands: ['echo base'],
+    );
+    final info = SharedProjectInfo(
+      preBuildCommands: ['echo base', 'echo shared'],
+      postBuildCommands: ['echo shared'],
+    );
+    final merged = mergeCompileConfigFromSharedProject(base, info);
+
+    expect(merged.preBuildCommands, ['echo base', 'echo shared']);
+    expect(merged.postBuildCommands, ['echo base', 'echo shared']);
+  });
+
+  test('真实 mimalloc.vcxitems 解析：无字面宏前缀（若文件存在）', () {
+    const path = r'D:\CODE\Library\mimalloc\mimalloc.vcxitems';
+    if (!File(path).existsSync()) {
+      markTestSkipped('mimalloc 共享项目不存在，跳过实测');
+      return;
+    }
+    final info = parseSharedProject(path);
+    expect(info.headerGlobs, isNotEmpty);
+    // 关键：headerGlob 不再含字面 $( 宏前缀（否则打包时拼出错误路径）。
+    expect(info.headerGlobs.any((g) => g.contains(r'$(')), isFalse);
+    expect(
+      info.headerGlobs.first.startsWith(r'mimalloc\'),
+      isTrue,
+      reason:
+          r'首个头文件应剥离 $(MSBuildThisFileDirectory) 前缀，'
+          '得到相对源目录的路径',
+    );
+    // 含宏的包含目录应原样保留，供生成器原样输出。
+    expect(
+      info.macroIncludeDirectories,
+      contains('%(AdditionalIncludeDirectories)'),
+    );
+  });
 }

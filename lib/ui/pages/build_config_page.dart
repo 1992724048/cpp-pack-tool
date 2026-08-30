@@ -111,6 +111,30 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
+          _collapsibleEditorSection(
+            label: '构建前命令',
+            values: compile.preBuildCommands,
+            hint: '如 .\\copy_deps.bat，消费方构建前执行；工作目录=包安装目录',
+            onChanged: (values) => _update(
+              project.copyWith(
+                compileConfig: compile.copyWith(preBuildCommands: values),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          _collapsibleEditorSection(
+            label: '构建后命令',
+            values: compile.postBuildCommands,
+            hint: '如 .\\sign.ps1，消费方构建后执行；工作目录=包安装目录',
+            onChanged: (values) => _update(
+              project.copyWith(
+                compileConfig: compile.copyWith(postBuildCommands: values),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.s2),
+          const _CommandsNote(),
+          const SizedBox(height: AppSpacing.s2),
           const _DataFileNote(),
         ],
       ),
@@ -552,6 +576,35 @@ class _StringListEditorState extends State<StringListEditor> {
 
   List<String> _cleaned(List<String> values) =>
       values.where((t) => t.trim().isNotEmpty).toList();
+}
+
+/// 构建命令说明块（区分消费方 targets 命令与打包页工具侧脚本）。
+///
+/// `CompileConfig.preBuildCommands`/`postBuildCommands` 被生成进消费方 `targets`，
+/// 由**消费方构建前/后**执行；与打包页顶层的构建前/后脚本（工具侧打包时执行）
+/// 职责不同。
+class _CommandsNote extends StatelessWidget {
+  const _CommandsNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.s2),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Text(
+        '此处命令生成进消费方项目，由消费方构建前/后执行；工作目录=包安装目录。'
+        '与打包页顶层的构建前/后脚本（工具侧打包时执行）不同。',
+        style: TextStyle(
+          color: AppColors.textSemantic,
+          fontSize: AppFontSizes.small,
+        ),
+      ),
+    );
+  }
 }
 
 /// 「数据文件/源码文件」提示块（替代旧的「数据文件拷贝」「注入源码」编辑区）。

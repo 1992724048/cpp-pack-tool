@@ -246,6 +246,32 @@ void main() {
       expect(config.languageStandard, 'stdcpp17');
       // 旧字段已迁移至文件映射，加载时直接忽略，不报错。
     });
+
+    test('preBuildCommands/postBuildCommands 默认空，JSON 往返一致', () {
+      final config = CompileConfig(
+        preBuildCommands: ['echo pre'],
+        postBuildCommands: ['copy /y a b'],
+      );
+      expect(config.preBuildCommands, ['echo pre']);
+      expect(config.postBuildCommands, ['copy /y a b']);
+
+      final restored = CompileConfig.fromJson(config.toJson());
+      expect(restored.preBuildCommands, ['echo pre']);
+      expect(restored.postBuildCommands, ['copy /y a b']);
+
+      // copyWith 未提供时保持不变。
+      expect(restored.copyWith(languageStandard: 'stdcpp20').preBuildCommands, [
+        'echo pre',
+      ]);
+    });
+
+    test('fromJson 旧 JSON 无命令键 → 空列表', () {
+      final config = CompileConfig.fromJson(<String, dynamic>{
+        'languageStandard': 'stdcpp20',
+      });
+      expect(config.preBuildCommands, isEmpty);
+      expect(config.postBuildCommands, isEmpty);
+    });
   });
 
   group('MSBuild identifier sanitizer', () {

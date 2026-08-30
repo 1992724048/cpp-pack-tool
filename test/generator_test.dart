@@ -413,5 +413,90 @@ void main() {
       expect(targets, contains('V8_Native_inject_exe_PostCmd_Run'));
       expect(targets, contains('>true</V8_Native_inject_exe_PostCmd_Run>'));
     });
+
+    test('编译配置级 pre/post 命令生成独立 Exec Target（Config 前缀 + 防重复 + 转义）', () {
+      final project = buildProject().copyWith(
+        compileConfig: buildProject().compileConfig.copyWith(
+          preBuildCommands: [
+            r'$(OutDir)\setup.exe --init & echo prep',
+            'copy /y c d',
+          ],
+          postBuildCommands: ['sign.exe /f cert'],
+        ),
+      );
+      final targets = generateTargets(project);
+
+      // 每个命令独立 Target，带 Config 前缀，区分映射级与打包页脚本。
+      expect(
+        targets,
+        contains('<Target Name="V8_NativeConfigPreCmd1" BeforeTargets="Build"'),
+      );
+      expect(
+        targets,
+        contains('<Target Name="V8_NativeConfigPreCmd2" BeforeTargets="Build"'),
+      );
+      expect(
+        targets,
+        contains('<Target Name="V8_NativeConfigPostCmd1" AfterTargets="Build"'),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Exec Command="$(OutDir)\setup.exe --init &amp; echo prep" '
+          r'WorkingDirectory="$(MSBuildThisFileDirectory)" />',
+        ),
+      );
+      expect(targets, contains('>true</V8_Native_ConfigPreCmd_1_Run>'));
+      expect(targets, contains('>true</V8_Native_ConfigPostCmd_1_Run>'));
+      // 与映射级命名空间隔离，无冲突。
+      expect(
+        targets,
+        isNot(contains('V8_NativeConfigPreCmd" BeforeTargets="Build" &&')),
+      );
+    });
+
+    test('含宏的包含目录/绝对路径原样输出（不重复加前缀、不剥斜杠）', () {
+      final project = buildProject().copyWith(
+        compileConfig: buildProject().compileConfig.copyWith(
+          additionalIncludeDirectories:
+              r'$(MSBuildThisFileDirectory)mimalloc;D:\abs\include\',
+        ),
+      );
+      final props = generateProps(project);
+
+      // 宏与绝对路径原样出现一次，不被再叠加 $(MSBuildThisFileDirectory) 前缀。
+      expect(
+        props,
+        contains(
+          r'$(MSBuildThisFileDirectory)mimalloc;D:\abs\include\;%(AdditionalIncludeDirectories)',
+        ),
+      );
+      expect(
+        props,
+        isNot(
+          contains(
+            r'$(MSBuildThisFileDirectory)$(MSBuildThisFileDirectory)mimalloc',
+          ),
+        ),
+      );
+    });
+
+    test(r'含宏的依赖原样输出（不在 $(...) 内部拆分分号）', () {
+      final project = buildProject().copyWith(
+        compileConfig: buildProject().compileConfig.copyWith(
+          additionalDependencies: r'ws2_32.lib;$(FrameworkLibDir)\x.lib',
+          preprocessorDefines: r'NOMINMAX;$(BaseDefines)',
+        ),
+      );
+      final targets = generateTargets(project);
+      expect(
+        targets,
+        contains(
+          r'ws2_32.lib;$(FrameworkLibDir)\x.lib;%(AdditionalDependencies)',
+        ),
+      );
+      final props = generateProps(project);
+      expect(props, contains(r'$(BaseDefines);%(PreprocessorDefinitions)'));
+    });
   });
 }

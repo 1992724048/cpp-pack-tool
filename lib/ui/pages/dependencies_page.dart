@@ -180,7 +180,10 @@ class _DependenciesPageState extends State<DependenciesPage> {
   Future<void> _addDependency(PackProject project) async {
     final dep = await showDialog<PackDependency>(
       context: context,
-      builder: (_) => _AddDependencyDialog(outputDir: widget.outputDir),
+      builder: (_) => _AddDependencyDialog(
+        outputDir: widget.outputDir,
+        excludedPackageId: project.packageId,
+      ),
     );
     if (dep == null || dep.id.trim().isEmpty || !mounted) return;
     widget.onChanged(_upsertDependency(project, dep));
@@ -213,9 +216,13 @@ class _DependenciesPageState extends State<DependenciesPage> {
 /// 上方为输出目录注册表中已有的包（点选回填 id/version），下方为手动 id/version
 /// 输入。确认返回 [PackDependency]；取消或 id 为空返回 null。
 class _AddDependencyDialog extends StatefulWidget {
-  const _AddDependencyDialog({required this.outputDir});
+  const _AddDependencyDialog({required this.outputDir, this.excludedPackageId});
 
   final String outputDir;
+
+  /// 当前项目的 packageId；注册表候选列表中会排除它（大小写不敏感），
+  /// 手动输入自身 id 时也会被拦截并提示（不能添加自身作为依赖）。
+  final String? excludedPackageId;
 
   @override
   State<_AddDependencyDialog> createState() => _AddDependencyDialogState();
@@ -233,7 +240,12 @@ class _AddDependencyDialogState extends State<_AddDependencyDialog> {
     _id = TextEditingController();
     _version = TextEditingController();
     // loadRegistry 对空目录/缺失/损坏均容错（返回空 + 可选错误），不会抛出。
-    _packages.addAll(loadRegistry(widget.outputDir).packages);
+    // 排除当前项目自身（大小写不敏感），避免把自身添加为依赖。
+    final excluded = widget.excludedPackageId?.trim().toLowerCase() ?? '';
+    _packages.addAll(
+      loadRegistry(widget.outputDir).packages
+          .where((pkg) => pkg.project.packageId.toLowerCase() != excluded),
+    );
   }
 
   @override
@@ -255,6 +267,11 @@ class _AddDependencyDialogState extends State<_AddDependencyDialog> {
     final id = _id.text.trim();
     if (id.isEmpty) {
       setState(() => _error = '依赖包 ID 不能为空');
+      return;
+    }
+    final excluded = widget.excludedPackageId?.trim().toLowerCase() ?? '';
+    if (id.toLowerCase() == excluded) {
+      setState(() => _error = '不能添加自身作为依赖');
       return;
     }
     Navigator.of(context)

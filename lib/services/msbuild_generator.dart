@@ -138,6 +138,7 @@ String generateTargets(PackProject project) {
 
   _appendHardlinkTargets(sb, project, prefix, usedIds);
   _appendCommandTargets(sb, project, prefix);
+  _appendConfigCommandTargets(sb, project, prefix);
 
   sb.writeln('</Project>');
   return sb.toString();
@@ -345,6 +346,73 @@ void _appendCommandTarget(
   sb.writeln('  </Target>');
 }
 
+/// 追加编译配置级命令 Target（[CompileConfig.preBuildCommands]/[postBuildCommands]）。
+///
+/// 与映射级命令（[_appendCommandTargets]）及打包页顶层脚本（[PackProject.preBuildCommand]/
+/// [postBuildCommand]，工具侧在打包时执行）职责不同：本列表被生成进消费方 targets，
+/// 由**消费方构建前/后**执行。每条命令一个独立 Target（名称带 `ConfigPre`/`ConfigPost`
+/// 前缀），便于日志区分；均带防重复标志，工作目录为 `$(MSBuildThisFileDirectory)`。
+void _appendConfigCommandTargets(
+  StringBuffer sb,
+  PackProject project,
+  String prefix,
+) {
+  final compile = project.compileConfig;
+  if (compile.preBuildCommands.isEmpty && compile.postBuildCommands.isEmpty) {
+    return;
+  }
+  for (var i = 0; i < compile.preBuildCommands.length; i++) {
+    _appendConfigCommandTarget(
+      sb,
+      prefix,
+      'Pre',
+      i + 1,
+      compile.preBuildCommands[i],
+    );
+  }
+  for (var i = 0; i < compile.postBuildCommands.length; i++) {
+    _appendConfigCommandTarget(
+      sb,
+      prefix,
+      'Post',
+      i + 1,
+      compile.postBuildCommands[i],
+    );
+  }
+}
+
+/// 生成一条编译配置级命令 Target 并写入 [sb]。
+///
+/// [phase] 为 `Pre`/`Post`（用于目标名与防重复标志），[index] 为该阶段内的命令序号。
+void _appendConfigCommandTarget(
+  StringBuffer sb,
+  String prefix,
+  String phase,
+  int index,
+  String command,
+) {
+  final when = phase == 'Pre'
+      ? 'BeforeTargets="Build"'
+      : 'AfterTargets="Build"';
+  final flag = '${prefix}_Config${phase}Cmd_${index}_Run';
+  final targetName = '${prefix}Config${phase}Cmd$index';
+  sb.writeln(
+    '  <Target Name="$targetName" $when '
+    "Condition=\"'\$($flag)' != 'true'\">",
+  );
+  sb.writeln(
+    '    <Exec Command="${xmlEscape(command)}" '
+    'WorkingDirectory="\$(MSBuildThisFileDirectory)" />',
+  );
+  sb.writeln('    <PropertyGroup>');
+  sb.writeln(
+    '      <$flag Condition="\'\$($flag)\' != \'true\'">'
+    'true</$flag>',
+  );
+  sb.writeln('    </PropertyGroup>');
+  sb.writeln('  </Target>');
+}
+
 /// 拼接硬链接映射的包内源路径（`$(MSBuildThisFileDirectory)` 相对段）。
 ///
 /// 目标位于 `build\native\` 下时取其相对段（如 `lib\x64\Debug`）；否则回退到
@@ -365,14 +433,19 @@ String _buildDefines(CompileConfig compile, String config) {
   final globalDefines = compile.preprocessorDefines;
   final configDefine = compile.configDefines[config];
   final parts = <String>[
-    ..._splitSemis(globalDefines),
-    ..._splitSemis(configDefine ?? ''),
+    ..._splitVerbatimSemis(globalDefines),
+    ..._splitVerbatimSemis(configDefine ?? ''),
     '%(PreprocessorDefinitions)',
   ];
   return _joinSemis(parts);
 }
 
 /// 计算包含路径（`$(MSBuildThisFileDirectory)include` + 映射目标派生子路径 + 用户额外 + 追加）。
+///
+/// - 由映射目标派生的子路径（`include\...`）统一加 `$(MSBuildThisFileDirectory)` 前缀并
+///   去除尾部斜杠；
+/// - 用户显式附加目录（[CompileConfig.additionalIncludeDirectories]）中的**宏/绝对路径**
+///   原样输出（不剥斜杠、不加前缀），其余相对目录也原样输出（保持既有语义）。
 String _buildIncludeDirs(PackProject project, CompileConfig compile) {
   final dirs = <String>['include'];
   for (final sourceDir in project.sourceDirs) {
@@ -382,12 +455,20 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
     }
   }
   final parts = <String>[
-    for (final dir in dirs)
-      '\$(MSBuildThisFileDirectory)${_stripTrailingSlash(dir)}',
-    ..._splitSemis(compile.additionalIncludeDirectories),
+    for (final dir in dirs) _relativeIncludeRef(dir),
+    ..._splitVerbatimSemis(compile.additionalIncludeDirectories),
     '%(AdditionalIncludeDirectories)',
   ];
   return _joinSemis(parts);
+}
+
+/// 为映射派生的包含目录生成 MSBuild 引用。
+///
+/// 宏引用或绝对路径（[`_isVerbatimValue`]）原样输出（不做前缀/剥斜杠）；否则统一加
+/// `$(MSBuildThisFileDirectory)` 前缀并去除尾部斜杠。
+String _relativeIncludeRef(String dir) {
+  if (_isVerbatimValue(dir)) return dir;
+  return '\$(MSBuildThisFileDirectory)${_stripTrailingSlash(dir)}';
 }
 
 /// 从文件映射目标提取 `include\...` 子路径；非头文件映射返回 null。
@@ -405,13 +486,9 @@ String? _includeSubPath(FileMapping mapping) {
 
 /// 首个全局宏（用于跳过宏标志的哨兵），无则返回 null。
 String? _firstDefine(String preprocessorDefines) {
-  final tokens = _splitSemis(preprocessorDefines);
+  final tokens = _splitVerbatimSemis(preprocessorDefines);
   return tokens.isEmpty ? null : tokens.first;
 }
-
-/// 拆分分号分隔的字符串并去除空项。
-List<String> _splitSemis(String value) =>
-    value.split(';').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
 
 /// 用分号连接已拆分的非空项，返回带尾随分号的完整值。
 String _semisOf(Iterable<String> parts) {
@@ -426,7 +503,57 @@ String _joinSemis(Iterable<String> parts) {
 }
 
 /// 连接以分号分隔的字符串，保留非空项，结尾带分号。
-String _semis(String value) => _semisOf(_splitSemis(value));
+String _semis(String value) => _semisOf(_splitVerbatimSemis(value));
+
+/// 按 `;` 拆分，忽略位于 `$(...)`/`%(...)` 引用内部的 `;`（避免拆坏含宏的值）。
+List<String> _splitVerbatimSemis(String value) {
+  final result = <String>[];
+  final buffer = StringBuffer();
+  var inRef = 0; // 0 = 不在引用内，1 = $(...)，2 = %(...)
+  for (var i = 0; i < value.length; i++) {
+    final c = value[i];
+    if (inRef == 0) {
+      if (c == r'$' && i + 1 < value.length && value[i + 1] == '(') {
+        buffer.write(c);
+        inRef = 1;
+        continue;
+      }
+      if (c == '%' && i + 1 < value.length && value[i + 1] == '(') {
+        buffer.write(c);
+        inRef = 2;
+        continue;
+      }
+      if (c == ';') {
+        final trimmed = buffer.toString().trim();
+        if (trimmed.isNotEmpty) result.add(trimmed);
+        buffer.clear();
+        continue;
+      }
+      buffer.write(c);
+      continue;
+    }
+    buffer.write(c);
+    if (c == ')') inRef = 0;
+  }
+  final trimmed = buffer.toString().trim();
+  if (trimmed.isNotEmpty) result.add(trimmed);
+  return result;
+}
+
+/// 是否含 MSBuild 引用（属性 `$(...)` 或项元数据 `%(...)`）。
+bool _isMsBuildReference(String value) =>
+    value.contains(r'$(') || value.contains('%(');
+
+/// 是否绝对路径（盘符形式 `C:\...` 或以 `\`/`/` 开头的根路径）。
+bool _isAbsolutePath(String value) {
+  final t = value.trim();
+  if (t.startsWith('\\') || t.startsWith('/')) return true;
+  return RegExp(r'^[A-Za-z]:[\\/]').hasMatch(t);
+}
+
+/// 是否为需原样输出（不做路径归一化/前缀拼接）的值：宏引用或绝对路径。
+bool _isVerbatimValue(String value) =>
+    _isMsBuildReference(value) || _isAbsolutePath(value);
 
 /// 去除结尾的斜杠。
 String _stripTrailingSlash(String value) {

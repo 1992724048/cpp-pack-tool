@@ -24,6 +24,7 @@ class LibraryList extends StatelessWidget {
     required this.onDelete,
     required this.onSettings,
     required this.onRefresh,
+    required this.onHistory,
     required this.refreshing,
   });
 
@@ -42,6 +43,9 @@ class LibraryList extends StatelessWidget {
 
   /// 点击某库项目行「刷新映射」按钮的回调（由 MainShell 重新扫描源目录并生成映射）。
   final void Function(int index) onRefresh;
+
+  /// 点击某库项目行「打包历史」菜单项的回调（由 MainShell 打开打包历史时间线）。
+  final void Function(int index) onHistory;
 
   /// 是否有库项目正在刷新映射（用于在对应行展示处理中状态）。
   final bool refreshing;
@@ -124,6 +128,7 @@ class LibraryList extends StatelessWidget {
           onRename: () => onRename(index),
           onDelete: () => onDelete(index),
           onRefresh: () => onRefresh(index),
+          onHistory: () => onHistory(index),
           refreshing: refreshing && index == selectedIndex,
         );
       },
@@ -140,6 +145,7 @@ class _ProjectRow extends StatefulWidget {
     required this.onRename,
     required this.onDelete,
     required this.onRefresh,
+    required this.onHistory,
     required this.refreshing,
   });
 
@@ -154,6 +160,9 @@ class _ProjectRow extends StatefulWidget {
 
   /// 点击「刷新映射」按钮的回调（仅选中项目时可用）。
   final VoidCallback onRefresh;
+
+  /// 点击「打包历史」菜单项的回调。
+  final VoidCallback onHistory;
 
   /// 该行是否处于刷新映射处理中（显示加载指示）。
   final bool refreshing;
@@ -276,12 +285,15 @@ class _ProjectRowState extends State<_ProjectRow> {
       onSelected: (value) {
         if (value == 'rename') {
           widget.onRename();
+        } else if (value == 'history') {
+          widget.onHistory();
         } else if (value == 'delete') {
           widget.onDelete();
         }
       },
       itemBuilder: (context) => const [
         PopupMenuItem(value: 'rename', child: Text('重命名')),
+        PopupMenuItem(value: 'history', child: Text('打包历史')),
         PopupMenuItem(value: 'delete', child: Text('删除库项目')),
       ],
     );

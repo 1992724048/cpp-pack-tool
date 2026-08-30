@@ -14,18 +14,28 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../models/pack_project.dart';
+import '../../services/cmake_generator.dart';
 import '../../services/msbuild_generator.dart';
 import '../../services/nuspec_generator.dart';
+import '../../services/package_registry.dart';
 import '../../services/packer.dart';
 import '../../services/path_utils.dart';
 import '../../services/settings.dart';
 import '../tokens.dart';
 import '../io_picker.dart';
 import '../log_controller.dart';
+import '../widgets/app_dialogs.dart';
 import '../widgets/form_fields.dart';
 
 /// 打包模式。
 enum PackMode { generateOnly, pack }
+
+/// 版本策略可选值（与 `package_registry.suggestVersion` 的 strategy 一致）。
+const List<(String, String)> _kVersionStrategies = <(String, String)>[
+  ('manual', '手动'),
+  ('timestamp', '时间戳自动'),
+  ('bump', '自动递进'),
+];
 
 /// 打包页。
 class PackPage extends StatefulWidget {
@@ -64,6 +74,9 @@ class _PackPageState extends State<PackPage> {
   PackMode _mode = PackMode.pack;
   bool _busy = false;
 
+  /// 版本策略（手动/时间戳自动/自动递进）；默认「手动」（值取输入版本原样）。
+  String _versionStrategy = 'manual';
+
   @override
   Widget build(BuildContext context) {
     final project = widget.project;
@@ -82,6 +95,8 @@ class _PackPageState extends State<PackPage> {
           const SectionTitle(title: '打包'),
           _modeSelector(),
           const SizedBox(height: AppSpacing.s3),
+          _versionStrategyField(project),
+          const SizedBox(height: AppSpacing.s2),
           _outputDirField(),
           const SizedBox(height: AppSpacing.s2),
           _nugetField(),
@@ -93,6 +108,54 @@ class _PackPageState extends State<PackPage> {
           if (missing.isNotEmpty) _missingText(missing),
         ],
       ),
+    );
+  }
+
+  /// 版本策略区：当前版本（只读，来自「包信息」）+ 版本策略下拉。
+  Widget _versionStrategyField(PackProject project) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '版本策略',
+          style: TextStyle(
+            color: AppColors.textSemantic,
+            fontSize: AppFontSizes.small,
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '当前版本：${project.version}',
+                style: monoTextStyle(),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s2),
+            DropdownButton<String>(
+              value: _versionStrategy,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final (value, label) in _kVersionStrategies)
+                  DropdownMenuItem(value: value, child: Text(label)),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _versionStrategy = value);
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        const Text(
+          '打包/仅生成前按此策略自动更新「包信息」中的版本（非手动时）。',
+          style: TextStyle(
+            color: AppColors.textDisabled,
+            fontSize: AppFontSizes.caption,
+          ),
+        ),
+      ],
     );
   }
 
@@ -298,25 +361,53 @@ class _PackPageState extends State<PackPage> {
 
   Widget _packButton(PackProject project, bool enabled) {
     final label = _mode == PackMode.pack ? '打包' : '生成文件';
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton(
-        onPressed: enabled ? () => _run(project) : null,
-        child: _busy
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: AppSpacing.s1),
-                  Text(_labelBusy()),
-                ],
-              )
-            : Text(label),
-      ),
+    // 预览/生成 CMake 包依赖输出目录与包 id；不依赖 nuget 路径（'enabled' 已含 nuget）。
+    final secondaryEnabled =
+        !_busy &&
+        widget.settings.defaultOutputDir.trim().isNotEmpty &&
+        project.packageId.trim().isNotEmpty;
+    return Row(
+      children: [
+        Tooltip(
+          message: '预览生成文件',
+          child: OutlinedButton.icon(
+            onPressed: secondaryEnabled ? () => _previewFiles(project) : null,
+            icon: const Icon(Icons.visibility_outlined, size: 16),
+            label: const Text('预览'),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s1),
+        Tooltip(
+          message:
+              '生成 CMake 包配置（建议使用具体文件映射；'
+              '含通配符的 glob 会生成通配符文件名）',
+          child: OutlinedButton.icon(
+            onPressed: secondaryEnabled ? () => _generateCmake(project) : null,
+            icon: const Icon(Icons.code, size: 16),
+            label: const Text('生成 CMake 包'),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s1),
+        Expanded(
+          child: FilledButton(
+            onPressed: enabled ? () => _run(project) : null,
+            child: _busy
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: AppSpacing.s1),
+                      Text(_labelBusy()),
+                    ],
+                  )
+                : Text(label),
+          ),
+        ),
+      ],
     );
   }
 
@@ -353,16 +444,19 @@ class _PackPageState extends State<PackPage> {
   Future<void> _run(PackProject project) async {
     setState(() => _busy = true);
     try {
-      _warnMissingFiles(project);
+      final effective = _applyVersionStrategy(project);
+      if (effective == null) return; // 版本解析失败，错误已提示。
+      if (!await _confirmDependenciesPresent(effective)) return; // 用户取消。
+      _warnMissingFiles(effective);
       // 构建前脚本：失败即中止，不进入生成/打包流程。
-      if (!await _runPreBuild(project)) return;
-      final paths = await _generateFiles(project);
+      if (!await _runPreBuild(effective)) return;
+      final paths = await _generateFiles(effective);
       widget.log.info('已生成：${paths.join('；')}');
       if (_mode == PackMode.pack) {
-        final packed = await _packWithNuget(project);
+        final packed = await _packWithNuget(effective);
         if (packed) {
-          widget.onPacked(project);
-          await _runPostBuild(project);
+          widget.onPacked(effective);
+          await _runPostBuild(effective);
         }
       } else {
         widget.onNotify('文件已生成到输出目录');
@@ -372,6 +466,113 @@ class _PackPageState extends State<PackPage> {
       widget.onNotify('操作失败：$e', isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 按版本策略推导实际版本：手动取输入版本原样；其他策略调用
+  /// [suggestVersion]。成功返回更新后的项目（并回写 onChanged），失败返回 null。
+  PackProject? _applyVersionStrategy(PackProject project) {
+    if (_versionStrategy == 'manual') return project;
+    final outputDir = widget.settings.defaultOutputDir.trim();
+    final registered = _registeredVersions(outputDir, project.packageId);
+    final suggested = suggestVersion(
+      currentVersion: project.version,
+      registeredVersions: registered,
+      strategy: _versionStrategy,
+    );
+    if (suggested == null) {
+      widget.log.error('版本解析失败');
+      widget.onNotify('版本解析失败', isError: true);
+      return null;
+    }
+    final updated = project.copyWith(version: suggested);
+    if (updated.version != project.version) {
+      widget.onChanged(updated);
+      widget.log.info(
+        '版本策略「${_versionStrategyLabel(_versionStrategy)}」生成版本：$suggested',
+      );
+    }
+    return updated;
+  }
+
+  /// 收集输出目录注册表里该包历史版本 + 当前注册表版本（用于 bump 基线）。
+  List<String> _registeredVersions(String outputDir, String packageId) {
+    if (outputDir.isEmpty) return const <String>[];
+    final result = loadRegistry(outputDir);
+    for (final pkg in result.packages) {
+      if (pkg.project.packageId == packageId) {
+        final versions = <String>{
+          for (final entry in pkg.history) entry.version,
+          if (pkg.project.version.trim().isNotEmpty) pkg.project.version.trim(),
+        };
+        return versions.toList();
+      }
+    }
+    return const <String>[];
+  }
+
+  String _versionStrategyLabel(String strategy) {
+    for (final (value, label) in _kVersionStrategies) {
+      if (value == strategy) return label;
+    }
+    return strategy;
+  }
+
+  /// 打包/仅生成前检查依赖是否已在输出目录注册表登记；缺失时弹警告对话框，
+  /// 用户取消返回 false（中止），继续返回 true（warn 日志后继续）。
+  Future<bool> _confirmDependenciesPresent(PackProject project) async {
+    if (project.dependencies.isEmpty) return true;
+    final outputDir = widget.settings.defaultOutputDir.trim();
+    if (outputDir.isEmpty) return true;
+    final missing = <String>[
+      for (final dep in project.dependencies)
+        if (!isPackagePresent(outputDir, dep.id))
+          '${dep.id} ${dep.version}'.trim(),
+    ];
+    if (missing.isEmpty) return true;
+    final proceed = await confirmMissingDependencies(context, missing: missing);
+    if (proceed) {
+      widget.log.warn('依赖缺失警告，用户选择继续打包：${missing.join('；')}');
+    }
+    return proceed;
+  }
+
+  /// 打开「预览生成文件」对话框。
+  void _previewFiles(PackProject project) {
+    final outputDir = widget.settings.defaultOutputDir.trim();
+    if (outputDir.isEmpty) {
+      widget.log.error('输出目录未设置，无法预览生成文件');
+      widget.onNotify('输出目录未设置', isError: true);
+      return;
+    }
+    final buildDir = joinPath([outputDir, 'build']);
+    previewFilesDialog(context, project: project, buildDir: buildDir);
+  }
+
+  /// 生成 CMake 包配置文件并写入 `{输出目录}\cmake\{packageId}\`。
+  void _generateCmake(PackProject project) {
+    final outputDir = widget.settings.defaultOutputDir.trim();
+    if (outputDir.isEmpty) {
+      widget.log.error('输出目录未设置，无法生成 CMake 包');
+      widget.onNotify('输出目录未设置', isError: true);
+      return;
+    }
+    try {
+      final entries = generateCmakeEntries(project);
+      final id = project.packageId.trim();
+      final cmakeDir = joinPath([outputDir, 'cmake', id]);
+      Directory(cmakeDir).createSync(recursive: true);
+      final written = <String>[];
+      for (final entry in entries) {
+        final path = joinPath([cmakeDir, entry.path]);
+        File(path).writeAsStringSync(entry.content);
+        written.add(path);
+      }
+      widget.log.info('已生成 CMake 包文件：${written.join('；')}');
+      widget.onNotify('已生成 ${entries.length} 个 CMake 文件');
+    } on Object catch (e) {
+      widget.log.error('生成 CMake 包失败：$e');
+      widget.onNotify('生成 CMake 包失败', isError: true);
     }
   }
 

@@ -14,6 +14,12 @@ import 'dart:io';
 import '../models/pack_project.dart';
 import 'path_utils.dart';
 
+/// MSBuild 属性引用模式（如 `$(MSBuildThisFileDirectory)`）。
+final RegExp _msBuildPropertyRef = RegExp(r'\$\([^)]*\)');
+
+/// MSBuild 项元数据引用模式（如 `%(AdditionalIncludeDirectories)`）。
+final RegExp _msBuildMetadataRef = RegExp(r'%\([^)]*\)');
+
 /// 共享项目配置文件扩展名（按优先级排序：vcxitems > vcxproj > props > targets）。
 const List<String> kSharedProjectExtensions = <String>[
   '.vcxitems',
@@ -23,6 +29,11 @@ const List<String> kSharedProjectExtensions = <String>[
 ];
 
 /// 解析结果：头/源 glob 与编译配置项（分号字符串已拆分为列表）。
+///
+/// 含 MSBuild 属性/元数据引用（`$(...)`/`%(...)`）的路径与定义会被「原样保留」，
+/// 同时列入对应的 `macro*` 列表供生成器识别为「需原样输出」的值（不做路径
+/// 归一化/前缀拼接）。头/源 glob 已剥离开头的 `$(MSBuildThisFileDirectory)` 前缀
+/// （见 [_relativizeInclude]），得到相对共享项目目录的路径。
 class SharedProjectInfo {
   const SharedProjectInfo({
     this.headerGlobs = const [],
@@ -30,6 +41,11 @@ class SharedProjectInfo {
     this.additionalDependencies = const [],
     this.additionalIncludeDirectories = const [],
     this.preprocessorDefinitions = const [],
+    this.macroDependencies = const [],
+    this.macroIncludeDirectories = const [],
+    this.macroPreprocessorDefinitions = const [],
+    this.preBuildCommands = const [],
+    this.postBuildCommands = const [],
   });
 
   /// 头文件相对路径（`<ClInclude Include="..."/>`，相对项目文件所在目录）。
@@ -46,6 +62,21 @@ class SharedProjectInfo {
 
   /// 预处理宏。
   final List<String> preprocessorDefinitions;
+
+  /// 附加依赖中含 MSBuild 引用（`$(...)`/`%(...)`）的条目（原样保留）。
+  final List<String> macroDependencies;
+
+  /// 附加包含目录中含 MSBuild 引用的条目（原样保留）。
+  final List<String> macroIncludeDirectories;
+
+  /// 预处理宏中含 MSBuild 引用的条目（原样保留）。
+  final List<String> macroPreprocessorDefinitions;
+
+  /// 编译前命令（`<PreBuildEvent><Command>`，多行按行拆分、去空、去重）。
+  final List<String> preBuildCommands;
+
+  /// 编译后命令（`<PostBuildEvent><Command>`，多行按行拆分、去空、去重）。
+  final List<String> postBuildCommands;
 }
 
 /// 在 [sourceDir] 顶层按优先级查找共享项目配置文件（大小写不敏感）。
@@ -91,21 +122,41 @@ SharedProjectInfo parseSharedProject(String filePath) {
     throw FormatException('共享项目文件为空：$filePath');
   }
   try {
+    final includeDirs = <String>[];
+    final includeDirsMacro = <String>[];
+    final deps = <String>[];
+    final depsMacro = <String>[];
+    final defines = <String>[];
+    final definesMacro = <String>[];
+    _collectElementSemicolon(
+      content,
+      'AdditionalIncludeDirectories',
+      includeDirs,
+      includeDirsMacro,
+    );
+    _collectElementSemicolon(
+      content,
+      'AdditionalDependencies',
+      deps,
+      depsMacro,
+    );
+    _collectElementSemicolon(
+      content,
+      'PreprocessorDefinitions',
+      defines,
+      definesMacro,
+    );
     return SharedProjectInfo(
       headerGlobs: _collectIncludeValues(content, 'ClInclude'),
       sourceGlobs: _collectIncludeValues(content, 'ClCompile'),
-      additionalDependencies: _collectElementSemis(
-        content,
-        'AdditionalDependencies',
-      ),
-      additionalIncludeDirectories: _collectElementSemis(
-        content,
-        'AdditionalIncludeDirectories',
-      ),
-      preprocessorDefinitions: _collectElementSemis(
-        content,
-        'PreprocessorDefinitions',
-      ),
+      additionalDependencies: deps,
+      additionalIncludeDirectories: includeDirs,
+      preprocessorDefinitions: defines,
+      macroDependencies: depsMacro,
+      macroIncludeDirectories: includeDirsMacro,
+      macroPreprocessorDefinitions: definesMacro,
+      preBuildCommands: _collectCommandLines(content, 'PreBuildEvent'),
+      postBuildCommands: _collectCommandLines(content, 'PostBuildEvent'),
     );
   } on Object catch (e) {
     throw FormatException('解析共享项目文件失败：$e');
@@ -142,7 +193,12 @@ List<FileMapping> buildMappingsFromSharedProject(
   return mappings;
 }
 
-/// 合并共享项目的编译配置到 [base]（去重追加，不覆盖既有配置）。
+/// 合并共享项目的编译配置与命令序列到 [base]（去重追加，不覆盖既有配置）。
+///
+/// - 附加依赖/包含目录/预处理宏：分号字符串去重追加。
+/// - 编译前/后命令：共享项目 `<PreBuildEvent>`/`<PostBuildEvent>` 的命令去重追加。
+///   CompileConfig 顶层命令（打包页脚本）与消费方 targets 命令（此列表）职责
+///   不同，详见 `msbuild_generator`。
 CompileConfig mergeCompileConfigFromSharedProject(
   CompileConfig base,
   SharedProjectInfo info,
@@ -160,10 +216,21 @@ CompileConfig mergeCompileConfigFromSharedProject(
       base.preprocessorDefines,
       info.preprocessorDefinitions,
     ),
+    preBuildCommands: _mergeStringLists(
+      base.preBuildCommands,
+      info.preBuildCommands,
+    ),
+    postBuildCommands: _mergeStringLists(
+      base.postBuildCommands,
+      info.postBuildCommands,
+    ),
   );
 }
 
 /// 提取 `<tagName Include="..." .../>` 或 `<tagName Include="...">` 的值列表。
+///
+/// 值中开头的 `$(MSBuildThisFileDirectory)` 宏段会被剥离（见 [_relativizeInclude]），
+/// 使返回的路径相对共享项目文件所在目录。
 List<String> _collectIncludeValues(String content, String tagName) {
   final open = RegExp(
     r'<\s*' + RegExp.escape(tagName) + r'\b([^>]*)>',
@@ -172,24 +239,94 @@ List<String> _collectIncludeValues(String content, String tagName) {
   final result = <String>[];
   for (final match in open.allMatches(content)) {
     final include = _attrValue(match.group(1)!, 'Include');
-    if (include != null && include.isNotEmpty) result.add(include);
-  }
-  return result;
-}
-
-/// 提取所有 `<tagName>...</tagName>` 元素文本并按 `;` 拆分去重。
-List<String> _collectElementSemis(String content, String tagName) {
-  final seen = <String>{};
-  final result = <String>[];
-  for (final text in _elementTexts(content, tagName)) {
-    for (final item in text.split(';')) {
-      final trimmed = item.trim();
-      if (trimmed.isEmpty) continue;
-      if (seen.add(trimmed)) result.add(trimmed);
+    if (include != null && include.isNotEmpty) {
+      final rel = _relativizeInclude(include);
+      if (rel.isNotEmpty) result.add(rel);
     }
   }
   return result;
 }
+
+/// 剥离路径开头的 `$(MSBuildThisFileDirectory)` 宏段，得到相对共享项目目录的路径。
+///
+/// 共享项目中使用 `$(MSBuildThisFileDirectory)` 前缀的 Include（如
+/// `$(MSBuildThisFileDirectory)include\foo.h`）在 MSBuild 中解析为 vcxitems 所在
+/// 目录（即用户添加的源目录）。为得到相对该目录的 srcGlob，必须剥掉宏前缀（连同
+/// 其后的分隔符）；否则字面 `$(...)` 会被当作路径段拼进实际路径（如
+/// `...\$(MSBuildThisFileDirectory)foo`），导致「找不到路径」错误。其它形式的宏
+/// （如 `$(SolutionDir)`）相对的不是 vcxitems 目录，保留原样交由生成器原样输出。
+String _relativizeInclude(String path) {
+  var p = path.trim();
+  if (p.isEmpty) return p;
+  const prefix = r'$(MSBuildThisFileDirectory)';
+  if (p.startsWith(prefix)) {
+    p = p.substring(prefix.length);
+  }
+  while (p.startsWith('\\') || p.startsWith('/')) {
+    p = p.substring(1);
+  }
+  return p;
+}
+
+/// 提取所有 `<tagName>...</tagName>` 元素文本并按 `;` 拆分。
+///
+/// 去重后的非空条目写入 [plain]；其中含 MSBuild 引用（`$(...)`/`%(...)`）的条目
+/// 同时写入 [macros]，供生成器识别为「需原样输出」的值。
+void _collectElementSemicolon(
+  String content,
+  String tagName,
+  List<String> plain,
+  List<String> macros,
+) {
+  final seen = <String>{};
+  for (final text in _elementTexts(content, tagName)) {
+    for (final item in text.split(';')) {
+      final trimmed = item.trim();
+      if (trimmed.isEmpty) continue;
+      if (!seen.add(trimmed)) continue;
+      plain.add(trimmed);
+      if (_isMsBuildReference(trimmed)) macros.add(trimmed);
+    }
+  }
+}
+
+/// 提取 `<tagName><Command>...</Command></tagName>` 的命令文本，按行拆分去空去重。
+///
+/// 用于 `<PreBuildEvent>`/`<PostBuildEvent>` 等事件的命令序列；多行命令逐行拆分，
+/// 每行 trim 后非空才保留，并按出现序去重。
+List<String> _collectCommandLines(String content, String tagName) {
+  final eventRe = RegExp(
+    r'<\s*' +
+        RegExp.escape(tagName) +
+        r'\b[^>]*>(.*?)</\s*' +
+        RegExp.escape(tagName) +
+        r'\s*>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  final commandRe = RegExp(
+    r'<\s*Command\b[^>]*>(.*?)</\s*Command\s*>',
+    caseSensitive: false,
+    dotAll: true,
+  );
+  final seen = <String>{};
+  final result = <String>[];
+  for (final event in eventRe.allMatches(content)) {
+    for (final cmd in commandRe.allMatches(event.group(1)!)) {
+      for (final line in cmd.group(1)!.split('\n')) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+        if (!seen.add(trimmed)) continue;
+        result.add(trimmed);
+      }
+    }
+  }
+  return result;
+}
+
+/// 是否含 MSBuild 引用（属性引用 `$(...)` 或项元数据引用 `%(...)`）。
+bool _isMsBuildReference(String value) =>
+    _msBuildPropertyRef.hasMatch(value) || _msBuildMetadataRef.hasMatch(value);
 
 /// 提取所有 `<tagName>...</tagName>` 的元素文本（已 trim）。
 List<String> _elementTexts(String content, String tagName) {
@@ -239,4 +376,21 @@ String _mergeSemicolon(String existing, List<String> added) {
     if (seen.add(trimmed)) parts.add(trimmed);
   }
   return parts.join(';');
+}
+
+/// 合并字符串列表：既有项（去重）+ 追加项（去重），保持原顺序。
+List<String> _mergeStringLists(List<String> existing, List<String> added) {
+  final seen = <String>{};
+  final result = <String>[];
+  for (final item in existing) {
+    final trimmed = item.trim();
+    if (trimmed.isEmpty) continue;
+    if (seen.add(trimmed)) result.add(trimmed);
+  }
+  for (final item in added) {
+    final trimmed = item.trim();
+    if (trimmed.isEmpty) continue;
+    if (seen.add(trimmed)) result.add(trimmed);
+  }
+  return result;
 }

@@ -5,8 +5,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/pack_project.dart';
+import '../../services/msbuild_generator.dart';
+import '../../services/nuspec_generator.dart';
+import '../../services/package_registry.dart';
 import '../../services/path_utils.dart';
 import '../../services/scanner.dart';
 import '../../services/shared_project_parser.dart';
@@ -76,23 +80,15 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
   /// 是否基于共享项目生成映射（合并映射与编译配置）。
   bool _useShared = false;
 
-  /// 当前展示的映射列表：未启用共享时即扫描建议；启用共享时合并共享项目映射（去重）。
+  /// 当前展示的映射列表：未启用共享时即扫描建议；启用共享时**以共享项目映射
+  /// 取代扫描建议**（不做合并——选择「是」即表示用共享项目为准）。
   List<FileMapping> get _displayMappings {
-    final scan = _result?.suggestedMappings ?? const <FileMapping>[];
     final info = _sharedInfo;
     if (_useShared && info != null) {
       final cluster = basenameOf(_dirPath ?? '');
-      final shared = buildMappingsFromSharedProject(info, cluster);
-      final seen = <String>{
-        for (final mapping in scan) normalizeMappingGlob(mapping.srcGlob),
-      };
-      return <FileMapping>[
-        ...scan,
-        for (final mapping in shared)
-          if (seen.add(normalizeMappingGlob(mapping.srcGlob))) mapping,
-      ];
+      return buildMappingsFromSharedProject(info, cluster);
     }
-    return scan;
+    return _result?.suggestedMappings ?? const <FileMapping>[];
   }
 
   @override
@@ -200,9 +196,11 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
     final info = _sharedInfo;
     if (_useShared && info != null && _sharedFile != null) {
       sharedConfig = mergeCompileConfigFromSharedProject(CompileConfig(), info);
-      infoMessage =
-          '已从 ${basenameOf(_sharedFile!)} 导入 '
-          '${info.headerGlobs.length + info.sourceGlobs.length} 条映射';
+      final mappingCount = info.headerGlobs.length + info.sourceGlobs.length;
+      final commandCount =
+          info.preBuildCommands.length + info.postBuildCommands.length;
+      infoMessage = '已从 ${basenameOf(_sharedFile!)} 导入 $mappingCount 条映射';
+      if (commandCount > 0) infoMessage += '，已导入 $commandCount 条构建命令';
     }
     Navigator.of(context).pop(
       AddSourceDirResult(
@@ -401,7 +399,8 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
         children: [
           Expanded(
             child: Text(
-              '检测到共享项目配置文件 $fileName，是否基于它生成映射？',
+              '检测到共享项目配置文件 $fileName。基于共享项目生成映射将取代文件扫描结果，'
+              '是否基于它生成映射？',
               style: const TextStyle(
                 color: AppColors.textSemantic,
                 fontSize: AppFontSizes.small,
@@ -445,10 +444,44 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
         ),
       );
     }
-    return MappingSuggestionList(
-      suggestions: _displayMappings,
-      checked: _checked,
-      onToggle: _toggle,
+    final badge = _useShared && _sharedInfo != null ? _sourceBadge() : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (badge != null) ...<Widget>[
+          badge,
+          const SizedBox(height: AppSpacing.s1),
+        ],
+        Expanded(
+          child: MappingSuggestionList(
+            suggestions: _displayMappings,
+            checked: _checked,
+            onToggle: _toggle,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 「基于共享项目」来源徽标（提示当前列表为共享项目解析结果，取代文件扫描）。
+  Widget _sourceBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s1,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.accent),
+      ),
+      child: const Text(
+        '来源：共享项目',
+        style: TextStyle(
+          color: AppColors.textAccent,
+          fontSize: AppFontSizes.caption,
+        ),
+      ),
     );
   }
 
@@ -652,4 +685,370 @@ Future<String?> promptTextInput(
   controller.dispose();
   final trimmed = result?.trim() ?? '';
   return trimmed.isEmpty ? null : trimmed;
+}
+
+/// 依赖缺失警告对话框：列出 [missing]（`id version` 字符串列表），
+/// 用户「仍然继续」返回 true，「取消」返回 false。
+Future<bool> confirmMissingDependencies(
+  BuildContext context, {
+  required List<String> missing,
+}) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('依赖缺失'),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '以下依赖未在输出目录注册表中找到，继续打包可能导致消费方安装失败：',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: AppFontSizes.body,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.s2),
+            for (final dep in missing)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                child: Text(dep, style: monoTextStyle()),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('仍然继续'),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+/// 打开「预览生成文件」对话框：以 [buildDir] 为 nuspec 基准目录，即时生成
+/// nuspec/props/targets 三个只读代码视图。
+Future<void> previewFilesDialog(
+  BuildContext context, {
+  required PackProject project,
+  required String buildDir,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _PreviewFilesDialog(project: project, buildDir: buildDir),
+  );
+}
+
+/// 预览生成文件对话框。
+///
+/// 顶部为 nuspec/props/targets 三个 Tab（SegmentedButton），右上角「复制」按钮
+/// 复制当前视图完整内容到剪贴板。内容在对话框打开时即时生成（调用
+/// `nuspec_generator`/`msbuild_generator`），生成失败在内容区以内联 error 提示。
+class _PreviewFilesDialog extends StatefulWidget {
+  const _PreviewFilesDialog({required this.project, required this.buildDir});
+
+  final PackProject project;
+
+  /// nuspec 的 `baseDir`（相对路径基准，通常为 `{输出目录}\build`）。
+  final String buildDir;
+
+  @override
+  State<_PreviewFilesDialog> createState() => _PreviewFilesDialogState();
+}
+
+class _PreviewFilesDialogState extends State<_PreviewFilesDialog> {
+  static const List<String> _labels = <String>['nuspec', 'props', 'targets'];
+
+  int _tab = 0;
+  String? _nuspec;
+  String? _props;
+  String? _targets;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _generate();
+  }
+
+  void _generate() {
+    try {
+      final project = widget.project;
+      _nuspec = generate(project, baseDir: widget.buildDir);
+      _props = generateProps(project);
+      _targets = generateTargets(project);
+      _error = null;
+    } on Object catch (e) {
+      _nuspec = null;
+      _props = null;
+      _targets = null;
+      _error = '生成预览失败：$e';
+    }
+  }
+
+  String get _content => switch (_tab) {
+    0 => _nuspec ?? '',
+    1 => _props ?? '',
+    _ => _targets ?? '',
+  };
+
+  void _copy() {
+    Clipboard.setData(ClipboardData(text: _content));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已复制 ${_labels[_tab]} 内容')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.all(AppSpacing.s4),
+      child: SizedBox(
+        width: 760,
+        height: 560,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.s3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '预览生成文件',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: AppFontSizes.h3,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _copy,
+                    tooltip: '复制',
+                    icon: const Icon(Icons.copy, size: 18),
+                    iconSize: 18,
+                    color: AppColors.textSemantic,
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              SegmentedButton<int>(
+                segments: [
+                  for (var i = 0; i < _labels.length; i++)
+                    ButtonSegment(value: i, label: Text(_labels[i])),
+                ],
+                selected: <int>{_tab},
+                onSelectionChanged: (selection) =>
+                    setState(() => _tab = selection.first),
+                showSelectedIcon: false,
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              Expanded(
+                child: _error != null
+                    ? Center(
+                        child: Text(
+                          _error!,
+                          style: const TextStyle(
+                            color: AppColors.error,
+                            fontSize: AppFontSizes.body,
+                          ),
+                        ),
+                      )
+                    : _codeView(),
+              ),
+              const SizedBox(height: AppSpacing.s2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _codeView() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s2),
+      decoration: BoxDecoration(
+        color: AppColors.bgApp,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: SingleChildScrollView(
+        child: SelectableText(_content, style: monoTextStyle()),
+      ),
+    );
+  }
+}
+
+/// 打开「打包历史」时间线对话框：按 [project.packageId] 查询输出目录注册表的
+/// 打包历史（[packageHistory]，倒序），以纵向时间线呈现。
+Future<void> packHistoryDialog(
+  BuildContext context, {
+  required PackProject project,
+  required String outputDir,
+}) {
+  final entries = packageHistory(outputDir, project.packageId);
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _PackHistoryDialog(project: project, entries: entries),
+  );
+}
+
+/// 打包历史时间线对话框。
+///
+/// 空历史时显示「暂无打包记录」；否则以纵向时间线（左侧节点圆点 + 竖线）列出
+/// 每一版打包记录：版本号（粗体主标题）、打包时间、可选摘要。
+class _PackHistoryDialog extends StatelessWidget {
+  const _PackHistoryDialog({required this.project, required this.entries});
+
+  final PackProject project;
+  final List<PackHistoryEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        '打包历史 — ${project.packageId}',
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: AppFontSizes.h3,
+        ),
+      ),
+      content: SizedBox(
+        width: 620,
+        height: 440,
+        child: entries.isEmpty
+            ? const Center(
+                child: Text(
+                  '暂无打包记录',
+                  style: TextStyle(
+                    color: AppColors.textSemantic,
+                    fontSize: AppFontSizes.body,
+                  ),
+                ),
+              )
+            : _timeline(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
+
+  /// 纵向时间线：左侧贯穿竖线（Stack 底层）+ 顶部节点圆点 + 卡片列表（[ListView]）。
+  Widget _timeline() {
+    return Stack(
+      children: [
+        Positioned(
+          left: 9,
+          top: 0,
+          bottom: 0,
+          child: Container(width: 2, color: AppColors.borderStrong),
+        ),
+        ListView.builder(
+          itemCount: entries.length,
+          itemBuilder: (context, index) =>
+              _TimelineEntry(entry: entries[index]),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单条时间线条目：左侧节点圆点（叠加在竖线上），右侧为卡片（版本/时间/摘要）。
+class _TimelineEntry extends StatelessWidget {
+  const _TimelineEntry({required this.entry});
+
+  final PackHistoryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 圆点水平居中于竖线（left:9 宽 2 → 中心 x=10），圆点宽 10 → 左偏移 5。
+        Container(
+          width: 10,
+          height: 10,
+          margin: const EdgeInsets.only(left: 5, top: 10),
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.accent,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s1),
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.only(bottom: AppSpacing.s2),
+            padding: const EdgeInsets.all(AppSpacing.s2),
+            decoration: BoxDecoration(
+              color: AppColors.bgSurface,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.version,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: AppFontSizes.body,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Text(
+                  _formatHistoryTime(entry.packedAt),
+                  style: const TextStyle(
+                    color: AppColors.textSemantic,
+                    fontSize: AppFontSizes.caption,
+                  ),
+                ),
+                if (entry.summary != null &&
+                    entry.summary!.trim().isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    entry.summary!,
+                    style: const TextStyle(
+                      color: AppColors.textSemantic,
+                      fontSize: AppFontSizes.small,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 格式化打包时间为 `yyyy-MM-dd HH:mm`。
+String _formatHistoryTime(DateTime dt) {
+  String pad2(int n) => n.toString().padLeft(2, '0');
+  return '${dt.year}-${pad2(dt.month)}-${pad2(dt.day)} '
+      '${pad2(dt.hour)}:${pad2(dt.minute)}';
 }
