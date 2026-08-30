@@ -153,6 +153,26 @@ void main() {
         ),
       );
     });
+
+    test('依赖段：非空时输出 dependencies，空时省略', () {
+      final project = buildProject().copyWith(
+        dependencies: [
+          PackDependency(id: 'V8.Native', version: '15.2.124.1'),
+          PackDependency(id: 'Zlib', version: '[1.0,2.0)'),
+        ],
+      );
+      final nuspec = generate(project, baseDir: r'C:\pkg\build');
+      expect(nuspec, contains('<dependencies>'));
+      expect(
+        nuspec,
+        contains(r'<dependency id="V8.Native" version="15.2.124.1" />'),
+      );
+      expect(nuspec, contains(r'<dependency id="Zlib" version="[1.0,2.0)" />'));
+      expect(nuspec, contains('</dependencies>'));
+
+      final noDeps = generate(buildProject(), baseDir: r'C:\pkg\build');
+      expect(noDeps, isNot(contains('<dependencies>')));
+    });
   });
 
   group('xmlEscape', () {
@@ -312,6 +332,86 @@ void main() {
           '<V8_Native_icudtl_dat_Copied>true</V8_Native_icudtl_dat_Copied>',
         ),
       );
+    });
+
+    test('动态库/可执行文件映射也生成硬链接 Target', () {
+      final project = buildProject().copyWith(
+        sourceDirs: [
+          SourceDir(
+            path: r'C:\src\v8',
+            mappings: [
+              FileMapping(
+                srcGlob: r'bin\x64\Debug\mylib.dll',
+                target: r'build\native\lib\x64\Debug',
+              ),
+              FileMapping(
+                srcGlob: r'bin\x64\Debug\mytool.exe',
+                target: r'build\native\tools\Debug',
+              ),
+            ],
+          ),
+        ],
+      );
+      final targets = generateTargets(project);
+      expect(targets, contains('<Target Name="V8_NativeCopymylib_dll"'));
+      expect(
+        targets,
+        contains(r'$(MSBuildThisFileDirectory)lib\x64\Debug\mylib.dll'),
+      );
+      expect(targets, contains('<Target Name="V8_NativeCopymytool_exe"'));
+      expect(
+        targets,
+        contains(r'$(MSBuildThisFileDirectory)tools\Debug\mytool.exe'),
+      );
+    });
+
+    test('带 pre/post 命令的映射生成 Exec Target（Before/AfterTargets + 转义 + 防重复）', () {
+      final project = buildProject().copyWith(
+        sourceDirs: [
+          SourceDir(
+            path: r'C:\src\v8',
+            mappings: [
+              FileMapping(
+                srcGlob: r'bin\x64\Debug\inject.exe',
+                target: r'build\native\tools\Debug',
+                preBuildCommand: r'$(OutDir)\inject.exe --setup & echo done',
+                postBuildCommand: 'copy /y a b',
+              ),
+            ],
+          ),
+        ],
+      );
+      final targets = generateTargets(project);
+      expect(
+        targets,
+        contains(
+          '<Target Name="V8_Nativeinject_exePreCmd" BeforeTargets="Build"',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Exec Command="$(OutDir)\inject.exe --setup &amp; echo done" '
+          r'WorkingDirectory="$(MSBuildThisFileDirectory)" />',
+        ),
+      );
+      expect(targets, contains('V8_Native_inject_exe_PreCmd_Run'));
+      expect(targets, contains('>true</V8_Native_inject_exe_PreCmd_Run>'));
+      expect(
+        targets,
+        contains(
+          '<Target Name="V8_Nativeinject_exePostCmd" AfterTargets="Build"',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Exec Command="copy /y a b" '
+          r'WorkingDirectory="$(MSBuildThisFileDirectory)" />',
+        ),
+      );
+      expect(targets, contains('V8_Native_inject_exe_PostCmd_Run'));
+      expect(targets, contains('>true</V8_Native_inject_exe_PostCmd_Run>'));
     });
   });
 }

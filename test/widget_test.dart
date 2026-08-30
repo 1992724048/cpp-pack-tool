@@ -39,14 +39,15 @@ void main() {
     );
   }
 
-  testWidgets('应用启动并渲染四个 Tab 与左栏设置按钮', (WidgetTester tester) async {
+  testWidgets('应用启动并渲染五个 Tab 与左栏设置按钮', (WidgetTester tester) async {
     await pumpApp(tester);
 
     // 顶部工具栏已移除：不再有旧的标题文本。
     expect(find.text('C++ NuGet 打包工具'), findsNothing);
-    // 四个 Tab 均渲染。
+    // 五个 Tab 均渲染。
     expect(find.text('包信息'), findsOneWidget);
     expect(find.text('文件映射'), findsOneWidget);
+    expect(find.text('依赖管理'), findsOneWidget);
     expect(find.text('编译配置'), findsOneWidget);
     expect(find.text('打包'), findsOneWidget);
     // 左栏顶部有设置按钮。

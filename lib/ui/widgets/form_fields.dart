@@ -94,7 +94,9 @@ class FileKindBadge extends StatelessWidget {
         '模块：注入编译；需 C++20 或 Latest 标准（/std:c++latest）',
       ),
       'data' => ('数据', AppColors.textSemantic, '数据：自动硬链接到消费方输出目录'),
-      'library' => ('库', AppColors.accent, '库：参与链接依赖'),
+      'staticLibrary' => ('静态库', AppColors.accent, '静态库：参与链接依赖'),
+      'dynamicLibrary' => ('动态库', AppColors.accent, '动态库（自动硬链接到消费方输出目录）'),
+      'executable' => ('可执行文件', AppColors.warn, '可执行文件：自动硬链接到消费方输出目录'),
       _ => ('其他', AppColors.textDisabled, '其他：按包内目标路径输出'),
     };
     return Tooltip(

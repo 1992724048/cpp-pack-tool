@@ -48,6 +48,7 @@ void main() {
     makeFile('src/v8wrap/win32.cpp');
     makeFile('src/mod/foo.cppm');
     makeFile('bin/x64/Debug/mylib.dll');
+    makeFile('bin/x64/Debug/mytool.exe');
     makeFile('data/icudtl.dat');
     makeFile('build/ignored.h');
     makeFile('out/ignored.lib');
@@ -72,16 +73,17 @@ void main() {
       result.sources,
       unorderedEquals([r'src\v8wrap\win32.cpp', r'src\mod\foo.cppm']),
     );
-    // .dll 动态库按数据处理，不进入 libraries。
+    // .dll 动态库单独归类为 dynamicLibraries，不进入 libraries / dataFiles。
     expect(result.libraries, isNot(contains(r'bin\x64\Debug\mylib.dll')));
     expect(
       result.dataFiles,
-      unorderedEquals([
-        r'data\icudtl.dat',
-        r'lib\x64\Debug\icudtl.dat',
-        r'bin\x64\Debug\mylib.dll',
-      ]),
+      unorderedEquals([r'data\icudtl.dat', r'lib\x64\Debug\icudtl.dat']),
     );
+    expect(
+      result.dynamicLibraries,
+      unorderedEquals([r'bin\x64\Debug\mylib.dll']),
+    );
+    expect(result.executables, unorderedEquals([r'bin\x64\Debug\mytool.exe']));
 
     // 生成目录 / 隐藏目录被忽略。
     expect(result.headers, isNot(contains(r'build\ignored.h')));
@@ -118,11 +120,13 @@ void main() {
     );
     // C++ Module 与源码同策略（target 前缀同为 build\native\src）。
     expect(globs, contains(r'src\mod\*.cppm -> build\native\src\v8\src\mod'));
-    // .dll 数据映射（位于配置目录）随库/配置映射到平台×配置目录。
+    // .dll 动态库映射（位于配置目录）随库/配置映射到平台×配置目录。
     expect(
       globs,
       contains(r'bin\x64\Debug\*.dll -> build\native\lib\x64\Debug'),
     );
+    // .exe 可执行文件建议映射到 tools\配置目录。
+    expect(globs, contains(r'bin\x64\Debug\*.exe -> build\native\tools\Debug'));
   });
 
   test('不递归超过最大深度', () {

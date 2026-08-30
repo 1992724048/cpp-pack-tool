@@ -37,16 +37,11 @@ class FileMappingPage extends StatefulWidget {
     super.key,
     required this.project,
     required this.onChanged,
-    required this.onAddSourceDir,
     this.onLogInfo,
   });
 
   final PackProject? project;
   final ValueChanged<PackProject> onChanged;
-
-  /// 点击「添加源目录」的回调（由 MainShell 打开对话框并把新目录加入当前项目）；
-  /// 返回新源目录下标，便于页面切换到新目录。
-  final Future<int?> Function() onAddSourceDir;
 
   /// 追加 info 级日志的回调（由 MainShell 绑定到日志控制器）。用于记录
   /// 「从目录扫描添加 N 条映射」等来源信息；为 null 时静默跳过。
@@ -119,12 +114,6 @@ class _FileMappingPageState extends State<FileMappingPage> {
           ),
           const Spacer(),
           OutlinedButton.icon(
-            onPressed: _addSourceDir,
-            icon: const Icon(Icons.folder_open, size: 16),
-            label: const Text('添加源目录'),
-          ),
-          const SizedBox(width: AppSpacing.s1),
-          OutlinedButton.icon(
             onPressed: () => _addMapping(project, effectiveIndex),
             icon: const Icon(Icons.add, size: 16),
             label: const Text('添加映射'),
@@ -132,14 +121,6 @@ class _FileMappingPageState extends State<FileMappingPage> {
         ],
       ),
     );
-  }
-
-  /// 向当前库项目追加源目录；添加成功后自动切换到新源目录。
-  Future<void> _addSourceDir() async {
-    final index = await widget.onAddSourceDir();
-    if (index != null && mounted) {
-      setState(() => _sourceIndex = index);
-    }
   }
 
   Widget _tableHeader() {
@@ -419,6 +400,8 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
   late TextEditingController _srcGlob;
   late TextEditingController _target;
   late TextEditingController _scanDirController;
+  late TextEditingController _preBuild;
+  late TextEditingController _postBuild;
   late Set<String> _platforms;
   late Set<String> _configs;
 
@@ -437,6 +420,12 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
     _srcGlob = TextEditingController(text: widget.initial?.srcGlob ?? '');
     _target = TextEditingController(text: widget.initial?.target ?? '');
     _scanDirController = TextEditingController();
+    _preBuild = TextEditingController(
+      text: widget.initial?.preBuildCommand ?? '',
+    );
+    _postBuild = TextEditingController(
+      text: widget.initial?.postBuildCommand ?? '',
+    );
     _platforms = (widget.initial?.platforms ?? const <String>[]).toSet();
     _configs = (widget.initial?.configurations ?? const <String>[]).toSet();
   }
@@ -446,6 +435,8 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
     _srcGlob.dispose();
     _target.dispose();
     _scanDirController.dispose();
+    _preBuild.dispose();
+    _postBuild.dispose();
     super.dispose();
   }
 
@@ -465,6 +456,8 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
             const SizedBox(height: AppSpacing.s2),
             if (scanMode) ..._scanFields() else ..._manualFields(),
             const SizedBox(height: AppSpacing.s2),
+            _buildCommandSection(),
+            const SizedBox(height: AppSpacing.s2),
             _chipGroupLabel('平台（空 = 全部）'),
             _chipGroup(_kPlatforms, _platforms),
             const SizedBox(height: AppSpacing.s1),
@@ -476,22 +469,25 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
     );
   }
 
-  /// 顶部分组工具条：扫描目录按钮 + （扫描模式下）返回手动输入的切换。
+  /// 顶部分组工具条：扫描目录 / 手动输入 模式切换（与打包页模式切换一致的 SegmentedButton）。
   Widget _modeBar() {
-    return Row(
-      children: [
-        OutlinedButton.icon(
-          onPressed: () => setState(() => _mode = _AddMappingMode.scan),
-          icon: const Icon(Icons.folder_open, size: 16),
-          label: const Text('扫描目录'),
+    return SegmentedButton<_AddMappingMode>(
+      segments: const [
+        ButtonSegment(
+          value: _AddMappingMode.scan,
+          label: Text('扫描目录'),
+          icon: Icon(Icons.folder_open, size: 16),
         ),
-        const SizedBox(width: AppSpacing.s1),
-        if (_mode == _AddMappingMode.scan)
-          TextButton(
-            onPressed: () => setState(() => _mode = _AddMappingMode.manual),
-            child: const Text('手动输入'),
-          ),
+        ButtonSegment(
+          value: _AddMappingMode.manual,
+          label: Text('手动输入'),
+          icon: Icon(Icons.edit_outlined, size: 16),
+        ),
       ],
+      selected: <_AddMappingMode>{_mode},
+      onSelectionChanged: (selection) =>
+          setState(() => _mode = selection.first),
+      showSelectedIcon: false,
     );
   }
 
@@ -718,7 +714,14 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
       'data' =>
         '数据：该值为包内目录（如 build\\native\\lib\\x64\\Debug）；'
             '打包后自动硬链接到消费方输出目录。',
-      'library' => '库：该值为包内目录（如 build\\native\\lib\\x64\\Debug），参与链接依赖。',
+      'staticLibrary' =>
+        '静态库：该值为包内目录（如 build\\native\\lib\\x64\\Debug），参与链接依赖。',
+      'dynamicLibrary' =>
+        '动态库：该值为包内目录（如 build\\native\\lib\\x64\\Debug）；'
+            '打包后自动硬链接到消费方输出目录。',
+      'executable' =>
+        '可执行文件：该值为包内目录（如 build\\native\\tools\\Debug）；'
+            '打包后自动硬链接到消费方输出目录。',
       _ => '其他：该值为包内目标路径。',
     };
     return Text(
@@ -727,6 +730,53 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
         color: AppColors.textSemantic,
         fontSize: AppFontSizes.caption,
       ),
+    );
+  }
+
+  /// 构建命令区（构建前/构建后两个输入框；任意映射类型可配）。
+  ///
+  /// 当当前 `srcGlob` 的 [FileMapping.fileKind] 为 executable/dynamicLibrary 时
+  /// 显示强提示（常见 .exe 注入场景），其他类型不隐藏、照常可配。
+  Widget _buildCommandSection() {
+    final kind = FileMapping(srcGlob: _srcGlob.text).fileKind;
+    final isDynamicExe = kind == 'executable' || kind == 'dynamicLibrary';
+    final kindLabel = kind == 'executable' ? '可执行文件' : '动态库';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (isDynamicExe)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(
+              '该映射为 $kindLabel，可配置编译前/后命令实现注入（如将本映射的 .exe 复制/运行）；'
+              '工作目录为包安装目录，可引用其同级文件。',
+              style: const TextStyle(
+                color: AppColors.warn,
+                fontSize: AppFontSizes.caption,
+              ),
+            ),
+          ),
+        _chipGroupLabel('构建命令（构建前 / 构建后，可选）'),
+        LabeledFormField(
+          label: '构建前命令',
+          child: TextField(
+            controller: _preBuild,
+            style: monoTextStyle(),
+            decoration: const InputDecoration(
+              hintText: '如在消费方构建前注入；工作目录为包安装目录；任意映射类型可配',
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.s2),
+        LabeledFormField(
+          label: '构建后命令',
+          child: TextField(
+            controller: _postBuild,
+            style: monoTextStyle(),
+            decoration: const InputDecoration(hintText: '消费方构建后执行；工作目录为包安装目录'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -744,6 +794,8 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
           base.copyWith(
             srcGlob: _srcGlob.text.trim(),
             target: _target.text.trim(),
+            preBuildCommand: _preBuild.text.trim(),
+            postBuildCommand: _postBuild.text.trim(),
             platforms: platforms,
             configurations: configs,
           ),
@@ -759,10 +811,14 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
     final platforms = _platforms.toList()..sort();
     final configs = _configs.toList()..sort();
     final picked = <FileMapping>[];
+    final preCommand = _preBuild.text.trim();
+    final postCommand = _postBuild.text.trim();
     for (final index in _scanChecked) {
       if (index < 0 || index >= result.suggestedMappings.length) continue;
       picked.add(
         result.suggestedMappings[index].copyWith(
+          preBuildCommand: preCommand,
+          postBuildCommand: postCommand,
           platforms: platforms.isEmpty ? const <String>[] : platforms,
           configurations: configs.isEmpty ? const <String>[] : configs,
         ),
@@ -872,7 +928,7 @@ class _NoSourceDir extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s2),
           const Text(
-            '请点击上方「添加源目录」，扫描后自动生成映射',
+            '请通过左侧「添加库项目」添加源目录，扫描后自动生成映射',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.textDisabled,

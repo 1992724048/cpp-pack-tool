@@ -35,6 +35,8 @@ class ScanResult {
     required this.sources,
     required this.libraries,
     required this.dataFiles,
+    this.dynamicLibraries = const [],
+    this.executables = const [],
     required this.suggestedMappings,
     this.truncated = false,
     this.warnings = const [],
@@ -46,11 +48,17 @@ class ScanResult {
   /// 源码文件相对路径列表（自动注入消费者编译目标）。
   final List<String> sources;
 
-  /// 库文件相对路径列表。
+  /// 静态库文件相对路径列表（参与链接依赖）。
   final List<String> libraries;
 
   /// 数据文件相对路径列表（建议硬链接到 OutDir 或随包）。
   final List<String> dataFiles;
+
+  /// 动态库（.dll/.so/.dylib）相对路径列表（建议硬链接到 OutDir）。
+  final List<String> dynamicLibraries;
+
+  /// 可执行文件（.exe）相对路径列表（建议硬链接到 OutDir）。
+  final List<String> executables;
 
   /// 建议的文件映射（供用户确认/修改后写入包配置）。
   final List<FileMapping> suggestedMappings;
@@ -85,6 +93,8 @@ ScanResult scanSourceDir(
   final sources = <String>[];
   final libraries = <String>[];
   final dataFiles = <String>[];
+  final dynamicLibraries = <String>[];
+  final executables = <String>[];
   final warnings = <String>[];
   var truncated = false;
 
@@ -99,6 +109,8 @@ ScanResult scanSourceDir(
     sources: sources,
     libraries: libraries,
     dataFiles: dataFiles,
+    dynamicLibraries: dynamicLibraries,
+    executables: executables,
     visitedDirs: visitedDirs,
     warnings: warnings,
     onTruncate: (reason) {
@@ -110,13 +122,22 @@ ScanResult scanSourceDir(
   final suggested = <FileMapping>[];
   suggested.addAll(_buildHeaderMappings(dirPath, headers));
   suggested.addAll(_buildSourceMappings(dirPath, sources));
-  suggested.addAll(_buildLibraryAndDataMappings(libraries, dataFiles));
+  suggested.addAll(
+    _buildLibraryAndDataMappings(
+      libraries,
+      dataFiles,
+      dynamicLibraries,
+      executables,
+    ),
+  );
 
   return ScanResult(
     headers: headers,
     sources: sources,
     libraries: libraries,
     dataFiles: dataFiles,
+    dynamicLibraries: dynamicLibraries,
+    executables: executables,
     suggestedMappings: suggested,
     truncated: truncated,
     warnings: warnings,
@@ -134,6 +155,8 @@ void _walk({
   required List<String> sources,
   required List<String> libraries,
   required List<String> dataFiles,
+  required List<String> dynamicLibraries,
+  required List<String> executables,
   required Set<String> visitedDirs,
   required List<String> warnings,
   required void Function(String reason) onTruncate,
@@ -193,6 +216,8 @@ void _walk({
         sources: sources,
         libraries: libraries,
         dataFiles: dataFiles,
+        dynamicLibraries: dynamicLibraries,
+        executables: executables,
         visitedDirs: visitedDirs,
         warnings: warnings,
         onTruncate: onTruncate,
@@ -209,8 +234,12 @@ void _walk({
         // C++ Module（.cppm/.ixx/.mpp）与源码同策略：并入 sources，统一生成
         // `build\native\src\...` 建议映射并注入 ClCompile（由语言标准解析模块语义）。
         sources.add(rel);
-      } else if (kLibraryExtensions.contains(ext)) {
+      } else if (kStaticLibraryExtensions.contains(ext)) {
         libraries.add(rel);
+      } else if (kDynamicLibraryExtensions.contains(ext)) {
+        dynamicLibraries.add(rel);
+      } else if (kExecutableExtensions.contains(ext)) {
+        executables.add(rel);
       } else if (kDataExtensions.contains(ext)) {
         dataFiles.add(rel);
       }
@@ -281,38 +310,60 @@ List<FileMapping> _buildSourceMappings(String dirPath, List<String> sources) {
   return mappings;
 }
 
-/// 根据库/数据文件按父目录分组（识别配置与平台），生成建议映射。
+/// 根据库/数据/动态库/可执行文件按父目录分组（识别配置与平台），生成建议映射。
+///
+/// 目标路径按文件类别派生：
+/// - `staticLibrary`/`dynamicLibrary`/`data`：位于配置目录时映射到 `build\native\lib\{平台}\{配置}`；
+///   否则（无配置目录，如源目录根）映射到默认 `build\native\lib`。
+/// - `executable`：建议映射到 `build\native\tools`；位于配置目录时追加 `\{配置}`（如
+///   `build\native\tools\Debug`），便于 exe 注入引用其同级运行库。
 List<FileMapping> _buildLibraryAndDataMappings(
   List<String> libraries,
   List<String> dataFiles,
+  List<String> dynamicLibraries,
+  List<String> executables,
 ) {
-  // 父目录 -> 实际存在的扩展名集合（库 + 数据，仅统计真实出现的扩展名）。
-  final byDir = <String, Set<String>>{};
-  void add(String rel) {
+  // 父目录 -> 扩展名 -> 文件类别（仅统计真实出现的扩展名）。
+  final byDir = <String, Map<String, String>>{};
+  void add(String rel, String kind) {
     final parent = dirnameOf(rel);
     final ext = _extensionOf(basenameOf(rel));
     if (ext.isEmpty) return;
-    byDir.putIfAbsent(parent, () => <String>{}).add(ext);
+    byDir
+        .putIfAbsent(parent, () => <String, String>{})
+        .putIfAbsent(ext, () => kind);
   }
 
   for (final rel in libraries) {
-    add(rel);
+    add(rel, 'staticLibrary');
+  }
+  for (final rel in dynamicLibraries) {
+    add(rel, 'dynamicLibrary');
+  }
+  for (final rel in executables) {
+    add(rel, 'executable');
   }
   // 数据文件：位于配置目录时随库映射到平台×配置；独立数据文件（如源目录根
   // icudtl.dat）映射到默认 `build\native\lib`（无配置目录）。
   for (final rel in dataFiles) {
-    add(rel);
+    add(rel, 'data');
   }
 
   final mappings = <FileMapping>[];
   for (final parent in byDir.keys) {
     final config = _detectConfig(parent);
     final platform = _detectPlatform(parent);
-    final target = config != null
-        ? joinPath(['build', 'native', 'lib', platform, config])
-        : joinPath(['build', 'native', 'lib']);
-
-    for (final ext in byDir[parent]!) {
+    final byExt = byDir[parent]!;
+    for (final entry in byExt.entries) {
+      final ext = entry.key;
+      final kind = entry.value;
+      final target = kind == 'executable'
+          ? (config != null
+                ? joinPath(['build', 'native', 'tools', config])
+                : joinPath(['build', 'native', 'tools']))
+          : (config != null
+                ? joinPath(['build', 'native', 'lib', platform, config])
+                : joinPath(['build', 'native', 'lib']));
       mappings.add(
         FileMapping(
           srcGlob: parent.isEmpty ? '*$ext' : '$parent$pathSeparator*$ext',

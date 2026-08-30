@@ -12,6 +12,9 @@ import '../tokens.dart';
 import 'form_fields.dart';
 
 /// 映射建议勾选列表。
+///
+/// 列表为可滚动（高度上限 [_kMaxPreviewHeight]），扫描结果多时可滚动查看，
+/// 勾选与底部操作按钮不受影响；[onToggle] 传 null 时为只读展示。
 class MappingSuggestionList extends StatelessWidget {
   const MappingSuggestionList({
     super.key,
@@ -19,6 +22,9 @@ class MappingSuggestionList extends StatelessWidget {
     required this.checked,
     required this.onToggle,
   });
+
+  /// 预览列表最大高度（超出后内部滚动）。
+  static const double _kMaxPreviewHeight = 320;
 
   /// 待展示的建议映射。
   final List<FileMapping> suggestions;
@@ -32,13 +38,13 @@ class MappingSuggestionList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: const BoxConstraints(maxHeight: _kMaxPreviewHeight),
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.borderStrong),
         borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: ListView.builder(
         shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
         itemCount: suggestions.length,
         itemBuilder: (context, index) {
           final mapping = suggestions[index];

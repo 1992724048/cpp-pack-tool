@@ -19,30 +19,31 @@ const Set<String> kHeaderExtensions = {'.h', '.hpp', '.hh', '.hxx'};
 /// 源码映射自动注入消费者编译目标（见 `msbuild_generator` 的 ClCompile 注入）。
 const Set<String> kSourceExtensions = {'.cpp', '.cc', '.cxx', '.c'};
 
-/// 库文件扩展名（[FileMapping.fileKind] == 'library'）。
-///
-/// 注意：`.dll` 属动态链接库，装入 [kDataExtensions]（打包后硬链接到消费方
-/// `$(OutDir)`），而非作为链接依赖参与 `AdditionalDependencies`。
-const Set<String> kLibraryExtensions = {'.lib', '.a', '.so', '.dylib'};
-
-/// 数据文件扩展名（[FileMapping.fileKind] == 'data'）。
-///
-/// 数据映射打包后自动硬链接到消费者 `$(OutDir)`（见 `msbuild_generator` 的拷贝 Target）。
-/// `.dll` 动态库按数据文件处理：打包后自动落盘到消费方输出目录。
-const Set<String> kDataExtensions = {
-  '.dat',
-  '.json',
-  '.bin',
-  '.txt',
-  '.xml',
-  '.dll',
-};
-
 /// C++ Module 文件扩展名（[FileMapping.fileKind] == 'module'）。
 ///
 /// `.ixx` 为模块接口单元；模块映射与源码映射同策略，打包后自动注入消费方
 /// ClCompile（由编译器语言标准 `/std:c++20` 或 `/std:c++latest` 解析模块语义）。
 const Set<String> kModuleExtensions = {'.cppm', '.ixx', '.mpp'};
+
+/// 静态库文件扩展名（[FileMapping.fileKind] == 'staticLibrary'）。
+///
+/// 静态库映射参与链接依赖（`AdditionalDependencies`），不自动硬链接。
+const Set<String> kStaticLibraryExtensions = {'.lib', '.a'};
+
+/// 动态库文件扩展名（[FileMapping.fileKind] == 'dynamicLibrary'）。
+///
+/// 动态库映射打包后自动硬链接到消费方 `$(OutDir)`（见 `msbuild_generator`）。
+const Set<String> kDynamicLibraryExtensions = {'.dll', '.so', '.dylib'};
+
+/// 可执行文件扩展名（[FileMapping.fileKind] == 'executable'）。
+///
+/// 可执行文件映射（如注入用的 `.exe`）打包后自动硬链接到消费方 `$(OutDir)`。
+const Set<String> kExecutableExtensions = {'.exe'};
+
+/// 数据文件扩展名（[FileMapping.fileKind] == 'data'）。
+///
+/// 数据映射打包后自动硬链接到消费者 `$(OutDir)`（见 `msbuild_generator` 的拷贝 Target）。
+const Set<String> kDataExtensions = {'.dat', '.json', '.bin', '.txt', '.xml'};
 
 /// 从路径串提取目录/文件名（兼容 `\` 与 `/`）。
 String _basenameOf(String path) {
@@ -84,10 +85,12 @@ class PackProject {
     this.preBuildCommand = '',
     this.postBuildCommand = '',
     List<SourceDir>? sourceDirs,
+    List<PackDependency>? dependencies,
     List<String>? platforms,
     List<String>? configurations,
     CompileConfig? compileConfig,
   }) : sourceDirs = sourceDirs ?? [],
+       dependencies = dependencies ?? [],
        platforms = platforms ?? const ['x64'],
        configurations = configurations ?? const ['Debug', 'Release'],
        compileConfig = compileConfig ?? CompileConfig();
@@ -124,6 +127,9 @@ class PackProject {
 
   /// 需要打包的源码目录列表。
   List<SourceDir> sourceDirs;
+
+  /// 包依赖列表（NuGet `<dependencies>` 段），默认空。
+  List<PackDependency> dependencies;
 
   /// 支持的目标平台，默认 `['x64']`。
   List<String> platforms;
@@ -170,6 +176,7 @@ class PackProject {
     String? preBuildCommand,
     String? postBuildCommand,
     List<SourceDir>? sourceDirs,
+    List<PackDependency>? dependencies,
     List<String>? platforms,
     List<String>? configurations,
     CompileConfig? compileConfig,
@@ -188,6 +195,7 @@ class PackProject {
       sourceDirs: sourceDirs != null
           ? sourceDirs.map((e) => e.copyWith()).toList()
           : List.of(this.sourceDirs),
+      dependencies: dependencies ?? List.of(this.dependencies),
       platforms: platforms ?? List.of(this.platforms),
       configurations: configurations ?? List.of(this.configurations),
       compileConfig: compileConfig ?? this.compileConfig.copyWith(),
@@ -207,6 +215,7 @@ class PackProject {
     'preBuildCommand': preBuildCommand,
     'postBuildCommand': postBuildCommand,
     'sourceDirs': sourceDirs.map((e) => e.toJson()).toList(),
+    'dependencies': dependencies.map((e) => e.toJson()).toList(),
     'platforms': List.of(platforms),
     'configurations': List.of(configurations),
     'compileConfig': compileConfig.toJson(),
@@ -226,6 +235,7 @@ class PackProject {
       preBuildCommand: _jsonString(json['preBuildCommand']),
       postBuildCommand: _jsonString(json['postBuildCommand']),
       sourceDirs: _jsonList(json['sourceDirs'], SourceDir.fromJson),
+      dependencies: _jsonList(json['dependencies'], PackDependency.fromJson),
       platforms: _jsonStringList(json['platforms']),
       configurations: _jsonStringList(json['configurations']),
       compileConfig: json['compileConfig'] is Map<String, dynamic>
@@ -242,6 +252,36 @@ class PackProject {
         'sourceDirs: ${sourceDirs.length}, platforms: $platforms, '
         'configurations: $configurations)';
   }
+}
+
+/// 一条 NuGet 依赖：包 id + 版本。
+///
+/// 版本可为精确版本或区间（如 `[1.0,2.0)`），生成 nuspec 时原样透传。
+class PackDependency {
+  PackDependency({required this.id, this.version = ''});
+
+  /// 依赖包 id。
+  String id;
+
+  /// 依赖版本或区间；空表示不限定版本。
+  String version;
+
+  /// 返回副本；未提供的字段保持不变。
+  PackDependency copyWith({String? id, String? version}) {
+    return PackDependency(id: id ?? this.id, version: version ?? this.version);
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'version': version};
+
+  factory PackDependency.fromJson(Map<String, dynamic> json) {
+    return PackDependency(
+      id: _jsonString(json['id']),
+      version: _jsonString(json['version']),
+    );
+  }
+
+  @override
+  String toString() => 'PackDependency(id: $id, version: $version)';
 }
 
 /// 将 JSON 列表按 [fromJson] 逐项反序列化。
@@ -319,6 +359,8 @@ class FileMapping {
   FileMapping({
     this.srcGlob = '',
     this.target = '',
+    this.preBuildCommand = '',
+    this.postBuildCommand = '',
     List<String>? platforms,
     List<String>? configurations,
   }) : platforms = platforms ?? [],
@@ -330,6 +372,15 @@ class FileMapping {
   /// 包内目标路径。
   String target;
 
+  /// 编译前命令行（在消费方构建前、`BeforeTargets="Build"` 执行）；空表示跳过。
+  ///
+  /// 工作目录为包安装目录（`$(MSBuildThisFileDirectory)`），可引用映射中的其他文件；
+  /// 任意映射类型均可配置（常见于 .exe/.dll 注入场景）。
+  String preBuildCommand;
+
+  /// 编译后命令行（在消费方构建后、`AfterTargets="Build"` 执行）；空表示跳过。
+  String postBuildCommand;
+
   /// 适用平台；空表示全部。
   List<String> platforms;
 
@@ -337,7 +388,8 @@ class FileMapping {
   List<String> configurations;
 
   /// 按 `srcGlob` 扩展名命分类，返回
-  /// 'header'/'source'/'module'/'data'/'library'/'other' 之一。
+  /// 'header'/'source'/'module'/'staticLibrary'/'dynamicLibrary'/'data'/'executable'/'other'
+  /// 之一。
   ///
   /// 分类决定了该映射在 nuspec/targets 中的处理方式：
   /// - `header`：target 为「最终 `#include` 路径」（不含 `build\native\include\` 前缀），
@@ -346,8 +398,9 @@ class FileMapping {
   ///   msbuild 生成 ClCompile 注入 Target。
   /// - `module`：与 `source` 同策略（target 前缀 `build\native\src\` 并注入 ClCompile），
   ///   由编译器语言标准解析模块语义。
-  /// - `library`：target 为包内路径（如 `build\native\lib\x64\Debug`），生成链接依赖。
-  /// - `data`：target 为包内目录，msbuild 生成硬链接到 `$(OutDir)` 的 Target。
+  /// - `staticLibrary`：target 为包内路径（如 `build\native\lib\x64\Debug`），生成链接依赖。
+  /// - `dynamicLibrary`/`data`/`executable`：target 为包内目录，msbuild 生成硬链接到
+  ///   `$(OutDir)` 的 Target。
   /// - `other`：未识别扩展名，target 原样输出为包内路径。
   String get fileKind {
     final glob = srcGlob.trim().toLowerCase();
@@ -356,7 +409,9 @@ class FileMapping {
     if (kHeaderExtensions.contains(ext)) return 'header';
     if (kSourceExtensions.contains(ext)) return 'source';
     if (kModuleExtensions.contains(ext)) return 'module';
-    if (kLibraryExtensions.contains(ext)) return 'library';
+    if (kStaticLibraryExtensions.contains(ext)) return 'staticLibrary';
+    if (kDynamicLibraryExtensions.contains(ext)) return 'dynamicLibrary';
+    if (kExecutableExtensions.contains(ext)) return 'executable';
     if (kDataExtensions.contains(ext)) return 'data';
     return 'other';
   }
@@ -374,12 +429,16 @@ class FileMapping {
   FileMapping copyWith({
     String? srcGlob,
     String? target,
+    String? preBuildCommand,
+    String? postBuildCommand,
     List<String>? platforms,
     List<String>? configurations,
   }) {
     return FileMapping(
       srcGlob: srcGlob ?? this.srcGlob,
       target: target ?? this.target,
+      preBuildCommand: preBuildCommand ?? this.preBuildCommand,
+      postBuildCommand: postBuildCommand ?? this.postBuildCommand,
       platforms: platforms ?? List.of(this.platforms),
       configurations: configurations ?? List.of(this.configurations),
     );
@@ -388,6 +447,8 @@ class FileMapping {
   Map<String, dynamic> toJson() => {
     'srcGlob': srcGlob,
     'target': target,
+    'preBuildCommand': preBuildCommand,
+    'postBuildCommand': postBuildCommand,
     'platforms': List.of(platforms),
     'configurations': List.of(configurations),
   };
@@ -396,6 +457,8 @@ class FileMapping {
     return FileMapping(
       srcGlob: _jsonString(json['srcGlob']),
       target: _jsonString(json['target']),
+      preBuildCommand: _jsonString(json['preBuildCommand']),
+      postBuildCommand: _jsonString(json['postBuildCommand']),
       platforms: _jsonStringList(json['platforms']),
       configurations: _jsonStringList(json['configurations']),
     );

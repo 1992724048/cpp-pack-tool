@@ -7,7 +7,9 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../models/pack_project.dart';
+import '../../services/path_utils.dart';
 import '../../services/scanner.dart';
+import '../../services/shared_project_parser.dart';
 import '../tokens.dart';
 import '../io_picker.dart';
 import 'form_fields.dart';
@@ -19,14 +21,36 @@ const List<String> _kPlatforms = <String>['x64', 'x86', 'arm64'];
 /// 配置候选。
 const List<String> _kConfigs = <String>['Debug', 'Release'];
 
+/// 「添加源目录」对话框的返回结果：源目录 + 可选的共享项目编译配置补丁与导入信息。
+class AddSourceDirResult {
+  const AddSourceDirResult({
+    required this.sourceDir,
+    this.compileConfig,
+    this.infoMessage,
+  });
+
+  /// 勾选后生成的源目录（含映射）。
+  final SourceDir sourceDir;
+
+  /// 共享项目解析出的编译配置（含默认值 + 共享项）；null 表示无共享配置或未启用。
+  final CompileConfig? compileConfig;
+
+  /// 导入信息（如「已从 xxx.vcxitems 导入 N 条映射」）；null 表示无。
+  final String? infoMessage;
+}
+
 /// 添加源目录对话框。
 ///
-/// 流程：选择目录 → 扫描 → 映射建议预览（勾选）→ 确认添加返回 [SourceDir]。
-/// 取消返回 null。
+/// 流程：选择目录 → 扫描 → 映射建议预览（勾选；若检测到共享项目配置文件则提示
+/// 是否基于它合并映射与编译配置）→ 确认添加返回 [AddSourceDirResult]。取消返回 null。
 class AddSourceDirDialog extends StatefulWidget {
-  const AddSourceDirDialog({super.key, this.initialDirectory});
+  const AddSourceDirDialog({super.key, this.initialDirectory, this.onLogWarn});
 
   final String? initialDirectory;
+
+  /// 解析共享项目失败时追加 warn 级日志的回调（由 MainShell 绑定到日志控制器）；
+  /// 为 null 时静默跳过。
+  final ValueChanged<String>? onLogWarn;
 
   @override
   State<AddSourceDirDialog> createState() => _AddSourceDirDialogState();
@@ -42,6 +66,34 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
   final Set<String> _selectedPlatforms = <String>{};
   final Set<String> _selectedConfigs = <String>{};
   late final TextEditingController _pathController;
+
+  /// 检测到的共享项目配置文件（.vcxitems/.vcxproj/.props/.targets）；null 表示未检测到。
+  String? _sharedFile;
+
+  /// 共享项目解析结果（仅当 [sharedFile] 成功解析时非空）。
+  SharedProjectInfo? _sharedInfo;
+
+  /// 是否基于共享项目生成映射（合并映射与编译配置）。
+  bool _useShared = false;
+
+  /// 当前展示的映射列表：未启用共享时即扫描建议；启用共享时合并共享项目映射（去重）。
+  List<FileMapping> get _displayMappings {
+    final scan = _result?.suggestedMappings ?? const <FileMapping>[];
+    final info = _sharedInfo;
+    if (_useShared && info != null) {
+      final cluster = basenameOf(_dirPath ?? '');
+      final shared = buildMappingsFromSharedProject(info, cluster);
+      final seen = <String>{
+        for (final mapping in scan) normalizeMappingGlob(mapping.srcGlob),
+      };
+      return <FileMapping>[
+        ...scan,
+        for (final mapping in shared)
+          if (seen.add(normalizeMappingGlob(mapping.srcGlob))) mapping,
+      ];
+    }
+    return scan;
+  }
 
   @override
   void initState() {
@@ -70,6 +122,9 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
       _scanDone = false;
       _scanError = null;
       _result = null;
+      _sharedFile = null;
+      _sharedInfo = null;
+      _useShared = false;
     });
   }
 
@@ -88,10 +143,22 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
     try {
       final result = await Future<ScanResult>(() => scanSourceDir(dir));
       if (!mounted) return;
+      final sharedFile = detectSharedProjectFile(dir);
+      SharedProjectInfo? sharedInfo;
+      if (sharedFile != null) {
+        try {
+          sharedInfo = parseSharedProject(sharedFile);
+        } on Object catch (e) {
+          widget.onLogWarn?.call('解析共享项目配置 $sharedFile 失败：$e');
+        }
+      }
       setState(() {
         _scanning = false;
         _scanDone = true;
         _result = result;
+        _sharedFile = sharedFile;
+        _sharedInfo = sharedInfo;
+        _useShared = false;
         _checked = {
           for (var i = 0; i < result.suggestedMappings.length; i++) i,
         };
@@ -108,15 +175,15 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
   }
 
   void _confirm() {
-    final result = _result;
-    final dir = _dirPath;
-    if (result == null || dir == null || _checked.isEmpty) return;
+    if (_result == null || _dirPath == null || _checked.isEmpty) return;
+    final dir = _dirPath!;
     final selectedPlatforms = _selectedPlatforms.toList();
     final selectedConfigs = _selectedConfigs.toList();
+    final display = _displayMappings;
     final mappings = <FileMapping>[];
     for (final index in _checked) {
-      if (index < 0 || index >= result.suggestedMappings.length) continue;
-      final base = result.suggestedMappings[index];
+      if (index < 0 || index >= display.length) continue;
+      final base = display[index];
       mappings.add(
         base.copyWith(
           platforms: selectedPlatforms.isEmpty
@@ -128,7 +195,22 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
         ),
       );
     }
-    Navigator.of(context).pop(SourceDir(path: dir, mappings: mappings));
+    CompileConfig? sharedConfig;
+    String? infoMessage;
+    final info = _sharedInfo;
+    if (_useShared && info != null && _sharedFile != null) {
+      sharedConfig = mergeCompileConfigFromSharedProject(CompileConfig(), info);
+      infoMessage =
+          '已从 ${basenameOf(_sharedFile!)} 导入 '
+          '${info.headerGlobs.length + info.sourceGlobs.length} 条映射';
+    }
+    Navigator.of(context).pop(
+      AddSourceDirResult(
+        sourceDir: SourceDir(path: dir, mappings: mappings),
+        compileConfig: sharedConfig,
+        infoMessage: infoMessage,
+      ),
+    );
   }
 
   @override
@@ -157,6 +239,7 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
               _filterChips(),
               const SizedBox(height: AppSpacing.s2),
               _statusArea(),
+              if (_scanDone && _sharedInfo != null) _sharedPrompt(),
               const SizedBox(height: AppSpacing.s2),
               Flexible(child: _previewList()),
               const SizedBox(height: AppSpacing.s3),
@@ -281,7 +364,7 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
       );
     }
     if (_scanDone && _result != null) {
-      final count = _result!.suggestedMappings.length;
+      final count = _displayMappings.length;
       final truncated = _result!.truncated;
       final text = truncated
           ? '扫描完成，发现 $count 项可映射文件（部分目录被跳过）'
@@ -303,9 +386,52 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
     );
   }
 
+  /// 检测到共享项目配置文件的提示行（「是否基于它生成映射？」+ 是/否）。
+  Widget _sharedPrompt() {
+    final fileName = basenameOf(_sharedFile ?? '');
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.s1),
+      padding: const EdgeInsets.all(AppSpacing.s2),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '检测到共享项目配置文件 $fileName，是否基于它生成映射？',
+              style: const TextStyle(
+                color: AppColors.textSemantic,
+                fontSize: AppFontSizes.small,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _setUseShared(true),
+            child: const Text('是'),
+          ),
+          const SizedBox(width: AppSpacing.s1),
+          TextButton(
+            onPressed: () => _setUseShared(false),
+            child: const Text('否'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 切换是否基于共享项目生成映射；切换后重置勾选为全部新列表。
+  void _setUseShared(bool value) {
+    setState(() {
+      _useShared = value;
+      _checked = {for (var i = 0; i < _displayMappings.length; i++) i};
+    });
+  }
+
   Widget _previewList() {
-    final result = _result;
-    if (result == null) {
+    if (_result == null) {
       return const SizedBox(
         height: 180,
         child: Center(
@@ -320,7 +446,7 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
       );
     }
     return MappingSuggestionList(
-      suggestions: result.suggestedMappings,
+      suggestions: _displayMappings,
       checked: _checked,
       onToggle: _toggle,
     );

@@ -48,6 +48,18 @@ String generate(PackProject project, {String? baseDir}) {
   if (project.repository.trim().isNotEmpty) {
     sb.writeln('    <repository>${xmlEscape(project.repository)}</repository>');
   }
+  if (project.dependencies.isNotEmpty) {
+    sb.writeln('    <dependencies>');
+    for (final dep in project.dependencies) {
+      if (dep.id.trim().isEmpty) continue;
+      final version = dep.version.trim();
+      sb.writeln(
+        '      <dependency id="${xmlEscape(dep.id)}" '
+        'version="${xmlEscape(version)}" />',
+      );
+    }
+    sb.writeln('    </dependencies>');
+  }
   sb.writeln('  </metadata>');
   sb.writeln('  <files>');
   _appendMsBuildEntries(sb, project.packageId.trim(), baseDir);
@@ -134,7 +146,8 @@ bool _startsWithParentSegment(String path) {
 /// 按 `mapping.fileKind` 分类：
 /// - `header`：target 为「最终 `#include` 路径」，展开为 `build\native\include\{target}`；
 /// - `source`/`module`：target 为相对 src 段，展开为 `build\native\src\{target}`；
-/// - `library`/`data`/`other`：target 原样输出（本身就为包内路径，如 `build\native\lib\x64\Debug`）。
+/// - `staticLibrary`/`dynamicLibrary`/`data`/`executable`/`other`：target 原样输出
+///   （本身就为包内路径，如 `build\native\lib\x64\Debug`、`build\native\tools\Debug`）。
 /// - 向后兼容：若目标已带对应前缀（旧配置），原样保留，不重复添加前缀。
 String _resolveTarget(FileMapping mapping) {
   final target = mapping.target.trim();

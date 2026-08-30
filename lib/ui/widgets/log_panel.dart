@@ -90,31 +90,34 @@ class _LogPanelState extends State<LogPanel> {
   }
 
   Widget _body() {
-    return ListenableBuilder(
-      listenable: widget.controller,
-      builder: (context, _) {
-        final entries = widget.controller.entries;
-        if (entries.isEmpty) {
-          return const Center(
-            child: Text(
-              '暂无日志',
-              style: TextStyle(
-                color: AppColors.textSemantic,
-                fontSize: AppFontSizes.body,
+    // SelectionArea 使日志文本可选择/复制（桌面端 Ctrl+C 可用）；空态与操作按钮不受影响。
+    return SelectionArea(
+      child: ListenableBuilder(
+        listenable: widget.controller,
+        builder: (context, _) {
+          final entries = widget.controller.entries;
+          if (entries.isEmpty) {
+            return const Center(
+              child: Text(
+                '暂无日志',
+                style: TextStyle(
+                  color: AppColors.textSemantic,
+                  fontSize: AppFontSizes.body,
+                ),
               ),
+            );
+          }
+          return ListView.builder(
+            reverse: true,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.s2,
+              vertical: AppSpacing.sm,
             ),
+            itemCount: entries.length,
+            itemBuilder: (context, index) => _row(entries[index]),
           );
-        }
-        return ListView.builder(
-          reverse: true,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.s2,
-            vertical: AppSpacing.sm,
-          ),
-          itemCount: entries.length,
-          itemBuilder: (context, index) => _row(entries[index]),
-        );
-      },
+        },
+      ),
     );
   }
 

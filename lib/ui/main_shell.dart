@@ -15,6 +15,7 @@ import '../services/scanner.dart';
 import '../services/settings.dart';
 import 'log_controller.dart';
 import 'pages/build_config_page.dart';
+import 'pages/dependencies_page.dart';
 import 'pages/file_mapping_page.dart';
 import 'pages/pack_info_page.dart';
 import 'pages/pack_page.dart';
@@ -71,7 +72,7 @@ class _MainShellState extends State<MainShell>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _log = LogController();
     _settings = widget.settings ?? SettingsStore.load();
     final initial = widget.initialPackages;
@@ -145,6 +146,7 @@ class _MainShellState extends State<MainShell>
             tabs: const [
               Tab(text: '包信息'),
               Tab(text: '文件映射'),
+              Tab(text: '依赖管理'),
               Tab(text: '编译配置'),
               Tab(text: '打包'),
             ],
@@ -163,8 +165,13 @@ class _MainShellState extends State<MainShell>
                 key: ValueKey('mapping-$_selectedIndex'),
                 project: project,
                 onChanged: _updateProject,
-                onAddSourceDir: _addSourceDirToCurrent,
                 onLogInfo: _log.info,
+              ),
+              DependenciesPage(
+                key: ValueKey('deps-$_selectedIndex'),
+                project: project,
+                onChanged: _updateProject,
+                outputDir: _registryOutputDir,
               ),
               BuildConfigPage(
                 key: ValueKey('build-$_selectedIndex'),
@@ -225,54 +232,33 @@ class _MainShellState extends State<MainShell>
   /// 流程：选择源目录 → 扫描 → 映射建议确认 → 新建库项目加入列表，并自动选中、
   /// 切回「包信息」Tab 提供视觉反馈。选中态不影响 ＋ 的「新建库项目」语义。
   Future<void> _addNewProject() async {
-    final sourceDir = await showDialog<SourceDir>(
+    final result = await showDialog<AddSourceDirResult>(
       context: context,
-      builder: (_) => const AddSourceDirDialog(),
+      builder: (_) => AddSourceDirDialog(onLogWarn: _log.warn),
     );
-    if (sourceDir == null || !mounted) return;
+    if (result == null || !mounted) return;
+    final sourceDir = result.sourceDir;
     final id = _derivePackageId(sourceDir.name);
     setState(() {
       _projects.add(
-        PackProject(packageId: id, sourceDirs: <SourceDir>[sourceDir]),
+        PackProject(
+          packageId: id,
+          sourceDirs: <SourceDir>[sourceDir],
+          compileConfig: result.compileConfig ?? CompileConfig(),
+        ),
       );
       _selectedIndex = _projects.length - 1;
       _refreshIconPaths();
     });
     _tabController.animateTo(0);
+    if (result.infoMessage != null) {
+      _log.info(result.infoMessage!);
+    }
     _log.info(
       '已新建库项目：$id，源目录 ${sourceDir.path}，'
       '映射 ${sourceDir.mappings.length} 条',
     );
     _notify('已新建库项目：$id');
-  }
-
-  /// 向当前选中的库项目追加源目录（文件映射页「添加源目录」入口）。
-  ///
-  /// 复用 [AddSourceDirDialog] 流程，将新目录加入当前项目的 sourceDirs 并刷新；
-  /// 返回新源目录在项目中的下标（无选中项目或用户取消时返回 null，供页面切换）。
-  Future<int?> _addSourceDirToCurrent() async {
-    final selectedIndex = _selectedIndex;
-    if (selectedIndex == null ||
-        selectedIndex < 0 ||
-        selectedIndex >= _projects.length) {
-      return null;
-    }
-    final current = _projects[selectedIndex];
-    final sourceDir = await showDialog<SourceDir>(
-      context: context,
-      builder: (_) => const AddSourceDirDialog(),
-    );
-    if (sourceDir == null || !mounted) return null;
-    final updated = current.copyWith(
-      sourceDirs: <SourceDir>[...current.sourceDirs, sourceDir],
-    );
-    setState(() {
-      _projects[selectedIndex] = updated;
-      _refreshIconPaths();
-    });
-    _log.info('已添加源目录：${sourceDir.path}，映射 ${sourceDir.mappings.length} 条');
-    _notify('已添加源目录：${sourceDir.path}');
-    return updated.sourceDirs.length - 1;
   }
 
   /// 刷新库项目的文件映射：重新扫描各源目录，检测变化后合并条件并替换映射。
@@ -605,8 +591,10 @@ const List<String> _kRefreshKindOrder = [
   'header',
   'source',
   'module',
-  'library',
+  'staticLibrary',
+  'dynamicLibrary',
   'data',
+  'executable',
   'other',
 ];
 
@@ -615,8 +603,10 @@ String _fileKindLabel(String kind) => switch (kind) {
   'header' => '头文件',
   'source' => '源码',
   'module' => '模块',
-  'library' => '库',
+  'staticLibrary' => '静态库',
+  'dynamicLibrary' => '动态库',
   'data' => '数据',
+  'executable' => '可执行文件',
   _ => '其他',
 };
 
