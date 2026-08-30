@@ -70,7 +70,7 @@ class LibraryList extends StatelessWidget {
           const Spacer(),
           IconButton(
             onPressed: onAdd,
-            tooltip: '添加源目录',
+            tooltip: '添加库项目',
             icon: const Icon(Icons.add, size: 18),
             color: AppColors.textSemantic,
           ),

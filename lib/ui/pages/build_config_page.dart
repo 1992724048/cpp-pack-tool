@@ -1,8 +1,8 @@
-/// 编译配置 Tab：C++ 标准、全局宏、分配置宏折叠列表、附加包含/库目录、附加依赖、
-/// 数据文件拷贝清单、消费者源码注入清单。
+/// 编译配置 Tab：C++ 标准、可折叠的全局宏/附加包含目录/附加库目录/附加依赖、
+/// 分配置宏折叠列表。
 ///
-/// 对照 `docs/ui-spec.md` §3.4 与任务清单「编译配置表单」。路径/宏等数据
-/// 用等宽字体；表单错误以内联 errorText 呈现。
+/// 数据文件与源码文件的配置已迁移至「文件映射」页（按 `FileMapping.fileKind`
+/// 自动处理），此处仅用说明块提示。对照 `docs/ui-spec.md` §3.4。
 library;
 
 import 'package:flutter/material.dart';
@@ -57,7 +57,7 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
           const SizedBox(height: AppSpacing.s2),
           _cStandardField(project, compile),
           const SizedBox(height: AppSpacing.s2),
-          _listEditorSection(
+          _collapsibleEditorSection(
             label: '全局宏',
             values: _splitSemis(compile.preprocessorDefines),
             hint: '如 NOMINMAX、V8_ENABLE_WEBASSEMBLY',
@@ -72,7 +72,7 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
           const SizedBox(height: AppSpacing.s2),
           _configDefinesSection(project, compile),
           const SizedBox(height: AppSpacing.s2),
-          _listEditorSection(
+          _collapsibleEditorSection(
             label: '附加包含目录',
             values: _splitSemis(compile.additionalIncludeDirectories),
             hint: '如 \$(MSBuildThisFileDirectory)include、..\\include',
@@ -85,7 +85,7 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
-          _listEditorSection(
+          _collapsibleEditorSection(
             label: '附加库目录',
             values: _splitSemis(compile.additionalLibraryDirectories),
             hint: '如 ..\\lib\\x64',
@@ -98,7 +98,7 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
-          _listEditorSection(
+          _collapsibleEditorSection(
             label: '附加依赖',
             values: _splitSemis(compile.additionalDependencies),
             hint: '如 ws2_32.lib、ntdll.lib',
@@ -111,27 +111,7 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
             ),
           ),
           const SizedBox(height: AppSpacing.s2),
-          _listEditorSection(
-            label: '数据文件拷贝到消费方 OutDir',
-            values: compile.dataFilesToCopy,
-            hint: '如 icudtl.dat',
-            onChanged: (values) => _update(
-              project.copyWith(
-                compileConfig: compile.copyWith(dataFilesToCopy: values),
-              ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.s2),
-          _listEditorSection(
-            label: '消费者源码注入清单',
-            values: compile.injectedSources,
-            hint: '如 src\\v8wrap\\win32.cpp',
-            onChanged: (values) => _update(
-              project.copyWith(
-                compileConfig: compile.copyWith(injectedSources: values),
-              ),
-            ),
-          ),
+          const _DataFileNote(),
         ],
       ),
     );
@@ -265,6 +245,11 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
   /// 分配置宏折叠块左侧的已配置数量徽标；未配置显示「未配置」。
   Widget _configBadge(String config, CompileConfig compile) {
     final count = _splitSemis(compile.configDefines[config] ?? '').length;
+    return _countBadge(count);
+  }
+
+  /// 通用折叠块数量徽标：[count] 为 0 显示「未配置」，否则显示「N 项」。
+  Widget _countBadge(int count) {
     final label = count == 0 ? '未配置' : '$count 项';
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -294,22 +279,60 @@ class _BuildConfigPageState extends State<BuildConfigPage> {
   String _joinSemis(Iterable<String> parts) =>
       parts.where((t) => t.trim().isNotEmpty).join(';');
 
-  Widget _listEditorSection({
+  /// 可折叠的列表编辑区（ExpansionTile，`initiallyExpanded: false`）。
+  ///
+  /// 折叠头标题 = [label] + 数量徽标；展开后为 [StringListEditor]（沿用列表编辑，
+  /// 含修改/添加/删除）。与已有的分配置宏折叠块视觉一致，减少页面滚动。
+  Widget _collapsibleEditorSection({
     required String label,
     required List<String> values,
     required String hint,
     required ValueChanged<List<String>> onChanged,
   }) {
-    return LabeledFormField(
-      label: label,
-      child: StringListEditor(values: values, hint: hint, onChanged: onChanged),
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: AppFontSizes.body,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.s1),
+            _countBadge(values.length),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(
+              left: AppSpacing.s2,
+              right: AppSpacing.s2,
+              bottom: AppSpacing.s2,
+            ),
+            child: StringListEditor(
+              values: values,
+              hint: hint,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   void _update(PackProject project) => widget.onChanged(project);
 }
 
-/// 字符串列表编辑器（分号分隔字段 / 数据拷贝清单 / 注入源码清单共用）。
+/// 字符串列表编辑器（分号分隔字段或任意字符串列表共用）。
 ///
 /// 每条目为「单行输入 + 删除按钮」，底部为新增输入框；[onChanged] 收到的是去空项
 /// 后的列表（不保留空串）。[allowDuplicates] 为 false 时新增同名条目被忽略。
@@ -529,6 +552,33 @@ class _StringListEditorState extends State<StringListEditor> {
 
   List<String> _cleaned(List<String> values) =>
       values.where((t) => t.trim().isNotEmpty).toList();
+}
+
+/// 「数据文件/源码文件」提示块（替代旧的「数据文件拷贝」「注入源码」编辑区）。
+///
+/// 数据/源码文件的处理已迁移至「文件映射」页，这里仅给出说明。
+class _DataFileNote extends StatelessWidget {
+  const _DataFileNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.s2),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Text(
+        '数据文件与源码文件请在「文件映射」中配置；数据文件打包后自动硬链接到消费方输出目录，'
+        '源码文件自动注入消费方编译。',
+        style: TextStyle(
+          color: AppColors.textSemantic,
+          fontSize: AppFontSizes.small,
+        ),
+      ),
+    );
+  }
 }
 
 class _ConfigPlaceholder extends StatelessWidget {

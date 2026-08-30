@@ -39,6 +39,52 @@ String stripMsBuildIncludeRoot(String path) {
   return normalized;
 }
 
+/// 源码映射在包内的根目录前缀（`build\native\src`）。
+///
+/// 源码映射的 `FileMapping.target` 语义为「相对 src 段」（如 `v8wrap`）或已含
+/// 此前缀的完整路径；生成 nuspec `<file>` target 时自动拼上此前缀。
+const String kMsBuildSourceRoot = 'build\\native\\src';
+
+/// 判断 [path] 是否已带 `build\native\src` 前缀（忽略大小写与分隔符差异）。
+bool startsWithMsBuildSourceRoot(String path) {
+  final normalized = normalizeSeparators(path.trim().toLowerCase());
+  final prefix = kMsBuildSourceRoot.toLowerCase();
+  return normalized == prefix || normalized.startsWith('$prefix\\');
+}
+
+/// 剥离 `build\native\src` 前缀，返回剩余子路径；无前缀时返回原路径。
+///
+/// 用于 msbuild 注入源码的 `$(MSBuildThisFileDirectory)src\{target}` 段；旧配置
+/// 源码映射含此前缀时先剥离再拼接。
+String stripMsBuildSourceRoot(String path) {
+  final normalized = normalizeSeparators(path.trim());
+  final lowered = normalized.toLowerCase();
+  final prefix = kMsBuildSourceRoot.toLowerCase();
+  if (lowered == prefix) return '';
+  if (lowered.startsWith('$prefix\\')) {
+    return normalized.substring(prefix.length + 1);
+  }
+  return normalized;
+}
+
+/// 包内 `build\native` 根目录前缀（数据/库映射的包内路径基准）。
+const String kMsBuildNativeRoot = 'build\\native';
+
+/// 剥离 `build\native` 前缀，返回剩余子路径；无前缀时返回原路径。
+///
+/// 用于 msbuild 数据/库映射统一引用：`$(MSBuildThisFileDirectory)`（= `build\native`）
+/// 后拼接相对段。
+String stripMsBuildNativeRoot(String path) {
+  final normalized = normalizeSeparators(path.trim());
+  final lowered = normalized.toLowerCase();
+  final prefix = kMsBuildNativeRoot.toLowerCase();
+  if (lowered == prefix) return '';
+  if (lowered.startsWith('$prefix\\')) {
+    return normalized.substring(prefix.length + 1);
+  }
+  return normalized;
+}
+
 /// 规范化路径分隔符（`/` 与 `\` 统一为 `\`）。
 String normalizeSeparators(String path) => path.replaceAll('/', pathSeparator);
 

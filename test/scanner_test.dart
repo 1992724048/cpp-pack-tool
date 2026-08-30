@@ -44,6 +44,7 @@ void main() {
     makeFile('lib/x64/Debug/v8_monolith.lib');
     makeFile('lib/x64/Release/v8_monolith.lib');
     makeFile('lib/x64/Debug/icudtl.dat');
+    makeFile('src/v8wrap/win32.cpp');
     makeFile('data/icudtl.dat');
     makeFile('build/ignored.h');
     makeFile('out/ignored.lib');
@@ -64,6 +65,7 @@ void main() {
         r'lib\x64\Release\v8_monolith.lib',
       ]),
     );
+    expect(result.sources, unorderedEquals([r'src\v8wrap\win32.cpp']));
     expect(
       result.dataFiles,
       unorderedEquals([r'data\icudtl.dat', r'lib\x64\Debug\icudtl.dat']),
@@ -94,6 +96,13 @@ void main() {
     expect(
       globs,
       contains(r'lib\x64\Debug\*.dat -> build\native\lib\x64\Debug'),
+    );
+    // 独立数据文件（非配置目录）建议映射到默认 build\native\lib。
+    expect(globs, contains(r'data\*.dat -> build\native\lib'));
+    // 源码文件建议映射到 build\native\src\...（按源目录名/父目录保留结构）。
+    expect(
+      globs,
+      contains(r'src\v8wrap\*.cpp -> build\native\src\v8\src\v8wrap'),
     );
   });
 

@@ -50,7 +50,7 @@ String generate(PackProject project, {String? baseDir}) {
   }
   sb.writeln('  </metadata>');
   sb.writeln('  <files>');
-  _appendMsBuildEntries(sb, project.packageId.trim());
+  _appendMsBuildEntries(sb, project.packageId.trim(), baseDir);
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final src = _resolveSrc(baseDir, sourceDir, mapping);
@@ -67,15 +67,31 @@ String generate(PackProject project, {String? baseDir}) {
 
 /// 写入 MSBuild 集成文件（props/targets）的 `<file>` 条目，置于 files 段最前。
 ///
-/// 文件名与打包输出目录中的 `build\native\{id}.props` / `{id}.targets` 一致，
-/// 使打包产物自带 MSBuild 集成（对照 V8.Native.nuspec 的 files 段前两条）。
-void _appendMsBuildEntries(StringBuffer sb, String id) {
+/// `target` 为包内路径，恒为 `build\native\{id}.{props|targets}`；`src` 为相对
+/// nuspec 所在目录（[baseDir]）的路径——新布局中 nuspec 位于 `{输出目录}\build`、
+/// props/targets 位于其下 `native\`，故 `src` 为 `native\{id}.{props|targets}`。
+/// 若 [baseDir] 为空（无法提前推算），回退到旧的 `build\native\...` 相对引用。
+void _appendMsBuildEntries(StringBuffer sb, String id, String? baseDir) {
   for (final extension in const <String>['.props', '.targets']) {
-    final entry = 'build\\native\\$id$extension';
+    final target = 'build\\native\\$id$extension';
+    final src = _msBuildEntrySrc(baseDir, id, extension);
     sb.writeln(
-      '    <file src="${xmlEscape(entry)}" target="${xmlEscape(entry)}" />',
+      '    <file src="${xmlEscape(src)}" target="${xmlEscape(target)}" />',
     );
   }
+}
+
+/// 计算 props/targets 集成文件相对 nuspec 所在目录（[baseDir]）的 src 值。
+///
+/// 基于新物理布局：props/targets 位于 `{baseDir}\native\`，故相对路径恒为
+/// `native\{id}{extension}`；若 [baseDir] 为空则回退旧式 `build\native\...`。
+String _msBuildEntrySrc(String? baseDir, String id, String extension) {
+  final base = baseDir?.trim() ?? '';
+  if (base.isEmpty) {
+    return 'build\\native\\$id$extension';
+  }
+  final abs = joinPath([base, 'native', '$id$extension']);
+  return relativePath(base, abs);
 }
 
 /// 将逗号分隔的标签字符串规范化为 NuGet 的空格分隔格式。
@@ -115,15 +131,22 @@ bool _startsWithParentSegment(String path) {
 
 /// 解析文件映射在 nuspec `<file>` 中的 target（包内路径）。
 ///
-/// - 头文件映射（`mapping.isHeaderMapping`）的 target 语义为「最终 `#include`
-///   路径」，此处展开为 `build\native\include\{target}`；
-/// - 其余映射 target 原样输出。
-/// - 向后兼容：若目标已带 `build\native\include\...` 前缀（旧配置），原样保留，
-///   不重复添加前缀。
+/// 按 `mapping.fileKind` 分类：
+/// - `header`：target 为「最终 `#include` 路径」，展开为 `build\native\include\{target}`；
+/// - `source`：target 为相对 src 段，展开为 `build\native\src\{target}`；
+/// - `library`/`data`/`other`：target 原样输出（本身就为包内路径，如 `build\native\lib\x64\Debug`）。
+/// - 向后兼容：若目标已带对应前缀（旧配置），原样保留，不重复添加前缀。
 String _resolveTarget(FileMapping mapping) {
   final target = mapping.target.trim();
   if (target.isEmpty) return target;
-  if (!mapping.isHeaderMapping) return target;
-  if (startsWithMsBuildIncludeRoot(target)) return target;
-  return joinPath(['build', 'native', 'include', target]);
+  final kind = mapping.fileKind;
+  if (kind == 'header') {
+    if (startsWithMsBuildIncludeRoot(target)) return target;
+    return joinPath(['build', 'native', 'include', target]);
+  }
+  if (kind == 'source') {
+    if (startsWithMsBuildSourceRoot(target)) return target;
+    return joinPath(['build', 'native', 'src', target]);
+  }
+  return target;
 }

@@ -31,8 +31,6 @@ void main() {
           languageStandard: 'stdcpplatest',
           clanguageStandard: 'c17',
           configDefines: {'Debug': 'V8_ENABLE_CHECKS'},
-          injectedSources: [r'src\win32.cpp'],
-          dataFilesToCopy: ['icudtl.dat'],
         ),
       );
 
@@ -59,8 +57,6 @@ void main() {
         r'build\native\include\v8',
       );
       expect(restored.compileConfig.configDefines['Debug'], 'V8_ENABLE_CHECKS');
-      expect(restored.compileConfig.injectedSources, [r'src\win32.cpp']);
-      expect(restored.compileConfig.dataFilesToCopy, ['icudtl.dat']);
       expect(restored.compileConfig.languageStandard, 'stdcpplatest');
       expect(restored.compileConfig.clanguageStandard, 'c17');
     });
@@ -158,6 +154,41 @@ void main() {
       final mapping = FileMapping(srcGlob: '*.h', target: 'inc');
       expect(mapping.platforms, isEmpty);
       expect(mapping.configurations, isEmpty);
+    });
+
+    test('fileKind 按扩展名分类（header/source/data/library/other）', () {
+      expect(FileMapping(srcGlob: 'a.h').fileKind, 'header');
+      expect(FileMapping(srcGlob: 'a.hpp').fileKind, 'header');
+      expect(FileMapping(srcGlob: 'a.hxx').fileKind, 'header');
+      expect(FileMapping(srcGlob: 'a.cpp').fileKind, 'source');
+      expect(FileMapping(srcGlob: 'a.cc').fileKind, 'source');
+      expect(FileMapping(srcGlob: 'a.c').fileKind, 'source');
+      expect(FileMapping(srcGlob: 'a.lib').fileKind, 'library');
+      expect(FileMapping(srcGlob: 'a.a').fileKind, 'library');
+      expect(FileMapping(srcGlob: 'a.dat').fileKind, 'data');
+      expect(FileMapping(srcGlob: 'a.json').fileKind, 'data');
+      expect(FileMapping(srcGlob: 'a.xml').fileKind, 'data');
+      expect(FileMapping(srcGlob: 'a.unknown').fileKind, 'other');
+      expect(FileMapping(srcGlob: '').fileKind, 'other');
+    });
+
+    test('isHeaderMapping 与 fileKind==header 等价', () {
+      expect(FileMapping(srcGlob: 'a.h').isHeaderMapping, isTrue);
+      expect(FileMapping(srcGlob: 'a.cpp').isHeaderMapping, isFalse);
+      expect(FileMapping(srcGlob: 'a.dat').isHeaderMapping, isFalse);
+    });
+  });
+
+  group('CompileConfig', () {
+    test('fromJson 容忍旧 JSON 中的 dataFilesToCopy/injectedSources 键', () {
+      final json = <String, dynamic>{
+        'languageStandard': 'stdcpp17',
+        'dataFilesToCopy': ['icudtl.dat'],
+        'injectedSources': [r'src\v8wrap\win32.cpp'],
+      };
+      final config = CompileConfig.fromJson(json);
+      expect(config.languageStandard, 'stdcpp17');
+      // 旧字段已迁移至文件映射，加载时直接忽略，不报错。
     });
   });
 

@@ -8,8 +8,10 @@
 /// - 分配置的预处理宏展开 + `%(PreprocessorDefinitions)` 追加。
 /// - 包含路径（`$(MSBuildThisFileDirectory)include` 及映射目标派生的子路径）。
 /// - 平台/配置检查 Target 与 `{id}_LibDir` 组合属性。
-/// - 链接依赖与注入源码（BeforeTargets="SelectClCompile" + 防重复标志）。
-/// - 数据文件拷贝 Target（`$(OutDir)` + 防重复标志）。
+/// - 链接依赖与源码注入（BeforeTargets="SelectClCompile" + 防重复标志），源码条目
+///   来自 `fileKind == 'source'` 的映射。
+/// - 数据文件硬链接 Target 到 `$(OutDir)`（`mklink /H` 优先 + 防重复标志），条目来自
+///   `fileKind == 'data'` 的映射。
 library;
 
 import '../models/pack_project.dart';
@@ -175,26 +177,38 @@ void _appendConfigCheck(StringBuffer sb, PackProject project, String prefix) {
 }
 
 /// 追加注入源码 Target（BeforeTargets="SelectClCompile" + 每个文件防重复标志）。
+///
+/// 遍历全部源码目录中 `fileKind == 'source'` 的映射，为其生成 `<ClCompile>`
+/// 注入（引用 `$(MSBuildThisFileDirectory)src\{相对段}\{glob}\`）；target 若已带
+/// `build\native\src` 前缀则剥离，避免与 `$(MSBuildThisFileDirectory)` 重复。
 void _appendInjectedSources(
   StringBuffer sb,
   PackProject project,
   String prefix,
   Set<String> usedIds,
 ) {
-  final sources = project.compileConfig.injectedSources;
-  if (sources.isEmpty) return;
+  final sourceMappings = <FileMapping>[];
+  for (final sourceDir in project.sourceDirs) {
+    for (final mapping in sourceDir.mappings) {
+      if (mapping.fileKind == 'source') sourceMappings.add(mapping);
+    }
+  }
+  if (sourceMappings.isEmpty) return;
 
   sb.writeln(
     '  <Target Name="${prefix}AddInjectedCompile" '
     'BeforeTargets="SelectClCompile">',
   );
-  for (final source in sources) {
-    final fileId = _uniqueFileId(basenameOf(source), usedIds);
+  for (final mapping in sourceMappings) {
+    final glob = basenameOf(mapping.srcGlob);
+    final fileId = _uniqueFileId(glob, usedIds);
+    final relTarget = stripMsBuildSourceRoot(mapping.target);
+    final src = _sourceCompileInclude(relTarget, glob);
     sb.writeln(
       '    <ItemGroup Condition="\'\$(${prefix}_${fileId}_Injected)\' != \'true\'">',
     );
     sb.writeln(
-      '      <ClCompile Include="\$(MSBuildThisFileDirectory)$source" />',
+      '      <ClCompile Include="\$(MSBuildThisFileDirectory)$src" />',
     );
     sb.writeln('    </ItemGroup>');
     sb.writeln('    <PropertyGroup>');
@@ -208,28 +222,42 @@ void _appendInjectedSources(
   sb.writeln('  </Target>');
 }
 
-/// 追加数据文件拷贝 Target（拷贝到 `$(OutDir)` + 防重复标志）。
+/// 拼接源码注入的 `$(MSBuildThisFileDirectory)` 相对引用段（`src\...`）。
 ///
-/// 采用硬链接优先（`mklink /H`），失败时回退到 `copy /y`（`||` 链），并仅当目标
-/// 不存在时才执行（`!Exists(...)` 条件 + 防重复标志）。
+/// [relTarget] 为剥离 `build\native\src` 前缀后的目标段；为空时直接指向 `src\`。
+String _sourceCompileInclude(String relTarget, String glob) {
+  final dir = relTarget.isEmpty ? '' : '$relTarget\\';
+  return 'src\\$dir$glob';
+}
+
+/// 追加数据文件硬链接 Target（硬链接到 `$(OutDir)` + 防重复标志）。
+///
+/// 遍历全部源码目录中 `fileKind == 'data'` 的映射。采用硬链接优先
+/// （`mklink /H`），失败时回退到 `copy /y`（`||` 链），并仅当目标不存在时才执行
+/// （`!Exists(...)` 条件 + 防重复标志）。源路径 = `$(MSBuildThisFileDirectory)`
+/// 拼接数据目标（target 为包内目录，位于 `build\native` 下则取其相对段）。
 void _appendDataCopyTargets(
   StringBuffer sb,
   PackProject project,
   String prefix,
   Set<String> usedIds,
 ) {
-  final files = project.compileConfig.dataFilesToCopy;
-  if (files.isEmpty) return;
+  final dataMappings = <FileMapping>[];
+  for (final sourceDir in project.sourceDirs) {
+    for (final mapping in sourceDir.mappings) {
+      if (mapping.fileKind == 'data') dataMappings.add(mapping);
+    }
+  }
+  if (dataMappings.isEmpty) return;
 
-  for (final file in files) {
-    final fileId = _uniqueFileId(basenameOf(file), usedIds);
-    final fileName = basenameOf(file);
+  for (final mapping in dataMappings) {
+    final fileName = basenameOf(mapping.srcGlob);
+    final fileId = _uniqueFileId(fileName, usedIds);
     final dst = '\$(OutDir)\\${xmlEscape(fileName)}';
-    final src = '\$(${prefix}_LibDir)\\${xmlEscape(file)}';
+    final src = _dataCopySource(mapping.target, fileName);
     sb.writeln(
       '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
-      "Condition=\"'\$(${prefix}_LibDir)' != '' and "
-      "'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
+      "Condition=\"'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
     );
     sb.writeln(
       '    <Exec Command="cmd /c mklink /H &quot;$dst&quot; &quot;$src&quot; 2&gt;nul '
@@ -243,6 +271,21 @@ void _appendDataCopyTargets(
     sb.writeln('    </PropertyGroup>');
     sb.writeln('  </Target>');
   }
+}
+
+/// 拼接数据文件硬链接的包内源路径（`$(MSBuildThisFileDirectory)` 相对段）。
+///
+/// 目标位于 `build\native\` 下时取其相对段（如 `lib\x64\Debug`）；否则回退到
+/// 包根（`build\native` 上两级 `..\..`）再进入目标目录。
+String _dataCopySource(String target, String fileName) {
+  final t = target.trim();
+  final stripped = stripMsBuildNativeRoot(t);
+  if (stripped != t) {
+    final dir = stripped.isEmpty ? '' : '$stripped\\';
+    return '\$(MSBuildThisFileDirectory)$dir$fileName';
+  }
+  if (t.isEmpty) return '\$(MSBuildThisFileDirectory)$fileName';
+  return '\$(MSBuildThisFileDirectory)..\\..\\$t\\$fileName';
 }
 
 /// 计算某配置下的预处理宏值（全局宏 + 配置宏 + `%(PreprocessorDefinitions)`）。

@@ -20,10 +20,15 @@ class FileMappingPage extends StatefulWidget {
     super.key,
     required this.project,
     required this.onChanged,
+    required this.onAddSourceDir,
   });
 
   final PackProject? project;
   final ValueChanged<PackProject> onChanged;
+
+  /// 点击「添加源目录」的回调（由 MainShell 打开对话框并把新目录加入当前项目）；
+  /// 返回新源目录下标，便于页面切换到新目录。
+  final Future<int?> Function() onAddSourceDir;
 
   @override
   State<FileMappingPage> createState() => _FileMappingPageState();
@@ -92,6 +97,12 @@ class _FileMappingPageState extends State<FileMappingPage> {
           ),
           const Spacer(),
           OutlinedButton.icon(
+            onPressed: _addSourceDir,
+            icon: const Icon(Icons.folder_open, size: 16),
+            label: const Text('添加源目录'),
+          ),
+          const SizedBox(width: AppSpacing.s1),
+          OutlinedButton.icon(
             onPressed: () => _addMapping(project, effectiveIndex),
             icon: const Icon(Icons.add, size: 16),
             label: const Text('添加映射'),
@@ -99,6 +110,14 @@ class _FileMappingPageState extends State<FileMappingPage> {
         ],
       ),
     );
+  }
+
+  /// 向当前库项目追加源目录；添加成功后自动切换到新源目录。
+  Future<void> _addSourceDir() async {
+    final index = await widget.onAddSourceDir();
+    if (index != null && mounted) {
+      setState(() => _sourceIndex = index);
+    }
   }
 
   Widget _tableHeader() {
@@ -110,6 +129,7 @@ class _FileMappingPageState extends State<FileMappingPage> {
         children: [
           _headerText('源文件模式', flex: 3),
           _headerText('目标路径', flex: 3),
+          _headerText('类型', flex: 2),
           _headerText('平台 · 配置', flex: 2),
           const SizedBox(width: 88),
         ],
@@ -298,6 +318,13 @@ class _MappingRowState extends State<_MappingRow> {
             ),
             Expanded(
               flex: 2,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FileKindBadge(kind: widget.mapping.fileKind),
+              ),
+            ),
+            Expanded(
+              flex: 2,
               child: Text(
                 _condition,
                 style: const TextStyle(
@@ -381,6 +408,7 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
               child: TextField(
                 controller: _srcGlob,
                 style: monoTextStyle(),
+                onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
                   hintText: '如 include/**/*.h 或 x64/Release/*.lib',
                 ),
@@ -400,14 +428,7 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  const Text(
-                    '按源文件扩展名区分：头文件（.h/.hpp/.hh/.hxx）的该值为最终 #include 路径，'
-                    '其余视为包内目标路径。',
-                    style: TextStyle(
-                      color: AppColors.textSemantic,
-                      fontSize: AppFontSizes.caption,
-                    ),
-                  ),
+                  _autoHandlingNote(),
                 ],
               ),
             ),
@@ -464,6 +485,31 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
             ),
           ),
       ],
+    );
+  }
+
+  /// 按当前 `srcGlob` 的 [FileMapping.fileKind] 动态呈现目标路径自动处理说明。
+  Widget _autoHandlingNote() {
+    final kind = FileMapping(srcGlob: _srcGlob.text).fileKind;
+    final note = switch (kind) {
+      'header' =>
+        '头文件：该值为最终 #include 路径（不含 build\\native\\include\\ 前缀），'
+            '如 v8\\cppgc 对应 #include <v8\\cppgc/x.h>。',
+      'source' =>
+        '源码：该值为包内相对 src 段（如 v8wrap）或完整 build\\native\\src\\...；'
+            '打包后自动注入消费方编译。',
+      'data' =>
+        '数据：该值为包内目录（如 build\\native\\lib\\x64\\Debug）；'
+            '打包后自动硬链接到消费方输出目录。',
+      'library' => '库：该值为包内目录（如 build\\native\\lib\\x64\\Debug），参与链接依赖。',
+      _ => '其他：该值为包内目标路径。',
+    };
+    return Text(
+      note,
+      style: const TextStyle(
+        color: AppColors.textSemantic,
+        fontSize: AppFontSizes.caption,
+      ),
     );
   }
 
@@ -580,7 +626,7 @@ class _NoSourceDir extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.s2),
           const Text(
-            '请点击左栏「+」添加源目录，扫描后自动生成映射',
+            '请点击上方「添加源目录」，扫描后自动生成映射',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.textDisabled,

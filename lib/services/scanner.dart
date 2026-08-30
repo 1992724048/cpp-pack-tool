@@ -12,14 +12,8 @@ import 'dart:io';
 import '../models/pack_project.dart';
 import 'path_utils.dart';
 
-/// 头文件扩展名。
-const Set<String> kHeaderExtensions = {'.h', '.hpp', '.hh', '.hxx'};
-
-/// 库文件扩展名。
-const Set<String> kLibraryExtensions = {'.lib', '.a', '.dll', '.so', '.dylib'};
-
-/// 数据文件扩展名（建议拷贝到 OutDir 或随包）。
-const Set<String> kDataExtensions = {'.dat', '.bin', '.json', '.txt'};
+/// 文件分类扩展名集合（头文件/源码/库/数据）统一定义在 `pack_project.dart`，
+/// 扫描器与 `FileMapping.fileKind` 共享同一套分类，避免语义漂移。
 
 /// 扫描时忽略的目录名（小写），通常为生成/源外目录。
 const Set<String> kIgnoredDirectoryNames = {
@@ -38,6 +32,7 @@ const Set<String> kIgnoredDirectoryNames = {
 class ScanResult {
   ScanResult({
     required this.headers,
+    required this.sources,
     required this.libraries,
     required this.dataFiles,
     required this.suggestedMappings,
@@ -48,10 +43,13 @@ class ScanResult {
   /// 头文件相对路径列表（含 `**` 的子目录结构，以 `\` 分隔）。
   final List<String> headers;
 
+  /// 源码文件相对路径列表（自动注入消费者编译目标）。
+  final List<String> sources;
+
   /// 库文件相对路径列表。
   final List<String> libraries;
 
-  /// 数据文件相对路径列表（建议拷贝到 OutDir 或随包）。
+  /// 数据文件相对路径列表（建议硬链接到 OutDir 或随包）。
   final List<String> dataFiles;
 
   /// 建议的文件映射（供用户确认/修改后写入包配置）。
@@ -84,6 +82,7 @@ ScanResult scanSourceDir(
   }
 
   final headers = <String>[];
+  final sources = <String>[];
   final libraries = <String>[];
   final dataFiles = <String>[];
   final warnings = <String>[];
@@ -97,6 +96,7 @@ ScanResult scanSourceDir(
     maxDepth: maxDepth,
     maxFilesPerDir: maxFilesPerDir,
     headers: headers,
+    sources: sources,
     libraries: libraries,
     dataFiles: dataFiles,
     visitedDirs: visitedDirs,
@@ -109,10 +109,12 @@ ScanResult scanSourceDir(
 
   final suggested = <FileMapping>[];
   suggested.addAll(_buildHeaderMappings(dirPath, headers));
+  suggested.addAll(_buildSourceMappings(dirPath, sources));
   suggested.addAll(_buildLibraryAndDataMappings(libraries, dataFiles));
 
   return ScanResult(
     headers: headers,
+    sources: sources,
     libraries: libraries,
     dataFiles: dataFiles,
     suggestedMappings: suggested,
@@ -129,6 +131,7 @@ void _walk({
   required int maxDepth,
   required int maxFilesPerDir,
   required List<String> headers,
+  required List<String> sources,
   required List<String> libraries,
   required List<String> dataFiles,
   required Set<String> visitedDirs,
@@ -187,6 +190,7 @@ void _walk({
         maxDepth: maxDepth,
         maxFilesPerDir: maxFilesPerDir,
         headers: headers,
+        sources: sources,
         libraries: libraries,
         dataFiles: dataFiles,
         visitedDirs: visitedDirs,
@@ -200,6 +204,8 @@ void _walk({
       final ext = _extensionOf(name);
       if (kHeaderExtensions.contains(ext)) {
         headers.add(rel);
+      } else if (kSourceExtensions.contains(ext)) {
+        sources.add(rel);
       } else if (kLibraryExtensions.contains(ext)) {
         libraries.add(rel);
       } else if (kDataExtensions.contains(ext)) {
@@ -241,6 +247,37 @@ List<FileMapping> _buildHeaderMappings(String dirPath, List<String> headers) {
   return mappings;
 }
 
+/// 根据源码文件按父目录分组，生成建议映射。
+///
+/// 每条映射的 target 为包内 `build\native\src\...` 绝对段（按源目录名/父目录
+/// 保留结构）；消费者侧由 `msbuild_generator` 生成 ClCompile 注入 Target。
+List<FileMapping> _buildSourceMappings(String dirPath, List<String> sources) {
+  if (sources.isEmpty) return const [];
+  final clusterName = basenameOf(dirPath);
+  final byDir = <String, Set<String>>{};
+  for (final rel in sources) {
+    final parent = dirnameOf(rel);
+    final ext = _extensionOf(basenameOf(rel));
+    byDir.putIfAbsent(parent, () => <String>{}).add(ext);
+  }
+
+  final mappings = <FileMapping>[];
+  for (final parent in byDir.keys) {
+    final target = joinPath([
+      'build',
+      'native',
+      'src',
+      clusterName,
+      ...(parent.isEmpty ? const <String>[] : parent.split(pathSeparator)),
+    ]);
+    for (final ext in byDir[parent]!) {
+      final srcGlob = parent.isEmpty ? '*$ext' : '$parent$pathSeparator*$ext';
+      mappings.add(FileMapping(srcGlob: srcGlob, target: target));
+    }
+  }
+  return mappings;
+}
+
 /// 根据库/数据文件按父目录分组（识别配置与平台），生成建议映射。
 List<FileMapping> _buildLibraryAndDataMappings(
   List<String> libraries,
@@ -258,12 +295,10 @@ List<FileMapping> _buildLibraryAndDataMappings(
   for (final rel in libraries) {
     add(rel);
   }
-  // 仅当父目录能识别出配置时，数据文件才随库一起映射到 lib 目标。
+  // 数据文件：位于配置目录时随库映射到平台×配置；独立数据文件（如源目录根
+  // icudtl.dat）映射到默认 `build\native\lib`（无配置目录）。
   for (final rel in dataFiles) {
-    final parent = dirnameOf(rel);
-    if (_detectConfig(parent) != null) {
-      add(rel);
-    }
+    add(rel);
   }
 
   final mappings = <FileMapping>[];

@@ -348,6 +348,8 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
                     ],
                   ),
                 ),
+                const SizedBox(width: AppSpacing.s1),
+                FileKindBadge(kind: mapping.fileKind),
               ],
             ),
           );

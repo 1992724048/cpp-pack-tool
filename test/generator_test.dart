@@ -20,6 +20,14 @@ PackProject buildProject() {
         mappings: [
           FileMapping(srcGlob: r'..\v8\*.h', target: r'v8'),
           FileMapping(srcGlob: r'*.lib', target: r'build\native\lib\x64\Debug'),
+          FileMapping(
+            srcGlob: r'src\v8wrap\win32.cpp',
+            target: r'build\native\src\v8wrap',
+          ),
+          FileMapping(
+            srcGlob: r'lib\x64\Debug\icudtl.dat',
+            target: r'build\native\lib\x64\Debug',
+          ),
         ],
       ),
     ],
@@ -29,15 +37,13 @@ PackProject buildProject() {
       additionalLibraryDirectories: r'extra\lib',
       additionalDependencies: 'ws2_32.lib;ntdll.lib',
       clanguageStandard: 'c17',
-      dataFilesToCopy: ['icudtl.dat'],
-      injectedSources: [r'src\v8wrap\win32.cpp'],
     ),
   );
 }
 
 void main() {
   group('nuspec 生成', () {
-    final nuspec = generate(buildProject(), baseDir: r'C:\pkg\out');
+    final nuspec = generate(buildProject(), baseDir: r'C:\pkg\build');
 
     test('含 XML 声明与命名空间', () {
       expect(nuspec, startsWith(r'<?xml version="1.0" encoding="utf-8"?>'));
@@ -82,30 +88,45 @@ void main() {
           r'<file src="..\..\src\v8\*.lib" target="build\native\lib\x64\Debug" />',
         ),
       );
+      // 源码映射 target 自动拼 `build\native\src` 前缀（相对 src 段）。
+      expect(
+        nuspec,
+        contains(
+          r'<file src="..\..\src\v8\src\v8wrap\win32.cpp" target="build\native\src\v8wrap" />',
+        ),
+      );
+      // 数据映射 target 原样输出为包内目录。
+      expect(
+        nuspec,
+        contains(
+          r'<file src="..\..\src\v8\lib\x64\Debug\icudtl.dat" target="build\native\lib\x64\Debug" />',
+        ),
+      );
       expect(nuspec, contains('<files>'));
       expect(nuspec, contains('</files>'));
     });
 
-    test('files 段开头包含 props/targets 集成文件条目', () {
+    test('files 段开头包含 props/targets 集成文件条目（src 相对 nuspec 目录）', () {
+      // 新布局：nuspec 位于 build\ 下，src 相对 nuspec = native\...；target 为包内路径。
       expect(
         nuspec,
         contains(
-          r'    <file src="build\native\V8.Native.props" target="build\native\V8.Native.props" />',
+          r'    <file src="native\V8.Native.props" target="build\native\V8.Native.props" />',
         ),
       );
       expect(
         nuspec,
         contains(
-          r'    <file src="build\native\V8.Native.targets" target="build\native\V8.Native.targets" />',
+          r'    <file src="native\V8.Native.targets" target="build\native\V8.Native.targets" />',
         ),
       );
 
       final filesOpenIdx = nuspec.indexOf('<files>');
       final propsIdx = nuspec.indexOf(
-        r'<file src="build\native\V8.Native.props" target="build\native\V8.Native.props" />',
+        r'<file src="native\V8.Native.props" target="build\native\V8.Native.props" />',
       );
       final targetsIdx = nuspec.indexOf(
-        r'<file src="build\native\V8.Native.targets" target="build\native\V8.Native.targets" />',
+        r'<file src="native\V8.Native.targets" target="build\native\V8.Native.targets" />',
       );
       final firstMappingIdx = nuspec.indexOf(
         r'<file src="..\v8\*.h" target="build\native\include\v8" />',
@@ -250,12 +271,13 @@ void main() {
       );
     });
 
-    test('数据文件拷贝 Target 用硬链接优先并带防重复标志', () {
+    test('数据文件硬链接 Target 用映射目标并带防重复标志', () {
       expect(targets, contains('<Target Name="V8_NativeCopyicudtl_dat"'));
+      // 源 = $(MSBuildThisFileDirectory) + 数据映射目标相对 build\native 的段。
       expect(
         targets,
         contains(
-          r'''<Exec Command="cmd /c mklink /H &quot;$(OutDir)\icudtl.dat&quot; &quot;$(V8_Native_LibDir)\icudtl.dat&quot; 2&gt;nul || copy /y &quot;$(V8_Native_LibDir)\icudtl.dat&quot; &quot;$(OutDir)\icudtl.dat&quot; &gt;nul" Condition="!Exists('$(OutDir)\icudtl.dat')" />''',
+          r'''<Exec Command="cmd /c mklink /H &quot;$(OutDir)\icudtl.dat&quot; &quot;$(MSBuildThisFileDirectory)lib\x64\Debug\icudtl.dat&quot; 2&gt;nul || copy /y &quot;$(MSBuildThisFileDirectory)lib\x64\Debug\icudtl.dat&quot; &quot;$(OutDir)\icudtl.dat&quot; &gt;nul" Condition="!Exists('$(OutDir)\icudtl.dat')" />''',
         ),
       );
       expect(

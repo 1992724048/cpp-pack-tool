@@ -61,10 +61,10 @@ void main() {
     expect(find.text('从左侧选择一个库项目开始编辑'), findsOneWidget);
   });
 
-  testWidgets('点击左栏 + 弹出添加源目录对话框', (WidgetTester tester) async {
+  testWidgets('点击左栏 + 弹出添加源目录对话框（新建库项目流程入口）', (WidgetTester tester) async {
     await pumpApp(tester);
 
-    await tester.tap(find.byTooltip('添加源目录'));
+    await tester.tap(find.byTooltip('添加库项目'));
     await tester.pumpAndSettle();
 
     expect(find.text('添加源目录'), findsOneWidget);
@@ -74,6 +74,39 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(find.text('添加源目录'), findsNothing);
+  });
+
+  testWidgets('已有选中项目时点击左栏 + 仍打开新建库项目对话框', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      initialPackages: [PackProject(packageId: 'V8.Native', version: '1.0.0')],
+    );
+
+    // 首个项目被自动选中，此时 + 仍应触发「新建库项目」流程而非「加源目录到当前项目」。
+    await tester.tap(find.byTooltip('添加库项目'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('添加源目录'), findsOneWidget);
+    expect(find.text('开始扫描'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('添加源目录'), findsNothing);
+  });
+
+  testWidgets('注入两个库项目时左栏渲染两条', (WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      initialPackages: [
+        PackProject(packageId: 'V8.Native', version: '1.0.0'),
+        PackProject(packageId: 'Zlib', version: '2.0.0'),
+      ],
+    );
+
+    // 两个库项目均出现在左栏（不再只显示一个）。
+    expect(find.text('V8.Native'), findsWidgets);
+    expect(find.text('Zlib'), findsWidgets);
+    expect(find.text('尚未添加库项目'), findsNothing);
   });
 
   testWidgets('Tab 切换到不同页显示对应占位', (WidgetTester tester) async {

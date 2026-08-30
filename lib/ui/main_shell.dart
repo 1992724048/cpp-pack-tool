@@ -110,7 +110,7 @@ class _MainShellState extends State<MainShell>
                   selectedIndex: _selectedIndex,
                   iconPaths: _iconPaths,
                   onSelect: _selectProject,
-                  onAdd: _openAddSourceDir,
+                  onAdd: _addNewProject,
                   onRename: _renameProject,
                   onDelete: _deleteProject,
                   onSettings: _openSettings,
@@ -158,6 +158,7 @@ class _MainShellState extends State<MainShell>
                 key: ValueKey('mapping-$_selectedIndex'),
                 project: project,
                 onChanged: _updateProject,
+                onAddSourceDir: _addSourceDirToCurrent,
               ),
               BuildConfigPage(
                 key: ValueKey('build-$_selectedIndex'),
@@ -213,33 +214,59 @@ class _MainShellState extends State<MainShell>
     }
   }
 
-  Future<void> _openAddSourceDir() async {
+  /// 左栏「＋ 添加」：始终新建一个库项目（无论当前是否有选中项目）。
+  ///
+  /// 流程：选择源目录 → 扫描 → 映射建议确认 → 新建库项目加入列表，并自动选中、
+  /// 切回「包信息」Tab 提供视觉反馈。选中态不影响 ＋ 的「新建库项目」语义。
+  Future<void> _addNewProject() async {
     final sourceDir = await showDialog<SourceDir>(
       context: context,
       builder: (_) => const AddSourceDirDialog(),
     );
     if (sourceDir == null || !mounted) return;
+    final id = _derivePackageId(sourceDir.name);
     setState(() {
-      if (_selectedIndex == null) {
-        _projects.add(
-          PackProject(
-            packageId: _derivePackageId(sourceDir.name),
-            sourceDirs: <SourceDir>[sourceDir],
-          ),
-        );
-        _selectedIndex = _projects.length - 1;
-      } else {
-        final index = _selectedIndex!;
-        final current = _projects[index];
-        _projects[index] = current.copyWith(
-          sourceDirs: <SourceDir>[...current.sourceDirs, sourceDir],
-        );
-      }
+      _projects.add(
+        PackProject(packageId: id, sourceDirs: <SourceDir>[sourceDir]),
+      );
+      _selectedIndex = _projects.length - 1;
       _refreshIconPaths();
     });
     _tabController.animateTo(0);
+    _log.info(
+      '已新建库项目：$id，源目录 ${sourceDir.path}，'
+      '映射 ${sourceDir.mappings.length} 条',
+    );
+    _notify('已新建库项目：$id');
+  }
+
+  /// 向当前选中的库项目追加源目录（文件映射页「添加源目录」入口）。
+  ///
+  /// 复用 [AddSourceDirDialog] 流程，将新目录加入当前项目的 sourceDirs 并刷新；
+  /// 返回新源目录在项目中的下标（无选中项目或用户取消时返回 null，供页面切换）。
+  Future<int?> _addSourceDirToCurrent() async {
+    final selectedIndex = _selectedIndex;
+    if (selectedIndex == null ||
+        selectedIndex < 0 ||
+        selectedIndex >= _projects.length) {
+      return null;
+    }
+    final current = _projects[selectedIndex];
+    final sourceDir = await showDialog<SourceDir>(
+      context: context,
+      builder: (_) => const AddSourceDirDialog(),
+    );
+    if (sourceDir == null || !mounted) return null;
+    final updated = current.copyWith(
+      sourceDirs: <SourceDir>[...current.sourceDirs, sourceDir],
+    );
+    setState(() {
+      _projects[selectedIndex] = updated;
+      _refreshIconPaths();
+    });
     _log.info('已添加源目录：${sourceDir.path}，映射 ${sourceDir.mappings.length} 条');
     _notify('已添加源目录：${sourceDir.path}');
+    return updated.sourceDirs.length - 1;
   }
 
   Future<void> _renameProject(int index) async {

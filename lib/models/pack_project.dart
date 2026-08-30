@@ -11,11 +11,21 @@ library;
 /// 不允许连续分隔符，也不允许以分隔符开头或结尾。
 final RegExp _nugetIdPattern = RegExp(r'^\w+([._-]\w+)*$');
 
-/// 被认定为「头文件映射」的扩展名集合。
+/// 头文件扩展名（[FileMapping.fileKind] == 'header'）。
+const Set<String> kHeaderExtensions = {'.h', '.hpp', '.hh', '.hxx'};
+
+/// 源码文件扩展名（[FileMapping.fileKind] == 'source'）。
 ///
-/// 头文件映射的 [FileMapping.target] 语义为「最终 `#include` 路径」
-/// （不含 `build\native\include\` 前缀）；其余映射的 target 为包内目标路径。
-const Set<String> _headerExtensions = {'.h', '.hpp', '.hh', '.hxx'};
+/// 源码映射自动注入消费者编译目标（见 `msbuild_generator` 的 ClCompile 注入）。
+const Set<String> kSourceExtensions = {'.cpp', '.cc', '.cxx', '.c'};
+
+/// 库文件扩展名（[FileMapping.fileKind] == 'library'）。
+const Set<String> kLibraryExtensions = {'.lib', '.a', '.dll', '.so', '.dylib'};
+
+/// 数据文件扩展名（[FileMapping.fileKind] == 'data'）。
+///
+/// 数据映射打包后自动硬链接到消费者 `$(OutDir)`（见 `msbuild_generator` 的拷贝 Target）。
+const Set<String> kDataExtensions = {'.dat', '.json', '.bin', '.txt', '.xml'};
 
 /// 从路径串提取目录/文件名（兼容 `\` 与 `/`）。
 String _basenameOf(String path) {
@@ -24,6 +34,13 @@ String _basenameOf(String path) {
   final normalized = trimmed.replaceAll('\\', '/');
   final segments = normalized.split('/');
   return segments.last;
+}
+
+/// 提取小写扩展名（含点），无扩展名返回空串。
+String _extensionOf(String path) {
+  final dot = path.lastIndexOf('.');
+  if (dot <= 0) return '';
+  return path.substring(dot).toLowerCase();
 }
 
 /// 将 JSON 中的字符串字段归一化（null -> 空串）。
@@ -302,18 +319,29 @@ class FileMapping {
   /// 适用配置；空表示全部。
   List<String> configurations;
 
-  /// 是否为头文件映射：`srcGlob` 的扩展名属于 `.h`/`.hpp`/`.hh`/`.hxx`。
+  /// 按 `srcGlob` 扩展名命分类，返回 'header'/'source'/'data'/'library'/'other' 之一。
   ///
-  /// 头文件映射的 [target] 语义为「最终 `#include` 路径」（不含
-  /// `build\native\include\` 前缀），例如 `v8\cppgc`；其余（库/数据）映射的
-  /// [target] 仍为包内目标路径（如 `build\native\lib\x64\Debug`）。
-  bool get isHeaderMapping {
+  /// 分类决定了该映射在 nuspec/targets 中的处理方式：
+  /// - `header`：target 为「最终 `#include` 路径」（不含 `build\native\include\` 前缀），
+  ///   nuspec 自动拼 `build\native\include\`，msbuild 派生 include 子目录。
+  /// - `source`：target 为包内 `build\native\src\...` 相对段，nuspec 自动拼前缀，
+  ///   msbuild 生成 ClCompile 注入 Target。
+  /// - `library`：target 为包内路径（如 `build\native\lib\x64\Debug`），生成链接依赖。
+  /// - `data`：target 为包内目录，msbuild 生成硬链接到 `$(OutDir)` 的 Target。
+  /// - `other`：未识别扩展名，target 原样输出为包内路径。
+  String get fileKind {
     final glob = srcGlob.trim().toLowerCase();
-    if (glob.isEmpty) return false;
-    final dot = glob.lastIndexOf('.');
-    if (dot < 0) return false;
-    return _headerExtensions.contains(glob.substring(dot));
+    if (glob.isEmpty) return 'other';
+    final ext = _extensionOf(glob);
+    if (kHeaderExtensions.contains(ext)) return 'header';
+    if (kSourceExtensions.contains(ext)) return 'source';
+    if (kLibraryExtensions.contains(ext)) return 'library';
+    if (kDataExtensions.contains(ext)) return 'data';
+    return 'other';
   }
+
+  /// 是否为头文件映射（`fileKind == 'header'`）。
+  bool get isHeaderMapping => fileKind == 'header';
 
   /// 返回部分更新后的副本；未提供的字段保持不变。
   FileMapping copyWith({
@@ -350,7 +378,10 @@ class FileMapping {
   String toString() => 'FileMapping(srcGlob: $srcGlob, target: $target)';
 }
 
-/// 编译配置：语言标准、预处理宏、包含/库路径、链接依赖、待拷贝文件与注入源码。
+/// 编译配置：语言标准、预处理宏、包含/库路径与链接依赖。
+///
+/// 数据文件与源码文件不再由编译配置维护——统一在「文件映射」中通过
+/// [FileMapping.fileKind]（data/source）自动处理（见 `msbuild_generator`）。
 class CompileConfig {
   /// 创建编译配置，采用默认语言标准 `stdcpp23`。
   CompileConfig({
@@ -361,11 +392,7 @@ class CompileConfig {
     this.additionalIncludeDirectories = '',
     this.additionalLibraryDirectories = '',
     this.additionalDependencies = '',
-    List<String>? dataFilesToCopy,
-    List<String>? injectedSources,
-  }) : configDefines = configDefines ?? {},
-       dataFilesToCopy = dataFilesToCopy ?? [],
-       injectedSources = injectedSources ?? [];
+  }) : configDefines = configDefines ?? {};
 
   /// 语言标准，如 `stdcpp23`、`stdcpp20`。
   String languageStandard;
@@ -388,12 +415,6 @@ class CompileConfig {
   /// 额外的链接依赖，分号分隔，如 `ws2_32.lib;ntdll.lib`。
   String additionalDependencies;
 
-  /// 需拷贝到消费者 `$(OutDir)` 的文件名列表，如 `['icudtl.dat']`。
-  List<String> dataFilesToCopy;
-
-  /// 需注入到消费者项目的源码文件列表，如 `['src\\v8wrap\\win32.cpp']`。
-  List<String> injectedSources;
-
   /// 返回部分更新后的副本；未提供的字段保持不变。
   CompileConfig copyWith({
     String? languageStandard,
@@ -403,8 +424,6 @@ class CompileConfig {
     String? additionalIncludeDirectories,
     String? additionalLibraryDirectories,
     String? additionalDependencies,
-    List<String>? dataFilesToCopy,
-    List<String>? injectedSources,
   }) {
     return CompileConfig(
       languageStandard: languageStandard ?? this.languageStandard,
@@ -419,8 +438,6 @@ class CompileConfig {
           additionalLibraryDirectories ?? this.additionalLibraryDirectories,
       additionalDependencies:
           additionalDependencies ?? this.additionalDependencies,
-      dataFilesToCopy: dataFilesToCopy ?? List.of(this.dataFilesToCopy),
-      injectedSources: injectedSources ?? List.of(this.injectedSources),
     );
   }
 
@@ -432,8 +449,6 @@ class CompileConfig {
     'additionalIncludeDirectories': additionalIncludeDirectories,
     'additionalLibraryDirectories': additionalLibraryDirectories,
     'additionalDependencies': additionalDependencies,
-    'dataFilesToCopy': List.of(dataFilesToCopy),
-    'injectedSources': List.of(injectedSources),
   };
 
   factory CompileConfig.fromJson(Map<String, dynamic> json) {
@@ -446,6 +461,8 @@ class CompileConfig {
         }
       });
     }
+    // 旧 JSON 可能含 dataFilesToCopy/injectedSources 键，已迁移至文件映射；
+    // 此处直接忽略（不读取），保证旧配置加载不报错。
     return CompileConfig(
       languageStandard: _jsonString(json['languageStandard']),
       clanguageStandard: _jsonString(json['clanguageStandard']),
@@ -458,8 +475,6 @@ class CompileConfig {
         json['additionalLibraryDirectories'],
       ),
       additionalDependencies: _jsonString(json['additionalDependencies']),
-      dataFilesToCopy: _jsonStringList(json['dataFilesToCopy']),
-      injectedSources: _jsonStringList(json['injectedSources']),
     );
   }
 
@@ -467,6 +482,6 @@ class CompileConfig {
   String toString() {
     return 'CompileConfig(languageStandard: $languageStandard, '
         'clanguageStandard: $clanguageStandard, '
-        'configDefines: $configDefines, injectedSources: $injectedSources)';
+        'configDefines: $configDefines)';
   }
 }

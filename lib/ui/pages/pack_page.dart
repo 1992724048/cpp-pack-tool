@@ -451,23 +451,28 @@ class _PackPageState extends State<PackPage> {
     return value.toString();
   }
 
-  /// 生成 nuspec/props/targets 并写入全局输出目录；返回写入的文件路径列表。
+  /// 生成 nuspec/props/targets 并写入全局输出目录下的 `build` 子目录；返回写入的文件路径列表。
+  ///
+  /// 布局：`build\{id}.nuspec`、`build\native\{id}.props`、`build\native\{id}.targets`。
+  /// nuspec 的 `baseDir` 传其所在目录（build），使集成条目 src（`native\...`）与
+  /// 文件映射相对路径均相对 nuspec 解析，保证 nuget pack 工作目录正确。
   Future<List<String>> _generateFiles(PackProject project) async {
     final outputDir = widget.settings.defaultOutputDir.trim();
     if (outputDir.isEmpty) {
       throw const FormatException('输出目录未设置');
     }
     final id = project.packageId.trim();
-    final buildNativeDir = joinPath([outputDir, 'build', 'native']);
+    final buildDir = joinPath([outputDir, 'build']);
+    final buildNativeDir = joinPath([buildDir, 'native']);
     Directory(buildNativeDir).createSync(recursive: true);
 
-    final nuspecPath = joinPath([outputDir, '$id.nuspec']);
+    final nuspecPath = joinPath([buildDir, '$id.nuspec']);
     final propsPath = joinPath([buildNativeDir, '$id.props']);
     final targetsPath = joinPath([buildNativeDir, '$id.targets']);
 
     // `generate` 已在 files 段头部输出 props/targets 的 `<file>` 条目，
     // 此处直接使用其结果，避免重复追加导致 nuget pack 异常。
-    final nuspec = generate(project, baseDir: outputDir);
+    final nuspec = generate(project, baseDir: buildDir);
     File(nuspecPath).writeAsStringSync(nuspec);
     File(propsPath).writeAsStringSync(generateProps(project));
     File(targetsPath).writeAsStringSync(generateTargets(project));
@@ -545,7 +550,8 @@ class _PackPageState extends State<PackPage> {
     }
     final outputDir = widget.settings.defaultOutputDir.trim();
     final id = project.packageId.trim();
-    final nuspecPath = joinPath([outputDir, '$id.nuspec']);
+    final buildDir = joinPath([outputDir, 'build']);
+    final nuspecPath = joinPath([buildDir, '$id.nuspec']);
 
     widget.log.info('开始打包：nuget.exe $nugetExe');
     final args = buildPackArgs(nuspecPath: nuspecPath, outputDir: outputDir);
@@ -553,7 +559,7 @@ class _PackPageState extends State<PackPage> {
       final process = await Process.start(
         nugetExe,
         args,
-        workingDirectory: outputDir,
+        workingDirectory: buildDir,
       );
       final stdoutDone = _forwardStream(process.stdout, LogLevel.info);
       final stderrDone = _forwardStream(process.stderr, LogLevel.error);
