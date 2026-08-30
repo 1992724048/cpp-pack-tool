@@ -142,8 +142,8 @@ void _appendPlatformCheck(StringBuffer sb, PackProject project, String prefix) {
       .join(' and ');
   final supported = project.platforms.join(', ');
   sb.writeln(
-    '    <Error Condition="${conditions}" '
-    'Text="${xmlEscape(project.packageId)} 包仅支持 ${supported} 平台；'
+    '    <Error Condition="$conditions" '
+    'Text="${xmlEscape(project.packageId)} 包仅支持 $supported 平台；'
     '当前平台 \$(Platform) 不受支持。请将项目平台切换为 $supported。" />',
   );
   sb.writeln('  </Target>');
@@ -161,7 +161,7 @@ void _appendConfigCheck(StringBuffer sb, PackProject project, String prefix) {
       '    <Error '
       "Condition=\"'\$(Platform)' == '${xmlEscape(platform)}' and "
       "'\$(${prefix}_LibDir)' == ''\" "
-      'Text="${xmlEscape(project.packageId)} 包仅提供 ${supported} 配置的库；'
+      'Text="${xmlEscape(project.packageId)} 包仅提供 $supported 配置的库；'
       '当前配置 \$(Configuration) 不受支持。请将项目配置切换为 $supported。" />',
     );
   }
@@ -188,7 +188,7 @@ void _appendInjectedSources(
       '    <ItemGroup Condition="\'\$(${prefix}_${fileId}_Injected)\' != \'true\'">',
     );
     sb.writeln(
-      '      <ClCompile Include="\$(MSBuildThisFileDirectory)${source}" />',
+      '      <ClCompile Include="\$(MSBuildThisFileDirectory)$source" />',
     );
     sb.writeln('    </ItemGroup>');
     sb.writeln('    <PropertyGroup>');
@@ -215,12 +215,12 @@ void _appendDataCopyTargets(
   for (final file in files) {
     final fileId = _uniqueFileId(basenameOf(file), usedIds);
     sb.writeln(
-      '  <Target Name="${prefix}Copy${fileId}" BeforeTargets="Build" '
+      '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
       "Condition=\"'\$(${prefix}_LibDir)' != '' and "
       "'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
     );
     sb.writeln(
-      '    <Copy SourceFiles="\$(${prefix}_LibDir)\\${file}" '
+      '    <Copy SourceFiles="\$(${prefix}_LibDir)\\$file" '
       'DestinationFolder="\$(OutDir)" SkipUnchangedFiles="true" />',
     );
     sb.writeln('    <PropertyGroup>');
@@ -241,7 +241,7 @@ String _buildDefines(CompileConfig compile, String config) {
     ..._splitSemis(configDefine ?? ''),
     '%(PreprocessorDefinitions)',
   ];
-  return _semisOf(parts);
+  return _joinSemis(parts);
 }
 
 /// 计算包含路径（`$(MSBuildThisFileDirectory)include` + 映射目标派生子路径 + 用户额外 + 追加）。
@@ -259,7 +259,7 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
     ..._splitSemis(compile.additionalIncludeDirectories),
     '%(AdditionalIncludeDirectories)',
   ];
-  return _semisOf(parts);
+  return _joinSemis(parts);
 }
 
 /// 从文件映射目标提取 `include\...` 子路径；非头文件目标返回 null。
@@ -287,6 +287,12 @@ List<String> _splitSemis(String value) =>
 String _semisOf(Iterable<String> parts) {
   final cleaned = parts.where((t) => t.trim().isNotEmpty).toList();
   return cleaned.isEmpty ? '' : '${cleaned.join(';')};';
+}
+
+/// 用分号连接已拆分的非空项，无尾随分号（用于以 `%( ... )` 元数据收尾的列表）。
+String _joinSemis(Iterable<String> parts) {
+  final cleaned = parts.where((t) => t.trim().isNotEmpty).toList();
+  return cleaned.join(';');
 }
 
 /// 连接以分号分隔的字符串，保留非空项，结尾带分号。

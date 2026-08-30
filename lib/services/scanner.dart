@@ -162,7 +162,7 @@ void _walk({
 
   for (final entry in entries) {
     final name = basenameOf(entry.path);
-    final rel = relRoot.isEmpty ? name : '${relRoot}$pathSeparator$name';
+    final rel = relRoot.isEmpty ? name : '$relRoot$pathSeparator$name';
 
     final type = FileSystemEntity.typeSync(entry.path, followLinks: false);
     if (type == FileSystemEntityType.link) {

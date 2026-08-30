@@ -115,7 +115,7 @@ Future<PackResult> pack({
 
   if (exitCode != 0) {
     return PackResult.failure(
-      'nuget pack 退出码 $exitCode' + (stderrText.isEmpty ? '' : ':\n$stderrText'),
+      'nuget pack 退出码 $exitCode${stderrText.isEmpty ? '' : ':\n$stderrText'}',
     );
   }
 

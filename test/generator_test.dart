@@ -88,6 +88,38 @@ void main() {
       expect(nuspec, contains('<files>'));
       expect(nuspec, contains('</files>'));
     });
+
+    test('files 段开头包含 props/targets 集成文件条目', () {
+      expect(
+        nuspec,
+        contains(
+          r'    <file src="build\native\V8.Native.props" target="build\native\V8.Native.props" />',
+        ),
+      );
+      expect(
+        nuspec,
+        contains(
+          r'    <file src="build\native\V8.Native.targets" target="build\native\V8.Native.targets" />',
+        ),
+      );
+
+      final filesOpenIdx = nuspec.indexOf('<files>');
+      final propsIdx = nuspec.indexOf(
+        r'<file src="build\native\V8.Native.props" target="build\native\V8.Native.props" />',
+      );
+      final targetsIdx = nuspec.indexOf(
+        r'<file src="build\native\V8.Native.targets" target="build\native\V8.Native.targets" />',
+      );
+      final firstMappingIdx = nuspec.indexOf(
+        r'<file src="..\v8\*.h" target="build\native\include\v8" />',
+      );
+
+      // 两条集成文件条目必须位于 files 段开头、且均在首个 sourceDirs 映射之前。
+      expect(filesOpenIdx, isNonNegative);
+      expect(propsIdx, greaterThan(filesOpenIdx));
+      expect(targetsIdx, greaterThan(propsIdx));
+      expect(firstMappingIdx, greaterThan(targetsIdx));
+    });
   });
 
   group('xmlEscape', () {

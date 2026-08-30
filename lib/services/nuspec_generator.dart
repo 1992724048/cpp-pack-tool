@@ -3,7 +3,8 @@
 /// - xmlns 沿用 `http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd`。
 /// - metadata 段输出 id/version/authors/owners/requireLicenseAcceptance/
 ///   description/tags，license 与 repository 仅在非空时输出。
-/// - files 段按 `sourceDirs → mappings` 展开为 `<file src="..." target="..." />`。
+/// - files 段首个输出 MSBuild 集成文件条目（`build\native\{id}.props` 与
+///   `{id}.targets`），随后按 `sourceDirs → mappings` 展开为 `<file src="..." target="..." />`。
 /// - 所有动态值均做 XML 转义。
 library;
 
@@ -47,6 +48,7 @@ String generate(PackProject project) {
   }
   sb.writeln('  </metadata>');
   sb.writeln('  <files>');
+  _appendMsBuildEntries(sb, project.packageId.trim());
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final src = _resolveSrc(project, sourceDir, mapping);
@@ -59,6 +61,19 @@ String generate(PackProject project) {
   sb.writeln('  </files>');
   sb.writeln('</package>');
   return sb.toString();
+}
+
+/// 写入 MSBuild 集成文件（props/targets）的 `<file>` 条目，置于 files 段最前。
+///
+/// 文件名与打包输出目录中的 `build\native\{id}.props` / `{id}.targets` 一致，
+/// 使打包产物自带 MSBuild 集成（对照 V8.Native.nuspec 的 files 段前两条）。
+void _appendMsBuildEntries(StringBuffer sb, String id) {
+  for (final extension in const <String>['.props', '.targets']) {
+    final entry = 'build\\native\\$id$extension';
+    sb.writeln(
+      '    <file src="${xmlEscape(entry)}" target="${xmlEscape(entry)}" />',
+    );
+  }
 }
 
 /// 将逗号分隔的标签字符串规范化为 NuGet 的空格分隔格式。
