@@ -58,6 +58,7 @@ docs/
 
 ## Conventions
 
+- **分支约定（强制）**：日常开发、功能与修复默认提交到 `dev` 分支并推送；`master` 仅用于发布合并（含 `dev` 合并后进行 CI/Release 验证），禁止直接向 `master` 提交功能代码
 - Dart 官方风格：类型标注完整；类型 UpperCamelCase、变量/函数 lowerCamelCase、私有成员 `_` 前缀
 - 不做 silent ignore：异常捕获必须记录或返回错误信息
 - 每个公开 API 有 doc comment（命名不足以表达语义时）
