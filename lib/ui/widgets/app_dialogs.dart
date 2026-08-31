@@ -895,8 +895,15 @@ class _PreviewFilesDialogState extends State<_PreviewFilesDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textPrimary,
+                      minimumSize: Size(60, 36),
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('关闭'),
+                    child: const Text(
+                      '关闭',
+                      style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+                    ),
                   ),
                 ],
               ),

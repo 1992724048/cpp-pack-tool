@@ -19,6 +19,7 @@ library;
 import '../models/pack_project.dart';
 import 'nuspec_generator.dart';
 import 'path_utils.dart';
+import 'dart:io';
 
 /// 将任意输入消毒为可安全用作 MSBuild 属性名/目标名的标识符：
 /// 非字母数字下划线替换为 `_`；空则回退 `Pkg`；数字开头加 `_` 前缀。
@@ -124,6 +125,8 @@ String generateTargets(PackProject project) {
   // 期望只包含库文件名（不带路径），因此需列出库基名；路径由
   // AdditionalLibraryDirectories（即 ${prefix}_LibDir）提供。
   // Collect mapping-derived library basenames per platform/config.
+  // Build a map of concrete static library basenames per platform|config by
+  // expanding srcGlobs against the sourceDir.path on disk when globs are used.
   final libMap = <String, List<String>>{};
   for (final platform in project.platforms) {
     for (final config in project.configurations) {
@@ -134,16 +137,18 @@ String generateTargets(PackProject project) {
     for (final mapping in sourceDir.mappings) {
       final kind = mapping.fileKind;
       if (kind == 'staticLibrary') {
-        // Only static libraries (.lib/.a) should be injected into
-        // AdditionalDependencies. Dynamic libraries (.dll/.so) are handled
-        // via hardlink targets and must NOT appear in AdditionalDependencies.
-        final libName = basenameOf(mapping.srcGlob);
-        for (final platform in project.platforms) {
-          for (final config in project.configurations) {
-            final platformMatch = mapping.platforms.isEmpty || mapping.platforms.contains(platform);
-            final configMatch = mapping.configurations.isEmpty || mapping.configurations.contains(config);
-            if (platformMatch && configMatch) {
-              libMap['$platform|${config.toLowerCase()}']!.add(libName);
+        // Expand the srcGlob into actual filenames (basenames). If the mapping is
+        // a literal filename, this returns that name; if it's a glob, it scans the
+        // sourceDir.path and returns matches.
+        final names = _expandBasenames(sourceDir.path, mapping.srcGlob);
+        for (final name in names) {
+          for (final platform in project.platforms) {
+            for (final config in project.configurations) {
+              final platformMatch = mapping.platforms.isEmpty || mapping.platforms.contains(platform);
+              final configMatch = mapping.configurations.isEmpty || mapping.configurations.contains(config);
+              if (platformMatch && configMatch) {
+                libMap['$platform|${config.toLowerCase()}']!.add(name);
+              }
             }
           }
         }
@@ -165,8 +170,19 @@ String generateTargets(PackProject project) {
         '%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
       );
       if (libs.isNotEmpty) {
-        final joined = libs.map(xmlEscape).join(';');
-        final deps = '${joined};${_semis(compile.additionalDependencies)}';
+        // Deduplicate while preserving order
+        final seen = <String>{};
+        final unique = <String>[];
+        for (final l in libs) {
+          if (!seen.contains(l)) {
+            seen.add(l);
+            unique.add(l);
+          }
+        }
+        final joined = unique.map(xmlEscape).join(';');
+        final deps = joined.isEmpty
+            ? _semis(compile.additionalDependencies)
+            : '$joined;${_semis(compile.additionalDependencies)}';
         sb.writeln(
           '      <AdditionalDependencies>${deps}%(AdditionalDependencies)</AdditionalDependencies>',
         );
@@ -293,37 +309,41 @@ void _appendHardlinkTargets(
   String prefix,
   Set<String> usedIds,
 ) {
-  final hardlinkMappings = <FileMapping>[];
+  final hardlinkMappings = <MapEntry<SourceDir, FileMapping>>[];
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final kind = mapping.fileKind;
       if (kind == 'data' || kind == 'dynamicLibrary' || kind == 'executable') {
-        hardlinkMappings.add(mapping);
+        hardlinkMappings.add(MapEntry(sourceDir, mapping));
       }
     }
   }
   if (hardlinkMappings.isEmpty) return;
 
-  for (final mapping in hardlinkMappings) {
-    final fileName = basenameOf(mapping.srcGlob);
-    final fileId = _uniqueFileId(fileName, usedIds);
-    final dst = '\$(OutDir)\\${xmlEscape(fileName)}';
-    final src = _hardlinkSource(mapping.target, fileName);
-    sb.writeln(
-      '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
-      "Condition=\"'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
-    );
-    sb.writeln(
-      '    <Exec Command="cmd /c mklink /H &quot;$dst&quot; &quot;$src&quot; 2&gt;nul '
-      '|| copy /y &quot;$src&quot; &quot;$dst&quot; &gt;nul" '
-      "Condition=\"!Exists('$dst')\" />",
-    );
-    sb.writeln('    <PropertyGroup>');
-    sb.writeln(
-      '      <${prefix}_${fileId}_Copied>true</${prefix}_${fileId}_Copied>',
-    );
-    sb.writeln('    </PropertyGroup>');
-    sb.writeln('  </Target>');
+  for (final entry in hardlinkMappings) {
+    final sourceDir = entry.key;
+    final mapping = entry.value;
+    final names = _expandBasenames(sourceDir.path, mapping.srcGlob);
+    if (names.isEmpty) continue;
+    for (final fileName in names) {
+      final fileId = _uniqueFileId(fileName, usedIds);
+      final dst = '\$(OutDir)\\${xmlEscape(fileName)}';
+      final src = _hardlinkSource(mapping.target, fileName);
+      sb.writeln(
+        '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
+        "Condition=\"'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
+      );
+      sb.writeln(
+        '    <Exec Command="cmd /c mklink /H &quot;$dst&quot; &quot;$src&quot; 2&gt;nul || copy /y &quot;$src&quot; &quot;$dst&quot; &gt;nul" '
+        "Condition=\"!Exists('$dst')\" />",
+      );
+      sb.writeln('    <PropertyGroup>');
+      sb.writeln(
+        '      <${prefix}_${fileId}_Copied>true</${prefix}_${fileId}_Copied>',
+      );
+      sb.writeln('    </PropertyGroup>');
+      sb.writeln('  </Target>');
+    }
   }
 }
 
@@ -470,6 +490,49 @@ String _hardlinkSource(String target, String fileName) {
   }
   if (t.isEmpty) return '\$(MSBuildThisFileDirectory)$fileName';
   return '\$(MSBuildThisFileDirectory)..\\..\\$t\\$fileName';
+}
+
+/// Expand a srcGlob relative to [basePath] into concrete basenames.
+/// If [srcGlob] contains no glob tokens, returns its basename directly.
+List<String> _expandBasenames(String basePath, String srcGlob) {
+  final s = srcGlob.trim();
+  if (s.isEmpty) return [];
+  if (!s.contains('*') && !s.contains('?')) {
+    return [basenameOf(s)];
+  }
+  try {
+    final base = Directory(basePath);
+    if (!base.existsSync()) return [basenameOf(s)];
+    // Normalize separators for pattern and file paths
+    final pattern = s.replaceAll('\\', '/');
+    final regex = _globToRegExp(pattern);
+    final results = <String>[];
+    for (final ent in base.listSync(recursive: true, followLinks: false)) {
+      if (ent is File) {
+        final rel = ent.path.replaceAll('\\', '/');
+        var relPath = rel;
+        if (relPath.startsWith(base.path.replaceAll('\\', '/'))) {
+          relPath = relPath.substring(base.path.length + (base.path.endsWith('\\') || base.path.endsWith('/') ? 0 : 1));
+        }
+        if (regex.hasMatch(relPath)) {
+          results.add(basenameOf(relPath));
+        }
+      }
+    }
+    return results;
+  } catch (e) {
+    return [basenameOf(s)];
+  }
+}
+
+RegExp _globToRegExp(String pattern) {
+  // Escape regex special chars, then replace glob tokens
+  final escaped = RegExp.escape(pattern);
+  final replaced = escaped
+      .replaceAll('\\*', '.*')
+      .replaceAll('\\?', '.')
+      .replaceAll('\\/', '\\/');
+  return RegExp('^$replaced\$');
 }
 
 /// 计算某配置下的预处理宏值（全局宏 + 配置宏 + `%(PreprocessorDefinitions)`）。
