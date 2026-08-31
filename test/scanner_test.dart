@@ -56,7 +56,7 @@ void main() {
     makeFile('.dart_tool/x.h');
     makeFile('.temp/tmp.dat');
 
-    final result = scanSourceDir(sourceDir.path);
+    final result = scanSourceDir(sourceDir.path, maxDepth: 8);
 
     expect(
       result.headers,
@@ -133,7 +133,7 @@ void main() {
     makeFile('l1/l2/l3/l4/deep.h');
     makeFile('l1/l2/l3/l4/l5/deeper.h');
 
-    final result = scanSourceDir(sourceDir.path);
+    final result = scanSourceDir(sourceDir.path, maxDepth: 8);
 
     expect(result.headers, unorderedEquals([r'l1\l2\l3\l4\deep.h']));
     expect(result.headers, isNot(contains(r'l1\l2\l3\l4\l5\deeper.h')));
@@ -162,7 +162,7 @@ void main() {
     }
 
     makeFile('real.h');
-    final result = scanSourceDir(sourceDir.path);
+    final result = scanSourceDir(sourceDir.path, maxDepth: 8);
 
     expect(result.headers, unorderedEquals(['real.h']));
   });
