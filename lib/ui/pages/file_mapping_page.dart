@@ -361,6 +361,19 @@ class _MappingRow extends StatefulWidget {
 
 class _MappingRowState extends State<_MappingRow> {
   bool _hovered = false;
+  late final ScrollController _condScrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _condScrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _condScrollController.dispose();
+    super.dispose();
+  }
 
   String get _condition {
     if (widget.mapping.platforms.isEmpty &&
@@ -395,10 +408,27 @@ class _MappingRowState extends State<_MappingRow> {
     for (final c in configs) {
       chips.add(_conditionChip(c, AppColors.warn));
     }
-    // 支持水平滚动以避免超出时遮挡
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(children: chips),
+    // 支持水平滚动并允许鼠标拖拽以水平滚动；标签间留出 5px 空隙
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        if (!_condScrollController.hasClients) return;
+        final max = _condScrollController.position.maxScrollExtent;
+        final newPos = (_condScrollController.position.pixels - details.delta.dx)
+            .clamp(0.0, max);
+        _condScrollController.jumpTo(newPos);
+      },
+      child: SingleChildScrollView(
+        controller: _condScrollController,
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (var i = 0; i < chips.length; i++) ...[
+              chips[i],
+              if (i != chips.length - 1) const SizedBox(width: 5),
+            ]
+          ],
+        ),
+      ),
     );
   }
 

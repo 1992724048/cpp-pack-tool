@@ -15,7 +15,7 @@ import 'form_fields.dart';
 ///
 /// 列表为可滚动（高度上限 [_kMaxPreviewHeight]），扫描结果多时可滚动查看，
 /// 勾选与底部操作按钮不受影响；[onToggle] 传 null 时为只读展示。
-class MappingSuggestionList extends StatelessWidget {
+class MappingSuggestionList extends StatefulWidget {
   const MappingSuggestionList({
     super.key,
     required this.suggestions,
@@ -36,26 +36,45 @@ class MappingSuggestionList extends StatelessWidget {
   final ValueChanged<int>? onToggle;
 
   @override
+  State<MappingSuggestionList> createState() => _MappingSuggestionListState();
+}
+
+class _MappingSuggestionListState extends State<MappingSuggestionList> {
+  late final ScrollController _chipScrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _chipScrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _chipScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(maxHeight: _kMaxPreviewHeight),
+      constraints: const BoxConstraints(maxHeight: MappingSuggestionList._kMaxPreviewHeight),
       decoration: BoxDecoration(
         border: Border.all(color: AppColors.borderStrong),
         borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: ListView.builder(
         shrinkWrap: true,
-        itemCount: suggestions.length,
+        itemCount: widget.suggestions.length,
         itemBuilder: (context, index) {
-          final mapping = suggestions[index];
-          final enabled = onToggle != null;
+          final mapping = widget.suggestions[index];
+          final enabled = widget.onToggle != null;
           return InkWell(
-            onTap: enabled ? () => onToggle!(index) : null,
+            onTap: enabled ? () => widget.onToggle!(index) : null,
             child: Row(
               children: [
                 Checkbox(
-                  value: checked.contains(index),
-                  onChanged: enabled ? (_) => onToggle!(index) : null,
+                  value: widget.checked.contains(index),
+                  onChanged: enabled ? (_) => widget.onToggle!(index) : null,
                 ),
                 Expanded(
                   child: Column(
@@ -70,7 +89,7 @@ class MappingSuggestionList extends StatelessWidget {
                               style: monoTextStyle(color: AppColors.textSemantic),
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.s1),
+                          const SizedBox(width: 5),
                           if (mapping.platforms.isEmpty && mapping.configurations.isEmpty)
                             Text(
                               '全部',
@@ -80,22 +99,32 @@ class MappingSuggestionList extends StatelessWidget {
                               ),
                             )
                           else
-                            // 使用水平滚动以防超出界面宽度
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  for (final p in mapping.platforms)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: AppSpacing.s1),
-                                      child: _smallChip(p, AppColors.accent),
-                                    ),
-                                  for (final c in mapping.configurations)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: AppSpacing.s1),
-                                      child: _smallChip(c, AppColors.warn),
-                                    ),
-                                ],
+                            // 使用水平滚动并支持鼠标拖拽以防超出界面宽度；标签间距 5px
+                            GestureDetector(
+                              onHorizontalDragUpdate: (details) {
+                                if (!_chipScrollController.hasClients) return;
+                                final max = _chipScrollController.position.maxScrollExtent;
+                                final newPos = (_chipScrollController.position.pixels - details.delta.dx)
+                                    .clamp(0.0, max);
+                                _chipScrollController.jumpTo(newPos);
+                              },
+                              child: SingleChildScrollView(
+                                controller: _chipScrollController,
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: [
+                                    for (var i = 0; i < mapping.platforms.length; i++) ...[
+                                      _smallChip(mapping.platforms[i], AppColors.accent),
+                                      if (i != mapping.platforms.length - 1) const SizedBox(width: 5),
+                                    ],
+                                    if (mapping.platforms.isNotEmpty && mapping.configurations.isNotEmpty)
+                                      const SizedBox(width: 5),
+                                    for (var j = 0; j < mapping.configurations.length; j++) ...[
+                                      _smallChip(mapping.configurations[j], AppColors.warn),
+                                      if (j != mapping.configurations.length - 1) const SizedBox(width: 5),
+                                    ],
+                                  ],
+                                ),
                               ),
                             ),
                         ],
