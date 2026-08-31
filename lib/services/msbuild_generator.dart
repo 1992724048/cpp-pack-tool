@@ -133,7 +133,10 @@ String generateTargets(PackProject project) {
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final kind = mapping.fileKind;
-      if (kind == 'staticLibrary' || kind == 'dynamicLibrary') {
+      if (kind == 'staticLibrary') {
+        // Only static libraries (.lib/.a) should be injected into
+        // AdditionalDependencies. Dynamic libraries (.dll/.so) are handled
+        // via hardlink targets and must NOT appear in AdditionalDependencies.
         final libName = basenameOf(mapping.srcGlob);
         for (final platform in project.platforms) {
           for (final config in project.configurations) {
