@@ -414,7 +414,7 @@ String? _detectConfig(String parentRelPath) {
       return 'Release';
     }
     // 处理类似 x64-debug 或 debug-x64 的复合段
-    final parts = s.split(RegExp('[-_\.]'));
+    final parts = s.split(RegExp(r'[-_.]'));
     if (parts.contains('debug')) return 'Debug';
     if (parts.contains('release') || parts.contains('relwithdebinfo') || parts.contains('reldebug') || parts.contains('minsizerel')) return 'Release';
   }
@@ -433,7 +433,7 @@ String? _detectPlatform(String parentRelPath) {
     if (s.contains('x86') || s.contains('win32') || s == 'ia32') return 'x86';
     if (s.contains('arm64') || s.contains('aarch64') || s.contains('arm64-v8a') || s.contains('armv8')) return 'arm64';
     // 复合段拆分后再匹配，例如 'release-x64' 或 'x64-debug'
-    final parts = s.split(RegExp('[-_\.]'));
+    final parts = s.split(RegExp(r'[-_.]'));
     for (final p in parts) {
       if (p == 'x64' || p == 'amd64' || p == 'x86_64') return 'x64';
       if (p == 'x86' || p == 'ia32') return 'x86';
@@ -545,10 +545,10 @@ List<FileMapping> mergeMappingConditions(
         // Preserve scanner-detected values when present; only copy from the matched
         // old mapping if the new mapping left the field empty. This avoids
         // inheriting broad combined configs (Debug+Release) from a generic old mapping.
-        final platformsToUse = (mapping.platforms != null && mapping.platforms.isNotEmpty)
+        final platformsToUse = mapping.platforms.isNotEmpty
             ? mapping.platforms
             : (matched?.platforms ?? const <String>[]);
-        final configsToUse = (mapping.configurations != null && mapping.configurations.isNotEmpty)
+        final configsToUse = mapping.configurations.isNotEmpty
             ? mapping.configurations
             : (matched?.configurations ?? const <String>[]);
 

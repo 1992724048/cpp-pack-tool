@@ -375,19 +375,6 @@ class _MappingRowState extends State<_MappingRow> {
     super.dispose();
   }
 
-  String get _condition {
-    if (widget.mapping.platforms.isEmpty &&
-        widget.mapping.configurations.isEmpty) {
-      return '全部';
-    }
-    final parts = <String>[
-      if (widget.mapping.platforms.isNotEmpty)
-        widget.mapping.platforms.join('/'),
-      if (widget.mapping.configurations.isNotEmpty)
-        widget.mapping.configurations.join('/'),
-    ];
-    return parts.join(' · ');
-  }
 
   Widget _buildConditionChips() {
     final platforms = widget.mapping.platforms;

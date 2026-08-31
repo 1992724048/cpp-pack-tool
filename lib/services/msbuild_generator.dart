@@ -184,7 +184,7 @@ String generateTargets(PackProject project) {
             ? _semis(compile.additionalDependencies)
             : '$joined;${_semis(compile.additionalDependencies)}';
         sb.writeln(
-          '      <AdditionalDependencies>${deps}%(AdditionalDependencies)</AdditionalDependencies>',
+          '      <AdditionalDependencies>$deps%(AdditionalDependencies)</AdditionalDependencies>',
         );
       } else {
         sb.writeln(

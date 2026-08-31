@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cpp_nuget_pack/services/scanner.dart';
 import 'package:cpp_nuget_pack/services/path_utils.dart';
 
@@ -23,9 +24,9 @@ void main() {
 
     final result = scanSourceDir(sourceDir.path);
 
-    print('Suggested mappings:');
+    debugPrint('Suggested mappings:');
     for (final m in result.suggestedMappings) {
-      print('${m.srcGlob} -> ${m.target}  platforms=${m.platforms} configs=${m.configurations} fileKind=${m.fileKind}');
+      debugPrint('${m.srcGlob} -> ${m.target}  platforms=${m.platforms} configs=${m.configurations} fileKind=${m.fileKind}');
     }
 
     // Cleanup
