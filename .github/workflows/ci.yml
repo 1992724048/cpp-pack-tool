@@ -41,7 +41,7 @@ jobs:
             $ver = $ver.Split('+')[0]
             $ver = $ver.Trim("'\"")
           } else { $ver = (Get-Date -Format 'yyyyMMddHHmmss') }
-          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$ver"
+          ('VERSION=' + $ver) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Install dependencies
         run: flutter pub get
@@ -62,7 +62,7 @@ jobs:
           $out_x64 = "dist/cpp_nuget_pack-${{ env.VERSION }}-win-x86_64.zip"
           if (Test-Path $out_x64) { Remove-Item $out_x64 -Force }
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out_x64 -CompressionLevel Optimal
-          Add-Content -Path $env:GITHUB_ENV -Value "ASSET_PATH_X64=$out_x64"
+          ('ASSET_PATH_X64=' + $out_x64) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build Windows ARM64 Release
         run: flutter build windows --release --target-platform=windows-arm64
@@ -76,10 +76,10 @@ jobs:
           if (Test-Path $out_arm) { Remove-Item $out_arm -Force }
           if (Test-Path build/windows/arm64/runner/Release) {
             Compress-Archive -Path build/windows/arm64/runner/Release/* -DestinationPath $out_arm -CompressionLevel Optimal
-            Add-Content -Path $env:GITHUB_ENV -Value "ASSET_PATH_ARM64=$out_arm"
+            ('ASSET_PATH_ARM64=' + $out_arm) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           } else {
-            Add-Content -Path $env:GITHUB_ENV -Value "ASSET_PATH_ARM64="
-            Add-Content -Path $env:GITHUB_ENV -Value "ARM64_BUILD_MISSING=true"
+            ('ASSET_PATH_ARM64=') | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            ('ARM64_BUILD_MISSING=true') | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           }
 
       - name: Create GitHub Release and upload assets
