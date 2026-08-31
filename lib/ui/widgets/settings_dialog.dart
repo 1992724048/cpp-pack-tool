@@ -70,7 +70,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 fontSize: AppFontSizes.caption,
               ),
             ),
-            const SizedBox(height: AppSpacing.xs),
+            SizedBox(height: AppSpacing.s2),
             const SelectableText(
               '仓库地址： https://github.com/1992724048/cpp-pack-tool',
               style: TextStyle(
