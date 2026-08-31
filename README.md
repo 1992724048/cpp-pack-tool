@@ -48,10 +48,6 @@ flutter build windows --release
   cmake\{id}\{id}Config.cmake  CMake 包配置（可生成）
 ```
 
-## 参考项目
-
-打包格式以 V8 15.2.124.1 的手工 NuGet 打包件为基准（`D:\CODE\Library\v8` 的 `.nuspec` / `.props` / `.targets` / `pack.ps1`），共享项目导入实测覆盖 [mimalloc](https://github.com/microsoft/mimalloc)（`.vcxitems`）。
-
 ## 目录结构
 
 ```
