@@ -39,7 +39,7 @@ jobs:
           if ($line) {
             $ver = ($line.ToString() -replace '^\s*version\s*:\s*','').Trim()
             $ver = $ver.Split('+')[0]
-            $ver = $ver.Trim("'\"")
+            if ($ver -match '^[\x22\x27](.*)[\x22\x27]$') { $ver = $matches[1] }
           } else { $ver = (Get-Date -Format 'yyyyMMddHHmmss') }
           ('VERSION=' + $ver) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
