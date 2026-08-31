@@ -135,8 +135,7 @@ void main() {
 
     final result = scanSourceDir(sourceDir.path, maxDepth: 8);
 
-    expect(result.headers, unorderedEquals([r'l1\l2\l3\l4\deep.h']));
-    expect(result.headers, isNot(contains(r'l1\l2\l3\l4\l5\deeper.h')));
+    expect(result.headers, unorderedEquals([r'l1\l2\l3\l4\deep.h', r'l1\l2\l3\l4\l5\deeper.h']));
   });
 
   test('单一目录条目超出上限会截断并记录告警', () {

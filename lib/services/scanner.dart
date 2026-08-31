@@ -82,7 +82,7 @@ class ScanResult {
 /// 当 [dirPath] 不存在或不是目录时抛出 [FileSystemException]。
 ScanResult scanSourceDir(
   String dirPath, {
-  int maxDepth = 8,
+  int maxDepth = 16,
   int maxFilesPerDir = 5000,
 }) {
   final dir = Directory(dirPath);
@@ -368,9 +368,6 @@ List<FileMapping> _buildLibraryAndDataMappings(
       // 平台与配置：platform 可能为 null（未显式包含平台词），config 可能为 null。
       final target = () {
         if (kind == 'executable') {
-          if (config != null && platform != null) {
-            return joinPath(['build', 'native', 'tools', platform, config]);
-          }
           if (config != null) return joinPath(['build', 'native', 'tools', config]);
           if (platform != null) return joinPath(['build', 'native', 'tools', platform]);
           return joinPath(['build', 'native', 'tools']);
