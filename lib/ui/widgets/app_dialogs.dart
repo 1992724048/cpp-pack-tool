@@ -182,11 +182,13 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
       final base = display[index];
       mappings.add(
         base.copyWith(
+          // If the user didn't pick any platform/config chips, keep the scanner's
+          // detected values (do not overwrite with an empty list which means "全部").
           platforms: selectedPlatforms.isEmpty
-              ? const <String>[]
+              ? base.platforms
               : selectedPlatforms,
           configurations: selectedConfigs.isEmpty
-              ? const <String>[]
+              ? base.configurations
               : selectedConfigs,
         ),
       );
@@ -216,7 +218,6 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
     return Dialog(
       insetPadding: const EdgeInsets.all(AppSpacing.s4),
       child: SizedBox(
-        width: 560,
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.s3),
           child: Column(
@@ -237,7 +238,13 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
               _filterChips(),
               const SizedBox(height: AppSpacing.s2),
               _statusArea(),
-              if (_scanDone && _sharedInfo != null) _sharedPrompt(),
+              if (_scanDone && _sharedInfo != null)
+                Column(
+                  children: [
+                    const SizedBox(height: AppSpacing.s2),
+                    _sharedPrompt(),
+                  ],
+                ),
               const SizedBox(height: AppSpacing.s2),
               Flexible(child: _previewList()),
               const SizedBox(height: AppSpacing.s3),
@@ -267,8 +274,12 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
         const SizedBox(width: AppSpacing.s1),
         OutlinedButton.icon(
           onPressed: _browse,
+          style: OutlinedButton.styleFrom(minimumSize: Size(60, 36)),
           icon: const Icon(Icons.folder_open, size: 16),
-          label: const Text('浏览'),
+          label: const Text(
+            '浏览',
+            style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+          ),
         ),
       ],
     );
@@ -501,18 +512,32 @@ class _AddSourceDirDialogState extends State<AddSourceDirDialog> {
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         OutlinedButton(
+          style: OutlinedButton.styleFrom(minimumSize: Size(60, 36)),
           onPressed: _scanning || _dirPath == null ? null : _startScan,
-          child: const Text('开始扫描'),
+          child: const Text(
+            '开始扫描',
+            style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+          ),
         ),
         const SizedBox(width: AppSpacing.s2),
         FilledButton(
           onPressed: canConfirm ? _confirm : null,
-          child: const Text('确认添加'),
+          child: const Text(
+            '确认添加',
+            style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+          ),
         ),
         const SizedBox(width: AppSpacing.s2),
         TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.textSemantic,
+            minimumSize: Size(60, 36),
+          ),
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: const Text(
+            '取消',
+            style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+          ),
         ),
       ],
     );

@@ -92,7 +92,6 @@ class _PackPageState extends State<PackPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle(title: '打包'),
           _modeSelector(),
           const SizedBox(height: AppSpacing.s3),
           _versionStrategyField(project),

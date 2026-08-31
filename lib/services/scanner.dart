@@ -490,20 +490,73 @@ List<FileMapping> mergeMappingConditions(
   List<FileMapping> oldMappings,
   List<FileMapping> newMappings,
 ) {
+  // Build quick lookup maps: by full normalized key (srcGlob|fileKind) and by normalized glob alone.
+  final oldByKey = <String, FileMapping>{};
   final oldByGlob = <String, FileMapping>{};
   for (final mapping in oldMappings) {
+    oldByKey[_mappingKey(mapping)] = mapping;
     oldByGlob[normalizeMappingGlob(mapping.srcGlob)] = mapping;
   }
+
   return [
     for (final mapping in newMappings)
-      mapping.copyWith(
-        platforms:
-            oldByGlob[normalizeMappingGlob(mapping.srcGlob)]?.platforms ??
-            const <String>[],
-        configurations:
-            oldByGlob[normalizeMappingGlob(mapping.srcGlob)]?.configurations ??
-            const <String>[],
-      ),
+      (() {
+        final key = _mappingKey(mapping);
+        final glob = normalizeMappingGlob(mapping.srcGlob);
+
+        // 1) Try exact key match (srcGlob + fileKind)
+        var matched = oldByKey[key];
+        // 2) Fallback to exact glob-only match
+        matched ??= oldByGlob[glob];
+
+        // 3) Heuristic fallback: choose the best matching old mapping by score.
+        //    Scoring: exact target match +50, exact glob +100, common suffix segments *10.
+        if (matched == null) {
+          int bestScore = 0;
+          FileMapping? best;
+          final newSegments = glob.split(pathSeparator);
+          for (final old in oldMappings) {
+            final oldGlob = normalizeMappingGlob(old.srcGlob);
+            int score = 0;
+            if (old.target == mapping.target) score += 50;
+            if (oldGlob == glob) score += 100;
+            // common suffix segments
+            final oldSegs = oldGlob.split(pathSeparator);
+            var i = 1;
+            var common = 0;
+            while (i <= oldSegs.length && i <= newSegments.length) {
+              if (oldSegs[oldSegs.length - i] == newSegments[newSegments.length - i]) {
+                common++;
+                i++;
+                continue;
+              }
+              break;
+            }
+            score += common * 10;
+            if (score > bestScore) {
+              bestScore = score;
+              best = old;
+            }
+          }
+          // Accept only when score is meaningful (>=20) to avoid matching overly generic globs like '*.lib'.
+          if (bestScore >= 20) matched = best;
+        }
+
+        // Preserve scanner-detected values when present; only copy from the matched
+        // old mapping if the new mapping left the field empty. This avoids
+        // inheriting broad combined configs (Debug+Release) from a generic old mapping.
+        final platformsToUse = (mapping.platforms != null && mapping.platforms.isNotEmpty)
+            ? mapping.platforms
+            : (matched?.platforms ?? const <String>[]);
+        final configsToUse = (mapping.configurations != null && mapping.configurations.isNotEmpty)
+            ? mapping.configurations
+            : (matched?.configurations ?? const <String>[]);
+
+        return mapping.copyWith(
+          platforms: platformsToUse,
+          configurations: configsToUse,
+        );
+      })(),
   ];
 }
 

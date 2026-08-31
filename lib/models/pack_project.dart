@@ -475,7 +475,7 @@ class FileMapping {
 class CompileConfig {
   /// 创建编译配置，采用默认语言标准 `stdcpp23`。
   CompileConfig({
-    this.languageStandard = 'stdcpplatest',
+    this.languageStandard = 'stdcpp23',
     this.clanguageStandard = '',
     this.preprocessorDefines = '',
     Map<String, String>? configDefines,

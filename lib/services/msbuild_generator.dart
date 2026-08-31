@@ -119,22 +119,63 @@ String generateTargets(PackProject project) {
   final usedIds = <String>{};
   _appendInjectedSources(sb, project, prefix, usedIds);
 
-  // 链接级元数据：库路径 + 依赖（仅当匹配到有效的 LibDir 时应用）。
-  sb.writeln(
-    '  <ItemDefinitionGroup Condition="\'\$(${prefix}_LibDir)\' != \'\'">',
-  );
-  sb.writeln('    <Link>');
-  sb.writeln(
-    '      <AdditionalLibraryDirectories>'
-    '\$(${prefix}_LibDir);${_semis(compile.additionalLibraryDirectories)}'
-    '%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
-  );
-  sb.writeln(
-    '      <AdditionalDependencies>${_semis(compile.additionalDependencies)}'
-    '%(AdditionalDependencies)</AdditionalDependencies>',
-  );
-  sb.writeln('    </Link>');
-  sb.writeln('  </ItemDefinitionGroup>');
+  // 链接级元数据：为每个 platform/config 生成条件化的 AdditionalLibraryDirectories
+  // 与 AdditionalDependencies。Important: Visual Studio 的 AdditionalDependencies
+  // 期望只包含库文件名（不带路径），因此需列出库基名；路径由
+  // AdditionalLibraryDirectories（即 ${prefix}_LibDir）提供。
+  // Collect mapping-derived library basenames per platform/config.
+  final libMap = <String, List<String>>{};
+  for (final platform in project.platforms) {
+    for (final config in project.configurations) {
+      libMap['$platform|${config.toLowerCase()}'] = [];
+    }
+  }
+  for (final sourceDir in project.sourceDirs) {
+    for (final mapping in sourceDir.mappings) {
+      final kind = mapping.fileKind;
+      if (kind == 'staticLibrary' || kind == 'dynamicLibrary') {
+        final libName = basenameOf(mapping.srcGlob);
+        for (final platform in project.platforms) {
+          for (final config in project.configurations) {
+            final platformMatch = mapping.platforms.isEmpty || mapping.platforms.contains(platform);
+            final configMatch = mapping.configurations.isEmpty || mapping.configurations.contains(config);
+            if (platformMatch && configMatch) {
+              libMap['$platform|${config.toLowerCase()}']!.add(libName);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (final platform in project.platforms) {
+    for (final config in project.configurations) {
+      final key = '$platform|${config.toLowerCase()}';
+      final libs = libMap[key] ?? [];
+      final condition = "'\$(Platform)' == '${xmlEscape(platform)}' and '\$(Configuration.ToLower())' == '${config.toLowerCase()}'"
+          " and '\$(${prefix}_LibDir)' != ''";
+      sb.writeln('  <ItemDefinitionGroup Condition="$condition">');
+      sb.writeln('    <Link>');
+      sb.writeln(
+        '      <AdditionalLibraryDirectories>'
+        '\$(${prefix}_LibDir);${_semis(compile.additionalLibraryDirectories)}'
+        '%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+      );
+      if (libs.isNotEmpty) {
+        final joined = libs.map(xmlEscape).join(';');
+        final deps = '${joined};${_semis(compile.additionalDependencies)}';
+        sb.writeln(
+          '      <AdditionalDependencies>${deps}%(AdditionalDependencies)</AdditionalDependencies>',
+        );
+      } else {
+        sb.writeln(
+          '      <AdditionalDependencies>${_semis(compile.additionalDependencies)}%(AdditionalDependencies)</AdditionalDependencies>',
+        );
+      }
+      sb.writeln('    </Link>');
+      sb.writeln('  </ItemDefinitionGroup>');
+    }
+  }
 
   _appendHardlinkTargets(sb, project, prefix, usedIds);
   _appendCommandTargets(sb, project, prefix);
@@ -447,17 +488,33 @@ String _buildDefines(CompileConfig compile, String config) {
 /// - 用户显式附加目录（[CompileConfig.additionalIncludeDirectories]）中的**宏/绝对路径**
 ///   原样输出（不剥斜杠、不加前缀），其余相对目录也原样输出（保持既有语义）。
 String _buildIncludeDirs(PackProject project, CompileConfig compile) {
-  final dirs = <String>['include'];
+  // Collect mapping-derived include subpaths + default 'include'. Preserve
+  // insertion order and avoid duplicates.
+  final dirs = <String>[];
+  void addDir(String d) {
+    if (d.trim().isEmpty) return;
+    if (!dirs.contains(d)) dirs.add(d);
+  }
+  addDir('include');
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final sub = _includeSubPath(mapping);
-      if (sub != null) dirs.add(sub);
+      if (sub != null) addDir(sub);
     }
   }
-  final parts = <String>[
-    if (dirs.isNotEmpty) _relativeIncludeRef(dirs.first),
-    '%(AdditionalIncludeDirectories)',
-  ];
+
+  final parts = <String>[];
+  for (final d in dirs) {
+    parts.add(_relativeIncludeRef(d));
+  }
+  // User-specified additional include directories: preserve verbatim tokens
+  // (macros/absolute paths) and relative paths as provided.
+  final userAdds = _splitVerbatimSemis(compile.additionalIncludeDirectories);
+  for (final u in userAdds) {
+    if (u.trim().isEmpty) continue;
+    parts.add(u);
+  }
+  parts.add('%(AdditionalIncludeDirectories)');
   return _joinSemis(parts);
 }
 
@@ -467,7 +524,10 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
 /// `$(MSBuildThisFileDirectory)` 前缀并去除尾部斜杠。
 String _relativeIncludeRef(String dir) {
   if (_isVerbatimValue(dir)) return dir;
-  return '\$(MSBuildThisFileDirectory)\\${_stripTrailingSlash(dir)}';
+  // Concatenate without an extra backslash so the MSBuild variable and the
+  // `include` segment form a single path token as expected by our tests
+  // (e.g. '$(MSBuildThisFileDirectory)include\v8').
+  return '\$(MSBuildThisFileDirectory)${_stripTrailingSlash(dir)}';
 }
 
 /// 从文件映射目标提取 `include\...` 子路径；非头文件映射返回 null。

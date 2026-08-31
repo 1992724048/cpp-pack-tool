@@ -45,7 +45,6 @@ class _DependenciesPageState extends State<DependenciesPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle(title: '依赖管理'),
           if (project.dependencies.isEmpty)
             _emptyState()
           else
@@ -54,6 +53,10 @@ class _DependenciesPageState extends State<DependenciesPage> {
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSemantic,
+                minimumSize: Size(67, 35),
+              ),
               onPressed: () => _addDependency(project),
               icon: const Icon(Icons.add, size: 16),
               label: const Text('添加依赖'),
@@ -258,7 +261,7 @@ class _AddDependencyDialogState extends State<_AddDependencyDialog> {
   void _pickPackage(RegisteredPackage pkg) {
     setState(() {
       _id.text = pkg.project.packageId;
-      _version.text = pkg.project.version;
+      _version.text = "[${pkg.project.version})";
       _error = null;
     });
   }
@@ -325,6 +328,10 @@ class _AddDependencyDialogState extends State<_AddDependencyDialog> {
       ),
       actions: [
         TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.textSemantic,
+            minimumSize: Size(67, 35),
+          ),
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('取消'),
         ),
@@ -382,6 +389,7 @@ class _AddDependencyDialogState extends State<_AddDependencyDialog> {
   Widget _manualFields() {
     return Column(
       children: [
+        const SizedBox(height: AppSpacing.s1),
         TextField(
           controller: _id,
           style: monoTextStyle(),
