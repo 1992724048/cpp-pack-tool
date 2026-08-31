@@ -395,7 +395,11 @@ class _MappingRowState extends State<_MappingRow> {
     for (final c in configs) {
       chips.add(_conditionChip(c, AppColors.warn));
     }
-    return Wrap(spacing: AppSpacing.s1, children: chips);
+    // 支持水平滚动以避免超出时遮挡
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: chips),
+    );
   }
 
   Widget _conditionChip(String label, Color color) {

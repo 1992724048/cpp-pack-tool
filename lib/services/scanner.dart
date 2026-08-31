@@ -389,7 +389,11 @@ List<FileMapping> _buildLibraryAndDataMappings(
           srcGlob: parent.isEmpty ? '*$ext' : '$parent$pathSeparator*$ext',
           target: target,
           // 仅当显式探测到平台/配置时才填充条件，未探测到则保持空以表示 "全部"。
-          platforms: platform != null ? [platform] : const <String>[],
+          // 当检测到配置但未显式检测到平台时，默认平台为 x64（目标路径也采用 x64 回退），
+          // 同时在 mapping 条件中体现为 platforms=['x64']，避免 UI 展示为“全部”。
+          platforms: platform != null
+              ? [platform]
+              : (config != null ? ['x64'] : const <String>[]),
           configurations: config != null ? [config] : const <String>[],
         ),
       );

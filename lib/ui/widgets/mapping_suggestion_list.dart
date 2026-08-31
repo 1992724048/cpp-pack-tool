@@ -80,14 +80,23 @@ class MappingSuggestionList extends StatelessWidget {
                               ),
                             )
                           else
-                            Wrap(
-                              spacing: AppSpacing.s1,
-                              children: [
-                                for (final p in mapping.platforms)
-                                  _smallChip(p, AppColors.accent),
-                                for (final c in mapping.configurations)
-                                  _smallChip(c, AppColors.warn),
-                              ],
+                            // 使用水平滚动以防超出界面宽度
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: [
+                                  for (final p in mapping.platforms)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: AppSpacing.s1),
+                                      child: _smallChip(p, AppColors.accent),
+                                    ),
+                                  for (final c in mapping.configurations)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: AppSpacing.s1),
+                                      child: _smallChip(c, AppColors.warn),
+                                    ),
+                                ],
+                              ),
                             ),
                         ],
                       ),
