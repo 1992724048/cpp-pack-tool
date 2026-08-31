@@ -365,18 +365,31 @@ List<FileMapping> _buildLibraryAndDataMappings(
     for (final entry in byExt.entries) {
       final ext = entry.key;
       final kind = entry.value;
-      final target = kind == 'executable'
-          ? (config != null
-                ? joinPath(['build', 'native', 'tools', config])
-                : joinPath(['build', 'native', 'tools']))
-          : (config != null
-                ? joinPath(['build', 'native', 'lib', platform, config])
-                : joinPath(['build', 'native', 'lib']));
+      // 平台与配置：platform 可能为 null（未显式包含平台词），config 可能为 null。
+      final target = () {
+        if (kind == 'executable') {
+          if (config != null && platform != null) {
+            return joinPath(['build', 'native', 'tools', platform, config]);
+          }
+          if (config != null) return joinPath(['build', 'native', 'tools', config]);
+          if (platform != null) return joinPath(['build', 'native', 'tools', platform]);
+          return joinPath(['build', 'native', 'tools']);
+        } else {
+          if (config != null) {
+            final platformSeg = platform ?? 'x64';
+            return joinPath(['build', 'native', 'lib', platformSeg, config]);
+          }
+          if (platform != null) return joinPath(['build', 'native', 'lib', platform]);
+          return joinPath(['build', 'native', 'lib']);
+        }
+      }();
+
       mappings.add(
         FileMapping(
           srcGlob: parent.isEmpty ? '*$ext' : '$parent$pathSeparator*$ext',
           target: target,
-          platforms: config != null ? [platform] : const <String>[],
+          // 仅当显式探测到平台/配置时才填充条件，未探测到则保持空以表示 "全部"。
+          platforms: platform != null ? [platform] : const <String>[],
           configurations: config != null ? [config] : const <String>[],
         ),
       );
@@ -386,32 +399,44 @@ List<FileMapping> _buildLibraryAndDataMappings(
 }
 
 /// 从路径段探测配置名（`Debug`/`Release`），无法识别返回 null。
+///
+/// 支持常见复合命名例如 `x64-Release`, `Release-x64`, `debug_x86`, `bin/Debug/net6.0` 等。
 String? _detectConfig(String parentRelPath) {
   if (parentRelPath.isEmpty) return null;
   for (final segment in parentRelPath.split(pathSeparator)) {
     final s = segment.toLowerCase();
-    if (s == 'debug') return 'Debug';
-    if (s == 'release' ||
-        s == 'reldebug' ||
-        s == 'relwithdebinfo' ||
-        s == 'minsizerel' ||
-        s == 'profile') {
+    if (s.contains('debug') || s == 'dbg' || s.contains('dbg_')) return 'Debug';
+    if (s.contains('release') || s.contains('relwithdebinfo') || s.contains('reldebug') || s.contains('minsizerel') || s.contains('profile') || s == 'rel') {
       return 'Release';
     }
+    // 处理类似 x64-debug 或 debug-x64 的复合段
+    final parts = s.split(RegExp('[-_\.]'));
+    if (parts.contains('debug')) return 'Debug';
+    if (parts.contains('release') || parts.contains('relwithdebinfo') || parts.contains('reldebug') || parts.contains('minsizerel')) return 'Release';
   }
   return null;
 }
 
-/// 从路径段探测平台名（`x64`/`x86`/`arm64`），未识别时默认 `x64`。
-String _detectPlatform(String parentRelPath) {
-  if (parentRelPath.isEmpty) return 'x64';
+/// 从路径段探测平台名（`x64`/`x86`/`arm64`），无法识别返回 null（使用 null 表示未显式探测到）。
+///
+/// 支持检测形式：`x64`/`amd64`/`x86_64`/`win64`/`win32`/`x86`/`arm64`/`aarch64`/`arm64-v8a`，
+/// 以及复合命名如 `win-x64`、`x64-Release` 等。
+String? _detectPlatform(String parentRelPath) {
+  if (parentRelPath.isEmpty) return null;
   for (final segment in parentRelPath.split(pathSeparator)) {
     final s = segment.toLowerCase();
-    if (s == 'x64' || s == 'amd64' || s == 'win64') return 'x64';
-    if (s == 'x86' || s == 'win32') return 'x86';
-    if (s == 'arm64') return 'arm64';
+    if (s.contains('x64') || s.contains('amd64') || s.contains('x86_64') || s.contains('win64') || s.contains('windows-x64') || s.contains('win-x64')) return 'x64';
+    if (s.contains('x86') || s.contains('win32') || s == 'ia32') return 'x86';
+    if (s.contains('arm64') || s.contains('aarch64') || s.contains('arm64-v8a') || s.contains('armv8')) return 'arm64';
+    // 复合段拆分后再匹配，例如 'release-x64' 或 'x64-debug'
+    final parts = s.split(RegExp('[-_\.]'));
+    for (final p in parts) {
+      if (p == 'x64' || p == 'amd64' || p == 'x86_64') return 'x64';
+      if (p == 'x86' || p == 'ia32') return 'x86';
+      if (p == 'arm64' || p == 'aarch64') return 'arm64';
+    }
   }
-  return 'x64';
+  return null;
 }
 
 /// 提取小写扩展名（含点），无扩展名返回空串。
