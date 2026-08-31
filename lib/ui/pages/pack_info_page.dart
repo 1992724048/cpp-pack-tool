@@ -254,7 +254,6 @@ class _PackInfoPageState extends State<PackInfoPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SectionTitle(title: '包信息'),
           const SizedBox(height: AppSpacing.s2),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,

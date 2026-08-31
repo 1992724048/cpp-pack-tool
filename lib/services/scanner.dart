@@ -28,6 +28,10 @@ const Set<String> kIgnoredDirectoryNames = {
   'cmakefiles',
 };
 
+const Set<String> kIgnoredFileNames = {
+  '.cpp_nuget_pack.json',
+};
+
 /// 扫描结果：分类后的相对路径列表与建议映射。
 class ScanResult {
   ScanResult({
@@ -78,7 +82,7 @@ class ScanResult {
 /// 当 [dirPath] 不存在或不是目录时抛出 [FileSystemException]。
 ScanResult scanSourceDir(
   String dirPath, {
-  int maxDepth = 4,
+  int maxDepth = 8,
   int maxFilesPerDir = 5000,
 }) {
   final dir = Directory(dirPath);
@@ -226,6 +230,10 @@ void _walk({
     }
 
     if (type == FileSystemEntityType.file) {
+      if (kIgnoredFileNames.contains(name.toLowerCase())) {
+        warnings.add('忽略文件: ${entry.path}');
+        continue;
+      }
       final ext = _extensionOf(name);
       if (kHeaderExtensions.contains(ext)) {
         headers.add(rel);
@@ -357,17 +365,36 @@ List<FileMapping> _buildLibraryAndDataMappings(
     for (final entry in byExt.entries) {
       final ext = entry.key;
       final kind = entry.value;
-      final target = kind == 'executable'
-          ? (config != null
-                ? joinPath(['build', 'native', 'tools', config])
-                : joinPath(['build', 'native', 'tools']))
-          : (config != null
-                ? joinPath(['build', 'native', 'lib', platform, config])
-                : joinPath(['build', 'native', 'lib']));
+      // 平台与配置：platform 可能为 null（未显式包含平台词），config 可能为 null。
+      final target = () {
+        if (kind == 'executable') {
+          if (config != null && platform != null) {
+            return joinPath(['build', 'native', 'tools', platform, config]);
+          }
+          if (config != null) return joinPath(['build', 'native', 'tools', config]);
+          if (platform != null) return joinPath(['build', 'native', 'tools', platform]);
+          return joinPath(['build', 'native', 'tools']);
+        } else {
+          if (config != null) {
+            final platformSeg = platform ?? 'x64';
+            return joinPath(['build', 'native', 'lib', platformSeg, config]);
+          }
+          if (platform != null) return joinPath(['build', 'native', 'lib', platform]);
+          return joinPath(['build', 'native', 'lib']);
+        }
+      }();
+
       mappings.add(
         FileMapping(
           srcGlob: parent.isEmpty ? '*$ext' : '$parent$pathSeparator*$ext',
           target: target,
+          // 仅当显式探测到平台/配置时才填充条件，未探测到则保持空以表示 "全部"。
+          // 当检测到配置但未显式检测到平台时，默认平台为 x64（目标路径也采用 x64 回退），
+          // 同时在 mapping 条件中体现为 platforms=['x64']，避免 UI 展示为“全部”。
+          platforms: platform != null
+              ? [platform]
+              : (config != null ? ['x64'] : const <String>[]),
+          configurations: config != null ? [config] : const <String>[],
         ),
       );
     }
@@ -376,32 +403,44 @@ List<FileMapping> _buildLibraryAndDataMappings(
 }
 
 /// 从路径段探测配置名（`Debug`/`Release`），无法识别返回 null。
+///
+/// 支持常见复合命名例如 `x64-Release`, `Release-x64`, `debug_x86`, `bin/Debug/net6.0` 等。
 String? _detectConfig(String parentRelPath) {
   if (parentRelPath.isEmpty) return null;
   for (final segment in parentRelPath.split(pathSeparator)) {
     final s = segment.toLowerCase();
-    if (s == 'debug') return 'Debug';
-    if (s == 'release' ||
-        s == 'reldebug' ||
-        s == 'relwithdebinfo' ||
-        s == 'minsizerel' ||
-        s == 'profile') {
+    if (s.contains('debug') || s == 'dbg' || s.contains('dbg_')) return 'Debug';
+    if (s.contains('release') || s.contains('relwithdebinfo') || s.contains('reldebug') || s.contains('minsizerel') || s.contains('profile') || s == 'rel') {
       return 'Release';
     }
+    // 处理类似 x64-debug 或 debug-x64 的复合段
+    final parts = s.split(RegExp('[-_\.]'));
+    if (parts.contains('debug')) return 'Debug';
+    if (parts.contains('release') || parts.contains('relwithdebinfo') || parts.contains('reldebug') || parts.contains('minsizerel')) return 'Release';
   }
   return null;
 }
 
-/// 从路径段探测平台名（`x64`/`x86`/`arm64`），未识别时默认 `x64`。
-String _detectPlatform(String parentRelPath) {
-  if (parentRelPath.isEmpty) return 'x64';
+/// 从路径段探测平台名（`x64`/`x86`/`arm64`），无法识别返回 null（使用 null 表示未显式探测到）。
+///
+/// 支持检测形式：`x64`/`amd64`/`x86_64`/`win64`/`win32`/`x86`/`arm64`/`aarch64`/`arm64-v8a`，
+/// 以及复合命名如 `win-x64`、`x64-Release` 等。
+String? _detectPlatform(String parentRelPath) {
+  if (parentRelPath.isEmpty) return null;
   for (final segment in parentRelPath.split(pathSeparator)) {
     final s = segment.toLowerCase();
-    if (s == 'x64' || s == 'amd64' || s == 'win64') return 'x64';
-    if (s == 'x86' || s == 'win32') return 'x86';
-    if (s == 'arm64') return 'arm64';
+    if (s.contains('x64') || s.contains('amd64') || s.contains('x86_64') || s.contains('win64') || s.contains('windows-x64') || s.contains('win-x64')) return 'x64';
+    if (s.contains('x86') || s.contains('win32') || s == 'ia32') return 'x86';
+    if (s.contains('arm64') || s.contains('aarch64') || s.contains('arm64-v8a') || s.contains('armv8')) return 'arm64';
+    // 复合段拆分后再匹配，例如 'release-x64' 或 'x64-debug'
+    final parts = s.split(RegExp('[-_\.]'));
+    for (final p in parts) {
+      if (p == 'x64' || p == 'amd64' || p == 'x86_64') return 'x64';
+      if (p == 'x86' || p == 'ia32') return 'x86';
+      if (p == 'arm64' || p == 'aarch64') return 'arm64';
+    }
   }
-  return 'x64';
+  return null;
 }
 
 /// 提取小写扩展名（含点），无扩展名返回空串。
@@ -451,20 +490,73 @@ List<FileMapping> mergeMappingConditions(
   List<FileMapping> oldMappings,
   List<FileMapping> newMappings,
 ) {
+  // Build quick lookup maps: by full normalized key (srcGlob|fileKind) and by normalized glob alone.
+  final oldByKey = <String, FileMapping>{};
   final oldByGlob = <String, FileMapping>{};
   for (final mapping in oldMappings) {
+    oldByKey[_mappingKey(mapping)] = mapping;
     oldByGlob[normalizeMappingGlob(mapping.srcGlob)] = mapping;
   }
+
   return [
     for (final mapping in newMappings)
-      mapping.copyWith(
-        platforms:
-            oldByGlob[normalizeMappingGlob(mapping.srcGlob)]?.platforms ??
-            const <String>[],
-        configurations:
-            oldByGlob[normalizeMappingGlob(mapping.srcGlob)]?.configurations ??
-            const <String>[],
-      ),
+      (() {
+        final key = _mappingKey(mapping);
+        final glob = normalizeMappingGlob(mapping.srcGlob);
+
+        // 1) Try exact key match (srcGlob + fileKind)
+        var matched = oldByKey[key];
+        // 2) Fallback to exact glob-only match
+        matched ??= oldByGlob[glob];
+
+        // 3) Heuristic fallback: choose the best matching old mapping by score.
+        //    Scoring: exact target match +50, exact glob +100, common suffix segments *10.
+        if (matched == null) {
+          int bestScore = 0;
+          FileMapping? best;
+          final newSegments = glob.split(pathSeparator);
+          for (final old in oldMappings) {
+            final oldGlob = normalizeMappingGlob(old.srcGlob);
+            int score = 0;
+            if (old.target == mapping.target) score += 50;
+            if (oldGlob == glob) score += 100;
+            // common suffix segments
+            final oldSegs = oldGlob.split(pathSeparator);
+            var i = 1;
+            var common = 0;
+            while (i <= oldSegs.length && i <= newSegments.length) {
+              if (oldSegs[oldSegs.length - i] == newSegments[newSegments.length - i]) {
+                common++;
+                i++;
+                continue;
+              }
+              break;
+            }
+            score += common * 10;
+            if (score > bestScore) {
+              bestScore = score;
+              best = old;
+            }
+          }
+          // Accept only when score is meaningful (>=20) to avoid matching overly generic globs like '*.lib'.
+          if (bestScore >= 20) matched = best;
+        }
+
+        // Preserve scanner-detected values when present; only copy from the matched
+        // old mapping if the new mapping left the field empty. This avoids
+        // inheriting broad combined configs (Debug+Release) from a generic old mapping.
+        final platformsToUse = (mapping.platforms != null && mapping.platforms.isNotEmpty)
+            ? mapping.platforms
+            : (matched?.platforms ?? const <String>[]);
+        final configsToUse = (mapping.configurations != null && mapping.configurations.isNotEmpty)
+            ? mapping.configurations
+            : (matched?.configurations ?? const <String>[]);
+
+        return mapping.copyWith(
+          platforms: platformsToUse,
+          configurations: configsToUse,
+        );
+      })(),
   ];
 }
 

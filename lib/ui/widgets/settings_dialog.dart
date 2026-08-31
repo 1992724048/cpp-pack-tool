@@ -67,6 +67,10 @@ class _SettingsDialogState extends State<SettingsDialog> {
       ),
       actions: [
         TextButton(
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.textSemantic,
+            minimumSize: Size(67, 36),
+          ),
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('取消'),
         ),
@@ -84,7 +88,17 @@ class _SettingsDialogState extends State<SettingsDialog> {
         readOnly: true,
         decoration: const InputDecoration(hintText: '未设置'),
       ),
-      button: TextButton(onPressed: _browseOutput, child: const Text('浏览')),
+      button: TextButton(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.textSemantic,
+          minimumSize: Size(67, 36),
+        ),
+        onPressed: _browseOutput,
+        child: const Text(
+          '浏览',
+          style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+        ),
+      ),
     );
   }
 
@@ -105,8 +119,28 @@ class _SettingsDialogState extends State<SettingsDialog> {
       button: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextButton(onPressed: _autoDetect, child: const Text('自动检测')),
-          TextButton(onPressed: _browseNuget, child: const Text('浏览')),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSemantic,
+              minimumSize: Size(67, 36),
+            ),
+            onPressed: _autoDetect,
+            child: const Text(
+              '自动检测',
+              style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.textSemantic,
+              minimumSize: Size(67, 36),
+            ),
+            onPressed: _browseNuget,
+            child: const Text(
+              '浏览',
+              style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),
+            ),
+          ),
         ],
       ),
     );

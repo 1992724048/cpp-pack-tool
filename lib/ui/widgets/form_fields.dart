@@ -66,7 +66,7 @@ TextStyle monoTextStyle({
   return TextStyle(
     color: color,
     fontSize: fontSize,
-    fontFamily: AppFonts.mono,
+    fontFamily: 'HarmonyOS_Sans_SC',
     fontFamilyFallback: AppFonts.monoFallback,
   );
 }

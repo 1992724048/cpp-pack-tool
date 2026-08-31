@@ -19,6 +19,7 @@ library;
 import '../models/pack_project.dart';
 import 'nuspec_generator.dart';
 import 'path_utils.dart';
+import 'dart:io';
 
 /// 将任意输入消毒为可安全用作 MSBuild 属性名/目标名的标识符：
 /// 非字母数字下划线替换为 `_`；空则回退 `Pkg`；数字开头加 `_` 前缀。
@@ -119,22 +120,81 @@ String generateTargets(PackProject project) {
   final usedIds = <String>{};
   _appendInjectedSources(sb, project, prefix, usedIds);
 
-  // 链接级元数据：库路径 + 依赖（仅当匹配到有效的 LibDir 时应用）。
-  sb.writeln(
-    '  <ItemDefinitionGroup Condition="\'\$(${prefix}_LibDir)\' != \'\'">',
-  );
-  sb.writeln('    <Link>');
-  sb.writeln(
-    '      <AdditionalLibraryDirectories>'
-    '\$(${prefix}_LibDir);${_semis(compile.additionalLibraryDirectories)}'
-    '%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
-  );
-  sb.writeln(
-    '      <AdditionalDependencies>${_semis(compile.additionalDependencies)}'
-    '%(AdditionalDependencies)</AdditionalDependencies>',
-  );
-  sb.writeln('    </Link>');
-  sb.writeln('  </ItemDefinitionGroup>');
+  // 链接级元数据：为每个 platform/config 生成条件化的 AdditionalLibraryDirectories
+  // 与 AdditionalDependencies。Important: Visual Studio 的 AdditionalDependencies
+  // 期望只包含库文件名（不带路径），因此需列出库基名；路径由
+  // AdditionalLibraryDirectories（即 ${prefix}_LibDir）提供。
+  // Collect mapping-derived library basenames per platform/config.
+  // Build a map of concrete static library basenames per platform|config by
+  // expanding srcGlobs against the sourceDir.path on disk when globs are used.
+  final libMap = <String, List<String>>{};
+  for (final platform in project.platforms) {
+    for (final config in project.configurations) {
+      libMap['$platform|${config.toLowerCase()}'] = [];
+    }
+  }
+  for (final sourceDir in project.sourceDirs) {
+    for (final mapping in sourceDir.mappings) {
+      final kind = mapping.fileKind;
+      if (kind == 'staticLibrary') {
+        // Expand the srcGlob into actual filenames (basenames). If the mapping is
+        // a literal filename, this returns that name; if it's a glob, it scans the
+        // sourceDir.path and returns matches.
+        final names = _expandBasenames(sourceDir.path, mapping.srcGlob);
+        for (final name in names) {
+          for (final platform in project.platforms) {
+            for (final config in project.configurations) {
+              final platformMatch = mapping.platforms.isEmpty || mapping.platforms.contains(platform);
+              final configMatch = mapping.configurations.isEmpty || mapping.configurations.contains(config);
+              if (platformMatch && configMatch) {
+                libMap['$platform|${config.toLowerCase()}']!.add(name);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (final platform in project.platforms) {
+    for (final config in project.configurations) {
+      final key = '$platform|${config.toLowerCase()}';
+      final libs = libMap[key] ?? [];
+      final condition = "'\$(Platform)' == '${xmlEscape(platform)}' and '\$(Configuration.ToLower())' == '${config.toLowerCase()}'"
+          " and '\$(${prefix}_LibDir)' != ''";
+      sb.writeln('  <ItemDefinitionGroup Condition="$condition">');
+      sb.writeln('    <Link>');
+      sb.writeln(
+        '      <AdditionalLibraryDirectories>'
+        '\$(${prefix}_LibDir);${_semis(compile.additionalLibraryDirectories)}'
+        '%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+      );
+      if (libs.isNotEmpty) {
+        // Deduplicate while preserving order
+        final seen = <String>{};
+        final unique = <String>[];
+        for (final l in libs) {
+          if (!seen.contains(l)) {
+            seen.add(l);
+            unique.add(l);
+          }
+        }
+        final joined = unique.map(xmlEscape).join(';');
+        final deps = joined.isEmpty
+            ? _semis(compile.additionalDependencies)
+            : '$joined;${_semis(compile.additionalDependencies)}';
+        sb.writeln(
+          '      <AdditionalDependencies>${deps}%(AdditionalDependencies)</AdditionalDependencies>',
+        );
+      } else {
+        sb.writeln(
+          '      <AdditionalDependencies>${_semis(compile.additionalDependencies)}%(AdditionalDependencies)</AdditionalDependencies>',
+        );
+      }
+      sb.writeln('    </Link>');
+      sb.writeln('  </ItemDefinitionGroup>');
+    }
+  }
 
   _appendHardlinkTargets(sb, project, prefix, usedIds);
   _appendCommandTargets(sb, project, prefix);
@@ -249,37 +309,41 @@ void _appendHardlinkTargets(
   String prefix,
   Set<String> usedIds,
 ) {
-  final hardlinkMappings = <FileMapping>[];
+  final hardlinkMappings = <MapEntry<SourceDir, FileMapping>>[];
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final kind = mapping.fileKind;
       if (kind == 'data' || kind == 'dynamicLibrary' || kind == 'executable') {
-        hardlinkMappings.add(mapping);
+        hardlinkMappings.add(MapEntry(sourceDir, mapping));
       }
     }
   }
   if (hardlinkMappings.isEmpty) return;
 
-  for (final mapping in hardlinkMappings) {
-    final fileName = basenameOf(mapping.srcGlob);
-    final fileId = _uniqueFileId(fileName, usedIds);
-    final dst = '\$(OutDir)\\${xmlEscape(fileName)}';
-    final src = _hardlinkSource(mapping.target, fileName);
-    sb.writeln(
-      '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
-      "Condition=\"'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
-    );
-    sb.writeln(
-      '    <Exec Command="cmd /c mklink /H &quot;$dst&quot; &quot;$src&quot; 2&gt;nul '
-      '|| copy /y &quot;$src&quot; &quot;$dst&quot; &gt;nul" '
-      "Condition=\"!Exists('$dst')\" />",
-    );
-    sb.writeln('    <PropertyGroup>');
-    sb.writeln(
-      '      <${prefix}_${fileId}_Copied>true</${prefix}_${fileId}_Copied>',
-    );
-    sb.writeln('    </PropertyGroup>');
-    sb.writeln('  </Target>');
+  for (final entry in hardlinkMappings) {
+    final sourceDir = entry.key;
+    final mapping = entry.value;
+    final names = _expandBasenames(sourceDir.path, mapping.srcGlob);
+    if (names.isEmpty) continue;
+    for (final fileName in names) {
+      final fileId = _uniqueFileId(fileName, usedIds);
+      final dst = '\$(OutDir)\\${xmlEscape(fileName)}';
+      final src = _hardlinkSource(mapping.target, fileName);
+      sb.writeln(
+        '  <Target Name="${prefix}Copy$fileId" BeforeTargets="Build" '
+        "Condition=\"'\$(${prefix}_${fileId}_Copied)' != 'true'\">",
+      );
+      sb.writeln(
+        '    <Exec Command="cmd /c mklink /H &quot;$dst&quot; &quot;$src&quot; 2&gt;nul || copy /y &quot;$src&quot; &quot;$dst&quot; &gt;nul" '
+        "Condition=\"!Exists('$dst')\" />",
+      );
+      sb.writeln('    <PropertyGroup>');
+      sb.writeln(
+        '      <${prefix}_${fileId}_Copied>true</${prefix}_${fileId}_Copied>',
+      );
+      sb.writeln('    </PropertyGroup>');
+      sb.writeln('  </Target>');
+    }
   }
 }
 
@@ -428,6 +492,49 @@ String _hardlinkSource(String target, String fileName) {
   return '\$(MSBuildThisFileDirectory)..\\..\\$t\\$fileName';
 }
 
+/// Expand a srcGlob relative to [basePath] into concrete basenames.
+/// If [srcGlob] contains no glob tokens, returns its basename directly.
+List<String> _expandBasenames(String basePath, String srcGlob) {
+  final s = srcGlob.trim();
+  if (s.isEmpty) return [];
+  if (!s.contains('*') && !s.contains('?')) {
+    return [basenameOf(s)];
+  }
+  try {
+    final base = Directory(basePath);
+    if (!base.existsSync()) return [basenameOf(s)];
+    // Normalize separators for pattern and file paths
+    final pattern = s.replaceAll('\\', '/');
+    final regex = _globToRegExp(pattern);
+    final results = <String>[];
+    for (final ent in base.listSync(recursive: true, followLinks: false)) {
+      if (ent is File) {
+        final rel = ent.path.replaceAll('\\', '/');
+        var relPath = rel;
+        if (relPath.startsWith(base.path.replaceAll('\\', '/'))) {
+          relPath = relPath.substring(base.path.length + (base.path.endsWith('\\') || base.path.endsWith('/') ? 0 : 1));
+        }
+        if (regex.hasMatch(relPath)) {
+          results.add(basenameOf(relPath));
+        }
+      }
+    }
+    return results;
+  } catch (e) {
+    return [basenameOf(s)];
+  }
+}
+
+RegExp _globToRegExp(String pattern) {
+  // Escape regex special chars, then replace glob tokens
+  final escaped = RegExp.escape(pattern);
+  final replaced = escaped
+      .replaceAll('\\*', '.*')
+      .replaceAll('\\?', '.')
+      .replaceAll('\\/', '\\/');
+  return RegExp('^$replaced\$');
+}
+
 /// 计算某配置下的预处理宏值（全局宏 + 配置宏 + `%(PreprocessorDefinitions)`）。
 String _buildDefines(CompileConfig compile, String config) {
   final globalDefines = compile.preprocessorDefines;
@@ -447,18 +554,33 @@ String _buildDefines(CompileConfig compile, String config) {
 /// - 用户显式附加目录（[CompileConfig.additionalIncludeDirectories]）中的**宏/绝对路径**
 ///   原样输出（不剥斜杠、不加前缀），其余相对目录也原样输出（保持既有语义）。
 String _buildIncludeDirs(PackProject project, CompileConfig compile) {
-  final dirs = <String>['include'];
+  // Collect mapping-derived include subpaths + default 'include'. Preserve
+  // insertion order and avoid duplicates.
+  final dirs = <String>[];
+  void addDir(String d) {
+    if (d.trim().isEmpty) return;
+    if (!dirs.contains(d)) dirs.add(d);
+  }
+  addDir('include');
   for (final sourceDir in project.sourceDirs) {
     for (final mapping in sourceDir.mappings) {
       final sub = _includeSubPath(mapping);
-      if (sub != null) dirs.add(sub);
+      if (sub != null) addDir(sub);
     }
   }
-  final parts = <String>[
-    for (final dir in dirs) _relativeIncludeRef(dir),
-    ..._splitVerbatimSemis(compile.additionalIncludeDirectories),
-    '%(AdditionalIncludeDirectories)',
-  ];
+
+  final parts = <String>[];
+  for (final d in dirs) {
+    parts.add(_relativeIncludeRef(d));
+  }
+  // User-specified additional include directories: preserve verbatim tokens
+  // (macros/absolute paths) and relative paths as provided.
+  final userAdds = _splitVerbatimSemis(compile.additionalIncludeDirectories);
+  for (final u in userAdds) {
+    if (u.trim().isEmpty) continue;
+    parts.add(u);
+  }
+  parts.add('%(AdditionalIncludeDirectories)');
   return _joinSemis(parts);
 }
 
@@ -468,6 +590,9 @@ String _buildIncludeDirs(PackProject project, CompileConfig compile) {
 /// `$(MSBuildThisFileDirectory)` 前缀并去除尾部斜杠。
 String _relativeIncludeRef(String dir) {
   if (_isVerbatimValue(dir)) return dir;
+  // Concatenate without an extra backslash so the MSBuild variable and the
+  // `include` segment form a single path token as expected by our tests
+  // (e.g. '$(MSBuildThisFileDirectory)include\v8').
   return '\$(MSBuildThisFileDirectory)${_stripTrailingSlash(dir)}';
 }
 

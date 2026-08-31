@@ -63,11 +63,17 @@ class _LogPanelState extends State<LogPanel> {
           TextButton.icon(
             onPressed: _handleClear,
             icon: const Icon(Icons.delete_outline, size: 14),
-            label: const Text('清空'),
+            label: const Text(
+              '清空',
+              style: TextStyle(
+                color: AppColors.error,
+                fontFamily: 'HarmonyOS_Sans_SC',
+              ),
+            ),
             style: TextButton.styleFrom(
               foregroundColor: AppColors.error,
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.s1),
-              minimumSize: const Size(0, 24),
+              minimumSize: const Size(67, 35),
               textStyle: const TextStyle(fontSize: AppFontSizes.small),
             ),
           ),
@@ -109,10 +115,6 @@ class _LogPanelState extends State<LogPanel> {
           }
           return ListView.builder(
             reverse: true,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.s2,
-              vertical: AppSpacing.sm,
-            ),
             itemCount: entries.length,
             itemBuilder: (context, index) => _row(entries[index]),
           );
@@ -140,7 +142,7 @@ class _LogPanelState extends State<LogPanel> {
             style: const TextStyle(
               color: AppColors.textSemantic,
               fontSize: AppFontSizes.caption,
-              fontFamily: AppFonts.mono,
+              fontFamily: 'HarmonyOS_Sans_SC',
               fontFamilyFallback: AppFonts.monoFallback,
             ),
           ),
@@ -153,7 +155,7 @@ class _LogPanelState extends State<LogPanel> {
                 color: color,
                 fontSize: AppFontSizes.caption,
                 fontWeight: FontWeight.w600,
-                fontFamily: AppFonts.mono,
+                fontFamily: 'HarmonyOS_Sans_SC',
                 fontFamilyFallback: AppFonts.monoFallback,
               ),
             ),
@@ -164,7 +166,7 @@ class _LogPanelState extends State<LogPanel> {
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: AppFontSizes.caption,
-                fontFamily: AppFonts.mono,
+                fontFamily: 'HarmonyOS_Sans_SC',
                 fontFamilyFallback: AppFonts.monoFallback,
                 height: 1.5,
               ),

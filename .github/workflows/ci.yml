@@ -2,112 +2,87 @@ name: CI/CD
 
 on:
   push:
-    branches: [dev, master]
-    tags: ['v*']
-  pull_request:
-    branches: [dev, master]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release 版本号（如 1.0.0；留空用日期）'
-        required: false
-        default: ''
-      publish:
-        description: '是否发布 Release 与 上传资产（手动触发需要显式同意，默认 false）'
-        required: false
-        default: 'false'
+    branches: [master]
 
 permissions:
   contents: write
   packages: write
-  actions: read
+  actions: write
 
 jobs:
-  ci:
-    name: 分析与测试
+  build-and-release:
+    name: Build, Test and Release (on push to master)
     runs-on: windows-latest
     steps:
-      - name: 检出代码
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 安装 Flutter
+      - name: Cache Pub packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: 获取依赖
-        run: flutter pub get
-
-      - name: 静态分析
-        run: flutter analyze
-
-      - name: 单元与组件测试
-        run: flutter test
-
-      - name: 构建 Windows Release
-        run: flutter build windows --release
-
-      - name: 上传构建产物（调试留存）
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpp-nuget-pack-windows-${{ github.sha }}
-          path: build/windows/x64/runner/Release
-          if-no-files-found: error
-
-  release:
-    name: 发布 Release
-    runs-on: windows-latest
-    needs: ci
-    # 仅在 tag（refs/tags/v*）或者手动触发且 publish=true 时运行
-    if: >
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true')
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: 获取依赖
-        run: flutter pub get
-
-      - name: 构建 Windows Release
-        run: flutter build windows --release
-
-      - name: 打包为 zip 并导出路径/版本到 env
+      - name: Get version from pubspec.yaml
         shell: pwsh
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            if ("${{ github.event.inputs.version }}" -ne "") {
-              $version = "${{ github.event.inputs.version }}"
-            } else {
-              $version = (Get-Date -Format "yyyyMMdd")
-            }
+          $line = Get-Content pubspec.yaml | Select-String -Pattern '^\s*version\s*:' | Select-Object -First 1
+          if ($line) {
+            $ver = ($line.ToString() -replace '^\s*version\s*:\s*','').Trim()
+            $ver = $ver.Split('+')[0]
+            $ver = $ver.Trim("'\"")
+          } else { $ver = (Get-Date -Format 'yyyyMMddHHmmss') }
+          Write-Output "VERSION=$ver" >> $env:GITHUB_ENV
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Zip x86_64 build artifacts and set env
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $out_x64 = "dist/cpp_nuget_pack-${{ env.VERSION }}-win-x86_64.zip"
+          if (Test-Path $out_x64) { Remove-Item $out_x64 -Force }
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out_x64 -CompressionLevel Optimal
+          Write-Output "ASSET_PATH_X64=$out_x64" >> $env:GITHUB_ENV
+
+      - name: Build Windows ARM64 Release
+        run: flutter build windows --release --target-platform=windows-arm64
+        continue-on-error: false
+
+      - name: Zip arm64 build artifacts and set env
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $out_arm = "dist/cpp_nuget_pack-${{ env.VERSION }}-win-arm64.zip"
+          if (Test-Path $out_arm) { Remove-Item $out_arm -Force }
+          if (Test-Path build/windows/arm64/runner/Release) {
+            Compress-Archive -Path build/windows/arm64/runner/Release/* -DestinationPath $out_arm -CompressionLevel Optimal
+            Write-Output "ASSET_PATH_ARM64=$out_arm" >> $env:GITHUB_ENV
           } else {
-            # 当由 tag 触发时，github.ref_name 是 tag 名称（例如 v1.2.3）
-            $version = "${{ github.ref_name }}".TrimStart('v')
+            Write-Output "ASSET_PATH_ARM64=" >> $env:GITHUB_ENV
+            Write-Output "ARM64_BUILD_MISSING=true" >> $env:GITHUB_ENV
           }
 
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $out = "dist/cpp_nuget_pack-$version-windows-x64.zip"
-          if (Test-Path $out) { Remove-Item $out -Force }
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out -CompressionLevel Optimal
-
-          # 将变量导出为后续 steps 可用的环境变量
-          Write-Output "VERSION=$version" >> $env:GITHUB_ENV
-          Write-Output "ASSET_PATH=$out" >> $env:GITHUB_ENV
-
-      - name: 显示打包信息
-        run: |
-          echo "Will create release for tag: v${{ env.VERSION }}"
-          echo "Asset path: ${{ env.ASSET_PATH }}"
-
-      - name: 创建 GitHub Release 并上传资产
+      - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
@@ -115,10 +90,13 @@ jobs:
           body: |
             ## cpp_nuget_pack v${{ env.VERSION }}
 
-            基于 GitHub Actions 自动构建的 Windows x64 Release 版本。
+            自动在 master 分支推送触发的 Release，版本来自 pubspec.yaml。
 
-            - 含完整运行时（exe + data + 依赖），解压后直接运行
-            - 构建链路：`flutter analyze`（0 issues）→ `flutter test`（全部通过）→ `flutter build windows --release`
+            - Windows x86_64 Release 构建
+            - Windows arm64 Release 构建（若 runner 支持）
+            - 包含运行产物，解压后即可运行
           draft: false
           prerelease: false
-          files: ${{ env.ASSET_PATH }}
+          files: |
+            ${{ env.ASSET_PATH_X64 }}
+            ${{ env.ASSET_PATH_ARM64 }}
