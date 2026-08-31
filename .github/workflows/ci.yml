@@ -64,23 +64,6 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out_x64 -CompressionLevel Optimal
           ('ASSET_PATH_X64=' + $out_x64) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Build Windows ARM64 Release
-        run: flutter build windows --release --target-platform=windows-arm64
-        continue-on-error: false
-
-      - name: Zip arm64 build artifacts and set env
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $out_arm = "dist/cpp_nuget_pack-${{ env.VERSION }}-win-arm64.zip"
-          if (Test-Path $out_arm) { Remove-Item $out_arm -Force }
-          if (Test-Path build/windows/arm64/runner/Release) {
-            Compress-Archive -Path build/windows/arm64/runner/Release/* -DestinationPath $out_arm -CompressionLevel Optimal
-            ('ASSET_PATH_ARM64=' + $out_arm) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          } else {
-            ('ASSET_PATH_ARM64=') | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-            ('ARM64_BUILD_MISSING=true') | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          }
 
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
@@ -93,10 +76,8 @@ jobs:
             自动在 master 分支推送触发的 Release，版本来自 pubspec.yaml。
 
             - Windows x86_64 Release 构建
-            - Windows arm64 Release 构建（若 runner 支持）
             - 包含运行产物，解压后即可运行
           draft: false
           prerelease: false
           files: |
             ${{ env.ASSET_PATH_X64 }}
-            ${{ env.ASSET_PATH_ARM64 }}
