@@ -62,9 +62,34 @@ class MappingSuggestionList extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(mapping.srcGlob, style: monoTextStyle()),
-                      Text(
-                        '→ ${mapping.target}',
-                        style: monoTextStyle(color: AppColors.textSemantic),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '→ ${mapping.target}',
+                              style: monoTextStyle(color: AppColors.textSemantic),
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.s1),
+                          if (mapping.platforms.isEmpty && mapping.configurations.isEmpty)
+                            Text(
+                              '全部',
+                              style: const TextStyle(
+                                color: AppColors.textSemantic,
+                                fontSize: AppFontSizes.small,
+                              ),
+                            )
+                          else
+                            Wrap(
+                              spacing: AppSpacing.s1,
+                              children: [
+                                for (final p in mapping.platforms)
+                                  _smallChip(p, AppColors.accent),
+                                for (final c in mapping.configurations)
+                                  _smallChip(c, AppColors.warn),
+                              ],
+                            ),
+                        ],
                       ),
                     ],
                   ),
@@ -76,6 +101,18 @@ class MappingSuggestionList extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  Widget _smallChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: color),
+      ),
+      child: Text(label, style: TextStyle(color: color, fontSize: AppFontSizes.small)),
     );
   }
 }

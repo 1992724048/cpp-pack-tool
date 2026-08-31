@@ -376,6 +376,43 @@ class _MappingRowState extends State<_MappingRow> {
     return parts.join(' · ');
   }
 
+  Widget _buildConditionChips() {
+    final platforms = widget.mapping.platforms;
+    final configs = widget.mapping.configurations;
+    if (platforms.isEmpty && configs.isEmpty) {
+      return Text(
+        '全部',
+        style: const TextStyle(
+          color: AppColors.textSemantic,
+          fontSize: AppFontSizes.small,
+        ),
+      );
+    }
+    final chips = <Widget>[];
+    for (final p in platforms) {
+      chips.add(_conditionChip(p, AppColors.accent));
+    }
+    for (final c in configs) {
+      chips.add(_conditionChip(c, AppColors.warn));
+    }
+    return Wrap(spacing: AppSpacing.s1, children: chips);
+  }
+
+  Widget _conditionChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.bgSurface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: AppFontSizes.small),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -411,15 +448,13 @@ class _MappingRowState extends State<_MappingRow> {
               ),
             ),
             Expanded(
-              flex: 2,
-              child: Text(
-                _condition,
-                style: const TextStyle(
-                  color: AppColors.textSemantic,
-                  fontSize: AppFontSizes.small,
-                ),
-              ),
+             flex: 2,
+             child: Align(
+               alignment: Alignment.centerLeft,
+               child: _buildConditionChips(),
+             ),
             ),
+
             SizedBox(
               width: 88,
               child: Row(
@@ -545,16 +580,16 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
   /// 顶部分组工具条：扫描目录 / 手动输入 模式切换（与打包页模式切换一致的 SegmentedButton）。
   Widget _modeBar() {
     return SegmentedButton<_AddMappingMode>(
-      segments: const [
+      segments: [
         ButtonSegment(
           value: _AddMappingMode.scan,
-          label: Text('扫描目录'),
-          icon: Icon(Icons.folder_open, size: 16),
+          label: Text('扫描目录', style: monoTextStyle()),
+          icon: const Icon(Icons.folder_open, size: 16),
         ),
         ButtonSegment(
           value: _AddMappingMode.manual,
-          label: Text('手动输入'),
-          icon: Icon(Icons.edit_outlined, size: 16),
+          label: Text('手动输入', style: monoTextStyle()),
+          icon: const Icon(Icons.edit_outlined, size: 16),
         ),
       ],
       selected: <_AddMappingMode>{_mode},
@@ -617,9 +652,10 @@ class _MappingEditDialogState extends State<MappingEditDialog> {
             ),
             const SizedBox(width: AppSpacing.s1),
             OutlinedButton.icon(
+              style: TextButton.styleFrom(minimumSize: Size(67, 35)),
               onPressed: _pickAndScan,
               icon: const Icon(Icons.folder_open, size: 16),
-              label: const Text('浏览'),
+              label: const Text('浏览', style: TextStyle(fontFamily: 'HarmonyOS_Sans_SC'),),
             ),
           ],
         ),
