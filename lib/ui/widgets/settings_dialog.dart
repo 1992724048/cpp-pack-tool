@@ -62,6 +62,22 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 fontSize: AppFontSizes.caption,
               ),
             ),
+            const SizedBox(height: AppSpacing.s2),
+            const SelectableText(
+              '作者: 遂沫 (issuimo.com)',
+              style: TextStyle(
+                color: AppColors.textSemantic,
+                fontSize: AppFontSizes.caption,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            const SelectableText(
+              '仓库地址： https://github.com/1992724048/cpp-pack-tool',
+              style: TextStyle(
+                color: AppColors.textSemantic,
+                fontSize: AppFontSizes.caption,
+              ),
+            ),
           ],
         ),
       ),
