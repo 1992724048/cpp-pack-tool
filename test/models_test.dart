@@ -183,6 +183,7 @@ void main() {
       expect(FileMapping(srcGlob: 'a.h').fileKind, 'header');
       expect(FileMapping(srcGlob: 'a.hpp').fileKind, 'header');
       expect(FileMapping(srcGlob: 'a.hxx').fileKind, 'header');
+      expect(FileMapping(srcGlob: 'a.inl').fileKind, 'header');
       expect(FileMapping(srcGlob: 'a.cpp').fileKind, 'source');
       expect(FileMapping(srcGlob: 'a.cc').fileKind, 'source');
       expect(FileMapping(srcGlob: 'a.c').fileKind, 'source');

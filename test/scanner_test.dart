@@ -41,6 +41,7 @@ void main() {
   test('按扩展名分类并生成建议映射（含忽略生成目录）', () {
     makeFile('v8.h');
     makeFile('v8-internal.hxx');
+    makeFile('inline/details.inl');
     makeFile('cppgc/gc.h');
     makeFile('lib/x64/Debug/v8_monolith.lib');
     makeFile('lib/x64/Release/v8_monolith.lib');
@@ -60,7 +61,7 @@ void main() {
 
     expect(
       result.headers,
-      unorderedEquals(['v8.h', 'v8-internal.hxx', r'cppgc\gc.h']),
+      unorderedEquals(['v8.h', 'v8-internal.hxx', r'inline\details.inl', r'cppgc\gc.h']),
     );
     expect(
       result.libraries,
@@ -96,6 +97,7 @@ void main() {
     // 头文件：按父目录簇分组，按扩展名各生成一条 glob（目标为最终 #include 路径）。
     expect(globs, contains(r'*.h -> v8'));
     expect(globs, contains(r'*.hxx -> v8'));
+    expect(globs, contains(r'inline\*.inl -> v8\inline'));
     expect(globs, contains(r'cppgc\*.h -> v8\cppgc'));
     // 库文件：按配置识别，映射到平台×配置目录。
     expect(

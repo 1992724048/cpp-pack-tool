@@ -12,7 +12,10 @@ library;
 final RegExp _nugetIdPattern = RegExp(r'^\w+([._-]\w+)*$');
 
 /// 头文件扩展名（[FileMapping.fileKind] == 'header'）。
-const Set<String> kHeaderExtensions = {'.h', '.hpp', '.hh', '.hxx'};
+///
+/// `.inl` 常用于 C++ 内联函数/模板实现，和 `.h`/`.hpp` 一样应被视为头部
+/// 依赖并打包到 `build\native\include\...` 路径下。
+const Set<String> kHeaderExtensions = {'.h', '.hpp', '.hh', '.hxx', '.inl'};
 
 /// 源码文件扩展名（[FileMapping.fileKind] == 'source'）。
 ///
