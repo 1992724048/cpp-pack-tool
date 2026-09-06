@@ -1,80 +1,81 @@
-﻿import 'package:cpp_nuget_pack/pack_list.dart';
-import 'package:cpp_nuget_pack/pack_manage.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_mdi_icons/flutter_mdi_icons.dart';
+﻿import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/util/svgs.dart';
+import 'package:cpp_nuget_pack/widgets/library_card.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+
+import 'Controls/pack_list.dart';
 
 void main() {
   runApp(const PackTool());
 }
-
-ValueNotifier<ThemeMode> _themeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
 
 class PackTool extends StatelessWidget {
   const PackTool({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: _themeNotifier,
-      builder: (context, themeMode, child) {
-        return MaterialApp(
-          title: 'C++ Pack Tool',
-          themeMode: themeMode,
-          theme: ThemeData(
-            fontFamily: 'Roboto',
-            fontFamilyFallback: ['HarmonyOS_Sans_SC', 'Noto Sans', 'Arial', 'sans-serif'],
-            brightness: Brightness.light,
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.light),
-          ),
-          darkTheme: ThemeData(
-            fontFamily: 'Roboto',
-            fontFamilyFallback: ['HarmonyOS_Sans_SC', 'Noto Sans', 'Arial', 'sans-serif'],
-            brightness: Brightness.dark,
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, brightness: Brightness.dark),
-          ),
-          home: const MainLayout(),
-        );
-      },
-    );
+    return FluentApp(title: 'C++ Pack Tool', themeMode: ThemeMode.system, theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark), home: const MainLayout());
   }
 }
 
-class MainLayout extends StatelessWidget {
+class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
 
   @override
+  State<MainLayout> createState() => _MainLayoutState();
+}
+
+class _MainLayoutState extends State<MainLayout> {
+  int index = 0;
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        shape: Border(bottom: BorderSide(color: Theme.of(context).colorScheme.outline)),
-        actions: [
-          IconButton(
-            tooltip: '切换主题',
-            onPressed: () {
-              _themeNotifier.value = _themeNotifier.value == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-            },
-            icon: _themeNotifier.value == ThemeMode.light ? Icon(Icons.brightness_4) : Icon(Icons.brightness_5),
-          ),
-          IconButton(tooltip: '设置', onPressed: null, icon: Icon(Icons.settings)),
-          IconButton(tooltip: '帮助', onPressed: null, icon: Icon(Icons.help)),
-        ],
-        title: Row(
+    return NavigationView(
+      titleBar: TitleBar(isBackButtonVisible: false, title: const Center(widthFactor: 1.0, child: Text('C++ NuGet 打包工具'))),
+      pane: NavigationPane(
+        selected: index,
+        onChanged: (int newIndex) => setState(() => index = newIndex),
+        header: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
-            Icon(Mdi.packageVariantClosed, size: 32),
-            const SizedBox(width: 10),
-            const Text('VCPKG 打包工具'),
-            const SizedBox(width: 10),
-            Tag(text: '26.0.0'),
+            Tooltip(
+              message: '添加文件夹',
+              child: IconButton(icon: Svgs.addFolder, onPressed: () {}),
+            ),
+            Tooltip(
+              message: '删除文件夹',
+              child: IconButton(icon: Svgs.deleteFolder, onPressed: () {}),
+            ),
+            Tooltip(
+              message: '重新映射',
+              child: IconButton(icon: Svgs.mapAsDrive, onPressed: () {}),
+            ),
+            Tooltip(
+              message: '打包文件夹',
+              child: IconButton(icon: Svgs.moveToFolder, onPressed: () {}),
+            ),
+            Tooltip(
+              message: '历史记录',
+              child: IconButton(icon: Svgs.historyFolder, onPressed: () {}),
+            ),
           ],
         ),
-      ),
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(flex: 3, child: PackList()),
-          const VerticalDivider(width: 0),
-          Expanded(flex: 7, child: PackManage()),
+        displayMode: PaneDisplayMode.expanded,
+        size: NavigationPaneSize(openMaxWidth: 260, openMinWidth: 260, compactWidth: 50),
+        items: [...PackList.buildCards()],
+        footerItems: [
+          PaneItemSeparator(),
+          LibraryItem(
+            icon: Svgs.settings,
+            title: '设置',
+            body: const Center(child: Text('设置内容')),
+          ),
+          LibraryItem(
+            icon: Svgs.info,
+            title: '关于',
+            version: '26.0.0',
+            body: const Center(child: Text('关于内容')),
+          ),
         ],
       ),
     );

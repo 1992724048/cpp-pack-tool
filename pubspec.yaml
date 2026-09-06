@@ -11,9 +11,9 @@ dependencies:
     sdk: flutter
   file_selector: ^1.0.0
   flutter_svg: ^2.0.0
-  flutter_mdi_icons: ^0.1.5
   fluent_ui: ^4.15.1
-
+  catppuccin_flutter: ^1.0.0
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
