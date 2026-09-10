@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
@@ -407,6 +408,109 @@ void main() {
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
     expect(find.byKey(const Key('deletePackDialog')), findsNothing);
   });
+
+  testWidgets('无包时重新映射按钮禁用', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      store: _FakePackStore(),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_remapButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('选中设置项时重新映射按钮禁用', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_remapButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_remapButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('重新映射成功后保存并更新包文件列表', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
+        ),
+      ],
+    );
+    String? scannedPath;
+    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (String path) {
+        scannedPath = path;
+        return completer.future;
+      },
+    );
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('remapPackDialog')), findsOneWidget);
+    expect(find.text('重新映射'), findsOneWidget);
+    expect(find.text('正在扫描…'), findsOneWidget);
+    expect(scannedPath, r'C:\libs\demo');
+
+    completer.complete(<FileModel>[
+      FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.saveCount, 1);
+    expect(store.packs.single.files, hasLength(1));
+    expect(store.packs.single.files.single.path, 'new/new.h');
+    expect(find.text('重新映射完成'), findsOneWidget);
+    expect(find.text('新增：1 个文件'), findsOneWidget);
+    expect(find.text('移除：1 个文件'), findsOneWidget);
+  });
+
+  testWidgets('缺少源目录信息时提示错误且不弹出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_remapButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('remapPackDialog')), findsNothing);
+    expect(find.text('该包缺少源目录信息，无法重新映射'), findsOneWidget);
+    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -457,11 +561,33 @@ IconButton _deleteButton(WidgetTester tester) => tester.widget<IconButton>(
   ),
 );
 
+IconButton _remapButton(WidgetTester tester) => tester.widget<IconButton>(
+  find.descendant(
+    of: find.byTooltip('重新映射'),
+    matching: find.byType(IconButton),
+  ),
+);
+
 int? _selectedIndex(WidgetTester tester) =>
     tester.widget<NavigationView>(find.byType(NavigationView)).pane?.selected;
 
-PackModel _pack(String name, String version) =>
-    PackModel(name: name, version: version, author: 'tester');
+PackModel _pack(
+  String name,
+  String version, {
+  String? sourcePath,
+  List<FileModel>? files,
+}) {
+  final PackModel pack = PackModel(
+    name: name,
+    version: version,
+    author: 'tester',
+    sourcePath: sourcePath,
+  );
+  if (files != null) {
+    pack.files.addAll(files);
+  }
+  return pack;
+}
 
 class _FakePackStore extends PackStore {
   _FakePackStore({List<PackModel>? packs, List<PackLoadError>? errors})

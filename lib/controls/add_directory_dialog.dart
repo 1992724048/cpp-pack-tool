@@ -5,15 +5,6 @@ import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-const List<String> _imageExtensions = [
-  'png',
-  'jpg',
-  'jpeg',
-  'svg',
-  'ico',
-  'webp',
-];
-
 class AddDirectoryDialog extends StatefulWidget {
   const AddDirectoryDialog({
     super.key,
@@ -81,31 +72,8 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
       _versionController.text.trim().isNotEmpty &&
       _authorController.text.trim().isNotEmpty;
 
-  FileModel? get _iconFile {
-    final List<FileModel>? files = _files;
-    if (files == null) {
-      return null;
-    }
-    for (final FileModel file in files) {
-      if (_imageExtensions.contains(file.extension)) {
-        return file;
-      }
-    }
-    return null;
-  }
-
-  String _scanErrorMessage(Object error) {
-    if (error is ArgumentError) {
-      final String? message = error.message?.toString();
-      if (message != null && message.isNotEmpty) {
-        return message;
-      }
-    }
-    return error.toString();
-  }
-
   void _submit() {
-    final FileModel? icon = _iconFile;
+    final FileModel? icon = findIconFile(_files);
     final String description = _descriptionController.text.trim();
     Navigator.pop(
       context,
@@ -209,7 +177,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
   Widget _buildScanStatus() {
     final Object? error = _scanError;
     if (error != null) {
-      return Text('扫描失败：${_scanErrorMessage(error)}');
+      return Text('扫描失败：${formatError(error)}');
     }
     final List<FileModel>? files = _files;
     if (files == null) {
@@ -235,7 +203,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
   }
 
   Widget _buildIcon() {
-    final FileModel? iconFile = _iconFile;
+    final FileModel? iconFile = findIconFile(_files);
     if (iconFile == null) {
       return const Text('未找到图标文件');
     }

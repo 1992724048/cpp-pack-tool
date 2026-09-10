@@ -8,6 +8,16 @@ String baseName(String path) => path.split(_pathSeparator).last;
 String joinPath(String base, String relative) =>
     '${base.replaceFirst(_trailingPathSeparators, '')}/$relative';
 
+String formatError(Object error) {
+  if (error is ArgumentError) {
+    final String? message = error.message?.toString();
+    if (message != null && message.isNotEmpty) {
+      return message;
+    }
+  }
+  return error.toString();
+}
+
 String formatBytes(int bytes) {
   if (bytes < _bytesPerUnit) {
     return '$bytes B';

@@ -12,6 +12,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/pack_list.dart';
+import 'controls/remap_pack_dialog.dart';
 
 void main() {
   runApp(const PackTool());
@@ -149,6 +150,11 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return false;
     }
+    _upsertPack(pack);
+    return true;
+  }
+
+  void _upsertPack(PackModel pack) {
     setState(() {
       final int existing = _packs.indexWhere(
         (PackModel item) => item.name.toLowerCase() == pack.name.toLowerCase(),
@@ -164,10 +170,9 @@ class _MainLayoutState extends State<MainLayout> {
         _selected = selected;
       }
     });
-    return true;
   }
 
-  bool get _canDeleteSelectedPack {
+  bool get _hasSelectedPack {
     final int? selected = _selected;
     return selected != null && selected >= 0 && selected < _packs.length;
   }
@@ -211,6 +216,41 @@ class _MainLayoutState extends State<MainLayout> {
       }
     });
     showFloatingToast(context, '已删除');
+  }
+
+  Future<void> _remapSelectedPack() async {
+    final int? selected = _selected;
+    if (selected == null || selected < 0 || selected >= _packs.length) {
+      return;
+    }
+    final PackModel pack = _packs[selected];
+    final String? sourcePath = pack.sourcePath;
+    if (sourcePath == null) {
+      showFloatingToast(
+        context,
+        '该包缺少源目录信息，无法重新映射',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    final Future<List<FileModel>> scanFuture = widget.scanFiles(sourcePath);
+    await showDialog<void>(
+      context: context,
+      builder: (_) => RemapPackDialog(
+        pack: pack,
+        scanFuture: scanFuture,
+        onApply: _applyRemap,
+      ),
+    );
+  }
+
+  Future<void> _applyRemap(PackModel pack) async {
+    await widget.store.savePack(pack);
+    if (!mounted) {
+      return;
+    }
+    _upsertPack(pack);
   }
 
   void _sortPacks() {
@@ -266,12 +306,15 @@ class _MainLayoutState extends State<MainLayout> {
               message: '删除文件夹',
               child: IconButton(
                 icon: Svgs.deleteFolder,
-                onPressed: _canDeleteSelectedPack ? _deleteSelectedPack : null,
+                onPressed: _hasSelectedPack ? _deleteSelectedPack : null,
               ),
             ),
             Tooltip(
               message: '重新映射',
-              child: IconButton(icon: Svgs.mapAsDrive, onPressed: () {}),
+              child: IconButton(
+                icon: Svgs.mapAsDrive,
+                onPressed: _hasSelectedPack ? _remapSelectedPack : null,
+              ),
             ),
             Tooltip(
               message: '打包文件夹',
