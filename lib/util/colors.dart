@@ -40,7 +40,7 @@ FluentThemeData buildTheme(Brightness brightness) {
 
     // 阴影与选中
     shadowColor: isLight ? const Color(0x40000000) : flavor.crust,
-    selectionColor: accent.withOpacity(0.35),
+    selectionColor: accent.withValues(alpha: 0.35),
 
     // 图标
     iconTheme: IconThemeData(color: text, size: 18),
@@ -77,8 +77,8 @@ FluentThemeData buildTheme(Brightness brightness) {
     // 焦点框
     focusTheme: FocusThemeData(
       primaryBorder: BorderSide(color: accent, width: 1.5),
-      secondaryBorder: BorderSide(color: accent.withOpacity(0.5), width: 1),
-      glowColor: accent.withOpacity(0.2),
+      secondaryBorder: BorderSide(color: accent.withValues(alpha: 0.5), width: 1),
+      glowColor: accent.withValues(alpha: 0.2),
       glowFactor: 2.0,
     ),
 
@@ -174,7 +174,7 @@ FluentThemeData buildTheme(Brightness brightness) {
         borderRadius: BorderRadius.circular(8),
         boxShadow: [BoxShadow(color: isLight ? const Color(0x40000000) : flavor.crust, blurRadius: 24, offset: const Offset(0, 8))],
       ),
-      barrierColor: flavor.crust.withOpacity(0.5),
+      barrierColor: flavor.crust.withValues(alpha: 0.5),
       titleStyle: TextStyle(color: text, fontSize: 20, fontWeight: FontWeight.w600),
       bodyStyle: TextStyle(color: subtext, fontFamily: "HarmonyOS_Sans_SC"),
     ),
@@ -233,8 +233,8 @@ ResourceDictionary _catppuccinResources(Flavor f, Brightness brightness) {
 
     // ── 悬停/按下水纹（未选中标签悬停走 subtleFill）
     subtleFillColorTransparent: Colors.transparent,
-    subtleFillColorSecondary: f.overlay0.withOpacity(0.6),
-    subtleFillColorTertiary: f.overlay0.withOpacity(0.8),
+    subtleFillColorSecondary: f.overlay0.withValues(alpha: 0.6),
+    subtleFillColorTertiary: f.overlay0.withValues(alpha: 0.8),
     subtleFillColorDisabled: Colors.transparent,
 
     // ── 描边
@@ -273,7 +273,7 @@ ResourceDictionary _catppuccinResources(Flavor f, Brightness brightness) {
     layerOnMicaBaseAltFillColorDefault: f.surface1,
     layerOnMicaBaseAltFillColorSecondary: f.surface2,
     layerOnMicaBaseAltFillColorTertiary: f.surface0,
-    smokeFillColorDefault: f.crust.withOpacity(0.5),
+    smokeFillColorDefault: f.crust.withValues(alpha: 0.5),
 
     // ── 系统语义色（InfoBar 成功/警告/错误等）
     systemFillColorSuccess: f.green,
@@ -281,9 +281,9 @@ ResourceDictionary _catppuccinResources(Flavor f, Brightness brightness) {
     systemFillColorCritical: f.red,
     systemFillColorNeutral: f.subtext0,
     systemFillColorSolidNeutral: f.overlay2,
-    systemFillColorSuccessBackground: f.green.withOpacity(0.15),
-    systemFillColorCautionBackground: f.yellow.withOpacity(0.15),
-    systemFillColorCriticalBackground: f.red.withOpacity(0.15),
+    systemFillColorSuccessBackground: f.green.withValues(alpha: 0.15),
+    systemFillColorCautionBackground: f.yellow.withValues(alpha: 0.15),
+    systemFillColorCriticalBackground: f.red.withValues(alpha: 0.15),
     systemFillColorNeutralBackground: f.surface1,
     systemFillColorAttentionBackground: f.surface1,
     systemFillColorSolidAttentionBackground: f.surface1,

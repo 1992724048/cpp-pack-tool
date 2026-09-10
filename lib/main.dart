@@ -3,7 +3,7 @@ import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-import 'Controls/pack_list.dart';
+import 'controls/pack_list.dart';
 
 void main() {
   runApp(const PackTool());

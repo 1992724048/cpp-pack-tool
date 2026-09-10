@@ -1,5 +1,4 @@
-﻿import 'package:cpp_nuget_pack/util/svgs.dart';
-import 'package:fluent_ui/fluent_ui.dart';
+﻿import 'package:fluent_ui/fluent_ui.dart';
 
 class PackInfo extends StatefulWidget {
   const PackInfo({super.key});
