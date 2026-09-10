@@ -21,30 +21,11 @@ class _PackFilesState extends State<PackFiles> {
   final Set<String> _expandedDirs = <String>{};
 
   @override
-  void initState() {
-    super.initState();
-    _expandedDirs.addAll(_topLevelDirs(widget.pack.files));
-  }
-
-  @override
   void didUpdateWidget(covariant PackFiles oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pack.name != widget.pack.name) {
-      _expandedDirs
-        ..clear()
-        ..addAll(_topLevelDirs(widget.pack.files));
+      _expandedDirs.clear();
     }
-  }
-
-  static Set<String> _topLevelDirs(List<FileModel> files) {
-    final Set<String> dirs = <String>{};
-    for (final FileModel file in files) {
-      final List<String> segments = _pathSegments(file.path);
-      if (segments.length > 1) {
-        dirs.add(segments.first);
-      }
-    }
-    return dirs;
   }
 
   static List<String> _pathSegments(String path) => path

@@ -74,6 +74,30 @@ void main() {
       expect(_file('main.dart'), _latte('dart'));
     });
 
+    test('Python、JavaScript、Fortran 与 LLVM 文件', () {
+      expect(_file('main.py'), _latte('python'));
+      expect(_file('gui.pyw'), _latte('python'));
+      expect(_file('types.pyi'), _latte('python'));
+      expect(_file('app.js'), _latte('javascript'));
+      expect(_file('app.mjs'), _latte('javascript'));
+      expect(_file('app.cjs'), _latte('javascript'));
+      expect(_file('app.esx'), _latte('javascript'));
+      expect(_file('solver.f'), _latte('fortran'));
+      expect(_file('solver.for'), _latte('fortran'));
+      expect(_file('solver.f77'), _latte('fortran'));
+      expect(_file('solver.f90'), _latte('fortran'));
+      expect(_file('solver.f95'), _latte('fortran'));
+      expect(_file('solver.f03'), _latte('fortran'));
+      expect(_file('solver.f08'), _latte('fortran'));
+      expect(_file('module.ll'), _latte('llvm'));
+      expect(_file('module.bc'), _latte('llvm'));
+    });
+
+    test('VBScript 与 PDB 调试符号', () {
+      expect(_file('script.vbs'), _latte('visual-studio'));
+      expect(_file('app.pdb'), _latte('database'));
+    });
+
     test('未知扩展名回退 _file', () {
       expect(_file('data.xyz'), _latte('_file'));
       expect(_file('main.rc'), _latte('_file'));

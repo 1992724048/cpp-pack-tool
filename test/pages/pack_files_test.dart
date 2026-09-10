@@ -6,7 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('默认展开第一层目录并显示直接子项与大小', (tester) async {
+  testWidgets('默认全部折叠所有目录', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'README.md', path: 'README.md', size: 100),
       FileModel(name: 'foo.h', path: 'include/foo.h', size: 2048),
@@ -18,21 +18,19 @@ void main() {
 
     expect(find.text('README.md'), findsOneWidget);
     expect(find.text('include'), findsOneWidget);
-    expect(find.text('foo.h'), findsOneWidget);
-    expect(find.text('detail'), findsOneWidget);
-    expect(find.text('bar.h'), findsNothing);
     expect(find.text('src'), findsOneWidget);
-    expect(find.text('main.cpp'), findsOneWidget);
+    expect(find.text('foo.h'), findsNothing);
+    expect(find.text('detail'), findsNothing);
+    expect(find.text('bar.h'), findsNothing);
+    expect(find.text('main.cpp'), findsNothing);
 
     _expectRowSize('include', '3.0 KB');
-    _expectRowSize('detail', '1.0 KB');
-    _expectRowSize('foo.h', '2.0 KB');
     _expectRowSize('src', '512 B');
-    _expectRowSize('main.cpp', '512 B');
     _expectRowSize('README.md', '100 B');
 
-    expect(find.byIcon(FluentIcons.chevron_down), findsNWidgets(2));
-    expect(find.byIcon(FluentIcons.chevron_right), findsOneWidget);
+    expect(_iconAssets(tester), contains(_latte('folder_include')));
+    expect(find.byIcon(FluentIcons.chevron_down), findsNothing);
+    expect(find.byIcon(FluentIcons.chevron_right), findsNWidgets(2));
   });
 
   testWidgets('点击目录行切换展开与折叠', (tester) async {
@@ -43,6 +41,12 @@ void main() {
 
     await _pumpPage(tester, PackFiles(pack: pack));
     expect(find.text('bar.h'), findsNothing);
+    expect(find.text('detail'), findsNothing);
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('foo.h'), findsOneWidget);
+    expect(find.text('detail'), findsOneWidget);
 
     await tester.tap(find.text('detail'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -65,6 +69,11 @@ void main() {
     ]);
 
     await _pumpPage(tester, PackFiles(pack: pack));
+    expect(find.text('bar.h'), findsNothing);
+
+    await tester.tap(find.byIcon(FluentIcons.chevron_right));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('detail'), findsOneWidget);
     expect(find.text('bar.h'), findsNothing);
 
     await tester.tap(find.byIcon(FluentIcons.chevron_right));
@@ -110,14 +119,18 @@ void main() {
     expect(find.byType(TreeView), findsNothing);
   });
 
-  testWidgets('切换包时重置为默认展开状态', (tester) async {
+  testWidgets('切换包时重置为全部折叠', (tester) async {
     final PackModel first = _pack('demo', <FileModel>[
       FileModel(name: 'one.cpp', path: 'a/one/one.cpp', size: 10),
     ]);
     await _pumpPage(tester, PackFiles(pack: first));
 
+    expect(find.text('a'), findsOneWidget);
+    expect(find.text('one'), findsNothing);
+
+    await tester.tap(find.text('a'));
+    await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('one'), findsOneWidget);
-    expect(find.text('one.cpp'), findsNothing);
 
     await tester.tap(find.text('one'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -128,7 +141,8 @@ void main() {
     ]);
     await _pumpPage(tester, PackFiles(pack: second));
 
-    expect(find.text('one'), findsOneWidget);
+    expect(find.text('a'), findsOneWidget);
+    expect(find.text('one'), findsNothing);
     expect(find.text('two.cpp'), findsNothing);
   });
 
@@ -138,6 +152,10 @@ void main() {
     ]);
     await _pumpPage(tester, PackFiles(pack: before));
 
+    expect(find.text('one'), findsNothing);
+
+    await tester.tap(find.text('a'));
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('one'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('one.cpp'), findsOneWidget);
@@ -148,6 +166,7 @@ void main() {
     ]);
     await _pumpPage(tester, PackFiles(pack: after));
 
+    expect(find.text('one'), findsOneWidget);
     expect(find.text('one.cpp'), findsOneWidget);
     expect(find.text('extra.cpp'), findsOneWidget);
   });
@@ -160,8 +179,12 @@ void main() {
     await _pumpPage(tester, PackFiles(pack: pack));
 
     expect(find.text('src'), findsOneWidget);
-    expect(find.text('win'), findsOneWidget);
+    expect(find.text('win'), findsNothing);
     expect(find.text('deep.cpp'), findsNothing);
+
+    await tester.tap(find.text('src'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('win'), findsOneWidget);
 
     await tester.tap(find.text('win'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -171,9 +194,12 @@ void main() {
   testWidgets('目录与文件使用 catppuccin 图标', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'README.md', path: 'README.md', size: 100),
-      FileModel(name: 'foo.h', path: 'include/foo.h', size: 2048),
-      FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 512),
+      FileModel(name: 'foo.h', path: 'foo.h', size: 2048),
+      FileModel(name: 'main.cpp', path: 'main.cpp', size: 512),
+      FileModel(name: 'tool.py', path: 'tool.py', size: 20),
       FileModel(name: 'unknown.xyz', path: 'unknown.xyz', size: 10),
+      FileModel(name: 'bar.h', path: 'include/bar.h', size: 64),
+      FileModel(name: 'deep.cpp', path: 'src/deep.cpp', size: 32),
     ]);
 
     await _pumpPage(tester, PackFiles(pack: pack));
@@ -182,9 +208,12 @@ void main() {
     expect(icons, contains(_latte('readme')));
     expect(icons, contains(_latte('c-header')));
     expect(icons, contains(_latte('cpp')));
+    expect(icons, contains(_latte('python')));
     expect(icons, contains(_latte('_file')));
-    expect(icons, contains(_latte('folder_include_open')));
-    expect(icons, contains(_latte('folder_src_open')));
+    expect(icons, contains(_latte('folder_include')));
+    expect(icons, contains(_latte('folder_src')));
+    expect(icons, isNot(contains(_latte('folder_include_open'))));
+    expect(icons, isNot(contains(_latte('folder_src_open'))));
     expect(find.byIcon(FluentIcons.folder), findsNothing);
     expect(find.byIcon(FluentIcons.document), findsNothing);
   });
@@ -195,6 +224,13 @@ void main() {
     ]);
 
     await _pumpPage(tester, PackFiles(pack: pack));
+
+    expect(_iconAssets(tester), contains(_latte('folder_include')));
+    expect(_iconAssets(tester), isNot(contains(_latte('folder_include_open'))));
+    expect(_iconAssets(tester), isNot(contains(_latte('_folder'))));
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(_iconAssets(tester), contains(_latte('folder_include_open')));
     expect(_iconAssets(tester), contains(_latte('_folder')));
@@ -208,13 +244,14 @@ void main() {
 
   testWidgets('深色主题使用 mocha 图标', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
-      FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 10),
+      FileModel(name: 'main.cpp', path: 'main.cpp', size: 10),
+      FileModel(name: 'tool.py', path: 'src/tool.py', size: 5),
     ]);
 
     await _pumpPage(tester, PackFiles(pack: pack), dark: true);
 
     expect(_iconAssets(tester), contains(_mocha('cpp')));
-    expect(_iconAssets(tester), contains(_mocha('folder_src_open')));
+    expect(_iconAssets(tester), contains(_mocha('folder_src')));
   });
 }
 
