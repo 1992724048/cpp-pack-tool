@@ -1,8 +1,12 @@
-﻿import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/scanner/file_scan.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+import 'controls/add_directory_dialog.dart';
 import 'controls/pack_list.dart';
 
 void main() {
@@ -14,12 +18,25 @@ class PackTool extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FluentApp(title: 'C++ Pack Tool', themeMode: ThemeMode.system, theme: buildTheme(Brightness.light), darkTheme: buildTheme(Brightness.dark), home: const MainLayout());
+    return FluentApp(
+      title: 'C++ Pack Tool',
+      themeMode: ThemeMode.system,
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      home: const MainLayout(),
+    );
   }
 }
 
 class MainLayout extends StatefulWidget {
-  const MainLayout({super.key});
+  const MainLayout({
+    super.key,
+    this.pickDirectory = getDirectoryPath,
+    this.scanFiles = FileScan.scan,
+  });
+
+  final Future<String?> Function() pickDirectory;
+  final Future<List<FileModel>> Function(String directoryPath) scanFiles;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -28,10 +45,29 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int index = 0;
 
+  Future<void> _addFolder() async {
+    final String? path = await widget.pickDirectory();
+    if (path == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final Future<List<FileModel>> scanFuture = widget.scanFiles(path);
+    await showDialog<void>(
+      context: context,
+      builder: (_) =>
+          AddDirectoryDialog(directoryPath: path, scanFuture: scanFuture),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return NavigationView(
-      titleBar: TitleBar(isBackButtonVisible: false, title: const Center(widthFactor: 1.0, child: Text('C++ NuGet 打包工具'))),
+      titleBar: TitleBar(
+        isBackButtonVisible: false,
+        title: const Center(widthFactor: 1.0, child: Text('C++ NuGet 打包工具')),
+      ),
       pane: NavigationPane(
         selected: index,
         onChanged: (int newIndex) => setState(() => index = newIndex),
@@ -40,7 +76,7 @@ class _MainLayoutState extends State<MainLayout> {
           children: [
             Tooltip(
               message: '添加文件夹',
-              child: IconButton(icon: Svgs.addFolder, onPressed: () {}),
+              child: IconButton(icon: Svgs.addFolder, onPressed: _addFolder),
             ),
             Tooltip(
               message: '删除文件夹',
@@ -61,7 +97,11 @@ class _MainLayoutState extends State<MainLayout> {
           ],
         ),
         displayMode: PaneDisplayMode.expanded,
-        size: NavigationPaneSize(openMaxWidth: 260, openMinWidth: 260, compactWidth: 50),
+        size: NavigationPaneSize(
+          openMaxWidth: 260,
+          openMinWidth: 260,
+          compactWidth: 50,
+        ),
         items: [...PackList.buildCards()],
         footerItems: [
           PaneItemSeparator(),
