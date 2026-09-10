@@ -131,6 +131,12 @@ void main() {
       expect(_file('cache.sqlite3'), _latte('database'));
     });
 
+    test('可执行文件映射到 exe 图标', () {
+      expect(_file('tool.exe'), _latte('exe'));
+      expect(_file('setup.msi'), _latte('exe'));
+      expect(_file('TOOL.EXE'), _latte('exe'));
+    });
+
     test('qml 无上游图标，回退 _file', () {
       expect(_file('Main.qml'), _latte('_file'));
     });

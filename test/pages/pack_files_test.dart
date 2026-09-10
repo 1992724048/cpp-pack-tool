@@ -1,6 +1,9 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_files.dart';
+import 'package:cpp_nuget_pack/util/build_config.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -253,11 +256,147 @@ void main() {
     expect(_iconAssets(tester), contains(_mocha('cpp')));
     expect(_iconAssets(tester), contains(_mocha('folder_src')));
   });
+
+  testWidgets('双击文件行以绝对路径调用 openFile', (tester) async {
+    final List<String> opened = <String>[];
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+    ], sourcePath: r'C:\libs\foo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        openFile: (String path) async {
+          opened.add(path);
+          return true;
+        },
+      ),
+    );
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await _doubleTapFile(tester, 'foo.h');
+
+    expect(opened, <String>[r'C:\libs\foo/include/foo.h']);
+  });
+
+  testWidgets('缺少源目录信息时双击文件提示错误且不调用 openFile', (tester) async {
+    bool called = false;
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'foo.h', path: 'foo.h', size: 10),
+    ]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        openFile: (String path) async {
+          called = true;
+          return true;
+        },
+      ),
+    );
+
+    await _doubleTapFile(tester, 'foo.h');
+
+    expect(called, isFalse);
+    expect(find.text('该包缺少源目录信息，无法打开文件'), findsOneWidget);
+  });
+
+  testWidgets('打开失败时显示错误提示', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'foo.h', path: 'foo.h', size: 10),
+    ], sourcePath: r'C:\libs\foo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(pack: pack, openFile: (String path) async => false),
+    );
+
+    await _doubleTapFile(tester, 'foo.h');
+
+    expect(find.text('无法打开文件：foo.h'), findsOneWidget);
+  });
+
+  testWidgets('Release 路径的二进制文件显示绿色 Release 标签', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'mylib.lib', path: 'release/mylib.lib', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    await tester.tap(find.text('release'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Tag tag = tester.widget<Tag>(find.byType(Tag));
+    expect(tag.text, releaseBuildLabel);
+    expect(tag.color, UCColors.flavor.green);
+    expect(tag.fontSize, 10);
+  });
+
+  testWidgets('Debug 路径的二进制文件显示橙色 Debug 标签', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'mylib.pdb', path: r'out\debug\mylib.pdb', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    await tester.tap(find.text('out'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('debug'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Tag tag = tester.widget<Tag>(find.byType(Tag));
+    expect(tag.text, debugBuildLabel);
+    expect(tag.color, UCColors.flavor.peach);
+  });
+
+  testWidgets('路径无构建配置段时不显示标签', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'mylib.lib', path: 'mylib.lib', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    expect(find.text('mylib.lib'), findsOneWidget);
+    expect(find.byType(Tag), findsNothing);
+  });
+
+  testWidgets('非二进制类型不显示构建标签', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'foo.cpp', path: 'release/foo.cpp', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    await tester.tap(find.text('release'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('foo.cpp'), findsOneWidget);
+    expect(find.byType(Tag), findsNothing);
+  });
+
+  testWidgets('exe 与 msi 文件使用 exe 图标', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'tool.exe', path: 'tool.exe', size: 10),
+      FileModel(name: 'setup.msi', path: 'setup.msi', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    final List<String> exeIcons = _iconAssets(tester)
+        .where((String icon) => icon == _latte('exe'))
+        .toList();
+    expect(exeIcons.length, 2);
+  });
 }
 
-PackModel _pack(String name, List<FileModel> files) {
-  return PackModel(name: name, version: '1.0.0', author: 'tester')
-    ..files = files;
+PackModel _pack(String name, List<FileModel> files, {String? sourcePath}) {
+  return PackModel(
+    name: name,
+    version: '1.0.0',
+    author: 'tester',
+    sourcePath: sourcePath,
+  )..files = files;
 }
 
 Finder _contentRow(String name) =>
@@ -268,6 +407,13 @@ void _expectRowSize(String name, String size) {
     find.descendant(of: _contentRow(name), matching: find.text(size)),
     findsOneWidget,
   );
+}
+
+Future<void> _doubleTapFile(WidgetTester tester, String name) async {
+  await tester.tap(find.text(name));
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.tap(find.text(name));
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 String _latte(String icon) => 'assets/icons/catppuccin/latte/$icon.svg';

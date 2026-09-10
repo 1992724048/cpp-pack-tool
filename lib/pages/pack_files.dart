@@ -1,14 +1,24 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/catppuccin_icons.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/util/file_opener.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class PackFiles extends StatefulWidget {
-  const PackFiles({super.key, required this.pack});
+  const PackFiles({
+    super.key,
+    required this.pack,
+    this.openFile = openWithDefaultApp,
+  });
 
   final PackModel pack;
+  final Future<bool> Function(String path) openFile;
 
   @override
   State<PackFiles> createState() => _PackFilesState();
@@ -18,6 +28,12 @@ class _PackFilesState extends State<PackFiles> {
   static const double _treeIconSize = 18;
   // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
   static const double _treeRowContentMinHeight = 26;
+  static const Set<FileType> _buildLabelTypes = <FileType>{
+    FileType.lib,
+    FileType.dll,
+    FileType.pdb,
+    FileType.executable,
+  };
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
   final Set<String> _expandedDirs = <String>{};
@@ -99,7 +115,15 @@ class _PackFilesState extends State<PackFiles> {
       items.add(
         TreeViewItem(
           leading: _buildIcon(file.name),
-          content: _buildRow(file.name, formatBytes(file.size), sizeColor),
+          content: GestureDetector(
+            onDoubleTap: () => _openFile(file),
+            child: _buildRow(
+              file.name,
+              formatBytes(file.size),
+              sizeColor,
+              label: _buildBuildLabel(file),
+            ),
+          ),
         ),
       );
     }
@@ -123,17 +147,65 @@ class _PackFilesState extends State<PackFiles> {
     );
   }
 
-  static Widget _buildRow(String name, String size, Color sizeColor) {
+  static Widget _buildRow(
+    String name,
+    String size,
+    Color sizeColor, {
+    Widget? label,
+  }) {
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: _treeRowContentMinHeight),
       child: Row(
         children: <Widget>[
           Expanded(child: Text(name, overflow: TextOverflow.ellipsis)),
+          if (label != null) ...[const SizedBox(width: 8), label],
           const SizedBox(width: 8),
           Text(size, style: TextStyle(color: sizeColor)),
         ],
       ),
     );
+  }
+
+  static Widget? _buildBuildLabel(FileModel file) {
+    if (!_buildLabelTypes.contains(file.type)) {
+      return null;
+    }
+    final String? label = inferBuildLabel(file.path);
+    if (label == null) {
+      return null;
+    }
+    return Tag(
+      text: label,
+      color: label == releaseBuildLabel
+          ? UCColors.flavor.green
+          : UCColors.flavor.peach,
+      fontSize: 10,
+    );
+  }
+
+  Future<void> _openFile(FileModel file) async {
+    final String? sourcePath = widget.pack.sourcePath;
+    if (sourcePath == null) {
+      showFloatingToast(
+        context,
+        '该包缺少源目录信息，无法打开文件',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    final bool opened = await widget.openFile(joinPath(sourcePath, file.path));
+    if (!mounted) {
+      return;
+    }
+    if (!opened) {
+      showFloatingToast(
+        context,
+        '无法打开文件：${file.name}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   Future<void> _onItemInvoked(

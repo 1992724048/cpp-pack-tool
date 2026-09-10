@@ -117,6 +117,8 @@ const Map<String, String> _extensionIcons = <String, String>{
   'sql': 'database',
   'sqlite': 'database',
   'sqlite3': 'database',
+  'exe': 'exe',
+  'msi': 'exe',
 };
 
 const Map<String, String> _directoryIcons = <String, String>{

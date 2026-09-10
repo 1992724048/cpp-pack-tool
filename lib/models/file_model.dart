@@ -15,6 +15,7 @@ enum FileType {
   llvm,
   python,
   database,
+  executable,
   other,
 }
 
@@ -63,6 +64,7 @@ const Map<String, FileType> _extensionTypes = {
   'pyw': FileType.python,
   'pyi': FileType.python,
   'db': FileType.database,
+  'exe': FileType.executable,
 };
 
 class FileModel {

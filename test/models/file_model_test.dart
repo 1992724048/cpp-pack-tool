@@ -114,6 +114,11 @@ void main() {
       expect(FileModel(name: 'data.db', path: '').type, FileType.database);
     });
 
+    test('可执行文件 .exe 映射为 executable', () {
+      expect(FileModel(name: 'tool.exe', path: '').type, FileType.executable);
+      expect(FileModel(name: 'FOO.EXE', path: '').type, FileType.executable);
+    });
+
     test('新类型扩展名大小写不敏感', () {
       expect(FileModel(name: 'FOO.PY', path: '').type, FileType.python);
       expect(FileModel(name: 'APP.PDB', path: '').type, FileType.pdb);
