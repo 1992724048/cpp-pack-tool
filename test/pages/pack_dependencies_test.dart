@@ -1,8 +1,10 @@
+import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_dependencies.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,6 +43,37 @@ void main() {
     expect(find.byIcon(FluentIcons.delete), findsNWidgets(2));
     expect(find.text('暂无依赖'), findsNothing);
     expect(find.byType(Divider), findsOneWidget);
+  });
+
+  testWidgets('分隔线水平范围与列表内容区对齐', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(name: 'libfoo', version: '1.0'),
+        const DependencyModel(name: 'libbar', version: '2.0'),
+      ];
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        allPacks: <PackModel>[_pack('demo'), _pack('libfoo'), _pack('libbar')],
+      ),
+      theme: buildTheme(Brightness.light, catppuccin.latte, 'teal'),
+    );
+
+    // Divider 外层包裹水平外边距，需取内部绘制层比较实际线体范围
+    final Rect lineRect = tester.getRect(
+      find
+          .descendant(
+            of: find.byType(Divider),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final Rect listRect = tester.getRect(find.byType(ListView));
+
+    expect(lineRect.left, listRect.left);
+    expect(lineRect.right, listRect.right);
   });
 
   testWidgets('单条依赖不渲染分隔线', (tester) async {
@@ -344,12 +377,16 @@ PackDependencies _page(
   );
 }
 
-Future<void> _pumpPage(WidgetTester tester, PackDependencies page) async {
+Future<void> _pumpPage(
+  WidgetTester tester,
+  PackDependencies page, {
+  FluentThemeData? theme,
+}) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(FluentApp(home: page));
+  await tester.pumpWidget(FluentApp(theme: theme, home: page));
   await tester.pump();
 }
 

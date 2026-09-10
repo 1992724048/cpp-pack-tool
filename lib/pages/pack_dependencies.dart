@@ -114,15 +114,30 @@ class _PackDependenciesState extends State<PackDependencies> {
           Expanded(
             child: widget.pack.dependencies.isEmpty
                 ? _buildEmptyGuide()
-                : ListView.separated(
-                    itemCount: widget.pack.dependencies.length,
-                    separatorBuilder: (BuildContext context, int index) =>
-                        const Divider(),
-                    itemBuilder: (BuildContext context, int index) =>
-                        _buildRow(context, widget.pack.dependencies[index]),
-                  ),
+                : _buildDependencyList(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDependencyList() {
+    final FluentThemeData theme = FluentTheme.of(context);
+    final DividerThemeData dividerTheme = theme.dividerTheme;
+    return FluentTheme(
+      data: theme.copyWith(
+        // 全局分割线自带 8px 水平边距，覆盖为 0 使线与列表内容同宽
+        dividerTheme: DividerThemeData(
+          decoration: dividerTheme.decoration,
+          verticalMargin: dividerTheme.verticalMargin,
+          horizontalMargin: EdgeInsets.zero,
+        ),
+      ),
+      child: ListView.separated(
+        itemCount: widget.pack.dependencies.length,
+        separatorBuilder: (BuildContext context, int index) => const Divider(),
+        itemBuilder: (BuildContext context, int index) =>
+            _buildRow(context, widget.pack.dependencies[index]),
       ),
     );
   }
