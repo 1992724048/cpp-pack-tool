@@ -1,4 +1,4 @@
-﻿import 'package:catppuccin_flutter/catppuccin_flutter.dart';
+import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class UCColors {
@@ -6,12 +6,65 @@ class UCColors {
   static Color accent = flavor.teal;
 }
 
-FluentThemeData buildTheme(Brightness brightness) {
+const List<String> darkFlavorNames = ['frappe', 'macchiato', 'mocha'];
+
+const List<String> accentColorNames = [
+  'rosewater',
+  'flamingo',
+  'pink',
+  'mauve',
+  'red',
+  'maroon',
+  'peach',
+  'yellow',
+  'green',
+  'teal',
+  'sky',
+  'sapphire',
+  'blue',
+  'lavender',
+];
+
+Flavor flavorByName(String name) {
+  return switch (name) {
+    'latte' => catppuccin.latte,
+    'frappe' => catppuccin.frappe,
+    'macchiato' => catppuccin.macchiato,
+    'mocha' => catppuccin.mocha,
+    _ => catppuccin.mocha,
+  };
+}
+
+Color accentColorFor(Flavor flavor, String name) {
+  return switch (name) {
+    'rosewater' => flavor.rosewater,
+    'flamingo' => flavor.flamingo,
+    'pink' => flavor.pink,
+    'mauve' => flavor.mauve,
+    'red' => flavor.red,
+    'maroon' => flavor.maroon,
+    'peach' => flavor.peach,
+    'yellow' => flavor.yellow,
+    'green' => flavor.green,
+    'teal' => flavor.teal,
+    'sky' => flavor.sky,
+    'sapphire' => flavor.sapphire,
+    'blue' => flavor.blue,
+    'lavender' => flavor.lavender,
+    _ => flavor.teal,
+  };
+}
+
+FluentThemeData buildTheme(
+  Brightness brightness,
+  Flavor flavor,
+  String accentName,
+) {
   final bool isLight = brightness == Brightness.light;
 
-  UCColors.flavor = isLight ? catppuccin.latte : catppuccin.mocha;
+  UCColors.flavor = flavor;
+  UCColors.accent = accentColorFor(flavor, accentName);
 
-  final flavor = UCColors.flavor;
   final accent = UCColors.accent;
 
   final Color text = flavor.text;
@@ -25,7 +78,13 @@ FluentThemeData buildTheme(Brightness brightness) {
     resources: _catppuccinResources(flavor, brightness),
 
     // 强调色
-    accentColor: AccentColor('normal', {'normal': accent, 'dark': _shade(accent, -0.08), 'darker': _shade(accent, -0.16), 'light': _shade(accent, 0.08), 'lighter': _shade(accent, 0.16)}),
+    accentColor: AccentColor('normal', {
+      'normal': accent,
+      'dark': _shade(accent, -0.08),
+      'darker': _shade(accent, -0.16),
+      'light': _shade(accent, 0.08),
+      'lighter': _shade(accent, 0.16),
+    }),
     activeColor: flavor.crust,
     // 强调色之上的前景（勾号、文字）
     inactiveColor: subtext,
@@ -48,7 +107,9 @@ FluentThemeData buildTheme(Brightness brightness) {
     // 按钮
     buttonTheme: ButtonThemeData(
       defaultButtonStyle: ButtonStyle(
-        foregroundColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.disabled) ? flavor.subtext0 : text),
+        foregroundColor: WidgetStateProperty.resolveWith(
+          (s) => s.contains(WidgetState.disabled) ? flavor.subtext0 : text,
+        ),
         backgroundColor: WidgetStateProperty.resolveWith((s) {
           if (s.contains(WidgetState.disabled)) return flavor.surface0;
           if (s.contains(WidgetState.pressed)) return flavor.surface2;
@@ -77,14 +138,19 @@ FluentThemeData buildTheme(Brightness brightness) {
     // 焦点框
     focusTheme: FocusThemeData(
       primaryBorder: BorderSide(color: accent, width: 1.5),
-      secondaryBorder: BorderSide(color: accent.withValues(alpha: 0.5), width: 1),
+      secondaryBorder: BorderSide(
+        color: accent.withValues(alpha: 0.5),
+        width: 1,
+      ),
       glowColor: accent.withValues(alpha: 0.2),
       glowFactor: 2.0,
     ),
 
     // 复选框
     checkboxTheme: CheckboxThemeData(
-      checkedDecoration: WidgetStateProperty.all(BoxDecoration(color: accent, borderRadius: BorderRadius.circular(4))),
+      checkedDecoration: WidgetStateProperty.all(
+        BoxDecoration(color: accent, borderRadius: BorderRadius.circular(4)),
+      ),
       uncheckedDecoration: WidgetStateProperty.all(
         BoxDecoration(
           color: flavor.surface0,
@@ -106,7 +172,9 @@ FluentThemeData buildTheme(Brightness brightness) {
 
     // 单选框
     radioButtonTheme: RadioButtonThemeData(
-      checkedDecoration: WidgetStateProperty.all(BoxDecoration(color: accent, shape: BoxShape.circle)),
+      checkedDecoration: WidgetStateProperty.all(
+        BoxDecoration(color: accent, shape: BoxShape.circle),
+      ),
       uncheckedDecoration: WidgetStateProperty.all(
         BoxDecoration(
           color: flavor.surface0,
@@ -119,16 +187,33 @@ FluentThemeData buildTheme(Brightness brightness) {
 
     // 切换开关
     toggleSwitchTheme: ToggleSwitchThemeData(
-      checkedDecoration: WidgetStateProperty.all(BoxDecoration(color: accent, borderRadius: BorderRadius.circular(20))),
-      uncheckedDecoration: WidgetStateProperty.all(BoxDecoration(color: flavor.surface2, borderRadius: BorderRadius.circular(20))),
-      checkedKnobDecoration: WidgetStateProperty.all(BoxDecoration(color: flavor.crust, shape: BoxShape.circle)),
-      uncheckedKnobDecoration: WidgetStateProperty.all(BoxDecoration(color: text, shape: BoxShape.circle)),
+      checkedDecoration: WidgetStateProperty.all(
+        BoxDecoration(color: accent, borderRadius: BorderRadius.circular(20)),
+      ),
+      uncheckedDecoration: WidgetStateProperty.all(
+        BoxDecoration(
+          color: flavor.surface2,
+          borderRadius: BorderRadius.circular(20),
+        ),
+      ),
+      checkedKnobDecoration: WidgetStateProperty.all(
+        BoxDecoration(color: flavor.crust, shape: BoxShape.circle),
+      ),
+      uncheckedKnobDecoration: WidgetStateProperty.all(
+        BoxDecoration(color: text, shape: BoxShape.circle),
+      ),
     ),
 
     // 切换按钮
     toggleButtonTheme: ToggleButtonThemeData(
-      checkedButtonStyle: ButtonStyle(backgroundColor: WidgetStateProperty.all(accent), foregroundColor: WidgetStateProperty.all(flavor.crust)),
-      uncheckedButtonStyle: ButtonStyle(backgroundColor: WidgetStateProperty.all(flavor.surface0), foregroundColor: WidgetStateProperty.all(text)),
+      checkedButtonStyle: ButtonStyle(
+        backgroundColor: WidgetStateProperty.all(accent),
+        foregroundColor: WidgetStateProperty.all(flavor.crust),
+      ),
+      uncheckedButtonStyle: ButtonStyle(
+        backgroundColor: WidgetStateProperty.all(flavor.surface0),
+        foregroundColor: WidgetStateProperty.all(text),
+      ),
     ),
 
     // 滑块
@@ -161,8 +246,12 @@ FluentThemeData buildTheme(Brightness brightness) {
         if (s.contains(WidgetState.hovered)) return flavor.surface0;
         return Colors.transparent;
       }),
-      selectedTextStyle: WidgetStateProperty.all(TextStyle(color: text, fontFamily: "HarmonyOS_Sans_SC")),
-      unselectedTextStyle: WidgetStateProperty.all(TextStyle(color: subtext, fontFamily: "HarmonyOS_Sans_SC")),
+      selectedTextStyle: WidgetStateProperty.all(
+        TextStyle(color: text, fontFamily: "HarmonyOS_Sans_SC"),
+      ),
+      unselectedTextStyle: WidgetStateProperty.all(
+        TextStyle(color: subtext, fontFamily: "HarmonyOS_Sans_SC"),
+      ),
       selectedIconColor: WidgetStateProperty.all(text),
       unselectedIconColor: WidgetStateProperty.all(subtext),
     ),
@@ -172,16 +261,29 @@ FluentThemeData buildTheme(Brightness brightness) {
       decoration: BoxDecoration(
         color: flavor.surface1,
         borderRadius: BorderRadius.circular(8),
-        boxShadow: [BoxShadow(color: isLight ? const Color(0x40000000) : flavor.crust, blurRadius: 24, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+            color: isLight ? const Color(0x40000000) : flavor.crust,
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       barrierColor: flavor.crust.withValues(alpha: 0.5),
-      titleStyle: TextStyle(color: text, fontSize: 20, fontWeight: FontWeight.w600),
+      titleStyle: TextStyle(
+        color: text,
+        fontSize: 20,
+        fontWeight: FontWeight.w600,
+      ),
       bodyStyle: TextStyle(color: subtext, fontFamily: "HarmonyOS_Sans_SC"),
     ),
 
     // 工具提示
     tooltipTheme: TooltipThemeData(
-      decoration: BoxDecoration(color: flavor.overlay2, borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(
+        color: flavor.overlay2,
+        borderRadius: BorderRadius.circular(6),
+      ),
       textStyle: TextStyle(color: flavor.base, fontSize: 12),
       waitDuration: const Duration(milliseconds: 500),
     ),
@@ -196,7 +298,9 @@ Color _shade(Color color, double amount) {
 /// Catppuccin 版 ResourceDictionary：
 /// 同时覆盖 TabView 标签条、输入框、Flyout、InfoBar 等所有 WinUI 控件的基础色
 ResourceDictionary _catppuccinResources(Flavor f, Brightness brightness) {
-  return (brightness == Brightness.light ? ResourceDictionary.light : ResourceDictionary.dark)(
+  return (brightness == Brightness.light
+      ? ResourceDictionary.light
+      : ResourceDictionary.dark)(
     // ── 文字（TabView 标签文字走这里）
     textFillColorPrimary: f.text,
     // 选中标签

@@ -44,6 +44,20 @@ class _DependencyDialogState extends State<DependencyDialog> {
     setState(() {});
   }
 
+  void _selectPackage(String? value) {
+    if (value == null) {
+      return;
+    }
+    _package = value;
+    for (final PackModel candidate in widget.candidates) {
+      if (candidate.name == value) {
+        _versionController.text = '[${candidate.version},)';
+        break;
+      }
+    }
+    setState(() {});
+  }
+
   String? get _versionError => versionRangeError(_versionController.text);
 
   bool get _canSubmit {
@@ -108,7 +122,7 @@ class _DependencyDialogState extends State<DependencyDialog> {
         value: _package,
         placeholder: const Text('请选择包'),
         isExpanded: true,
-        onChanged: (String? value) => setState(() => _package = value),
+        onChanged: _selectPackage,
         items: <ComboBoxItem<String>>[
           for (final PackModel pack in widget.candidates)
             ComboBoxItem<String>(value: pack.name, child: Text(pack.name)),

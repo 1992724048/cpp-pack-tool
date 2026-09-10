@@ -1,6 +1,9 @@
+import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
@@ -13,25 +16,73 @@ import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/pack_list.dart';
 import 'controls/remap_pack_dialog.dart';
+import 'pages/setting.dart';
 
 void main() {
   runApp(const PackTool());
 }
 
-class PackTool extends StatelessWidget {
-  const PackTool({super.key});
+class PackTool extends StatefulWidget {
+  const PackTool({super.key, this.store = const PackStore()});
+
+  final PackStore store;
+
+  @override
+  State<PackTool> createState() => _PackToolState();
+}
+
+class _PackToolState extends State<PackTool> {
+  SettingsModel _settings = const SettingsModel();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    SettingsModel settings;
+    try {
+      settings = await widget.store.loadSettings();
+    } catch (_) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _settings = settings);
+  }
+
+  Future<void> _saveSettings(SettingsModel next) async {
+    setState(() => _settings = next);
+    await widget.store.saveSettings(next);
+  }
 
   @override
   Widget build(BuildContext context) {
     return FluentApp(
       title: 'C++ Pack Tool',
-      themeMode: ThemeMode.system,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      home: const MainLayout(),
+      themeMode: switch (_settings.themeMode) {
+        ThemeModeSetting.system => ThemeMode.system,
+        ThemeModeSetting.dark => ThemeMode.dark,
+        ThemeModeSetting.light => ThemeMode.light,
+      },
+      theme: buildTheme(Brightness.light, catppuccin.latte, _settings.accent),
+      darkTheme: buildTheme(
+        Brightness.dark,
+        flavorByName(_settings.darkFlavor),
+        _settings.accent,
+      ),
+      home: MainLayout(
+        store: widget.store,
+        settings: _settings,
+        onSaveSettings: _saveSettings,
+      ),
     );
   }
 }
+
+Future<void> _noopSaveSettings(SettingsModel settings) async {}
 
 class MainLayout extends StatefulWidget {
   const MainLayout({
@@ -39,11 +90,15 @@ class MainLayout extends StatefulWidget {
     this.pickDirectory = getDirectoryPath,
     this.scanFiles = FileScan.scan,
     this.store = const PackStore(),
+    this.settings = const SettingsModel(),
+    this.onSaveSettings = _noopSaveSettings,
   });
 
   final Future<String?> Function() pickDirectory;
   final Future<List<FileModel>> Function(String directoryPath) scanFiles;
   final PackStore store;
+  final SettingsModel settings;
+  final Future<void> Function(SettingsModel settings) onSaveSettings;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -183,9 +238,19 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     final PackModel pack = _packs[selected];
+    final List<String> dependents = <String>[
+      for (final PackModel item in _packs)
+        if (item.name.toLowerCase() != pack.name.toLowerCase() &&
+            item.dependencies.any(
+              (DependencyModel dependency) =>
+                  dependency.name.toLowerCase() == pack.name.toLowerCase(),
+            ))
+          item.name,
+    ];
     final bool confirmed = await showDeletePackDialog(
       context,
       packName: pack.name,
+      dependents: dependents,
     );
     if (!confirmed || !mounted) {
       return;
@@ -338,7 +403,11 @@ class _MainLayoutState extends State<MainLayout> {
           LibraryItem(
             icon: Svgs.settings,
             title: '设置',
-            body: const Center(child: Text('设置内容')),
+            body: Setting(
+              settings: widget.settings,
+              onSave: widget.onSaveSettings,
+              pickDirectory: widget.pickDirectory,
+            ),
           ),
           LibraryItem(
             icon: Svgs.info,

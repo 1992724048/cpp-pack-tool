@@ -52,11 +52,12 @@ void main() {
     expect(_confirmButton(tester).onPressed, isNull);
   });
 
-  testWidgets('非法版本范围实时提示并禁用确定', (tester) async {
+  testWidgets('选包预填最低版本范围且非法输入实时禁用确定', (tester) async {
     await _pumpDialog(tester, candidates: _candidates());
     await _selectPackage(tester, 'libfoo');
 
-    expect(_confirmButton(tester).onPressed, isNull);
+    expect(_versionBox(tester).controller!.text, '[1.0.0,)');
+    expect(_confirmButton(tester).onPressed, isNotNull);
 
     await tester.enterText(
       find.byKey(const Key('dependencyVersionField')),
@@ -81,6 +82,24 @@ void main() {
     );
     await tester.pump();
     expect(find.byKey(const Key('dependencyVersionError')), findsNothing);
+    expect(_confirmButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('重新选包覆盖已填版本', (tester) async {
+    await _pumpDialog(tester, candidates: _candidates());
+
+    await _selectPackage(tester, 'libfoo');
+    expect(_versionBox(tester).controller!.text, '[1.0.0,)');
+
+    await tester.enterText(
+      find.byKey(const Key('dependencyVersionField')),
+      '[2.0,3.0)',
+    );
+    await tester.pump();
+    expect(_versionBox(tester).controller!.text, '[2.0,3.0)');
+
+    await _selectPackage(tester, 'libbar');
+    expect(_versionBox(tester).controller!.text, '[2.0.0,)');
     expect(_confirmButton(tester).onPressed, isNotNull);
   });
 

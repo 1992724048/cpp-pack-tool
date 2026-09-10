@@ -4,6 +4,7 @@ import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yaml/yaml.dart';
 
@@ -241,6 +242,88 @@ void main() {
       await store.deletePack(r'a<b>:c');
 
       expect(File('${tempDir.path}/packs/a_b__c.yaml').existsSync(), isFalse);
+    });
+  });
+
+  group('settings', () {
+    test('无配置文件时返回默认值', () async {
+      final SettingsModel settings = await store.loadSettings();
+
+      expect(settings.outputDirectory, isNull);
+      expect(settings.themeMode, ThemeModeSetting.system);
+      expect(settings.darkFlavor, 'mocha');
+      expect(settings.accent, 'teal');
+    });
+
+    test('保存后可往返读回且保留 version 字段', () async {
+      const SettingsModel settings = SettingsModel(
+        outputDirectory: r'D:\nuget\out',
+        themeMode: ThemeModeSetting.dark,
+        darkFlavor: 'frappe',
+        accent: 'mauve',
+      );
+
+      await store.saveSettings(settings);
+
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, contains('version: 1'));
+
+      final SettingsModel loaded = await store.loadSettings();
+      expect(loaded.outputDirectory, r'D:\nuget\out');
+      expect(loaded.themeMode, ThemeModeSetting.dark);
+      expect(loaded.darkFlavor, 'frappe');
+      expect(loaded.accent, 'mauve');
+    });
+
+    test('输出目录为空时不写入 YAML', () async {
+      await store.saveSettings(const SettingsModel());
+
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, isNot(contains('outputDirectory')));
+      expect(yaml, contains('themeMode: system'));
+      expect(yaml, contains('darkFlavor: mocha'));
+      expect(yaml, contains('accent: teal'));
+    });
+
+    test('已有内容被全量重写', () async {
+      await store.ensureConfigExist();
+      File('${tempDir.path}/config.yaml')
+          .writeAsStringSync('version: 1\nlegacy: true\n');
+
+      await store.saveSettings(const SettingsModel(accent: 'red'));
+
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, contains('version: 1'));
+      expect(yaml, isNot(contains('legacy')));
+      expect(yaml, contains('accent: red'));
+    });
+
+    test('损坏的配置文件回退默认值', () async {
+      File('${tempDir.path}/config.yaml').createSync(recursive: true);
+      File('${tempDir.path}/config.yaml')
+          .writeAsStringSync('themeMode: [broken');
+
+      final SettingsModel settings = await store.loadSettings();
+
+      expect(settings.themeMode, ThemeModeSetting.system);
+      expect(settings.darkFlavor, 'mocha');
+      expect(settings.accent, 'teal');
+    });
+
+    test('未知字段值回退默认', () async {
+      File('${tempDir.path}/config.yaml').createSync(recursive: true);
+      File('${tempDir.path}/config.yaml').writeAsStringSync(
+        'version: 1\nthemeMode: pink\ndarkFlavor: latte\naccent: rainbow\n',
+      );
+
+      final SettingsModel settings = await store.loadSettings();
+
+      expect(settings.themeMode, ThemeModeSetting.system);
+      expect(settings.darkFlavor, 'mocha');
+      expect(settings.accent, 'teal');
     });
   });
 

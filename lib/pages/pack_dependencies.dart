@@ -1,7 +1,9 @@
 import 'package:cpp_nuget_pack/controls/dependency_dialog.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class PackDependencies extends StatefulWidget {
@@ -112,8 +114,10 @@ class _PackDependenciesState extends State<PackDependencies> {
           Expanded(
             child: widget.pack.dependencies.isEmpty
                 ? _buildEmptyGuide()
-                : ListView.builder(
+                : ListView.separated(
                     itemCount: widget.pack.dependencies.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        const Divider(),
                     itemBuilder: (BuildContext context, int index) =>
                         _buildRow(context, widget.pack.dependencies[index]),
                   ),
@@ -134,12 +138,26 @@ class _PackDependenciesState extends State<PackDependencies> {
 
   Widget _buildRow(BuildContext context, DependencyModel dependency) {
     final FluentThemeData theme = FluentTheme.of(context);
+    final bool missing = !widget.allPacks.any(
+      (PackModel pack) =>
+          pack.name.toLowerCase() == dependency.name.toLowerCase(),
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
           Expanded(
-            child: Text(dependency.name, overflow: TextOverflow.ellipsis),
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(dependency.name, overflow: TextOverflow.ellipsis),
+                ),
+                if (missing) ...[
+                  const SizedBox(width: 5),
+                  Tag(text: '缺失', color: UCColors.flavor.red, fontSize: 10),
+                ],
+              ],
+            ),
           ),
           const SizedBox(width: 12),
           Text(

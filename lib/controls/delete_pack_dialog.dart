@@ -4,6 +4,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 Future<bool> showDeletePackDialog(
   BuildContext context, {
   required String packName,
+  List<String> dependents = const <String>[],
 }) async {
   final bool? confirmed = await showDialog<bool>(
     context: context,
@@ -18,6 +19,16 @@ Future<bool> showDeletePackDialog(
           Text('确定要删除包「$packName」吗？'),
           const SizedBox(height: 8),
           const Text('将移除其配置文件，此操作不可恢复；源目录中的文件不会被删除。'),
+          if (dependents.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              '以下包依赖它：${dependents.join('、')}',
+              key: const Key('deletePackDependents'),
+              style: TextStyle(color: UCColors.flavor.red),
+            ),
+            const SizedBox(height: 4),
+            const Text('删除后这些依赖将显示为「缺失」。'),
+          ],
         ],
       ),
       actions: [

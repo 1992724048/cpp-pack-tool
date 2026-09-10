@@ -15,6 +15,22 @@ void main() {
     expect(find.text('将移除其配置文件，此操作不可恢复；源目录中的文件不会被删除。'), findsOneWidget);
   });
 
+  testWidgets('存在被依赖项时显示依赖方与提示', (tester) async {
+    await _pumpDialog(tester, dependents: <String>['alpha', 'gamma']);
+
+    expect(find.byKey(const Key('deletePackDependents')), findsOneWidget);
+    expect(find.text('以下包依赖它：alpha、gamma'), findsOneWidget);
+    expect(find.text('删除后这些依赖将显示为「缺失」。'), findsOneWidget);
+  });
+
+  testWidgets('无被依赖项时不显示依赖提示', (tester) async {
+    await _pumpDialog(tester);
+
+    expect(find.byKey(const Key('deletePackDependents')), findsNothing);
+    expect(find.textContaining('以下包依赖它'), findsNothing);
+    expect(find.text('删除后这些依赖将显示为「缺失」。'), findsNothing);
+  });
+
   testWidgets('删除键位于左端且为红底白字，取消键位于右端', (tester) async {
     await _pumpDialog(tester);
 
@@ -68,6 +84,7 @@ void main() {
 Future<void> _pumpDialog(
   WidgetTester tester, {
   ValueChanged<bool>? onResult,
+  List<String> dependents = const <String>[],
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -82,6 +99,7 @@ Future<void> _pumpDialog(
               final bool result = await showDeletePackDialog(
                 context,
                 packName: _packName,
+                dependents: dependents,
               );
               onResult?.call(result);
             },

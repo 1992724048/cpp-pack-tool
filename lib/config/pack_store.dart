@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
@@ -111,6 +112,39 @@ class PackStore {
     if (await file.exists()) {
       await file.delete();
     }
+  }
+
+  Future<SettingsModel> loadSettings() async {
+    final File file = configFile;
+    if (!await file.exists()) {
+      return const SettingsModel();
+    }
+    try {
+      final String content = await file.readAsString();
+      final Object? document = loadYaml(content);
+      if (document is! Map) {
+        return const SettingsModel();
+      }
+      return SettingsModel.fromMap(_stringKeyMap(document));
+    } catch (_) {
+      return const SettingsModel();
+    }
+  }
+
+  Future<void> saveSettings(SettingsModel settings) async {
+    await ensureConfigExist();
+    final Map<String, Object?> payload = <String, Object?>{
+      'version': 1,
+      ...settings.toMap(),
+    };
+
+    final YamlEditor editor = YamlEditor('');
+    editor.update(<Object?>[], payload);
+    final String yaml = editor.toString();
+    await configFile.writeAsString(
+      yaml.endsWith('\n') ? yaml : '$yaml\n',
+      flush: true,
+    );
   }
 
   static String sanitizeFileName(String name) {

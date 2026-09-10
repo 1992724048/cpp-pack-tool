@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -62,7 +64,34 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('设置内容'), findsOneWidget);
+    expect(find.text('主题模式'), findsOneWidget);
+    expect(find.byKey(const Key('settingPickDirButton')), findsOneWidget);
+  });
+
+  testWidgets('footer 设置页可操作且回传新设置', (tester) async {
+    SettingsModel? saved;
+
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      onSaveSettings: (SettingsModel settings) async => saved = settings,
+    );
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('settingThemeModeField')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('深色').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.themeMode, ThemeModeSetting.dark);
+    expect(find.text('已保存'), findsOneWidget);
   });
 
   testWidgets('启动后显示已加载的包', (tester) async {
@@ -296,6 +325,69 @@ void main() {
     expect(_selectedIndex(tester), 1);
   });
 
+  testWidgets('删除被依赖的包时对话框显示依赖方名称', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'alpha',
+          '1.0.0',
+          dependencies: <DependencyModel>[
+            const DependencyModel(name: 'beta', version: '1.0'),
+          ],
+        ),
+        _pack('beta', '1.0.0'),
+        _pack(
+          'gamma',
+          '1.0.0',
+          dependencies: <DependencyModel>[
+            const DependencyModel(name: 'BETA', version: '1.0'),
+          ],
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('beta'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('deletePackDependents')), findsOneWidget);
+    expect(find.text('以下包依赖它：alpha、gamma'), findsOneWidget);
+    expect(find.text('删除后这些依赖将显示为「缺失」。'), findsOneWidget);
+  });
+
+  testWidgets('删除未被依赖的包时不显示依赖提示', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('alpha', '1.0.0'), _pack('beta', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('beta'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('deletePackDependents')), findsNothing);
+    expect(find.textContaining('以下包依赖它'), findsNothing);
+  });
+
   testWidgets('删除最后一项后选择回退到前一项', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[_pack('alpha', '1.0.0'), _pack('beta', '1.0.0')],
@@ -518,6 +610,8 @@ Future<void> _pumpMainLayout(
   required Future<String?> Function() pickDirectory,
   required Future<List<FileModel>> Function(String directoryPath) scanFiles,
   PackStore? store,
+  SettingsModel settings = const SettingsModel(),
+  Future<void> Function(SettingsModel settings)? onSaveSettings,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -529,6 +623,8 @@ Future<void> _pumpMainLayout(
         pickDirectory: pickDirectory,
         scanFiles: scanFiles,
         store: store ?? _FakePackStore(),
+        settings: settings,
+        onSaveSettings: onSaveSettings ?? (SettingsModel settings) async {},
       ),
     ),
   );
@@ -576,6 +672,7 @@ PackModel _pack(
   String version, {
   String? sourcePath,
   List<FileModel>? files,
+  List<DependencyModel>? dependencies,
 }) {
   final PackModel pack = PackModel(
     name: name,
@@ -585,6 +682,9 @@ PackModel _pack(
   );
   if (files != null) {
     pack.files.addAll(files);
+  }
+  if (dependencies != null) {
+    pack.dependencies.addAll(dependencies);
   }
   return pack;
 }

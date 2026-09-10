@@ -40,9 +40,24 @@ void main() {
     expect(find.byIcon(FluentIcons.edit), findsNWidgets(2));
     expect(find.byIcon(FluentIcons.delete), findsNWidgets(2));
     expect(find.text('暂无依赖'), findsNothing);
+    expect(find.byType(Divider), findsOneWidget);
   });
 
-  testWidgets('依赖指向已删除的包时原样展示', (tester) async {
+  testWidgets('单条依赖不渲染分隔线', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(name: 'libfoo', version: '1.0'),
+      ];
+
+    await _pumpPage(
+      tester,
+      _page(pack, allPacks: <PackModel>[_pack('libfoo')]),
+    );
+
+    expect(find.byType(Divider), findsNothing);
+  });
+
+  testWidgets('依赖指向已删除的包时展示并标记缺失', (tester) async {
     final PackModel pack = _pack('demo')
       ..dependencies = <DependencyModel>[
         const DependencyModel(name: 'gone', version: '1.0'),
@@ -52,6 +67,22 @@ void main() {
 
     expect(find.text('gone'), findsOneWidget);
     expect(find.text('1.0'), findsOneWidget);
+    expect(find.text('缺失'), findsOneWidget);
+  });
+
+  testWidgets('依赖对应的包存在时不显示缺失标签', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(name: 'LIBFOO', version: '1.0'),
+      ];
+
+    await _pumpPage(
+      tester,
+      _page(pack, allPacks: <PackModel>[_pack('demo'), _pack('libfoo')]),
+    );
+
+    expect(find.text('LIBFOO'), findsOneWidget);
+    expect(find.text('缺失'), findsNothing);
   });
 
   testWidgets('添加依赖后回调收到含新依赖的完整包并提示已添加', (tester) async {
@@ -148,11 +179,18 @@ void main() {
 
     expect(
       tester
+          .widget<TextBox>(find.byKey(const Key('dependencyVersionField')))
+          .controller!
+          .text,
+      '[1.0.0,)',
+    );
+    expect(
+      tester
           .widget<FilledButton>(
             find.byKey(const Key('dependencyConfirmButton')),
           )
           .onPressed,
-      isNull,
+      isNotNull,
     );
 
     await tester.enterText(
