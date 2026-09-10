@@ -1,7 +1,22 @@
 ﻿import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
-enum FileType { header, source, module, resource, lib, dll, other }
+enum FileType {
+  header,
+  source,
+  module,
+  resource,
+  lib,
+  dll,
+  pdb,
+  asm,
+  fortran,
+  script,
+  llvm,
+  python,
+  database,
+  other,
+}
 
 const Map<String, FileType> _extensionTypes = {
   'h': FileType.header,
@@ -27,6 +42,27 @@ const Map<String, FileType> _extensionTypes = {
   'rc': FileType.resource,
   'lib': FileType.lib,
   'dll': FileType.dll,
+  'pdb': FileType.pdb,
+  'asm': FileType.asm,
+  's': FileType.asm,
+  'nasm': FileType.asm,
+  'f': FileType.fortran,
+  'for': FileType.fortran,
+  'f77': FileType.fortran,
+  'f90': FileType.fortran,
+  'f95': FileType.fortran,
+  'f03': FileType.fortran,
+  'f08': FileType.fortran,
+  'bat': FileType.script,
+  'cmd': FileType.script,
+  'ps1': FileType.script,
+  'vbs': FileType.script,
+  'll': FileType.llvm,
+  'bc': FileType.llvm,
+  'py': FileType.python,
+  'pyw': FileType.python,
+  'pyi': FileType.python,
+  'db': FileType.database,
 };
 
 class FileModel {

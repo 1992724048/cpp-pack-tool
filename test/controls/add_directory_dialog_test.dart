@@ -19,10 +19,13 @@ void main() {
     expect(find.text('正在扫描…'), findsOneWidget);
     expect(find.text('添加包'), findsOneWidget);
     expect(find.text('路径：$_directoryPath'), findsOneWidget);
+    expect(find.byKey(const Key('packIdField')), findsNothing);
+    expect(find.text('包 ID'), findsNothing);
     expect(_confirmButton(tester).onPressed, isNull);
 
     completer.complete(const <FileModel>[]);
     await tester.pump();
+    expect(find.byKey(const Key('packIdField')), findsOneWidget);
   });
 
   testWidgets('扫描成功时显示文件数量与总大小', (tester) async {
@@ -37,6 +40,7 @@ void main() {
     expect(find.byType(ProgressRing), findsNothing);
     expect(find.text('文件数量：2'), findsOneWidget);
     expect(find.text('总大小：2.0 KB'), findsOneWidget);
+    expect(find.byKey(const Key('packIdField')), findsOneWidget);
   });
 
   testWidgets('扫描失败时显示去除前缀的错误信息且确定禁用', (tester) async {
@@ -48,6 +52,7 @@ void main() {
 
     expect(find.text('扫描失败：目录不存在: X'), findsOneWidget);
     expect(find.textContaining('Invalid argument(s):'), findsNothing);
+    expect(find.byKey(const Key('packIdField')), findsNothing);
     expect(_confirmButton(tester).onPressed, isNull);
   });
 

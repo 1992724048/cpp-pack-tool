@@ -98,6 +98,43 @@ void main() {
       expect(_file('app.pdb'), _latte('database'));
     });
 
+    test('汇编、Java、C# 与 Rust 文件', () {
+      expect(_file('boot.asm'), _latte('assembly'));
+      expect(_file('boot.s'), _latte('assembly'));
+      expect(_file('boot.nasm'), _latte('assembly'));
+      expect(_file('Main.java'), _latte('java'));
+      expect(_file('page.jsp'), _latte('java'));
+      expect(_file('Main.class'), _latte('java-class'));
+      expect(_file('library.jar'), _latte('java-jar'));
+      expect(_file('Program.cs'), _latte('csharp'));
+      expect(_file('script.csx'), _latte('csharp'));
+      expect(_file('main.rs'), _latte('rust'));
+      expect(_file('config.ron'), _latte('rust'));
+    });
+
+    test('HTML、CSS 与 XAML 文件', () {
+      expect(_file('index.html'), _latte('html'));
+      expect(_file('index.htm'), _latte('html'));
+      expect(_file('index.xhtml'), _latte('html'));
+      expect(_file('style.css'), _latte('css'));
+      expect(_file('style.scss'), _latte('sass'));
+      expect(_file('style.sass'), _latte('sass'));
+      expect(_file('style.less'), _latte('less'));
+      expect(_file('App.xaml'), _latte('xaml'));
+      expect(_file('App.axaml'), _latte('xaml'));
+    });
+
+    test('数据库文件映射到 database', () {
+      expect(_file('data.db'), _latte('database'));
+      expect(_file('query.sql'), _latte('database'));
+      expect(_file('cache.sqlite'), _latte('database'));
+      expect(_file('cache.sqlite3'), _latte('database'));
+    });
+
+    test('qml 无上游图标，回退 _file', () {
+      expect(_file('Main.qml'), _latte('_file'));
+    });
+
     test('未知扩展名回退 _file', () {
       expect(_file('data.xyz'), _latte('_file'));
       expect(_file('main.rc'), _latte('_file'));

@@ -68,6 +68,60 @@ void main() {
       expect(FileModel(name: 'mylib.dll', path: '').type, FileType.dll);
     });
 
+    test('PDB 调试符号映射为 pdb', () {
+      expect(FileModel(name: 'app.pdb', path: '').type, FileType.pdb);
+    });
+
+    test('汇编扩展名映射为 asm', () {
+      for (final extension in ['asm', 's', 'nasm']) {
+        expect(FileModel(name: 'boot.$extension', path: '').type, FileType.asm);
+      }
+    });
+
+    test('Fortran 扩展名映射为 fortran', () {
+      for (final extension in ['f', 'for', 'f77', 'f90', 'f95', 'f03', 'f08']) {
+        expect(
+          FileModel(name: 'solver.$extension', path: '').type,
+          FileType.fortran,
+        );
+      }
+    });
+
+    test('脚本扩展名映射为 script', () {
+      for (final extension in ['bat', 'cmd', 'ps1', 'vbs']) {
+        expect(
+          FileModel(name: 'run.$extension', path: '').type,
+          FileType.script,
+        );
+      }
+    });
+
+    test('LLVM 扩展名映射为 llvm', () {
+      expect(FileModel(name: 'module.ll', path: '').type, FileType.llvm);
+      expect(FileModel(name: 'module.bc', path: '').type, FileType.llvm);
+    });
+
+    test('Python 扩展名映射为 python', () {
+      for (final extension in ['py', 'pyw', 'pyi']) {
+        expect(
+          FileModel(name: 'tool.$extension', path: '').type,
+          FileType.python,
+        );
+      }
+    });
+
+    test('数据库扩展名映射为 database', () {
+      expect(FileModel(name: 'data.db', path: '').type, FileType.database);
+    });
+
+    test('新类型扩展名大小写不敏感', () {
+      expect(FileModel(name: 'FOO.PY', path: '').type, FileType.python);
+      expect(FileModel(name: 'APP.PDB', path: '').type, FileType.pdb);
+      expect(FileModel(name: 'SOLVER.F90', path: '').type, FileType.fortran);
+      expect(FileModel(name: 'MODULE.LL', path: '').type, FileType.llvm);
+      expect(FileModel(name: 'DATA.DB', path: '').type, FileType.database);
+    });
+
     test('未知扩展名或无扩展名映射为 other', () {
       expect(FileModel(name: 'readme.md', path: '').type, FileType.other);
       expect(FileModel(name: 'LICENSE', path: '').type, FileType.other);

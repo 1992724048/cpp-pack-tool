@@ -102,62 +102,10 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
             Text('路径：${widget.directoryPath}'),
             const SizedBox(height: 12),
             _buildScanStatus(),
-            const SizedBox(height: 12),
-            _buildField(
-              label: '包 ID',
-              child: TextBox(
-                key: const Key('packIdField'),
-                controller: _idController,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: '版本',
-              child: TextBox(
-                key: const Key('packVersionField'),
-                controller: _versionController,
-                placeholder: '1.0.0',
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: '作者',
-              child: TextBox(
-                key: const Key('packAuthorField'),
-                controller: _authorController,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: '许可证',
-              child: FluentTheme(
-                data: FluentTheme.of(context)
-                    .copyWith(visualDensity: licenseSelectorDensity),
-                child: ComboBox<String?>(
-                  key: const Key('packLicenseField'),
-                  value: _license,
-                  placeholder: const Text('无'),
-                  isExpanded: true,
-                  onChanged: (String? value) =>
-                      setState(() => _license = value),
-                  items: <ComboBoxItem<String?>>[
-                    const ComboBoxItem<String?>(value: null, child: Text('无')),
-                    for (final String option in licenseOptions)
-                      ComboBoxItem<String?>(value: option, child: Text(option)),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildField(
-              label: '描述',
-              child: TextBox(
-                key: const Key('packDescriptionField'),
-                controller: _descriptionController,
-                minLines: 3,
-                maxLines: 3,
-              ),
-            ),
+            if (_files != null) ...[
+              const SizedBox(height: 12),
+              _buildFormFields(),
+            ],
           ],
         ),
       ),
@@ -218,6 +166,69 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
         const SizedBox(width: 12),
         Expanded(
           child: Text('图标：${iconFile.path}', overflow: TextOverflow.ellipsis),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormFields() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildField(
+          label: '包 ID',
+          child: TextBox(
+            key: const Key('packIdField'),
+            controller: _idController,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildField(
+          label: '版本',
+          child: TextBox(
+            key: const Key('packVersionField'),
+            controller: _versionController,
+            placeholder: '1.0.0',
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildField(
+          label: '作者',
+          child: TextBox(
+            key: const Key('packAuthorField'),
+            controller: _authorController,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildField(
+          label: '许可证',
+          child: FluentTheme(
+            data: FluentTheme.of(context)
+                .copyWith(visualDensity: licenseSelectorDensity),
+            child: ComboBox<String?>(
+              key: const Key('packLicenseField'),
+              value: _license,
+              placeholder: const Text('无'),
+              isExpanded: true,
+              onChanged: (String? value) => setState(() => _license = value),
+              items: <ComboBoxItem<String?>>[
+                const ComboBoxItem<String?>(value: null, child: Text('无')),
+                for (final String option in licenseOptions)
+                  ComboBoxItem<String?>(value: option, child: Text(option)),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildField(
+          label: '描述',
+          child: TextBox(
+            key: const Key('packDescriptionField'),
+            controller: _descriptionController,
+            minLines: 3,
+            maxLines: 3,
+          ),
         ),
       ],
     );

@@ -16,6 +16,8 @@ class PackFiles extends StatefulWidget {
 
 class _PackFilesState extends State<PackFiles> {
   static const double _treeIconSize = 18;
+  // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
+  static const double _treeRowContentMinHeight = 26;
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
   final Set<String> _expandedDirs = <String>{};
@@ -122,12 +124,15 @@ class _PackFilesState extends State<PackFiles> {
   }
 
   static Widget _buildRow(String name, String size, Color sizeColor) {
-    return Row(
-      children: <Widget>[
-        Expanded(child: Text(name, overflow: TextOverflow.ellipsis)),
-        const SizedBox(width: 8),
-        Text(size, style: TextStyle(color: sizeColor)),
-      ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: _treeRowContentMinHeight),
+      child: Row(
+        children: <Widget>[
+          Expanded(child: Text(name, overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 8),
+          Text(size, style: TextStyle(color: sizeColor)),
+        ],
+      ),
     );
   }
 
