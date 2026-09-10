@@ -3,6 +3,10 @@ import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+/// fluent_ui 4.16.1 中 ComboBox 上下各有 1px 边框衬距，比单行 TextBox 高 2px；
+/// visualDensity 每 1 单位调整 4px，取垂直 -0.5 恰好抵消，使许可证下拉框与相邻输入框等高。
+const VisualDensity _licenseSelectorDensity = VisualDensity(vertical: -0.5);
+
 class PackInfo extends StatefulWidget {
   const PackInfo({super.key, required this.pack, required this.onSave});
 
@@ -258,13 +262,19 @@ class _PackInfoState extends State<PackInfo> {
     }
     return InfoLabel(
       label: '许可证',
-      child: ComboBox<String?>(
-        key: const Key('packInfoLicenseField'),
-        value: _license,
-        placeholder: const Text('无'),
-        isExpanded: true,
-        onChanged: (String? value) => setState(() => _license = value),
-        items: _licenseItems(),
+      child: Builder(
+        builder: (BuildContext context) => FluentTheme(
+          data: FluentTheme.of(context)
+              .copyWith(visualDensity: _licenseSelectorDensity),
+          child: ComboBox<String?>(
+            key: const Key('packInfoLicenseField'),
+            value: _license,
+            placeholder: const Text('无'),
+            isExpanded: true,
+            onChanged: (String? value) => setState(() => _license = value),
+            items: _licenseItems(),
+          ),
+        ),
       ),
     );
   }

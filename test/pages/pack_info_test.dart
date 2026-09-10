@@ -52,6 +52,30 @@ void main() {
     expect(find.byKey(const Key('packInfoEditButton')), findsNothing);
   });
 
+  testWidgets('编辑态许可证下拉框与相邻输入框等高同宽', (tester) async {
+    final PackModel pack = _pack();
+
+    await _pumpPage(tester, PackInfo(pack: pack, onSave: _acceptSave));
+    await _tapEdit(tester);
+
+    final Size license = tester.getSize(
+      find.byKey(const Key('packInfoLicenseField')),
+    );
+    final Size version = tester.getSize(
+      find.byKey(const Key('packInfoVersionField')),
+    );
+    final Size author = tester.getSize(
+      find.byKey(const Key('packInfoAuthorField')),
+    );
+
+    expect(find.byType(ComboBox<String?>), findsOneWidget);
+    expect(license.height, version.height);
+    expect(license.height, author.height);
+    expect(license.width, version.width);
+    expect(license.width, author.width);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('取消编辑还原字段并回到只读态', (tester) async {
     final PackModel pack = _pack();
 
