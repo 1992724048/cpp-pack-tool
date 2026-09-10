@@ -33,10 +33,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.byType(ContentDialog), findsOneWidget);
+    expect(find.text('添加包'), findsOneWidget);
     expect(find.text(r'路径：C:\libs\foo'), findsOneWidget);
     expect(find.text('文件数量：2'), findsOneWidget);
     expect(find.text('总大小：2.0 KB'), findsOneWidget);
-    expect(find.text('关闭'), findsOneWidget);
+    expect(find.text('取消'), findsOneWidget);
+    expect(find.text('确定'), findsOneWidget);
   });
 }
 

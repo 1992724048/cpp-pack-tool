@@ -5,7 +5,7 @@
 「C++ NuGet 打包工具」：Flutter **Windows 桌面应用**（`.metadata` → `project_type: app`），目标是把 C++ 头文件/源码/库可视化成 NuGet 包。注意：
 
 - **不是** Flutter 插件、**不是** C++ 库。名称里的 NuGet 只是应用的功能主题——构建管线与 CI 至今没有任何 NuGet 工具链集成（无 .nuspec/.targets/nuget.exe/dotnet pack）。
-- 当前为早期 UI 骨架：`lib/controls/pack_list.dart`、`lib/pages/pack_files.dart` 是硬编码假数据，多个 Tab 与多数工具栏按钮回调为空（「添加文件夹」已接入目录选择 + 占位对话框）；`lib/pages/setting.dart`、`lib/pages/about.dart` 是 0 字节空文件。
+- 当前为早期 UI 骨架：`lib/controls/pack_list.dart`、`lib/pages/pack_files.dart` 是硬编码假数据，多个 Tab 与多数工具栏按钮回调为空（「添加文件夹」已接入目录选择 + 「添加包」表单对话框）；`lib/pages/setting.dart`、`lib/pages/about.dart` 是 0 字节空文件。
 - 仅支持 Windows（无 android/ios/linux/macos/web 平台目录）。
 
 ## Commands
@@ -31,7 +31,7 @@ flutter run -d windows             # 本地运行
 ## Architecture
 
 - 入口链：`lib/main.dart` → `MainLayout` → `lib/controls/pack_list.dart` / `pack_manage.dart` → `lib/pages/*`。
-- 「添加文件夹」流程：`MainLayout.pickDirectory`（默认 `file_selector` 的 `getDirectoryPath()`，系统原生目录对话框，取消返回 null）→ `lib/controls/add_directory_dialog.dart` 占位对话框（展示路径 + 扫描统计，扫描经 `MainLayout.scanFiles`，默认 `FileScan.scan`）。两依赖均可注入以配合测试。
+- 「添加文件夹」流程：`MainLayout.pickDirectory`（默认 `file_selector` 的 `getDirectoryPath()`，系统原生目录对话框，取消返回 null）→ `lib/controls/add_directory_dialog.dart`「添加包」表单对话框（路径 + 扫描统计 + 包 ID/版本/作者（必填）/许可证（下拉可空，8 项 SPDX）/描述 + 图标自动识别扫描结果首个图片文件（png/jpg/jpeg/svg/ico/webp）；「确定」返回 `PackModel`（含 `files`/`license`/`iconPath`），扫描经 `MainLayout.scanFiles`，默认 `FileScan.scan`）。两依赖均可注入以配合测试。
 - 领域模型在 `lib/models/`：`PackModel`、`CmdModel`/`CmdType`、`MacroModel`、`FileModel`/`FileType`、`BuildModel`——纯数据类，无序列化。
 - `lib/scanner/file_scan.dart` 是唯一 `dart:io` 用法：`FileScan.scan()` 异步单次遍历包目录，输出相对路径、稳定排序的 `FileModel` 列表（跳过隐藏目录与 `build`/`out`；`FileModel` 含 `size` 字节数）。
 - **Dart ↔ C++ 无任何桥接**（无 MethodChannel / FFI）；`windows/` 是 Flutter runner 模板，唯一自定义处是窗口标题（`windows/runner/main.cpp`）。要加原生能力需从零自建通道。

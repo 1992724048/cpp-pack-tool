@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
@@ -54,7 +55,7 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     final Future<List<FileModel>> scanFuture = widget.scanFiles(path);
-    await showDialog<void>(
+    await showDialog<PackModel>(
       context: context,
       builder: (_) =>
           AddDirectoryDialog(directoryPath: path, scanFuture: scanFuture),

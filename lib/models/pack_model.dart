@@ -6,11 +6,20 @@ class PackModel {
   final String version;
   final String author;
   final String? description;
+  final String? license;
+  final String? iconPath;
 
   List<FileModel> files = [];
   List<CmdModel> cmds = [];
 
   static List<PackModel> packs = [];
-  
-  PackModel({required this.name, required this.version, required this.author, this.description});
+
+  PackModel({
+    required this.name,
+    required this.version,
+    required this.author,
+    this.description,
+    this.license,
+    this.iconPath,
+  });
 }
