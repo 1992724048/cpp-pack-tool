@@ -10,6 +10,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'controls/add_directory_dialog.dart';
+import 'controls/delete_pack_dialog.dart';
 import 'controls/pack_list.dart';
 
 void main() {
@@ -166,6 +167,52 @@ class _MainLayoutState extends State<MainLayout> {
     return true;
   }
 
+  bool get _canDeleteSelectedPack {
+    final int? selected = _selected;
+    return selected != null && selected >= 0 && selected < _packs.length;
+  }
+
+  Future<void> _deleteSelectedPack() async {
+    final int? selected = _selected;
+    if (selected == null || selected < 0 || selected >= _packs.length) {
+      return;
+    }
+    final PackModel pack = _packs[selected];
+    final bool confirmed = await showDeletePackDialog(
+      context,
+      packName: pack.name,
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+    try {
+      await widget.store.deletePack(pack.name);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '删除失败：$error',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _packs.removeAt(selected);
+      if (_packs.isEmpty) {
+        _selected = null;
+      } else if (selected >= _packs.length) {
+        _selected = _packs.length - 1;
+      }
+    });
+    showFloatingToast(context, '已删除');
+  }
+
   void _sortPacks() {
     _packs.sort((PackModel first, PackModel second) {
       final int insensitive = first.name.toLowerCase().compareTo(
@@ -217,7 +264,10 @@ class _MainLayoutState extends State<MainLayout> {
             ),
             Tooltip(
               message: '删除文件夹',
-              child: IconButton(icon: Svgs.deleteFolder, onPressed: () {}),
+              child: IconButton(
+                icon: Svgs.deleteFolder,
+                onPressed: _canDeleteSelectedPack ? _deleteSelectedPack : null,
+              ),
             ),
             Tooltip(
               message: '重新映射',

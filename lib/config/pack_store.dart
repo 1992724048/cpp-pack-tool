@@ -104,6 +104,15 @@ class PackStore {
     );
   }
 
+  Future<void> deletePack(String name) async {
+    final File file = File(
+      '${packsDirectory.path}/${sanitizeFileName(name)}.yaml',
+    );
+    if (await file.exists()) {
+      await file.delete();
+    }
+  }
+
   static String sanitizeFileName(String name) {
     final String sanitized = name
         .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')

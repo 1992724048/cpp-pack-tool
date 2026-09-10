@@ -252,6 +252,161 @@ void main() {
       isNotNull,
     );
   });
+
+  testWidgets('删除选中包确认后调用 deletePack 并从列表移除', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('alpha', '1.0.0'),
+        _pack('beta', '1.0.0'),
+        _pack('gamma', '1.0.0'),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('beta'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('deletePackDialog')), findsOneWidget);
+    expect(find.text('确定要删除包「beta」吗？'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.deleteCount, 1);
+    expect(store.deletedNames, <String>['beta']);
+    expect(store.packs.map((PackModel pack) => pack.name).toList(), <String>[
+      'alpha',
+      'gamma',
+    ]);
+    expect(find.text('beta'), findsNothing);
+    expect(find.text('已删除'), findsOneWidget);
+    expect(_selectedIndex(tester), 1);
+  });
+
+  testWidgets('删除最后一项后选择回退到前一项', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('alpha', '1.0.0'), _pack('beta', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('beta'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, hasLength(1));
+    expect(_selectedIndex(tester), 0);
+  });
+
+  testWidgets('取消删除时列表与存储不变', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackCancelButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.deleteCount, 0);
+    expect(store.packs, hasLength(1));
+    expect(find.byKey(const Key('deletePackDialog')), findsNothing);
+    expect(find.text('demo'), findsWidgets);
+    expect(find.text('已删除'), findsNothing);
+  });
+
+  testWidgets('无包时删除按钮禁用', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      store: _FakePackStore(),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_deleteButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('选中设置项时删除按钮禁用', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_deleteButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_deleteButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('删除失败时显示错误提示且列表不变', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    )..failDelete = true;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.deleteCount, 1);
+    expect(store.packs, hasLength(1));
+    expect(find.text('demo'), findsWidgets);
+    expect(find.textContaining('删除失败'), findsOneWidget);
+    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+    expect(find.byKey(const Key('deletePackDialog')), findsNothing);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -295,6 +450,16 @@ Future<void> _tapDialogButton(WidgetTester tester, String label) async {
   await tester.pump();
 }
 
+IconButton _deleteButton(WidgetTester tester) => tester.widget<IconButton>(
+  find.descendant(
+    of: find.byTooltip('删除文件夹'),
+    matching: find.byType(IconButton),
+  ),
+);
+
+int? _selectedIndex(WidgetTester tester) =>
+    tester.widget<NavigationView>(find.byType(NavigationView)).pane?.selected;
+
 PackModel _pack(String name, String version) =>
     PackModel(name: name, version: version, author: 'tester');
 
@@ -307,7 +472,10 @@ class _FakePackStore extends PackStore {
   final List<PackModel> _packs;
   final List<PackLoadError> _errors;
   int saveCount = 0;
+  int deleteCount = 0;
   bool failSave = false;
+  bool failDelete = false;
+  final List<String> deletedNames = <String>[];
 
   List<PackModel> get packs => _packs;
 
@@ -334,5 +502,17 @@ class _FakePackStore extends PackStore {
     } else {
       _packs.add(pack);
     }
+  }
+
+  @override
+  Future<void> deletePack(String name) async {
+    deleteCount++;
+    if (failDelete) {
+      throw const FileSystemException('删除出错');
+    }
+    deletedNames.add(name);
+    _packs.removeWhere(
+      (PackModel item) => item.name.toLowerCase() == name.toLowerCase(),
+    );
   }
 }

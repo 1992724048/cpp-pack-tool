@@ -168,6 +168,37 @@ void main() {
     });
   });
 
+  group('deletePack', () {
+    test('删除已存在的配置文件且 loadPacks 不再返回', () async {
+      await store.savePack(
+        PackModel(name: 'demo', version: '1.0.0', author: 'tester'),
+      );
+
+      await store.deletePack('demo');
+
+      expect(File('${tempDir.path}/packs/demo.yaml').existsSync(), isFalse);
+      final PackLoadResult result = await store.loadPacks();
+      expect(result.packs, isEmpty);
+    });
+
+    test('文件不存在时不报错', () async {
+      await store.ensureConfigExist();
+
+      await expectLater(store.deletePack('missing'), completes);
+    });
+
+    test('包名含非法字符时按清洗后的文件名删除', () async {
+      await store.savePack(
+        PackModel(name: r'a<b>:c', version: '1.0.0', author: 'tester'),
+      );
+      expect(File('${tempDir.path}/packs/a_b__c.yaml').existsSync(), isTrue);
+
+      await store.deletePack(r'a<b>:c');
+
+      expect(File('${tempDir.path}/packs/a_b__c.yaml').existsSync(), isFalse);
+    });
+  });
+
   group('loadPacks 容错', () {
     test('目录不存在时返回空结果', () async {
       final PackLoadResult result = await store.loadPacks();
