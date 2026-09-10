@@ -49,3 +49,11 @@ app.*.map.json
 
 # IDE caches
 _ReSharper.Caches/
+
+# Tooling scratch directories
+.temp/
+.slim/
+.decompiled/
+
+# Runtime pack configuration
+/config/

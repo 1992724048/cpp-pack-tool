@@ -1,0 +1,278 @@
+import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/build_config.dart';
+import 'package:cpp_nuget_pack/util/catppuccin_icons.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/util/file_opener.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+
+class PackFiles extends StatefulWidget {
+  const PackFiles({
+    super.key,
+    required this.pack,
+    this.openFile = openWithDefaultApp,
+  });
+
+  final PackModel pack;
+  final Future<bool> Function(String path) openFile;
+
+  @override
+  State<PackFiles> createState() => _PackFilesState();
+}
+
+class _PackFilesState extends State<PackFiles> {
+  static const double _treeIconSize = 18;
+  // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
+  static const double _treeRowContentMinHeight = 26;
+  static const Set<FileType> _buildLabelTypes = <FileType>{
+    FileType.lib,
+    FileType.dll,
+    FileType.pdb,
+    FileType.executable,
+  };
+  static final RegExp _pathSeparator = RegExp(r'[/\\]');
+
+  final Set<String> _expandedDirs = <String>{};
+
+  @override
+  void didUpdateWidget(covariant PackFiles oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pack.name != widget.pack.name) {
+      _expandedDirs.clear();
+    }
+  }
+
+  static List<String> _pathSegments(String path) => path
+      .split(_pathSeparator)
+      .where((String segment) => segment.isNotEmpty)
+      .toList();
+
+  static int _compareNames(String first, String second) {
+    final int insensitive = first.toLowerCase().compareTo(second.toLowerCase());
+    if (insensitive != 0) {
+      return insensitive;
+    }
+    return first.compareTo(second);
+  }
+
+  static _DirNode _buildTree(List<FileModel> files) {
+    final _DirNode root = _DirNode(name: '', path: '');
+    for (final FileModel file in files) {
+      final List<String> segments = _pathSegments(file.path);
+      if (segments.isEmpty) {
+        root.files.add(file);
+        continue;
+      }
+      _DirNode parent = root;
+      for (final String segment in segments.take(segments.length - 1)) {
+        final String childPath = parent.path.isEmpty
+            ? segment
+            : '${parent.path}/$segment';
+        parent = parent.children.putIfAbsent(
+          segment,
+          () => _DirNode(name: segment, path: childPath),
+        );
+        parent.size += file.size;
+      }
+      parent.files.add(file);
+    }
+    return root;
+  }
+
+  List<TreeViewItem> _buildTreeItems(_DirNode node, Color sizeColor) {
+    final List<TreeViewItem> items = <TreeViewItem>[];
+    final List<_DirNode> dirs = node.children.values.toList()
+      ..sort(
+        (_DirNode first, _DirNode second) =>
+            _compareNames(first.name, second.name),
+      );
+    for (final _DirNode dir in dirs) {
+      final bool expanded = _expandedDirs.contains(dir.path);
+      items.add(
+        TreeViewItem(
+          value: dir.path,
+          leading: _buildIcon(
+            dir.name,
+            isDirectory: true,
+            isExpanded: expanded,
+          ),
+          expanded: expanded,
+          content: _buildRow(dir.name, formatBytes(dir.size), sizeColor),
+          children: _buildTreeItems(dir, sizeColor),
+        ),
+      );
+    }
+    final List<FileModel> files = node.files.toList()
+      ..sort(
+        (FileModel first, FileModel second) =>
+            _compareNames(first.name, second.name),
+      );
+    for (final FileModel file in files) {
+      items.add(
+        TreeViewItem(
+          leading: _buildIcon(file.name),
+          content: GestureDetector(
+            onDoubleTap: () => _openFile(file),
+            child: _buildRow(
+              file.name,
+              formatBytes(file.size),
+              sizeColor,
+              label: _buildBuildLabel(file),
+            ),
+          ),
+        ),
+      );
+    }
+    return items;
+  }
+
+  Widget _buildIcon(
+    String name, {
+    bool isDirectory = false,
+    bool isExpanded = false,
+  }) {
+    return SvgPicture.asset(
+      iconAssetFor(
+        brightness: FluentTheme.of(context).brightness,
+        name: name,
+        isDirectory: isDirectory,
+        isExpanded: isExpanded,
+      ),
+      width: _treeIconSize,
+      height: _treeIconSize,
+    );
+  }
+
+  static Widget _buildRow(
+    String name,
+    String size,
+    Color sizeColor, {
+    Widget? label,
+  }) {
+    final Widget nameText = Text(name, overflow: TextOverflow.ellipsis);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: _treeRowContentMinHeight),
+      child: Row(
+        children: <Widget>[
+          if (label == null)
+            Expanded(child: nameText)
+          else
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Flexible(child: nameText),
+                  const SizedBox(width: 5),
+                  label,
+                ],
+              ),
+            ),
+          const SizedBox(width: 8),
+          Text(size, style: TextStyle(color: sizeColor)),
+        ],
+      ),
+    );
+  }
+
+  static Widget? _buildBuildLabel(FileModel file) {
+    if (!_buildLabelTypes.contains(file.type)) {
+      return null;
+    }
+    final String? label = inferBuildLabel(file.path);
+    if (label == null) {
+      return null;
+    }
+    return Tag(
+      text: label,
+      color: label == releaseBuildLabel
+          ? UCColors.flavor.green
+          : UCColors.flavor.peach,
+      fontSize: 10,
+    );
+  }
+
+  Future<void> _openFile(FileModel file) async {
+    final String? sourcePath = widget.pack.sourcePath;
+    if (sourcePath == null) {
+      showFloatingToast(
+        context,
+        '该包缺少源目录信息，无法打开文件',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    final bool opened = await widget.openFile(joinPath(sourcePath, file.path));
+    if (!mounted) {
+      return;
+    }
+    if (!opened) {
+      showFloatingToast(
+        context,
+        '无法打开文件：${file.name}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+    }
+  }
+
+  Future<void> _onItemInvoked(
+    TreeViewItem item,
+    TreeViewItemInvokeReason reason,
+  ) async {
+    if (reason != TreeViewItemInvokeReason.pressed) {
+      return;
+    }
+    final Object? value = item.value;
+    if (value is! String) {
+      return;
+    }
+    setState(() {
+      if (!_expandedDirs.remove(value)) {
+        _expandedDirs.add(value);
+      }
+    });
+  }
+
+  Future<void> _onExpandToggle(TreeViewItem item, bool willExpand) async {
+    final Object? value = item.value;
+    if (value is! String) {
+      return;
+    }
+    if (willExpand) {
+      _expandedDirs.add(value);
+    } else {
+      _expandedDirs.remove(value);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.pack.files.isEmpty) {
+      return const Center(child: Text('该包暂无文件'));
+    }
+    final Color sizeColor = FluentTheme.of(context)
+        .resources
+        .textFillColorSecondary;
+    return TreeView(
+      items: _buildTreeItems(_buildTree(widget.pack.files), sizeColor),
+      onItemInvoked: _onItemInvoked,
+      onItemExpandToggle: _onExpandToggle,
+      shrinkWrap: false,
+      scrollPrimary: false,
+    );
+  }
+}
+
+class _DirNode {
+  _DirNode({required this.name, required this.path});
+
+  final String name;
+  final String path;
+  final Map<String, _DirNode> children = <String, _DirNode>{};
+  final List<FileModel> files = <FileModel>[];
+  int size = 0;
+}

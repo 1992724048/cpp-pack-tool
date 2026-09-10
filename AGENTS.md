@@ -1,75 +1,57 @@
-# cpp_nuget_pack — C++ NuGet 打包工具
+# cpp_nuget_pack
 
 ## Overview
 
-Flutter Windows 桌面应用，用于将 C/C++ 库（头文件 + 预编译库 + 数据文件）打包为 NuGet native 包。用户添加库源目录、自动扫描文件、配置包元数据与 MSBuild 集成（props/targets），一键生成 .nuspec/.props/.targets 并调用 nuget.exe 产出 .nupkg；也支持"仅生成文件"模式。输出目录取全局设置；打包成功自动登记到输出目录 `packages.json` 包注册表并在启动时恢复展示，配置同时写回源目录 `.cpp_nuget_pack.json`（加载时源目录配置优先）。
+「C++ NuGet 打包工具」：Flutter **Windows 桌面应用**（`.metadata` → `project_type: app`），目标是把 C++ 头文件/源码/库可视化成 NuGet 包。注意：
 
-参考格式：D:\CODE\Library\v8（V8 15.2.124.1 的手工打包件，含 V8.Native.nuspec/props/targets/pack.ps1，是生成模板的格式基准）。
+- **不是** Flutter 插件、**不是** C++ 库。名称里的 NuGet 只是应用的功能主题——构建管线与 CI 至今没有任何 NuGet 工具链集成（无 .nuspec/.targets/nuget.exe/dotnet pack）。
+- 当前进度：「添加文件夹」全流程可用（目录选择 → 「添加包」表单 → 保存 YAML → 侧边栏列表更新），且「包信息」页支持编辑并保存回 YAML（版本/作者/许可证/描述可改，包 ID 不可改），工具栏「删除文件夹」可删除选中包（确认对话框仅删配置，被依赖时列出依赖方），「重新映射」可对选中包重新扫描源目录并更新包结构（进度/结果对话框）；「文件管理」目录树支持双击打开文件、lib/dll/pdb/exe 显示 Release/Debug 构建标签；包列表与「文件管理」目录树均为真实数据（配置持久化在 `config/`，见 Architecture）；「依赖管理」支持从现有包选择依赖并自定义 NuGet 版本范围（增删改自动保存、选中包预填 `[版本,)`、失效依赖显示「缺失」）；「编译设置/打包设置」2 个 Tab 与「打包/历史」2 个工具栏按钮回调仍为空；`lib/pages/about.dart` 仍为 0 字节空文件；footer「设置」已接入真实设置页（打包输出目录 + 主题模式 + 主题配色，即时生效并持久化）。
+- 仅支持 Windows（无 android/ios/linux/macos/web 平台目录）。
+
+## Commands
+
+```text
+flutter pub get
+flutter analyze                    # 静态检查（CI 门禁，须零问题）；analysis_options.yaml 排除 build/**、windows/**、android/**
+flutter test                       # 运行测试（test/：冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具 + 悬浮提示 + 图标映射 + 构建标签 + 依赖管理/版本范围 + 设置页/主题）
+flutter build windows --release    # 产物：build/windows/x64/runner/Release/
+flutter run -d windows             # 本地运行
+```
+
+- `pub get → analyze → test → build windows --release` 序列来自 `.github/workflows/ci.yml`（命令事实源）。
+- Windows 构建走 CMake + MSVC（C++17、`/W4 /WX` 警告即错误，见 `windows/CMakeLists.txt`），需要 Visual Studio C++ 工具链；本机缺工具链时先 `flutter doctor` 确认，构建交给 CI。
+- SDK 约束：Dart `^3.13.2`、Flutter `>=3.44.0`（本地环境 Flutter 3.47.2 stable）。
+
+## 发布流程（勿误触发）
+
+- **CI 在 push `master` / `dev` 时触发**：`analyze → test → build windows --release`（Flutter SDK 与 pub 依赖由 `subosito/flutter-action` 缓存）。**仅 `master` 发布**：打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip` → 创建 GitHub Release（tag `v<版本>`）；`dev` 渠道只验证（测试+构建）不发布。无 PR 检查。
+- 开发在 `dev` 分支进行（日常推送不触发发布）；发布时把 `dev` 合并/推送到 `master` 并升级版本号。
+- 版本号唯一来源是 `pubspec.yaml` 的 `version:`（如 `1.0.1+1`；CI 去掉 `+build` 后缀，解析失败回退为时间戳）。同一版本经 CMake `FLUTTER_VERSION*` 宏注入 exe 文件版本（`windows/runner/Runner.rc`）。
+- 所以「改 `pubspec.yaml` 版本号 + push `master` = 发 Release」——没有发布意图时不要动版本号。
 
 ## Architecture
 
-分层结构：models（数据模型）→ services（扫描/生成/打包/设置）→ ui（深色专业风界面）→ main.dart（入口）。
-
-- `models/pack_project.dart` — 核心数据模型 `PackProject`/`SourceDir`/`FileMapping`/`CompileConfig`/`PackDependency`，JSON 可序列化、深拷贝、NuGet id 校验、MSBuild 标识符消毒；`FileMapping.fileKind` 八类分类（header/source/module/staticLibrary/dynamicLibrary/data/executable/other，`isSourceMapping` = source|module）+ 扩展名常量表；头文件映射 `target` 为最终 `#include` 路径，源码/模块映射 target 为 `src\...` 相对段，库/动态库/可执行/数据映射为包内目标路径；映射级构建前/后命令（生成 Exec Target）；项目级构建前/后脚本（工具侧打包时执行）+ `CompileConfig.preBuildCommands/postBuildCommands`（生成进消费方 targets，Enterable 增删）+ dependencies 依赖列表；`CompileConfig` 不含数据拷贝/源码注入（映射自动推导，fromJson 容忍旧键）
-- `services/scanner.dart` — 递归扫描源目录：八类分类（头文件/源码/模块/静态库/动态库/数据/可执行/其他），生成映射建议（头文件按目录簇 → include 路径、源码/模块 → src 路径、库/动态库按配置目录 → lib\x64\{Config}、exe → tools\{Config}），忽略生成目录、深度/数量上限、符号链接防循环；`findIconFile` 查找源目录顶层 icon.png/jpg/ico 作为库图标；映射刷新纯函数 `hasMappingChanged`（归一化 srcGlob+fileKind 集合对比）+ `mergeMappingConditions`（保留同 glob 旧条件）
-- `services/shared_project_parser.dart` — vcxitems/vcxproj/props/targets 检测（优先级 vcxitems>vcxproj>props>targets）与解析（ClInclude/ClCompile Include + AdditionalDependencies/AdditionalIncludeDirectories/PreprocessorDefinitions + PreBuildEvent/PostBuildEvent 命令，手写正则无第三方依赖）；`$(MSBuildThisFileDirectory)` 前缀剥离为相对 glob；含宏/绝对路径值列入 macro* 列表供生成器原样输出；生成映射建议（选「是」时**替换**扫描结果）与合并编译配置（去重追加不覆盖）
-- `services/cmake_generator.dart` — 生成 CMake 包配置文件（`{id}Config.cmake`：imported target，分配置 IMPORTED_LOCATION、INTERFACE_INCLUDE_DIRECTORIES/COMPILE_DEFINITIONS/LINK_LIBRARIES/COMPILE_FEATURES，静态/动态/仅头文件目标区分；`generateCmakeEntries` 返回路径+内容列表）
-- `services/nuspec_generator.dart` — 生成 .nuspec（metadata + files 段，files 段头部自动含 props/targets 集成条目且 src 相对 nuspec 所在目录，`baseDir` 为相对路径基准；头文件映射 target 自动拼 `build\native\include\` 前缀、源码映射拼 `build\native\src\` 前缀，旧前缀兼容；dependencies 非空时输出 `<dependencies>` 段）
-- `services/msbuild_generator.dart` — 生成 `build\native\{id}.props`（C++ 标准含 stdcpplatest、CLanguageStandard、分配置宏/包含目录；含 `$(...)` 宏/绝对路径的值**原样输出**不叠加前缀）与 `{id}.targets`（LibDir 平台×配置映射、平台/配置检查、链接依赖、**源码/模块映射自动注入 ClCompile**（模块语义由编译器+/std:c++latest 处理）、**数据/动态库/可执行映射自动硬链接**（mklink /H，失败回退 copy）、**映射级与 CompileConfig 级构建前/后命令 Exec Target**（Config 前缀命名隔离））；`%(...)` 元数据收尾的列表不带尾分号，与参考件一致
-- `services/packer.dart` — nuget.exe 定位（显式路径 > PATH > winget 常见位置，仿 pack.ps1）与 `nuget pack` 执行（含 `buildPackArgs`/`parseNupkgOutputPath` 可测构件）；`generateConsumerNugetConfig` 生成消费方 nuget.config（globalPackagesFolder 共享缓存 + 本地包源）
-- `services/settings.dart` — 应用设置持久化（%APPDATA%\cpp_nuget_pack\settings.json，损坏回退默认；含 defaultOutputDir 与 nugetGlobalCacheDir）
-- `services/package_registry.dart` — 输出目录包注册表（`packages.json`：RegisteredPackage 列表含 `history`（PackHistoryEntry 打包历史时间线），load/save/upsert/remove，原子写、损坏容错）+ 源目录包配置（`.cpp_nuget_pack.json` 写/读）+ `suggestVersion`（manual/timestamp/bump 版本策略）+ `packageHistory`（倒序）+ `isPackagePresent`（依赖检查）
-- `services/path_utils.dart` — 内部路径助手（不引第三方 package:path）
-- `ui/tokens.dart` + `ui/theme.dart` — 深色专业风设计令牌与 `buildDarkTheme()`（颜色/字体/间距/圆角全部主题化，正文统一 HarmonyOS_Sans_SC，页面不逐处硬编码）
-- `ui/main_shell.dart` — 工作台 Scaffold：左栏库列表（含设置按钮、库图标、刷新映射按钮（目录变化检测→重新生成映射并保留条件）、主源目录配置写入、**打包历史时间线入口**、删除确认对话框：注册表/源目录配置/nupkg 三选默认全勾但源文件永不删）+ 右栏五 Tab（包信息/文件映射/依赖管理/编译配置/打包）+ 底部日志面板；启动加载输出目录注册表（源目录配置优先覆盖）；「＋」恒新建库项目（`_addNewProject`，含共享项目检测导入，选「是」时替换扫描结果）
-- `ui/pages/` — 五个 Tab 页：pack_info（包元数据表单，README/LICENSE 自动填充默认值）/ file_mapping（映射表：源文件模式/目标/类型徽标/条件，**表头可排序**，行内编辑；添加映射对话框支持「扫描目录」批量添加与 SegmentedButton 模式切换）/ dependencies（依赖管理：注册表包选择**排除自身**+手动输入，nuspec dependencies）/ build_config（C/C++ 标准、全局宏/附加目录/附加依赖可折叠列表编辑、分配置宏折叠块、构建前/后命令列表）/ pack（打包模式切换 + 输出目录只读自全局设置 + **版本策略**（手动/时间戳/递进）+ **生成文件预览**对话框 + **生成 CMake 包**按钮 + 依赖缺失警告（可继续/取消）+ 流式打包日志（systemEncoding 解码）+ 文件丢失警告 + 构建前/后脚本 + 生成消费方 nuget.config；生成文件输出到 `{输出目录}\build\`（nuspec 基准目录））
-- `ui/widgets/` — library_list / log_panel（SelectionArea 可选择文本） / app_dialogs（添加源目录: 选目录→扫描→映射建议勾选→共享项目检测提示）/ mapping_suggestion_list（映射建议勾选公共组件，可滚动，供添加源目录与扫描目录复用）/ form_fields（含 StringListEditor、FileKindBadge）/ settings_dialog
-- `ui/log_controller.dart` — 日志模型（ChangeNotifier + LogEntry/LogLevel）；`ui/io_picker.dart` — file_selector 唯一入口（目录/可执行文件选择）
-- 状态管理：MainShell 内 setState 驱动，不引入状态管理库
-
-## Source Tree
-
-```
-README.md          项目文档（功能/快速开始/输出目录结构/开发）
-lib/
-  main.dart         应用入口（MaterialApp + buildDarkTheme + MainShell）
-  models/pack_project.dart
-  services/{scanner,nuspec_generator,msbuild_generator,packer,settings,package_registry,shared_project_parser,cmake_generator,path_utils}.dart
-  ui/
-    tokens.dart / theme.dart / log_controller.dart / io_picker.dart / main_shell.dart
-    pages/{pack_info,file_mapping,dependencies,build_config,pack}_page.dart
-    widgets/{library_list,log_panel,app_dialogs,mapping_suggestion_list,form_fields,settings_dialog}.dart
-test/
-  models_test.dart / scanner_test.dart / generator_test.dart / packer_test.dart / package_registry_test.dart / shared_project_parser_test.dart / widget_test.dart
-docs/
-  ui-spec.md        深色专业风 UI 视觉规格（设计令牌/组件/布局，实现基准）
-```
-
-## Build
-
-- Get: `flutter pub get`
-- Build: `flutter build windows`（Release 桌面产物）
-- Analyze: `flutter analyze`
-- CI/CD: `.github/workflows/ci.yml`（GitHub Actions，windows-latest）：push dev/master 与 PR 触发 ci job（analyze + test + build + 留档产物）；`v*` tag 或手动 workflow_dispatch 触发 release job（构建 zip 并发布 GitHub Release，版本号取 tag 或输入参数）。**主开发分支为 `dev`**（master 仅用于稳定发布）
-
-## Test
-
-- Test: `flutter test`
+- 入口链：`lib/main.dart` → `MainLayout` → `lib/controls/pack_list.dart` / `pack_manage.dart` → `lib/pages/*`。
+- 「添加文件夹」流程：`MainLayout.pickDirectory`（默认 `file_selector` 的 `getDirectoryPath()`，系统原生目录对话框，取消返回 null）→ `lib/controls/add_directory_dialog.dart`「添加包」对话框（分阶段：扫描进行中仅显示进度，完成后才显示表单——路径 + 扫描统计 + 包 ID/版本/作者（必填）/许可证（下拉可空，8 项 SPDX）/描述 + 图标自动识别扫描结果首个图片文件（png/jpg/jpeg/svg/ico/webp）；「确定」返回 `PackModel`（含 `files`/`license`/`iconPath`/`sourcePath`）→ `PackStore.savePack` 写入 YAML 并更新侧边栏列表（同 ID 覆盖、自动选中）。扫描经 `MainLayout.scanFiles`，默认 `FileScan.scan`。`pickDirectory`/`scanFiles`/`store` 均可注入以配合测试。
+- 配置持久化在 `lib/config/pack_store.dart`（唯一 YAML 读写点）：根目录为工作目录相对 `config/`（便携）；启动时 `ensureConfigExist()`（`config/`、`config/packs/`、`config.yaml`）+ `loadPacks()` 逐个解析 `packs/*.yaml`，损坏或缺必填字段的文件跳过、启动后以右上角悬浮提示（error、5 秒、多条合并）列出警告（不静默）；`savePack()` 文件名 = 包 ID 清洗（`sanitizeFileName`，非法字符 → `_`，同 ID 覆盖）；`deletePack()` 按同规则删除对应 YAML（幂等，文件不存在视为成功）。YAML 由 `yaml`/`yaml_edit` 生成：null 字段省略、多行描述用 `|-` 块标量。另有 `loadSettings()`/`saveSettings()` 读写 `config.yaml` 中的全局设置（打包输出目录/主题模式/深色配色/强调色；缺文件或损坏回退默认值）。
+- 侧边栏列表由 `PackList.buildCards(packs, onSave:)` 从真实包列表动态构建，列表项图标取自包 `iconPath`（与 `sourcePath` 拼接；svg 走 `SvgPicture.file`、位图走 `Image.file`，缺失/加载失败时兜底默认图标）；选中包后右侧为「包信息」与「文件管理」（`pack_files.dart` 目录结构树：fluent_ui `TreeView`，目录/文件均显示大小、目录为后代聚合，默认全部折叠；树图标为 catppuccin/vscode-icons 子集双套——latte/mocha 随主题亮度、具名目录与展开态 `_open`，解析见 `lib/util/catppuccin_icons.dart`；双击文件行用系统默认程序打开（`lib/util/file_opener.dart`），lib/dll/pdb/exe 文件按相对路径推断在名称后显示 Release（绿）/Debug（橙）标签、推断不出不显示（`lib/util/build_config.dart`））；无包时显示引导文案。`lib/util/format.dart` 提供共享的 `formatBytes()`/`baseName()`/`joinPath()`/`formatError()`（错误文案，ArgumentError 去前缀）；`lib/util/file_image.dart` 提供共享的 `buildFileImage()` 与图标识别 `findIconFile()`（对话框预览与侧边栏共用）；`lib/util/licenses.dart` 提供共享 SPDX 许可证列表与下拉框等高常量 `comboBoxDensity`（许可证、依赖包名下拉框与相邻输入框等高）；`lib/util/catppuccin_icons.dart` 提供目录树图标资产路径解析 `iconAssetFor()`（文件名 > 前缀 > 扩展名 > 兜底；latte/mocha 随 `Brightness`）；`lib/util/version_range.dart` 提供 NuGet 版本范围校验 `versionRangeError()`/`isValidVersionRange()`（`[ ]` 含端点、`( )` 不含，裸版本 = 最低版本、含预发布排序比较；拒绝浮版本与零宽度区间）。
+- 「包信息」编辑流（`lib/pages/pack_info.dart`）：默认只读，点「编辑」后版本/作者/描述/许可证可改（包 ID 永远只读——它同时是 YAML 文件名）；「保存」需必填有效且有改动，「取消」还原原值；保存挂起期间切换包则丢弃回写；成功经 `onSave` 回调链写盘（`PackList → PackManage → PackInfo → MainLayout._savePack`）并弹出右上角悬浮提示「已保存」，失败弹「保存失败」对话框且停留编辑态。`PackManage` 持稳定 `Tab` 实例 + `ValueNotifier<PackModel>` 推送包更新（fluent_ui `TabView` 每次 build 重建 `Tab` 会销毁页面 state）。
+- 「删除包」流程：工具栏「删除文件夹」按钮（未选中包或选中 footer「设置/关于」时禁用）→ `lib/controls/delete_pack_dialog.dart` 确认对话框（「删除」红底白字居左、「取消」居右；若被其他包依赖，列出依赖方并提示将显示「缺失」）→ `PackStore.deletePack()` 仅删除配置文件（源目录不动）；成功后从列表移除并调整选择（保持索引位、越界回退末项、空列表置空），悬浮提示「已删除」；失败提示「删除失败」（error、5 秒）。
+- 「重新映射」流程：工具栏「重新映射」按钮（未选中包或选中 footer「设置/关于」时禁用）→ 选中包重新扫描 `sourcePath`（缺失时 error 悬浮提示、不弹对话框）→ `lib/controls/remap_pack_dialog.dart`（扫描中 → 更新中 → 完成/失败：显示文件数量、总大小、新增/移除 N，与旧快照按路径大小写不敏感对比）→ 扫描成功后自动 `savePack` 写盘并刷新列表/详情，图标按新结果重识别；扫描完成前关闭对话框即取消（不写盘）。
+- 「依赖管理」流程：`PackManage` 第 3 Tab（`lib/pages/pack_dependencies.dart`）列出依赖（包名 + 版本范围 + 编辑/删除）；「添加依赖」经 `lib/controls/dependency_dialog.dart` 从现有包下拉选择（排除自身与已添加、无候选时提示；选中后自动预填 `[该包版本,)`），版本范围实时校验（非法提示并禁用「确定」）；依赖列表行间有分隔线、指向不存在包的依赖显示红色「缺失」标签；增删改均自动保存（构造全字段拷贝的 `PackModel` → `onSave` → 成功悬浮提示「已添加/已保存/已删除」）；依赖持久化为 YAML `dependencies: [{name, version}]`。
+- 「设置」页（`lib/pages/setting.dart`，footer「设置」）：打包输出目录（系统原生目录选择 + 清除）、主题模式（系统/深色/浅色）、深色主题配色（Frappe/Macchiato/Mocha）与强调色（14 个 Catppuccin 标准色）；改动即时生效并自动保存至 `config.yaml`（`PackTool` 有状态持有设置并重建 `FluentApp`，浮层提示「已保存」）；浅色模式固定 Latte；`buildTheme(brightness, flavor, accentName)`、`flavorByName()`、`accentColorFor()` 与两个名单常量见 `lib/util/colors.dart`。
+- UI 提示统一走 `lib/widgets/floating_toast.dart` 的 `showFloatingToast()`（右上角悬浮、success/info/error 图标配色、默认 3 秒自动关闭 + 手动关闭、同时最多一条、新提示替换旧提示）；「已保存」（3 秒）与配置加载失败警告（error、5 秒、多条合并）均用它。
+- 领域模型在 `lib/models/`：`PackModel`（含可选 `license`/`iconPath`/`sourcePath` 与 `dependencies` 列表，`toMap`/`fromMap` 序列化）、`DependencyModel`（`name`/`version`）、`CmdModel`/`CmdType`、`MacroModel`、`FileModel`/`FileType`（序列化只存 `path`/`size`，读回时由 basename 推导 name/type；类型识别覆盖 C++ 系与 pdb/asm/fortran/脚本/LLVM/Python/数据库/exe 等扩展）、`BuildModel`、`SettingsModel`（全局设置：`outputDirectory`/`themeMode`/`darkFlavor`/`accent`，容错反序列化）。
+- `lib/scanner/file_scan.dart` 与 `lib/util/file_opener.dart` 是仅有的 `dart:io` 用法：前者 `FileScan.scan()` 异步单次遍历包目录，输出相对路径、稳定排序的 `FileModel` 列表（跳过隐藏目录与 `build`/`out`；`FileModel` 含 `size` 字节数）；后者 `openWithDefaultApp()` 用 `Process.run('explorer', ...)` 以系统默认程序打开文件（预检存在性；不检查退出码——explorer 成功时也恒为 1）。
+- **Dart ↔ C++ 无任何桥接**（无 MethodChannel / FFI）；`windows/` 是 Flutter runner 模板，唯一自定义处是窗口标题（`windows/runner/main.cpp`）。要加原生能力需从零自建通道。
+- 生成物禁止手改：`windows/flutter/generated_plugin_registrant.*`、`windows/flutter/generated_plugins.cmake`、`windows/flutter/ephemeral/`（均由 Flutter 重新生成）。
 
 ## Conventions
 
-- **分支约定（强制）**：日常开发、功能与修复默认提交到 `dev` 分支并推送；`master` 仅用于发布合并（含 `dev` 合并后进行 CI/Release 验证），禁止直接向 `master` 提交功能代码
-- Dart 官方风格：类型标注完整；类型 UpperCamelCase、变量/函数 lowerCamelCase、私有成员 `_` 前缀
-- 不做 silent ignore：异常捕获必须记录或返回错误信息
-- 每个公开 API 有 doc comment（命名不足以表达语义时）
-- 圈复杂度 >22 的函数必须拆分
-- 中文 UI 文案；日志级别 info/warn/error
-- 核心逻辑只用 dart:io/dart:convert 等 SDK 库，不引第三方包（UI 层可用 file_selector 等 UI 包）
-
-## Dependencies
-
-| 依赖 | 用途 |
-| --- | --- |
-| flutter (SDK ^3.13.2) | 桌面应用框架 |
-| file_selector ^1.1.0 | Windows 目录/文件选择（联邦插件，含 file_selector_windows） |
-| flutter_lints ^6.0.0 | lint 规则 |
+- **所有用户可见文案为中文**（硬编码，无 i18n 框架）；新增 UI 文案保持中文。
+- UI 使用 `fluent_ui`（Win11 风格）而非 Material；主题色统一走 `lib/util/colors.dart`（`UCColors` / `buildTheme`；深色 flavor 与强调色可配置）。
+- 图标：应用自绘 SVG 放 `assets/icons/` 并在 `lib/util/svgs.dart` 注册；目录树图标为第三方子集 `assets/icons/catppuccin/{latte,mocha}/`（catppuccin/vscode-icons v1.26.0，MIT，声明见 `THIRD_PARTY_NOTICES.md`），经 `lib/util/catppuccin_icons.dart` 解析（新增第三方资产须同步声明文件）。
+- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具 + 悬浮提示 + 图标映射 + 依赖管理 + 设置页/主题；widget 测试均用有界 `pump`，禁 `pumpAndSettle`）；新增测试放 `test/`。
+- `file_selector` 用于「添加文件夹」的系统原生目录选择（`getDirectoryPath()`，取消返回 null）。
+- YAML 配置读写用 Dart 官方 `yaml`/`yaml_edit` 包（封装在 `lib/config/pack_store.dart`）。
+- `README.md` 仅一行占位，不可作为文档来源；以本文件、`ci.yml`、CMake 为准。
