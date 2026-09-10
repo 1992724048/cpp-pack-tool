@@ -8,7 +8,6 @@ const Map<String, FileType> _extensionTypes = {
   'hh': FileType.header,
   'hxx': FileType.header,
   'h++': FileType.header,
-  // .inl/.ipp/.tcc 为随头文件分发的包含式实现
   'inl': FileType.header,
   'ipp': FileType.header,
   'tcc': FileType.header,
@@ -17,7 +16,6 @@ const Map<String, FileType> _extensionTypes = {
   'cc': FileType.source,
   'cxx': FileType.source,
   'c++': FileType.source,
-  // C++20 模块接口单元：MSVC .ixx、Clang .cppm/.ccm/.cxxm/.c++m、build2 .mxx/.mpp
   'ixx': FileType.module,
   'cppm': FileType.module,
   'ccm': FileType.module,
