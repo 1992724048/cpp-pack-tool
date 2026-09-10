@@ -351,6 +351,44 @@ void main() {
     expect(tag.color, UCColors.flavor.peach);
   });
 
+  testWidgets('构建标签紧贴名称右侧 5px', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'mylib.lib', path: 'release/mylib.lib', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    await tester.tap(find.text('release'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Rect nameRect = tester.getRect(find.text('mylib.lib'));
+    final Rect tagRect = tester.getRect(find.byType(Tag));
+    expect(tagRect.left - nameRect.right, 5);
+  });
+
+  testWidgets('超长名称先省略且标签完整可见', (tester) async {
+    final String longName = '${'long_component_name_' * 10}mylib.lib';
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: longName, path: 'release/$longName', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    await tester.tap(find.text('release'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder row = find
+        .ancestor(of: find.text(longName), matching: find.byType(Row))
+        .at(1);
+    final Rect nameRect = tester.getRect(find.text(longName));
+    final Rect tagRect = tester.getRect(find.byType(Tag));
+    final Rect sizeRect = tester.getRect(
+      find.descendant(of: row, matching: find.text('10 B')),
+    );
+
+    expect(tagRect.left - nameRect.right, 5);
+    expect(sizeRect.left - tagRect.right, 8);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('路径无构建配置段时不显示标签', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'mylib.lib', path: 'mylib.lib', size: 10),

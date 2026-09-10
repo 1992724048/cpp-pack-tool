@@ -153,12 +153,23 @@ class _PackFilesState extends State<PackFiles> {
     Color sizeColor, {
     Widget? label,
   }) {
+    final Widget nameText = Text(name, overflow: TextOverflow.ellipsis);
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: _treeRowContentMinHeight),
       child: Row(
         children: <Widget>[
-          Expanded(child: Text(name, overflow: TextOverflow.ellipsis)),
-          if (label != null) ...[const SizedBox(width: 8), label],
+          if (label == null)
+            Expanded(child: nameText)
+          else
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Flexible(child: nameText),
+                  const SizedBox(width: 5),
+                  label,
+                ],
+              ),
+            ),
           const SizedBox(width: 8),
           Text(size, style: TextStyle(color: sizeColor)),
         ],
