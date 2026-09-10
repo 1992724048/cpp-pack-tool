@@ -2,6 +2,7 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_files.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -166,6 +167,55 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('deep.cpp'), findsOneWidget);
   });
+
+  testWidgets('目录与文件使用 catppuccin 图标', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'README.md', path: 'README.md', size: 100),
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 2048),
+      FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 512),
+      FileModel(name: 'unknown.xyz', path: 'unknown.xyz', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    final List<String> icons = _iconAssets(tester);
+    expect(icons, contains(_latte('readme')));
+    expect(icons, contains(_latte('c-header')));
+    expect(icons, contains(_latte('cpp')));
+    expect(icons, contains(_latte('_file')));
+    expect(icons, contains(_latte('folder_include_open')));
+    expect(icons, contains(_latte('folder_src_open')));
+    expect(find.byIcon(FluentIcons.folder), findsNothing);
+    expect(find.byIcon(FluentIcons.document), findsNothing);
+  });
+
+  testWidgets('目录图标按名称解析且展开态切换为 _open', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'bar.h', path: 'include/detail/bar.h', size: 1024),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    expect(_iconAssets(tester), contains(_latte('folder_include_open')));
+    expect(_iconAssets(tester), contains(_latte('_folder')));
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_iconAssets(tester), contains(_latte('folder_include')));
+    expect(_iconAssets(tester), isNot(contains(_latte('folder_include_open'))));
+  });
+
+  testWidgets('深色主题使用 mocha 图标', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack), dark: true);
+
+    expect(_iconAssets(tester), contains(_mocha('cpp')));
+    expect(_iconAssets(tester), contains(_mocha('folder_src_open')));
+  });
 }
 
 PackModel _pack(String name, List<FileModel> files) {
@@ -183,11 +233,31 @@ void _expectRowSize(String name, String size) {
   );
 }
 
-Future<void> _pumpPage(WidgetTester tester, Widget page) async {
+String _latte(String icon) => 'assets/icons/catppuccin/latte/$icon.svg';
+
+String _mocha(String icon) => 'assets/icons/catppuccin/mocha/$icon.svg';
+
+List<String> _iconAssets(WidgetTester tester) => tester
+    .widgetList<SvgPicture>(find.byType(SvgPicture))
+    .map(
+      (SvgPicture picture) => (picture.bytesLoader as SvgAssetLoader).assetName,
+    )
+    .toList();
+
+Future<void> _pumpPage(
+  WidgetTester tester,
+  Widget page, {
+  bool dark = false,
+}) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(FluentApp(home: page));
+  await tester.pumpWidget(
+    FluentApp(
+      theme: dark ? FluentThemeData.dark() : FluentThemeData.light(),
+      home: page,
+    ),
+  );
   await tester.pump();
 }

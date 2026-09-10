@@ -1,7 +1,9 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/catppuccin_icons.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class PackFiles extends StatefulWidget {
   const PackFiles({super.key, required this.pack});
@@ -13,6 +15,7 @@ class PackFiles extends StatefulWidget {
 }
 
 class _PackFilesState extends State<PackFiles> {
+  static const double _treeIconSize = 18;
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
   final Set<String> _expandedDirs = <String>{};
@@ -89,11 +92,16 @@ class _PackFilesState extends State<PackFiles> {
             _compareNames(first.name, second.name),
       );
     for (final _DirNode dir in dirs) {
+      final bool expanded = _expandedDirs.contains(dir.path);
       items.add(
         TreeViewItem(
           value: dir.path,
-          leading: const Icon(FluentIcons.folder),
-          expanded: _expandedDirs.contains(dir.path),
+          leading: _buildIcon(
+            dir.name,
+            isDirectory: true,
+            isExpanded: expanded,
+          ),
+          expanded: expanded,
           content: _buildRow(dir.name, formatBytes(dir.size), sizeColor),
           children: _buildTreeItems(dir, sizeColor),
         ),
@@ -107,12 +115,29 @@ class _PackFilesState extends State<PackFiles> {
     for (final FileModel file in files) {
       items.add(
         TreeViewItem(
-          leading: const Icon(FluentIcons.document),
+          leading: _buildIcon(file.name),
           content: _buildRow(file.name, formatBytes(file.size), sizeColor),
         ),
       );
     }
     return items;
+  }
+
+  Widget _buildIcon(
+    String name, {
+    bool isDirectory = false,
+    bool isExpanded = false,
+  }) {
+    return SvgPicture.asset(
+      iconAssetFor(
+        brightness: FluentTheme.of(context).brightness,
+        name: name,
+        isDirectory: isDirectory,
+        isExpanded: isExpanded,
+      ),
+      width: _treeIconSize,
+      height: _treeIconSize,
+    );
   }
 
   static Widget _buildRow(String name, String size, Color sizeColor) {

@@ -25,6 +25,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/
+    - assets/icons/catppuccin/latte/
+    - assets/icons/catppuccin/mocha/
   fonts:
     - family: HarmonyOS_Sans_SC
       fonts:
