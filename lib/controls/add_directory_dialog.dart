@@ -162,17 +162,22 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
             const SizedBox(height: 12),
             _buildField(
               label: '许可证',
-              child: ComboBox<String?>(
-                key: const Key('packLicenseField'),
-                value: _license,
-                placeholder: const Text('无'),
-                isExpanded: true,
-                onChanged: (String? value) => setState(() => _license = value),
-                items: <ComboBoxItem<String?>>[
-                  const ComboBoxItem<String?>(value: null, child: Text('无')),
-                  for (final String option in licenseOptions)
-                    ComboBoxItem<String?>(value: option, child: Text(option)),
-                ],
+              child: FluentTheme(
+                data: FluentTheme.of(context)
+                    .copyWith(visualDensity: licenseSelectorDensity),
+                child: ComboBox<String?>(
+                  key: const Key('packLicenseField'),
+                  value: _license,
+                  placeholder: const Text('无'),
+                  isExpanded: true,
+                  onChanged: (String? value) =>
+                      setState(() => _license = value),
+                  items: <ComboBoxItem<String?>>[
+                    const ComboBoxItem<String?>(value: null, child: Text('无')),
+                    for (final String option in licenseOptions)
+                      ComboBoxItem<String?>(value: option, child: Text(option)),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 12),

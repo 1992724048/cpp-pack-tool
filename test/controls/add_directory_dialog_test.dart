@@ -97,6 +97,30 @@ void main() {
     expect(_confirmButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('许可证下拉框与相邻输入框等高同宽', (tester) async {
+    await _pumpDialog(
+      tester,
+      scanFuture: Future<List<FileModel>>.value(const <FileModel>[]),
+    );
+
+    final Size license = tester.getSize(
+      find.byKey(const Key('packLicenseField')),
+    );
+    final Size version = tester.getSize(
+      find.byKey(const Key('packVersionField')),
+    );
+    final Size author = tester.getSize(
+      find.byKey(const Key('packAuthorField')),
+    );
+
+    expect(find.byType(ComboBox<String?>), findsOneWidget);
+    expect(license.height, version.height);
+    expect(license.height, author.height);
+    expect(license.width, version.width);
+    expect(license.width, author.width);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('点击确定返回填写的 PackModel', (tester) async {
     PackModel? result;
     await _pumpDialog(
