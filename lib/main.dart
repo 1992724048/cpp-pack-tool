@@ -4,6 +4,7 @@ import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -48,7 +49,6 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   List<PackModel> _packs = [];
-  List<PackLoadError> _loadErrors = [];
   int? _selected;
 
   @override
@@ -78,10 +78,29 @@ class _MainLayoutState extends State<MainLayout> {
     }
     setState(() {
       _packs = packs;
-      _loadErrors = errors;
       _sortPacks();
       _selected = _packs.isEmpty ? null : 0;
     });
+    if (errors.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showLoadErrorsToast(errors),
+      );
+    }
+  }
+
+  void _showLoadErrorsToast(List<PackLoadError> errors) {
+    if (!mounted) {
+      return;
+    }
+    final String details = errors
+        .map((PackLoadError error) => error.toString())
+        .join('\n');
+    showFloatingToast(
+      context,
+      '${errors.length} 个配置加载失败\n$details',
+      type: FloatingToastType.error,
+      duration: const Duration(seconds: 5),
+    );
   }
 
   Future<void> _addFolder() async {
@@ -160,27 +179,7 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Widget _buildPaneBody(PaneItem? item, Widget? body) {
-    final Widget content = body ?? _buildEmptyGuide();
-    if (_loadErrors.isEmpty) {
-      return content;
-    }
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: InfoBar(
-            title: Text('${_loadErrors.length} 个配置加载失败'),
-            content: Text(
-              _loadErrors
-                  .map((PackLoadError error) => error.toString())
-                  .join('\n'),
-            ),
-            severity: InfoBarSeverity.warning,
-          ),
-        ),
-        Expanded(child: content),
-      ],
-    );
+    return body ?? _buildEmptyGuide();
   }
 
   Widget _buildEmptyGuide() {

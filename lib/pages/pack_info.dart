@@ -1,5 +1,6 @@
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class PackInfo extends StatefulWidget {
@@ -21,7 +22,6 @@ class _PackInfoState extends State<PackInfo> {
 
   bool _editing = false;
   bool _saving = false;
-  String? _savedMessage;
   String? _license;
 
   @override
@@ -47,10 +47,6 @@ class _PackInfoState extends State<PackInfo> {
     _applyPack(widget.pack);
     _editing = false;
     _saving = false;
-    if (oldWidget.pack.name != widget.pack.name) {
-      // 同包保存后的回写刷新保留「已保存」提示，切换包时才清除
-      _savedMessage = null;
-    }
   }
 
   @override
@@ -90,10 +86,7 @@ class _PackInfoState extends State<PackInfo> {
   }
 
   void _startEditing() {
-    setState(() {
-      _editing = true;
-      _savedMessage = null;
-    });
+    setState(() => _editing = true);
   }
 
   void _cancelEditing() {
@@ -137,8 +130,8 @@ class _PackInfoState extends State<PackInfo> {
     setState(() {
       _editing = false;
       _saving = false;
-      _savedMessage = '已保存';
     });
+    showFloatingToast(context, '已保存');
   }
 
   @override
@@ -148,14 +141,6 @@ class _PackInfoState extends State<PackInfo> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_savedMessage != null) ...[
-            InfoBar(
-              title: Text(_savedMessage!),
-              severity: InfoBarSeverity.success,
-              onClose: () => setState(() => _savedMessage = null),
-            ),
-            const SizedBox(height: 16),
-          ],
           Row(
             children: [
               Expanded(

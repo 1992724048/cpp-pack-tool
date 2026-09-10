@@ -81,7 +81,7 @@ void main() {
     expect(find.text('尚未添加包'), findsNothing);
   });
 
-  testWidgets('配置文件加载失败时通过 InfoBar 提示', (tester) async {
+  testWidgets('配置文件加载失败时通过悬浮提示', (tester) async {
     final _FakePackStore store = _FakePackStore(
       errors: <PackLoadError>[
         const PackLoadError(fileName: 'broken.yaml', message: '解析失败'),
@@ -95,9 +95,12 @@ void main() {
       scanFiles: (_) async => <FileModel>[],
     );
 
-    expect(find.byType(InfoBar), findsOneWidget);
-    expect(find.text('1 个配置加载失败'), findsOneWidget);
+    expect(find.byType(InfoBar), findsNothing);
+    expect(find.byKey(const Key('floatingToast')), findsOneWidget);
+    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+    expect(find.textContaining('1 个配置加载失败'), findsOneWidget);
     expect(find.textContaining('broken.yaml'), findsOneWidget);
+    expect(find.textContaining('解析失败'), findsOneWidget);
   });
 
   testWidgets('添加成功后列表更新并选中新包', (tester) async {

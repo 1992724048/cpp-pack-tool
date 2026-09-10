@@ -153,6 +153,11 @@ void main() {
     expect(find.text('已保存'), findsOneWidget);
     expect(find.byKey(const Key('packInfoSaveButton')), findsNothing);
     expect(find.byKey(const Key('packInfoEditButton')), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(find.text('已保存'), findsNothing);
   });
 
   testWidgets('清空描述并选择无许可证时保存为空值', (tester) async {
