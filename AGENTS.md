@@ -5,7 +5,7 @@
 「C++ NuGet 打包工具」：Flutter **Windows 桌面应用**（`.metadata` → `project_type: app`），目标是把 C++ 头文件/源码/库可视化成 NuGet 包。注意：
 
 - **不是** Flutter 插件、**不是** C++ 库。名称里的 NuGet 只是应用的功能主题——构建管线与 CI 至今没有任何 NuGet 工具链集成（无 .nuspec/.targets/nuget.exe/dotnet pack）。
-- 当前进度：「添加文件夹」全流程可用（目录选择 → 「添加包」表单 → 保存 YAML → 侧边栏列表更新），包列表/包信息/文件表均为真实数据（配置持久化在 `config/`，见 Architecture）；「依赖管理/编译设置/打包设置」3 个 Tab 与「删除/映射/打包/历史」4 个工具栏按钮回调仍为空；`lib/pages/setting.dart`、`lib/pages/about.dart` 仍是 0 字节空文件。
+- 当前进度：「添加文件夹」全流程可用（目录选择 → 「添加包」表单 → 保存 YAML → 侧边栏列表更新），且「包信息」页支持编辑并保存回 YAML（版本/作者/许可证/描述可改，包 ID 不可改）；包列表/文件表均为真实数据（配置持久化在 `config/`，见 Architecture）；「依赖管理/编译设置/打包设置」3 个 Tab 与「删除/映射/打包/历史」4 个工具栏按钮回调仍为空；`lib/pages/setting.dart`、`lib/pages/about.dart` 仍是 0 字节空文件。
 - 仅支持 Windows（无 android/ios/linux/macos/web 平台目录）。
 
 ## Commands
@@ -33,7 +33,8 @@ flutter run -d windows             # 本地运行
 - 入口链：`lib/main.dart` → `MainLayout` → `lib/controls/pack_list.dart` / `pack_manage.dart` → `lib/pages/*`。
 - 「添加文件夹」流程：`MainLayout.pickDirectory`（默认 `file_selector` 的 `getDirectoryPath()`，系统原生目录对话框，取消返回 null）→ `lib/controls/add_directory_dialog.dart`「添加包」表单对话框（路径 + 扫描统计 + 包 ID/版本/作者（必填）/许可证（下拉可空，8 项 SPDX）/描述 + 图标自动识别扫描结果首个图片文件（png/jpg/jpeg/svg/ico/webp）；「确定」返回 `PackModel`（含 `files`/`license`/`iconPath`/`sourcePath`）→ `PackStore.savePack` 写入 YAML 并更新侧边栏列表（同 ID 覆盖、自动选中）。扫描经 `MainLayout.scanFiles`，默认 `FileScan.scan`。`pickDirectory`/`scanFiles`/`store` 均可注入以配合测试。
 - 配置持久化在 `lib/config/pack_store.dart`（唯一 YAML 读写点）：根目录为工作目录相对 `config/`（便携）；启动时 `ensureConfigExist()`（`config/`、`config/packs/`、`config.yaml`）+ `loadPacks()` 逐个解析 `packs/*.yaml`，损坏或缺必填字段的文件跳过、界面以 `InfoBar` 列出警告（不静默）；`savePack()` 文件名 = 包 ID 清洗（`sanitizeFileName`，非法字符 → `_`，同 ID 覆盖）。YAML 由 `yaml`/`yaml_edit` 生成：null 字段省略、多行描述用 `|-` 块标量。
-- 侧边栏列表由 `PackList.buildCards(packs)` 从真实包列表动态构建，列表项图标取自包 `iconPath`（与 `sourcePath` 拼接；svg 走 `SvgPicture.file`、位图走 `Image.file`，缺失/加载失败时兜底默认图标）；选中包后右侧为只读详情（`pack_info.dart` 展示字段、`pack_files.dart` 展示文件表）；无包时显示引导文案。`lib/util/format.dart` 提供共享的 `formatBytes()`/`baseName()`/`joinPath()`；`lib/util/file_image.dart` 提供共享的 `buildFileImage()`（对话框预览与侧边栏共用）。
+- 侧边栏列表由 `PackList.buildCards(packs, onSave:)` 从真实包列表动态构建，列表项图标取自包 `iconPath`（与 `sourcePath` 拼接；svg 走 `SvgPicture.file`、位图走 `Image.file`，缺失/加载失败时兜底默认图标）；选中包后右侧为「包信息」与「文件管理」（`pack_files.dart` 文件表）；无包时显示引导文案。`lib/util/format.dart` 提供共享的 `formatBytes()`/`baseName()`/`joinPath()`；`lib/util/file_image.dart` 提供共享的 `buildFileImage()`（对话框预览与侧边栏共用）；`lib/util/licenses.dart` 提供共享 SPDX 许可证列表（对话框与包信息页共用）。
+- 「包信息」编辑流（`lib/pages/pack_info.dart`）：默认只读，点「编辑」后版本/作者/描述/许可证可改（包 ID 永远只读——它同时是 YAML 文件名）；「保存」需必填有效且有改动，「取消」还原原值；保存挂起期间切换包则丢弃回写；成功经 `onSave` 回调链写盘（`PackList → PackManage → PackInfo → MainLayout._savePack`）并显示 InfoBar「已保存」，失败弹「保存失败」对话框且停留编辑态。`PackManage` 持稳定 `Tab` 实例 + `ValueNotifier<PackModel>` 推送包更新（fluent_ui `TabView` 每次 build 重建 `Tab` 会销毁页面 state）。
 - 领域模型在 `lib/models/`：`PackModel`（含可选 `license`/`iconPath`/`sourcePath`，`toMap`/`fromMap` 序列化）、`CmdModel`/`CmdType`、`MacroModel`、`FileModel`/`FileType`（序列化只存 `path`/`size`，读回时由 basename 推导 name/type）、`BuildModel`。
 - `lib/scanner/file_scan.dart` 是唯一 `dart:io` 用法：`FileScan.scan()` 异步单次遍历包目录，输出相对路径、稳定排序的 `FileModel` 列表（跳过隐藏目录与 `build`/`out`；`FileModel` 含 `size` 字节数）。
 - **Dart ↔ C++ 无任何桥接**（无 MethodChannel / FFI）；`windows/` 是 Flutter runner 模板，唯一自定义处是窗口标题（`windows/runner/main.cpp`）。要加原生能力需从零自建通道。

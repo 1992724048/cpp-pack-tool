@@ -104,12 +104,12 @@ class _MainLayoutState extends State<MainLayout> {
     await _savePack(pack);
   }
 
-  Future<void> _savePack(PackModel pack) async {
+  Future<bool> _savePack(PackModel pack) async {
     try {
       await widget.store.savePack(pack);
     } catch (error) {
       if (!mounted) {
-        return;
+        return false;
       }
       await showDialog<void>(
         context: context,
@@ -124,10 +124,10 @@ class _MainLayoutState extends State<MainLayout> {
           ],
         ),
       );
-      return;
+      return false;
     }
     if (!mounted) {
-      return;
+      return false;
     }
     setState(() {
       final int existing = _packs.indexWhere(
@@ -144,6 +144,7 @@ class _MainLayoutState extends State<MainLayout> {
         _selected = selected;
       }
     });
+    return true;
   }
 
   void _sortPacks() {
@@ -239,7 +240,7 @@ class _MainLayoutState extends State<MainLayout> {
           openMinWidth: 260,
           compactWidth: 50,
         ),
-        items: PackList.buildCards(_packs),
+        items: PackList.buildCards(_packs, onSave: _savePack),
         footerItems: [
           PaneItemSeparator(),
           LibraryItem(

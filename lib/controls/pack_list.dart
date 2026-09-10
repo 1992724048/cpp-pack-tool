@@ -10,14 +10,17 @@ import 'pack_manage.dart';
 class PackList {
   PackList._();
 
-  static List<NavigationPaneItem> buildCards(List<PackModel> packs) {
+  static List<NavigationPaneItem> buildCards(
+    List<PackModel> packs, {
+    required Future<bool> Function(PackModel pack) onSave,
+  }) {
     return [
       for (final PackModel pack in packs)
         LibraryItem(
           icon: _iconFor(pack),
           title: pack.name,
           version: pack.version,
-          body: PackManage(pack: pack),
+          body: PackManage(pack: pack, onSave: onSave),
         ),
     ];
   }

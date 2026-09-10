@@ -65,4 +65,7 @@ PackModel _pack({String? iconPath, String? sourcePath}) => PackModel(
 );
 
 LibraryItem _firstItem(PackModel pack) =>
-    PackList.buildCards(<PackModel>[pack]).single as LibraryItem;
+    PackList.buildCards(<PackModel>[pack], onSave: _acceptSave).single
+        as LibraryItem;
+
+Future<bool> _acceptSave(PackModel pack) async => true;

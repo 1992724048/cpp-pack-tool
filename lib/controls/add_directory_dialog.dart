@@ -2,6 +2,7 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/file_image.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 const List<String> _imageExtensions = [
@@ -11,16 +12,6 @@ const List<String> _imageExtensions = [
   'svg',
   'ico',
   'webp',
-];
-const List<String> _licenseOptions = [
-  'MIT',
-  'Apache-2.0',
-  'BSD-3-Clause',
-  'GPL-2.0',
-  'GPL-3.0',
-  'LGPL-3.0',
-  'MPL-2.0',
-  'Unlicense',
 ];
 
 class AddDirectoryDialog extends StatefulWidget {
@@ -179,7 +170,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
                 onChanged: (String? value) => setState(() => _license = value),
                 items: <ComboBoxItem<String?>>[
                   const ComboBoxItem<String?>(value: null, child: Text('无')),
-                  for (final String option in _licenseOptions)
+                  for (final String option in licenseOptions)
                     ComboBoxItem<String?>(value: option, child: Text(option)),
                 ],
               ),

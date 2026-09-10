@@ -173,6 +173,82 @@ void main() {
     expect(store.packs, isEmpty);
     expect(find.text('尚未添加包'), findsOneWidget);
   });
+
+  testWidgets('编辑包信息保存后侧边栏更新并显示已保存', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byKey(const Key('packInfoEditButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.saveCount, 1);
+    expect(store.packs.single.version, '2.0.0');
+    expect(find.text('2.0.0'), findsWidgets);
+    expect(find.text('已保存'), findsOneWidget);
+    expect(find.byKey(const Key('packInfoSaveButton')), findsNothing);
+    expect(find.byKey(const Key('packInfoEditButton')), findsOneWidget);
+  });
+
+  testWidgets('编辑保存失败时弹出错误对话框且停留编辑态', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    )..failSave = true;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byKey(const Key('packInfoEditButton')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('保存失败'), findsOneWidget);
+    expect(find.textContaining('包「demo」保存失败'), findsOneWidget);
+    expect(store.saveCount, 0);
+
+    await tester.tap(find.text('确定'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.byType(ContentDialog), findsNothing);
+    expect(find.byKey(const Key('packInfoSaveButton')), findsOneWidget);
+    expect(find.byKey(const Key('packInfoCancelButton')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('packInfoSaveButton')))
+          .onPressed,
+      isNotNull,
+    );
+  });
 }
 
 Future<void> _pumpMainLayout(
