@@ -2,6 +2,8 @@
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+import '../util/file_image.dart';
+import '../util/format.dart';
 import '../util/svgs.dart';
 import 'pack_manage.dart';
 
@@ -12,11 +14,24 @@ class PackList {
     return [
       for (final PackModel pack in packs)
         LibraryItem(
-          icon: Svgs.cardboardBox,
+          icon: _iconFor(pack),
           title: pack.name,
           version: pack.version,
           body: PackManage(pack: pack),
         ),
     ];
+  }
+
+  static Widget? _iconFor(PackModel pack) {
+    final String? iconPath = pack.iconPath;
+    final String? sourcePath = pack.sourcePath;
+    if (iconPath == null || sourcePath == null) {
+      return null;
+    }
+    return buildFileImage(
+      joinPath(sourcePath, iconPath),
+      size: 20,
+      fallback: Svgs.cardboardBox,
+    );
   }
 }

@@ -1,8 +1,12 @@
 const int _bytesPerUnit = 1024;
 const List<String> _sizeUnits = ['B', 'KB', 'MB', 'GB'];
 final RegExp _pathSeparator = RegExp(r'[/\\]');
+final RegExp _trailingPathSeparators = RegExp(r'[/\\]+$');
 
 String baseName(String path) => path.split(_pathSeparator).last;
+
+String joinPath(String base, String relative) =>
+    '${base.replaceFirst(_trailingPathSeparators, '')}/$relative';
 
 String formatBytes(int bytes) {
   if (bytes < _bytesPerUnit) {

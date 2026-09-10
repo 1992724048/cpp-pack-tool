@@ -1,10 +1,8 @@
-import 'dart:io';
-
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/file_image.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 const List<String> _imageExtensions = [
   'png',
@@ -103,14 +101,6 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
       }
     }
     return null;
-  }
-
-  String _absolutePath(String relativePath) {
-    final String base = widget.directoryPath.replaceFirst(
-      RegExp(r'[\\/]+$'),
-      '',
-    );
-    return '$base/$relativePath';
   }
 
   String _scanErrorMessage(Object error) {
@@ -253,29 +243,11 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
     if (iconFile == null) {
       return const Text('未找到图标文件');
     }
-    final String absolutePath = _absolutePath(iconFile.path);
-    final Widget preview = iconFile.extension == 'svg'
-        ? SvgPicture.file(
-            File(absolutePath),
-            width: 48,
-            height: 48,
-            errorBuilder: (
-              BuildContext context,
-              Object error,
-              StackTrace stackTrace,
-            ) => const Icon(WindowsIcons.picture, size: 24),
-          )
-        : Image.file(
-            File(absolutePath),
-            width: 48,
-            height: 48,
-            fit: BoxFit.contain,
-            errorBuilder: (
-              BuildContext context,
-              Object error,
-              StackTrace? stackTrace,
-            ) => const Icon(WindowsIcons.picture, size: 24),
-          );
+    final Widget preview = buildFileImage(
+      joinPath(widget.directoryPath, iconFile.path),
+      size: 48,
+      fallback: const Icon(WindowsIcons.picture, size: 24),
+    );
     return Row(
       children: [
         SizedBox(width: 48, height: 48, child: Center(child: preview)),
