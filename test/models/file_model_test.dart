@@ -8,9 +8,55 @@ void main() {
       expect(FileModel(name: 'widget.hpp', path: '').type, FileType.header);
     });
 
+    test('头文件后缀变体 .hh/.hxx/.h++/.inl/.ipp/.tcc 映射为 header', () {
+      for (final extension in ['hh', 'hxx', 'h++', 'inl', 'ipp', 'tcc']) {
+        expect(
+          FileModel(name: 'widget.$extension', path: '').type,
+          FileType.header,
+        );
+      }
+    });
+
     test('源文件 .c/.cpp 映射为 source', () {
       expect(FileModel(name: 'main.c', path: '').type, FileType.source);
       expect(FileModel(name: 'main.cpp', path: '').type, FileType.source);
+    });
+
+    test('源文件后缀变体 .cc/.cxx/.c++ 映射为 source', () {
+      for (final extension in ['cc', 'cxx', 'c++']) {
+        expect(
+          FileModel(name: 'unit.$extension', path: '').type,
+          FileType.source,
+        );
+      }
+    });
+
+    test('C++20 模块接口单元扩展名映射为 module', () {
+      for (final extension in [
+        'ixx',
+        'cppm',
+        'ccm',
+        'cxxm',
+        'c++m',
+        'mxx',
+        'mpp',
+      ]) {
+        expect(
+          FileModel(name: 'math.$extension', path: '').type,
+          FileType.module,
+        );
+      }
+    });
+
+    test('模块扩展名大小写不敏感', () {
+      expect(FileModel(name: 'FOO.CPPM', path: '').type, FileType.module);
+    });
+
+    test('含 "+" 与多点的文件名解析出最后一段扩展名', () {
+      expect(FileModel(name: 'foo.c++m', path: '').type, FileType.module);
+      expect(FileModel(name: 'foo.c++m', path: '').extension, 'c++m');
+      expect(FileModel(name: 'bar.cxxm', path: '').type, FileType.module);
+      expect(FileModel(name: 'pkg.detail.ixx', path: '').type, FileType.module);
     });
 
     test('资源文件 .rc 映射为 resource', () {

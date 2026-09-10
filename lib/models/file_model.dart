@@ -1,6 +1,34 @@
 ﻿import 'package:cpp_nuget_pack/models/build_model.dart';
 
-enum FileType { header, source, resource, lib, dll, other }
+enum FileType { header, source, module, resource, lib, dll, other }
+
+const Map<String, FileType> _extensionTypes = {
+  'h': FileType.header,
+  'hpp': FileType.header,
+  'hh': FileType.header,
+  'hxx': FileType.header,
+  'h++': FileType.header,
+  // .inl/.ipp/.tcc 为随头文件分发的包含式实现
+  'inl': FileType.header,
+  'ipp': FileType.header,
+  'tcc': FileType.header,
+  'c': FileType.source,
+  'cpp': FileType.source,
+  'cc': FileType.source,
+  'cxx': FileType.source,
+  'c++': FileType.source,
+  // C++20 模块接口单元：MSVC .ixx、Clang .cppm/.ccm/.cxxm/.c++m、build2 .mxx/.mpp
+  'ixx': FileType.module,
+  'cppm': FileType.module,
+  'ccm': FileType.module,
+  'cxxm': FileType.module,
+  'c++m': FileType.module,
+  'mxx': FileType.module,
+  'mpp': FileType.module,
+  'rc': FileType.resource,
+  'lib': FileType.lib,
+  'dll': FileType.dll,
+};
 
 class FileModel {
   final String name;
@@ -18,21 +46,6 @@ class FileModel {
   }
 
   FileType _determineFileType(String extension) {
-    switch (extension) {
-      case 'h':
-      case 'hpp':
-        return FileType.header;
-      case 'c':
-      case 'cpp':
-        return FileType.source;
-      case 'rc':
-        return FileType.resource;
-      case 'lib':
-        return FileType.lib;
-      case 'dll':
-        return FileType.dll;
-      default:
-        return FileType.other;
-    }
+    return _extensionTypes[extension] ?? FileType.other;
   }
 }
