@@ -13,7 +13,7 @@
 ```text
 flutter pub get
 flutter analyze                    # 静态检查（CI 门禁，须零问题）；analysis_options.yaml 排除 build/**、windows/**、android/**
-flutter test                       # 运行测试（test/：冒烟 + 模型）
+flutter test                       # 运行测试（test/：冒烟 + 模型 + 扫描器）
 flutter build windows --release    # 产物：build/windows/x64/runner/Release/
 flutter run -d windows             # 本地运行
 ```
@@ -32,7 +32,7 @@ flutter run -d windows             # 本地运行
 
 - 入口链：`lib/main.dart` → `MainLayout` → `lib/controls/pack_list.dart` / `pack_manage.dart` → `lib/pages/*`。
 - 领域模型在 `lib/models/`：`PackModel`、`CmdModel`/`CmdType`、`MacroModel`、`FileModel`/`FileType`、`BuildModel`——纯数据类，无序列化。
-- `lib/scanner/file_scan.dart` 是唯一 `dart:io` 用法（目录扫描）。
+- `lib/scanner/file_scan.dart` 是唯一 `dart:io` 用法：`FileScan.scan()` 异步单次遍历包目录，输出相对路径、稳定排序的 `FileModel` 列表（跳过隐藏目录与 `build`/`out`；`FileModel` 含 `size` 字节数）。
 - **Dart ↔ C++ 无任何桥接**（无 MethodChannel / FFI）；`windows/` 是 Flutter runner 模板，唯一自定义处是窗口标题（`windows/runner/main.cpp`）。要加原生能力需从零自建通道。
 - 生成物禁止手改：`windows/flutter/generated_plugin_registrant.*`、`windows/flutter/generated_plugins.cmake`、`windows/flutter/ephemeral/`（均由 Flutter 重新生成）。
 
@@ -41,6 +41,6 @@ flutter run -d windows             # 本地运行
 - **所有用户可见文案为中文**（硬编码，无 i18n 框架）；新增 UI 文案保持中文。
 - UI 使用 `fluent_ui`（Win11 风格）而非 Material；主题色统一走 `lib/util/colors.dart`（`UCColors` / `buildTheme`）。
 - 图标：SVG 放 `assets/icons/` 并在 `lib/util/svgs.dart` 注册。
-- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型逻辑）；新增测试放 `test/`。
+- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型逻辑 + 目录扫描）；新增测试放 `test/`。
 - `file_selector` 已在 pubspec 声明但尚未使用（为文件对话框预留）。
 - `README.md` 仅一行占位，不可作为文档来源；以本文件、`ci.yml`、CMake 为准。
