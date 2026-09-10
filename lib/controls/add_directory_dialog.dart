@@ -2,11 +2,10 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-const int _bytesPerUnit = 1024;
-const List<String> _sizeUnits = ['B', 'KB', 'MB', 'GB'];
 const List<String> _imageExtensions = [
   'png',
   'jpg',
@@ -25,19 +24,6 @@ const List<String> _licenseOptions = [
   'MPL-2.0',
   'Unlicense',
 ];
-
-String _formatSize(int size) {
-  if (size < _bytesPerUnit) {
-    return '$size B';
-  }
-  var value = size.toDouble();
-  var unitIndex = 0;
-  while (value >= _bytesPerUnit && unitIndex < _sizeUnits.length - 1) {
-    value /= _bytesPerUnit;
-    unitIndex++;
-  }
-  return '${value.toStringAsFixed(1)} ${_sizeUnits[unitIndex]}';
-}
 
 class AddDirectoryDialog extends StatefulWidget {
   const AddDirectoryDialog({
@@ -149,6 +135,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
         description: description.isEmpty ? null : description,
         license: _license,
         iconPath: icon?.path,
+        sourcePath: widget.directoryPath,
       )..files = _files ?? const <FileModel>[],
     );
   }
@@ -254,7 +241,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
       children: [
         Text('文件数量：${files.length}'),
         const SizedBox(height: 4),
-        Text('总大小：${_formatSize(totalSize)}'),
+        Text('总大小：${formatBytes(totalSize)}'),
         const SizedBox(height: 12),
         _buildIcon(),
       ],

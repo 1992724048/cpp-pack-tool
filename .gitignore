@@ -54,3 +54,6 @@ _ReSharper.Caches/
 .temp/
 .slim/
 .decompiled/
+
+# Runtime pack configuration
+/config/

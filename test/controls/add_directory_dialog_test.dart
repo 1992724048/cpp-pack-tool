@@ -123,6 +123,7 @@ void main() {
     expect(result!.description, '测试描述');
     expect(result!.license, 'MIT');
     expect(result!.iconPath, 'assets/logo.svg');
+    expect(result!.sourcePath, _directoryPath);
     expect(result!.files.length, 2);
   });
 

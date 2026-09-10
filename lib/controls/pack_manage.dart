@@ -1,11 +1,14 @@
-﻿import 'package:cpp_nuget_pack/util/svgs.dart';
+﻿import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import '../pages/pack_files.dart';
 import '../pages/pack_info.dart';
 
 class PackManage extends StatefulWidget {
-  const PackManage({super.key});
+  const PackManage({super.key, required this.pack});
+
+  final PackModel pack;
 
   @override
   State<PackManage> createState() => _PackManageState();
@@ -33,12 +36,12 @@ class _PackManageState extends State<PackManage> {
           Tab(
             icon: Svgs.showPermitCard,
             text: const Text('包信息'),
-            body: _body(PackInfo()),
+            body: _body(PackInfo(pack: widget.pack)),
           ),
           Tab(
             icon: Svgs.fileExplorer,
             text: const Text('文件管理'),
-            body: _body(PackFiles()),
+            body: _body(PackFiles(pack: widget.pack)),
           ),
           Tab(
             icon: Svgs.inventoryFlow,

@@ -1,4 +1,5 @@
 ﻿import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 
 enum FileType { header, source, module, resource, lib, dll, other }
 
@@ -41,6 +42,24 @@ class FileModel {
   FileModel({required this.name, required this.path, this.size = 0}) {
     extension = name.split('.').last.toLowerCase();
     type = _determineFileType(extension);
+  }
+
+  Map<String, Object?> toMap() => <String, Object?>{'path': path, 'size': size};
+
+  factory FileModel.fromMap(Map<String, Object?> map) {
+    final Object? path = map['path'];
+    if (path is! String || path.isEmpty) {
+      throw const FormatException('文件缺少 path 字段');
+    }
+    final Object? size = map['size'];
+    if (size != null && size is! num) {
+      throw const FormatException('文件 size 字段类型错误，应为整数');
+    }
+    return FileModel(
+      name: baseName(path),
+      path: path,
+      size: (size as num?)?.toInt() ?? 0,
+    );
   }
 
   FileType _determineFileType(String extension) {

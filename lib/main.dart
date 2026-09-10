@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
@@ -34,17 +35,54 @@ class MainLayout extends StatefulWidget {
     super.key,
     this.pickDirectory = getDirectoryPath,
     this.scanFiles = FileScan.scan,
+    this.store = const PackStore(),
   });
 
   final Future<String?> Function() pickDirectory;
   final Future<List<FileModel>> Function(String directoryPath) scanFiles;
+  final PackStore store;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
 }
 
 class _MainLayoutState extends State<MainLayout> {
-  int index = 0;
+  List<PackModel> _packs = [];
+  List<PackLoadError> _loadErrors = [];
+  int? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPacks();
+  }
+
+  Future<void> _loadPacks() async {
+    final List<PackLoadError> errors = <PackLoadError>[];
+    List<PackModel> packs = <PackModel>[];
+    try {
+      await widget.store.ensureConfigExist();
+      final PackLoadResult result = await widget.store.loadPacks();
+      packs = result.packs;
+      errors.addAll(result.errors);
+    } catch (error) {
+      errors.add(
+        PackLoadError(
+          fileName: widget.store.rootPath,
+          message: error.toString(),
+        ),
+      );
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _packs = packs;
+      _loadErrors = errors;
+      _sortPacks();
+      _selected = _packs.isEmpty ? null : 0;
+    });
+  }
 
   Future<void> _addFolder() async {
     final String? path = await widget.pickDirectory();
@@ -55,10 +93,107 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     final Future<List<FileModel>> scanFuture = widget.scanFiles(path);
-    await showDialog<PackModel>(
+    final PackModel? pack = await showDialog<PackModel>(
       context: context,
       builder: (_) =>
           AddDirectoryDialog(directoryPath: path, scanFuture: scanFuture),
+    );
+    if (pack == null || !mounted) {
+      return;
+    }
+    await _savePack(pack);
+  }
+
+  Future<void> _savePack(PackModel pack) async {
+    try {
+      await widget.store.savePack(pack);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => ContentDialog(
+          title: const Text('保存失败'),
+          content: Text('包「${pack.name}」保存失败：$error'),
+          actions: [
+            Button(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      final int existing = _packs.indexWhere(
+        (PackModel item) => item.name.toLowerCase() == pack.name.toLowerCase(),
+      );
+      if (existing >= 0) {
+        _packs[existing] = pack;
+      } else {
+        _packs.add(pack);
+      }
+      _sortPacks();
+      final int selected = _packs.indexOf(pack);
+      if (selected >= 0) {
+        _selected = selected;
+      }
+    });
+  }
+
+  void _sortPacks() {
+    _packs.sort((PackModel first, PackModel second) {
+      final int insensitive = first.name.toLowerCase().compareTo(
+        second.name.toLowerCase(),
+      );
+      if (insensitive != 0) {
+        return insensitive;
+      }
+      return first.name.compareTo(second.name);
+    });
+  }
+
+  Widget _buildPaneBody(PaneItem? item, Widget? body) {
+    final Widget content = body ?? _buildEmptyGuide();
+    if (_loadErrors.isEmpty) {
+      return content;
+    }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(8),
+          child: InfoBar(
+            title: Text('${_loadErrors.length} 个配置加载失败'),
+            content: Text(
+              _loadErrors
+                  .map((PackLoadError error) => error.toString())
+                  .join('\n'),
+            ),
+            severity: InfoBarSeverity.warning,
+          ),
+        ),
+        Expanded(child: content),
+      ],
+    );
+  }
+
+  Widget _buildEmptyGuide() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Svgs.cardboardBox,
+          const SizedBox(height: 12),
+          const Text('尚未添加包'),
+          const SizedBox(height: 6),
+          const Text('点击工具栏「添加文件夹」开始'),
+        ],
+      ),
     );
   }
 
@@ -69,9 +204,10 @@ class _MainLayoutState extends State<MainLayout> {
         isBackButtonVisible: false,
         title: const Center(widthFactor: 1.0, child: Text('C++ NuGet 打包工具')),
       ),
+      paneBodyBuilder: _buildPaneBody,
       pane: NavigationPane(
-        selected: index,
-        onChanged: (int newIndex) => setState(() => index = newIndex),
+        selected: _selected,
+        onChanged: (int newIndex) => setState(() => _selected = newIndex),
         header: Row(
           mainAxisAlignment: MainAxisAlignment.start,
           children: [
@@ -103,7 +239,7 @@ class _MainLayoutState extends State<MainLayout> {
           openMinWidth: 260,
           compactWidth: 50,
         ),
-        items: [...PackList.buildCards()],
+        items: PackList.buildCards(_packs),
         footerItems: [
           PaneItemSeparator(),
           LibraryItem(
