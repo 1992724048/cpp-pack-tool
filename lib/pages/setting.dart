@@ -87,24 +87,29 @@ class _SettingState extends State<Setting> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionTitle(context, '打包输出目录'),
-            const SizedBox(height: 12),
-            _buildOutputDirectoryField(context),
-            const SizedBox(height: 24),
-            _buildSectionTitle(context, '主题'),
-            const SizedBox(height: 12),
-            InfoLabel(label: '主题模式', child: _buildThemeModeField()),
-            const SizedBox(height: 12),
-            InfoLabel(label: '深色主题配色', child: _buildDarkFlavorField()),
-            const SizedBox(height: 12),
-            InfoLabel(label: '强调色', child: _buildAccentField()),
-          ],
+    return SizedBox.expand(
+      child: Container(
+        decoration: BoxDecoration(color: FluentTheme.of(context).cardColor),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSectionTitle(context, '打包输出目录'),
+                const SizedBox(height: 12),
+                _buildOutputDirectoryField(context),
+                const SizedBox(height: 24),
+                _buildSectionTitle(context, '主题'),
+                const SizedBox(height: 12),
+                InfoLabel(label: '主题模式', child: _buildThemeModeField()),
+                const SizedBox(height: 12),
+                InfoLabel(label: '深色主题配色', child: _buildDarkFlavorField()),
+                const SizedBox(height: 12),
+                InfoLabel(label: '强调色', child: _buildAccentField()),
+              ],
+            ),
+          ),
         ),
       ),
     );

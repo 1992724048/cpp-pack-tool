@@ -154,6 +154,35 @@ void main() {
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
     expect(find.text('已保存'), findsNothing);
   });
+
+  testWidgets('宽松约束下铺满可用区域且带页面背景表面', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      FluentApp(
+        home: Center(
+          key: const Key('settingLooseBox'),
+          child: Setting(
+            settings: const SettingsModel(),
+            pickDirectory: () async => null,
+            onSave: (_) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final Size available = tester.getSize(
+      find.byKey(const Key('settingLooseBox')),
+    );
+    expect(tester.getSize(find.byType(Setting)), available);
+
+    final Finder surface = _pageSurface(tester);
+    expect(surface, findsOneWidget);
+    expect(tester.getSize(surface), available);
+  });
 }
 
 Future<void> _pumpSetting(
@@ -196,3 +225,18 @@ Future<void> _selectCombo(WidgetTester tester, Key key, String label) async {
 
 Button _clearButton(WidgetTester tester) =>
     tester.widget<Button>(find.byKey(const Key('settingClearDirButton')));
+
+Finder _pageSurface(WidgetTester tester) {
+  final Color cardColor = FluentTheme.of(tester.element(find.byType(Setting)))
+      .cardColor;
+  return find.descendant(
+    of: find.byType(Setting),
+    matching: find.byWidgetPredicate((Widget widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final Decoration? decoration = widget.decoration;
+      return decoration is BoxDecoration && decoration.color == cardColor;
+    }),
+  );
+}

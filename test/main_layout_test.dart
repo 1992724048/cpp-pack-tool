@@ -7,6 +7,7 @@ import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -92,6 +93,28 @@ void main() {
     expect(saved, isNotNull);
     expect(saved!.themeMode, ThemeModeSetting.dark);
     expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('footer 设置页铺满内容区域并带页面背景表面', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    final Rect contentArea = tester.getRect(
+      find.ancestor(of: find.text('尚未添加包'), matching: find.byType(Center)),
+    );
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.getRect(find.byType(Setting)), contentArea);
+
+    final Finder surface = _pageSurface(tester);
+    expect(surface, findsOneWidget);
+    expect(tester.getRect(surface), contentArea);
   });
 
   testWidgets('启动后显示已加载的包', (tester) async {
@@ -687,6 +710,21 @@ PackModel _pack(
     pack.dependencies.addAll(dependencies);
   }
   return pack;
+}
+
+Finder _pageSurface(WidgetTester tester) {
+  final Color cardColor = FluentTheme.of(tester.element(find.byType(Setting)))
+      .cardColor;
+  return find.descendant(
+    of: find.byType(Setting),
+    matching: find.byWidgetPredicate((Widget widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final Decoration? decoration = widget.decoration;
+      return decoration is BoxDecoration && decoration.color == cardColor;
+    }),
+  );
 }
 
 class _FakePackStore extends PackStore {
