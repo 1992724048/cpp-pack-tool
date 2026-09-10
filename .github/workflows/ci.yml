@@ -2,7 +2,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [master]
+    branches: [master, dev]
 
 permissions:
   contents: write
@@ -10,23 +10,14 @@ permissions:
   actions: write
 
 jobs:
-  build-and-release:
-    name: Build, Test and Release (on push to master)
+  build-and-test:
+    name: Build and Test (Release on master only)
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Cache Pub packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.pub-cache
-          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pub-
-
-      - name: Setup Flutter
+      - name: Setup Flutter (SDK and pub cache)
         uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -56,6 +47,7 @@ jobs:
         run: flutter build windows --release
 
       - name: Zip x86_64 build artifacts and set env
+        if: github.ref == 'refs/heads/master'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
@@ -64,9 +56,9 @@ jobs:
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath $out_x64 -CompressionLevel Optimal
           ('ASSET_PATH_X64=' + $out_x64) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-
       - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}

@@ -24,9 +24,10 @@ flutter run -d windows             # 本地运行
 
 ## 发布流程（勿误触发）
 
-- **推送/合并到 `master` 即触发 CI 发布**：构建 → 打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip` → 创建 GitHub Release（tag `v<版本>`）。CI 仅 push master 触发，无 PR 检查。
+- **CI 在 push `master` / `dev` 时触发**：`analyze → test → build windows --release`（Flutter SDK 与 pub 依赖由 `subosito/flutter-action` 缓存）。**仅 `master` 发布**：打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip` → 创建 GitHub Release（tag `v<版本>`）；`dev` 渠道只验证（测试+构建）不发布。无 PR 检查。
+- 开发在 `dev` 分支进行（日常推送不触发发布）；发布时把 `dev` 合并/推送到 `master` 并升级版本号。
 - 版本号唯一来源是 `pubspec.yaml` 的 `version:`（如 `1.0.1+1`；CI 去掉 `+build` 后缀，解析失败回退为时间戳）。同一版本经 CMake `FLUTTER_VERSION*` 宏注入 exe 文件版本（`windows/runner/Runner.rc`）。
-- 所以「改 `pubspec.yaml` 版本号 + push master = 发 Release」——没有发布意图时不要动版本号。
+- 所以「改 `pubspec.yaml` 版本号 + push `master` = 发 Release」——没有发布意图时不要动版本号。
 
 ## Architecture
 
