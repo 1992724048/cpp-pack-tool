@@ -205,7 +205,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
           label: '许可证',
           child: FluentTheme(
             data: FluentTheme.of(context)
-                .copyWith(visualDensity: licenseSelectorDensity),
+                .copyWith(visualDensity: comboBoxDensity),
             child: ComboBox<String?>(
               key: const Key('packLicenseField'),
               value: _license,

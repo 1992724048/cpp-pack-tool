@@ -59,15 +59,19 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
     final Set<String> newPaths = <String>{
       for (final FileModel file in files) file.path.toLowerCase(),
     };
-    final PackModel updated = PackModel(
-      name: widget.pack.name,
-      version: widget.pack.version,
-      author: widget.pack.author,
-      description: widget.pack.description,
-      license: widget.pack.license,
-      iconPath: findIconFile(files)?.path,
-      sourcePath: widget.pack.sourcePath,
-    )..files = files;
+    final PackModel updated =
+        PackModel(
+            name: widget.pack.name,
+            version: widget.pack.version,
+            author: widget.pack.author,
+            description: widget.pack.description,
+            license: widget.pack.license,
+            iconPath: findIconFile(files)?.path,
+            sourcePath: widget.pack.sourcePath,
+          )
+          ..files = files
+          ..cmds = widget.pack.cmds
+          ..dependencies = widget.pack.dependencies;
 
     setState(() {
       _stage = _RemapStage.applying;

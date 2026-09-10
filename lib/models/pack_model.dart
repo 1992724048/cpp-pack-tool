@@ -1,4 +1,5 @@
 ﻿import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 
 class PackModel {
@@ -12,6 +13,7 @@ class PackModel {
 
   List<FileModel> files = [];
   List<CmdModel> cmds = [];
+  List<DependencyModel> dependencies = [];
 
   static List<PackModel> packs = [];
 
@@ -37,6 +39,10 @@ class PackModel {
       'files': <Map<String, Object?>>[
         for (final FileModel file in files) file.toMap(),
       ],
+      'dependencies': <Map<String, Object?>>[
+        for (final DependencyModel dependency in dependencies)
+          dependency.toMap(),
+      ],
     };
   }
 
@@ -61,6 +67,19 @@ class PackModel {
           throw const FormatException('files 项类型错误，应为映射');
         }
         pack.files.add(FileModel.fromMap(_stringKeyMap(item)));
+      }
+    }
+
+    final Object? dependencies = map['dependencies'];
+    if (dependencies != null) {
+      if (dependencies is! List) {
+        throw const FormatException('dependencies 字段类型错误，应为列表');
+      }
+      for (final Object? item in dependencies) {
+        if (item is! Map) {
+          throw const FormatException('dependencies 项类型错误，应为映射');
+        }
+        pack.dependencies.add(DependencyModel.fromMap(_stringKeyMap(item)));
       }
     }
     return pack;

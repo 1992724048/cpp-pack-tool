@@ -111,7 +111,8 @@ class _PackInfoState extends State<PackInfo> {
             sourcePath: widget.pack.sourcePath,
           )
           ..files = widget.pack.files
-          ..cmds = widget.pack.cmds;
+          ..cmds = widget.pack.cmds
+          ..dependencies = widget.pack.dependencies;
 
     setState(() => _saving = true);
     final bool saved = await widget.onSave(updated);
@@ -261,7 +262,7 @@ class _PackInfoState extends State<PackInfo> {
       child: Builder(
         builder: (BuildContext context) => FluentTheme(
           data: FluentTheme.of(context)
-              .copyWith(visualDensity: licenseSelectorDensity),
+              .copyWith(visualDensity: comboBoxDensity),
           child: ComboBox<String?>(
             key: const Key('packInfoLicenseField'),
             value: _license,

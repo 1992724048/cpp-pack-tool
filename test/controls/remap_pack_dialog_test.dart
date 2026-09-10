@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:cpp_nuget_pack/controls/remap_pack_dialog.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -81,6 +83,35 @@ void main() {
     expect(applied!.sourcePath, r'C:\libs\demo');
     expect(applied!.files, hasLength(2));
     expect(applied!.iconPath, 'assets/logo.svg');
+  });
+
+  testWidgets('重新映射保留依赖与命令列表', (tester) async {
+    final PackModel pack = _pack()
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(name: 'libfoo', version: '1.0'),
+      ]
+      ..cmds = <CmdModel>[CmdModel(command: 'echo hi', type: CmdType.preBuild)];
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      pack: pack,
+      scanFuture: Future<List<FileModel>>.value(<FileModel>[
+        FileModel(name: 'new.h', path: 'include/new.h', size: 10),
+      ]),
+      onApply: (PackModel updated) async {
+        applied = updated;
+      },
+    );
+
+    expect(applied, isNotNull);
+    expect(applied!.files, hasLength(1));
+    expect(applied!.dependencies, hasLength(1));
+    expect(applied!.dependencies.single.name, 'libfoo');
+    expect(applied!.dependencies.single.version, '1.0');
+    expect(applied!.cmds, hasLength(1));
+    expect(applied!.cmds.single.command, 'echo hi');
+    expect(applied!.cmds.single.type, CmdType.preBuild);
   });
 
   testWidgets('扫描结果无图片文件时 iconPath 为空', (tester) async {

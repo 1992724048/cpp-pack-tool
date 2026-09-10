@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -48,6 +49,7 @@ void main() {
       expect(map.containsKey('iconPath'), isFalse);
       expect(map.containsKey('sourcePath'), isFalse);
       expect(map['files'], isEmpty);
+      expect(map['dependencies'], isEmpty);
     });
 
     test('fromMap 缺少 files 时默认空列表', () {
@@ -109,6 +111,71 @@ void main() {
           'version': '1.0.0',
           'author': 'tester',
           'files': 'oops',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('toMap/fromMap 往返保留依赖列表', () {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..dependencies = <DependencyModel>[
+              const DependencyModel(name: 'libfoo', version: '[1.0,2.0)'),
+              const DependencyModel(name: 'libbar', version: '1.0'),
+            ];
+
+      final PackModel loaded = PackModel.fromMap(pack.toMap());
+
+      expect(loaded.dependencies, hasLength(2));
+      expect(loaded.dependencies[0].name, 'libfoo');
+      expect(loaded.dependencies[0].version, '[1.0,2.0)');
+      expect(loaded.dependencies[1].name, 'libbar');
+      expect(loaded.dependencies[1].version, '1.0');
+    });
+
+    test('fromMap 缺少 dependencies 时默认空列表', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+
+      expect(pack.dependencies, isEmpty);
+    });
+
+    test('fromMap dependencies 类型错误时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'dependencies': 'oops',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('fromMap dependencies 项类型错误时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'dependencies': <Object?>['oops'],
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('fromMap 依赖项缺少 version 时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'dependencies': <Object?>[
+            <String, Object?>{'name': 'libfoo'},
+          ],
         }),
         throwsFormatException,
       );

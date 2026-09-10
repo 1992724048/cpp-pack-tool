@@ -20,7 +20,7 @@ class PackList {
           icon: _iconFor(pack),
           title: pack.name,
           version: pack.version,
-          body: PackManage(pack: pack, onSave: onSave),
+          body: PackManage(pack: pack, allPacks: packs, onSave: onSave),
         ),
     ];
   }

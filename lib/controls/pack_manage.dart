@@ -2,13 +2,20 @@
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+import '../pages/pack_dependencies.dart';
 import '../pages/pack_files.dart';
 import '../pages/pack_info.dart';
 
 class PackManage extends StatefulWidget {
-  const PackManage({super.key, required this.pack, required this.onSave});
+  const PackManage({
+    super.key,
+    required this.pack,
+    required this.allPacks,
+    required this.onSave,
+  });
 
   final PackModel pack;
+  final List<PackModel> allPacks;
   final Future<bool> Function(PackModel pack) onSave;
 
   @override
@@ -38,7 +45,7 @@ class _PackManageState extends State<PackManage> {
       Tab(
         icon: Svgs.inventoryFlow,
         text: const Text('依赖管理'),
-        body: _body(const Center(child: Text('依赖管理内容'))),
+        body: _body(_packDependenciesBody()),
       ),
       Tab(
         icon: Svgs.projectSetup,
@@ -80,6 +87,18 @@ class _PackManageState extends State<PackManage> {
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
           PackFiles(pack: pack),
+    );
+  }
+
+  Widget _packDependenciesBody() {
+    return ValueListenableBuilder<PackModel>(
+      valueListenable: _pack,
+      builder: (BuildContext context, PackModel pack, Widget? child) =>
+          PackDependencies(
+            pack: pack,
+            allPacks: widget.allPacks,
+            onSave: widget.onSave,
+          ),
     );
   }
 

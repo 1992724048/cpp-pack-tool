@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_info.dart';
@@ -182,6 +183,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
     expect(find.text('已保存'), findsNothing);
+  });
+
+  testWidgets('保存包信息时保留依赖列表', (tester) async {
+    final PackModel pack = _pack()
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(name: 'libfoo', version: '[1.0,2.0)'),
+      ];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackInfo(
+        pack: pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+    await _tapEdit(tester);
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.version, '2.0.0');
+    expect(saved!.dependencies, hasLength(1));
+    expect(saved!.dependencies.single.name, 'libfoo');
+    expect(saved!.dependencies.single.version, '[1.0,2.0)');
   });
 
   testWidgets('清空描述并选择无许可证时保存为空值', (tester) async {

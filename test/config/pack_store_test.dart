@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
+import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart';
 
 void main() {
   late Directory tempDir;
@@ -166,6 +168,49 @@ void main() {
         'beta',
       ]);
     });
+
+    test('依赖列表写入 YAML 并可往返读回', () async {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..dependencies = <DependencyModel>[
+              const DependencyModel(name: 'libfoo', version: '[1.0,2.0)'),
+              const DependencyModel(name: 'libbar', version: '1.0'),
+            ];
+
+      await store.savePack(pack);
+      final String yaml = File('${tempDir.path}/packs/demo.yaml')
+          .readAsStringSync();
+      final YamlMap document = loadYaml(yaml) as YamlMap;
+      final YamlList dependencies = document['dependencies'] as YamlList;
+
+      expect(dependencies, hasLength(2));
+      expect((dependencies[0] as YamlMap)['name'], 'libfoo');
+      expect((dependencies[0] as YamlMap)['version'], '[1.0,2.0)');
+      expect((dependencies[1] as YamlMap)['name'], 'libbar');
+      expect((dependencies[1] as YamlMap)['version'], '1.0');
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.errors, isEmpty);
+      final PackModel loaded = result.packs.single;
+      expect(loaded.dependencies, hasLength(2));
+      expect(loaded.dependencies[0].name, 'libfoo');
+      expect(loaded.dependencies[0].version, '[1.0,2.0)');
+      expect(loaded.dependencies[1].name, 'libbar');
+      expect(loaded.dependencies[1].version, '1.0');
+    });
+
+    test('文件缺少 files 与 dependencies 时默认空列表', () async {
+      await store.ensureConfigExist();
+      File('${tempDir.path}/packs/legacy.yaml')
+          .writeAsStringSync('name: legacy\nversion: 1.0.0\nauthor: tester\n');
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.errors, isEmpty);
+      expect(result.packs.single.files, isEmpty);
+      expect(result.packs.single.dependencies, isEmpty);
+    });
   });
 
   group('deletePack', () {
@@ -244,6 +289,22 @@ void main() {
 
       expect(result.packs, isEmpty);
       expect(result.errors.single.fileName, 'empty.yaml');
+    });
+
+    test('依赖项损坏的文件被跳过并记录原因', () async {
+      await store.savePack(
+        PackModel(name: 'good', version: '1.0.0', author: 'tester'),
+      );
+      File('${tempDir.path}/packs/broken.yaml').writeAsStringSync(
+        'name: bad\nversion: 1.0.0\nauthor: tester\ndependencies:\n'
+        '  - name: libfoo\n',
+      );
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.packs.single.name, 'good');
+      expect(result.errors.single.fileName, 'broken.yaml');
+      expect(result.errors.single.message, contains('version'));
     });
   });
 
