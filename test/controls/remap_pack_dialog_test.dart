@@ -4,6 +4,9 @@ import 'package:cpp_nuget_pack/controls/remap_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/models/library_model.dart';
+import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -90,7 +93,14 @@ void main() {
       ..dependencies = <DependencyModel>[
         const DependencyModel(name: 'libfoo', version: '1.0'),
       ]
-      ..cmds = <CmdModel>[CmdModel(command: 'echo hi', type: CmdType.preBuild)];
+      ..commands = <CmdModel>[
+        CmdModel(command: 'echo hi', type: CmdType.preBuild),
+      ]
+      ..macros = <MacroModel>[const MacroModel(value: 'MY_MACRO=1')]
+      ..libDirectories = <LibDirModel>[
+        const LibDirModel(path: 'third_party/lib'),
+      ]
+      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
     PackModel? applied;
 
     await _pumpDialog(
@@ -109,9 +119,12 @@ void main() {
     expect(applied!.dependencies, hasLength(1));
     expect(applied!.dependencies.single.name, 'libfoo');
     expect(applied!.dependencies.single.version, '1.0');
-    expect(applied!.cmds, hasLength(1));
-    expect(applied!.cmds.single.command, 'echo hi');
-    expect(applied!.cmds.single.type, CmdType.preBuild);
+    expect(applied!.commands, hasLength(1));
+    expect(applied!.commands.single.command, 'echo hi');
+    expect(applied!.commands.single.type, CmdType.preBuild);
+    expect(applied!.macros.single.value, 'MY_MACRO=1');
+    expect(applied!.libDirectories.single.path, 'third_party/lib');
+    expect(applied!.libraries.single.name, 'mylib.lib');
   });
 
   testWidgets('扫描结果无图片文件时 iconPath 为空', (tester) async {

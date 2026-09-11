@@ -2,6 +2,9 @@ import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/models/library_model.dart';
+import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_dependencies.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
@@ -123,7 +126,14 @@ void main() {
       ..files = <FileModel>[
         FileModel(name: 'foo.h', path: 'include/foo.h', size: 128),
       ]
-      ..cmds = <CmdModel>[CmdModel(command: 'echo hi', type: CmdType.preBuild)];
+      ..commands = <CmdModel>[
+        CmdModel(command: 'echo hi', type: CmdType.preBuild),
+      ]
+      ..macros = <MacroModel>[const MacroModel(value: 'MY_MACRO=1')]
+      ..libDirectories = <LibDirModel>[
+        const LibDirModel(path: 'third_party/lib'),
+      ]
+      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
     PackModel? saved;
 
     await _pumpPage(
@@ -155,7 +165,10 @@ void main() {
     expect(saved!.dependencies.single.name, 'libfoo');
     expect(saved!.dependencies.single.version, '[1.0,2.0)');
     expect(saved!.files, hasLength(1));
-    expect(saved!.cmds, hasLength(1));
+    expect(saved!.commands, hasLength(1));
+    expect(saved!.macros.single.value, 'MY_MACRO=1');
+    expect(saved!.libDirectories.single.path, 'third_party/lib');
+    expect(saved!.libraries.single.name, 'mylib.lib');
     expect(find.text('已添加'), findsOneWidget);
     expect(find.byKey(const Key('dependencyDialog')), findsNothing);
   });

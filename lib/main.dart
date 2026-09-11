@@ -397,7 +397,11 @@ class _MainLayoutState extends State<MainLayout> {
           openMinWidth: 260,
           compactWidth: 50,
         ),
-        items: PackList.buildCards(_packs, onSave: _savePack),
+        items: PackList.buildCards(
+          _packs,
+          onSave: _savePack,
+          pickDirectory: widget.pickDirectory,
+        ),
         footerItems: [
           PaneItemSeparator(),
           LibraryItem(

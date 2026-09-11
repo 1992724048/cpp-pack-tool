@@ -1,7 +1,18 @@
+import 'package:cpp_nuget_pack/models/build_model.dart';
+
 final RegExp _pathSeparator = RegExp(r'[/\\]');
 
+const String allBuildLabel = 'ALL';
 const String releaseBuildLabel = 'Release';
 const String debugBuildLabel = 'Debug';
+
+String buildModelLabel(BuildModel buildModel) {
+  return switch (buildModel) {
+    BuildModel.all => allBuildLabel,
+    BuildModel.release => releaseBuildLabel,
+    BuildModel.debug => debugBuildLabel,
+  };
+}
 
 /// 从文件相对路径推断构建配置标签。
 ///

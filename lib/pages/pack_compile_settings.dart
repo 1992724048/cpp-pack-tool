@@ -1,0 +1,604 @@
+import 'package:cpp_nuget_pack/controls/compile_entry_dialog.dart';
+import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/models/library_model.dart';
+import 'package:cpp_nuget_pack/models/macro_model.dart';
+import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/build_config.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:file_selector/file_selector.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+
+class PackCompileSettings extends StatefulWidget {
+  const PackCompileSettings({
+    super.key,
+    required this.pack,
+    required this.onSave,
+    this.pickDirectory = getDirectoryPath,
+  });
+
+  final PackModel pack;
+  final Future<bool> Function(PackModel pack) onSave;
+  final Future<String?> Function() pickDirectory;
+
+  @override
+  State<PackCompileSettings> createState() => _PackCompileSettingsState();
+}
+
+class _PackCompileSettingsState extends State<PackCompileSettings> {
+  bool _saving = false;
+
+  Future<void> _addMacro() async {
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: '添加宏定义',
+      label: '宏定义',
+      hintText: 'MY_MACRO=1',
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        macros: <MacroModel>[
+          ...pack.macros,
+          MacroModel(value: result.text, buildModel: result.buildModel),
+        ],
+      ),
+      '已添加',
+    );
+  }
+
+  Future<void> _editMacro(int index) async {
+    final MacroModel macro = widget.pack.macros[index];
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: '编辑宏定义',
+      label: '宏定义',
+      hintText: 'MY_MACRO=1',
+      initialText: macro.value,
+      initialBuildModel: macro.buildModel,
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        macros: <MacroModel>[
+          for (int i = 0; i < pack.macros.length; i++)
+            if (i == index)
+              MacroModel(value: result.text, buildModel: result.buildModel)
+            else
+              pack.macros[i],
+        ],
+      ),
+      '已保存',
+    );
+  }
+
+  Future<void> _removeMacro(int index) async {
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        macros: <MacroModel>[
+          for (int i = 0; i < pack.macros.length; i++)
+            if (i != index) pack.macros[i],
+        ],
+      ),
+      '已删除',
+    );
+  }
+
+  Future<void> _addCommand(CmdType type) async {
+    final bool preBuild = type == CmdType.preBuild;
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: preBuild ? '添加编译前命令' : '添加编译后命令',
+      label: '命令',
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        commands: <CmdModel>[
+          ...pack.commands,
+          CmdModel(
+            command: result.text,
+            type: type,
+            buildModel: result.buildModel,
+          ),
+        ],
+      ),
+      '已添加',
+    );
+  }
+
+  Future<void> _editCommand(int index) async {
+    final CmdModel command = widget.pack.commands[index];
+    final bool preBuild = command.type == CmdType.preBuild;
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: preBuild ? '编辑编译前命令' : '编辑编译后命令',
+      label: '命令',
+      initialText: command.command,
+      initialBuildModel: command.buildModel,
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        commands: <CmdModel>[
+          for (int i = 0; i < pack.commands.length; i++)
+            if (i == index)
+              CmdModel(
+                command: result.text,
+                type: command.type,
+                buildModel: result.buildModel,
+              )
+            else
+              pack.commands[i],
+        ],
+      ),
+      '已保存',
+    );
+  }
+
+  Future<void> _removeCommand(int index) async {
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        commands: <CmdModel>[
+          for (int i = 0; i < pack.commands.length; i++)
+            if (i != index) pack.commands[i],
+        ],
+      ),
+      '已删除',
+    );
+  }
+
+  Future<void> _addLibDirectory() async {
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: '添加附加库目录',
+      label: '目录路径',
+      hintText: r'third_party\lib',
+      showBrowse: true,
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        libDirectories: <LibDirModel>[
+          ...pack.libDirectories,
+          LibDirModel(path: result.text, buildModel: result.buildModel),
+        ],
+      ),
+      '已添加',
+    );
+  }
+
+  Future<void> _editLibDirectory(int index) async {
+    final LibDirModel libDirectory = widget.pack.libDirectories[index];
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: '编辑附加库目录',
+      label: '目录路径',
+      hintText: r'third_party\lib',
+      showBrowse: true,
+      initialText: libDirectory.path,
+      initialBuildModel: libDirectory.buildModel,
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        libDirectories: <LibDirModel>[
+          for (int i = 0; i < pack.libDirectories.length; i++)
+            if (i == index)
+              LibDirModel(path: result.text, buildModel: result.buildModel)
+            else
+              pack.libDirectories[i],
+        ],
+      ),
+      '已保存',
+    );
+  }
+
+  Future<void> _removeLibDirectory(int index) async {
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        libDirectories: <LibDirModel>[
+          for (int i = 0; i < pack.libDirectories.length; i++)
+            if (i != index) pack.libDirectories[i],
+        ],
+      ),
+      '已删除',
+    );
+  }
+
+  Future<void> _addLibrary() async {
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: '添加附加库',
+      label: '库名称',
+      hintText: 'mylib.lib',
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        libraries: <LibraryModel>[
+          ...pack.libraries,
+          LibraryModel(name: result.text, buildModel: result.buildModel),
+        ],
+      ),
+      '已添加',
+    );
+  }
+
+  Future<void> _editLibrary(int index) async {
+    final LibraryModel library = widget.pack.libraries[index];
+    final CompileEntryResult? result = await _openEntryDialog(
+      title: '编辑附加库',
+      label: '库名称',
+      hintText: 'mylib.lib',
+      initialText: library.name,
+      initialBuildModel: library.buildModel,
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        libraries: <LibraryModel>[
+          for (int i = 0; i < pack.libraries.length; i++)
+            if (i == index)
+              LibraryModel(name: result.text, buildModel: result.buildModel)
+            else
+              pack.libraries[i],
+        ],
+      ),
+      '已保存',
+    );
+  }
+
+  Future<void> _removeLibrary(int index) async {
+    await _persist(
+      (PackModel pack) => _updatedPack(
+        pack,
+        libraries: <LibraryModel>[
+          for (int i = 0; i < pack.libraries.length; i++)
+            if (i != index) pack.libraries[i],
+        ],
+      ),
+      '已删除',
+    );
+  }
+
+  Future<CompileEntryResult?> _openEntryDialog({
+    required String title,
+    required String label,
+    String? hintText,
+    bool showBrowse = false,
+    String initialText = '',
+    BuildModel initialBuildModel = BuildModel.all,
+  }) {
+    return showDialog<CompileEntryResult>(
+      context: context,
+      builder: (_) => CompileEntryDialog(
+        title: title,
+        label: label,
+        hintText: hintText,
+        showBrowse: showBrowse,
+        pickDirectory: widget.pickDirectory,
+        initialText: initialText,
+        initialBuildModel: initialBuildModel,
+      ),
+    );
+  }
+
+  Future<void> _persist(
+    PackModel Function(PackModel pack) update,
+    String message,
+  ) async {
+    if (_saving) {
+      return;
+    }
+    _saving = true;
+    final bool saved;
+    try {
+      saved = await widget.onSave(update(widget.pack));
+    } finally {
+      _saving = false;
+    }
+    if (!mounted || !saved) {
+      return;
+    }
+    showFloatingToast(context, message);
+  }
+
+  PackModel _updatedPack(
+    PackModel pack, {
+    List<CmdModel>? commands,
+    List<MacroModel>? macros,
+    List<LibDirModel>? libDirectories,
+    List<LibraryModel>? libraries,
+  }) {
+    return PackModel(
+        name: pack.name,
+        version: pack.version,
+        author: pack.author,
+        description: pack.description,
+        license: pack.license,
+        iconPath: pack.iconPath,
+        sourcePath: pack.sourcePath,
+      )
+      ..files = pack.files
+      ..commands = commands ?? pack.commands
+      ..dependencies = pack.dependencies
+      ..macros = macros ?? pack.macros
+      ..libDirectories = libDirectories ?? pack.libDirectories
+      ..libraries = libraries ?? pack.libraries;
+  }
+
+  List<_CompileEntry> _macroEntries() {
+    final List<MacroModel> macros = widget.pack.macros;
+    return <_CompileEntry>[
+      for (int index = 0; index < macros.length; index++)
+        _CompileEntry(
+          text: macros[index].value,
+          buildModel: macros[index].buildModel,
+          editKey: Key('macroEditButton_$index'),
+          deleteKey: Key('macroDeleteButton_$index'),
+          onEdit: () => _editMacro(index),
+          onDelete: () => _removeMacro(index),
+        ),
+    ];
+  }
+
+  List<_CompileEntry> _commandEntries(CmdType type, String keyPrefix) {
+    final List<CmdModel> commands = widget.pack.commands;
+    return <_CompileEntry>[
+      for (int index = 0; index < commands.length; index++)
+        if (commands[index].type == type)
+          _CompileEntry(
+            text: commands[index].command,
+            buildModel: commands[index].buildModel,
+            editKey: Key('${keyPrefix}EditButton_$index'),
+            deleteKey: Key('${keyPrefix}DeleteButton_$index'),
+            onEdit: () => _editCommand(index),
+            onDelete: () => _removeCommand(index),
+          ),
+    ];
+  }
+
+  List<_CompileEntry> _libDirectoryEntries() {
+    final List<LibDirModel> libDirectories = widget.pack.libDirectories;
+    return <_CompileEntry>[
+      for (int index = 0; index < libDirectories.length; index++)
+        _CompileEntry(
+          text: libDirectories[index].path,
+          buildModel: libDirectories[index].buildModel,
+          editKey: Key('libDirEditButton_$index'),
+          deleteKey: Key('libDirDeleteButton_$index'),
+          onEdit: () => _editLibDirectory(index),
+          onDelete: () => _removeLibDirectory(index),
+        ),
+    ];
+  }
+
+  List<_CompileEntry> _libraryEntries() {
+    final List<LibraryModel> libraries = widget.pack.libraries;
+    return <_CompileEntry>[
+      for (int index = 0; index < libraries.length; index++)
+        _CompileEntry(
+          text: libraries[index].name,
+          buildModel: libraries[index].buildModel,
+          editKey: Key('libraryEditButton_$index'),
+          deleteKey: Key('libraryDeleteButton_$index'),
+          onEdit: () => _editLibrary(index),
+          onDelete: () => _removeLibrary(index),
+        ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.expand(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSection(
+                title: '宏定义',
+                emptyText: '暂无宏定义',
+                addKey: const Key('addMacroButton'),
+                onAdd: _addMacro,
+                entries: _macroEntries(),
+              ),
+              const SizedBox(height: 24),
+              _buildSection(
+                title: '编译前命令',
+                emptyText: '暂无编译前命令',
+                addKey: const Key('addPreBuildCmdButton'),
+                onAdd: () => _addCommand(CmdType.preBuild),
+                entries: _commandEntries(CmdType.preBuild, 'preBuildCmd'),
+              ),
+              const SizedBox(height: 24),
+              _buildSection(
+                title: '编译后命令',
+                emptyText: '暂无编译后命令',
+                addKey: const Key('addPostBuildCmdButton'),
+                onAdd: () => _addCommand(CmdType.postBuild),
+                entries: _commandEntries(CmdType.postBuild, 'postBuildCmd'),
+              ),
+              const SizedBox(height: 24),
+              _buildSection(
+                title: '附加库目录',
+                emptyText: '暂无附加库目录',
+                addKey: const Key('addLibDirButton'),
+                onAdd: _addLibDirectory,
+                entries: _libDirectoryEntries(),
+              ),
+              const SizedBox(height: 24),
+              _buildSection(
+                title: '附加库',
+                emptyText: '暂无附加库',
+                addKey: const Key('addLibraryButton'),
+                onAdd: _addLibrary,
+                entries: _libraryEntries(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required String emptyText,
+    required Key addKey,
+    required VoidCallback onAdd,
+    required List<_CompileEntry> entries,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: FluentTheme.of(context).typography.body?.color,
+                ),
+              ),
+            ),
+            FilledButton(
+              key: addKey,
+              onPressed: _saving ? null : onAdd,
+              child: const Text('添加'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (entries.isEmpty)
+          Text(
+            emptyText,
+            style: TextStyle(
+              color: FluentTheme.of(context).resources.textFillColorSecondary,
+            ),
+          )
+        else
+          _buildEntryList(entries),
+      ],
+    );
+  }
+
+  Widget _buildEntryList(List<_CompileEntry> entries) {
+    final FluentThemeData theme = FluentTheme.of(context);
+    final DividerThemeData dividerTheme = theme.dividerTheme;
+    return FluentTheme(
+      data: theme.copyWith(
+        // 全局分割线自带 8px 水平边距，覆盖为 0 使线与列表内容同宽
+        dividerTheme: DividerThemeData(
+          decoration: dividerTheme.decoration,
+          verticalMargin: dividerTheme.verticalMargin,
+          horizontalMargin: EdgeInsets.zero,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int index = 0; index < entries.length; index++) ...[
+            if (index > 0) const Divider(),
+            _buildEntryRow(entries[index]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEntryRow(_CompileEntry entry) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(entry.text, overflow: TextOverflow.ellipsis),
+                ),
+                const SizedBox(width: 5),
+                Tag(
+                  text: buildModelLabel(entry.buildModel),
+                  color: _buildModelColor(entry.buildModel),
+                  fontSize: 10,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Tooltip(
+            message: '编辑',
+            child: IconButton(
+              key: entry.editKey,
+              icon: const Icon(FluentIcons.edit, size: 16),
+              onPressed: _saving ? null : entry.onEdit,
+            ),
+          ),
+          Tooltip(
+            message: '删除',
+            child: IconButton(
+              key: entry.deleteKey,
+              icon: const Icon(FluentIcons.delete, size: 16),
+              onPressed: _saving ? null : entry.onDelete,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _buildModelColor(BuildModel buildModel) {
+    return switch (buildModel) {
+      BuildModel.all => UCColors.flavor.blue,
+      BuildModel.release => UCColors.flavor.green,
+      BuildModel.debug => UCColors.flavor.peach,
+    };
+  }
+}
+
+class _CompileEntry {
+  const _CompileEntry({
+    required this.text,
+    required this.buildModel,
+    required this.editKey,
+    required this.deleteKey,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final String text;
+  final BuildModel buildModel;
+  final Key editKey;
+  final Key deleteKey;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+}

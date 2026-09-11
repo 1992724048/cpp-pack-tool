@@ -1,6 +1,9 @@
 ﻿import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/models/library_model.dart';
+import 'package:cpp_nuget_pack/models/macro_model.dart';
 
 class PackModel {
   final String name;
@@ -12,8 +15,11 @@ class PackModel {
   final String? sourcePath;
 
   List<FileModel> files = [];
-  List<CmdModel> cmds = [];
+  List<CmdModel> commands = [];
   List<DependencyModel> dependencies = [];
+  List<MacroModel> macros = [];
+  List<LibDirModel> libDirectories = [];
+  List<LibraryModel> libraries = [];
 
   static List<PackModel> packs = [];
 
@@ -43,6 +49,19 @@ class PackModel {
         for (final DependencyModel dependency in dependencies)
           dependency.toMap(),
       ],
+      'commands': <Map<String, Object?>>[
+        for (final CmdModel command in commands) command.toMap(),
+      ],
+      'macros': <Map<String, Object?>>[
+        for (final MacroModel macro in macros) macro.toMap(),
+      ],
+      'libDirectories': <Map<String, Object?>>[
+        for (final LibDirModel libDirectory in libDirectories)
+          libDirectory.toMap(),
+      ],
+      'libraries': <Map<String, Object?>>[
+        for (final LibraryModel library in libraries) library.toMap(),
+      ],
     };
   }
 
@@ -57,33 +76,50 @@ class PackModel {
       sourcePath: _optionalString(map, 'sourcePath'),
     );
 
-    final Object? files = map['files'];
-    if (files != null) {
-      if (files is! List) {
-        throw const FormatException('files 字段类型错误，应为列表');
-      }
-      for (final Object? item in files) {
-        if (item is! Map) {
-          throw const FormatException('files 项类型错误，应为映射');
-        }
-        pack.files.add(FileModel.fromMap(_stringKeyMap(item)));
-      }
-    }
-
-    final Object? dependencies = map['dependencies'];
-    if (dependencies != null) {
-      if (dependencies is! List) {
-        throw const FormatException('dependencies 字段类型错误，应为列表');
-      }
-      for (final Object? item in dependencies) {
-        if (item is! Map) {
-          throw const FormatException('dependencies 项类型错误，应为映射');
-        }
-        pack.dependencies.add(DependencyModel.fromMap(_stringKeyMap(item)));
-      }
-    }
+    pack.files.addAll(<FileModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'files'))
+        FileModel.fromMap(item),
+    ]);
+    pack.dependencies.addAll(<DependencyModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'dependencies'))
+        DependencyModel.fromMap(item),
+    ]);
+    pack.commands.addAll(<CmdModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'commands'))
+        CmdModel.fromMap(item),
+    ]);
+    pack.macros.addAll(<MacroModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'macros'))
+        MacroModel.fromMap(item),
+    ]);
+    pack.libDirectories.addAll(<LibDirModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'libDirectories'))
+        LibDirModel.fromMap(item),
+    ]);
+    pack.libraries.addAll(<LibraryModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'libraries'))
+        LibraryModel.fromMap(item),
+    ]);
     return pack;
   }
+}
+
+List<Map<String, Object?>> _mapList(Map<String, Object?> map, String key) {
+  final Object? value = map[key];
+  if (value == null) {
+    return const <Map<String, Object?>>[];
+  }
+  if (value is! List) {
+    throw FormatException('$key 字段类型错误，应为列表');
+  }
+  final List<Map<String, Object?>> items = <Map<String, Object?>>[];
+  for (final Object? item in value) {
+    if (item is! Map) {
+      throw FormatException('$key 项类型错误，应为映射');
+    }
+    items.add(_stringKeyMap(item));
+  }
+  return items;
 }
 
 Map<String, Object?> _stringKeyMap(Map<Object?, Object?> map) {

@@ -70,8 +70,11 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
             sourcePath: widget.pack.sourcePath,
           )
           ..files = files
-          ..cmds = widget.pack.cmds
-          ..dependencies = widget.pack.dependencies;
+          ..commands = widget.pack.commands
+          ..dependencies = widget.pack.dependencies
+          ..macros = widget.pack.macros
+          ..libDirectories = widget.pack.libDirectories
+          ..libraries = widget.pack.libraries;
 
     setState(() {
       _stage = _RemapStage.applying;

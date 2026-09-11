@@ -216,6 +216,9 @@ PackModel _withDependencies(
       sourcePath: pack.sourcePath,
     )
     ..files = pack.files
-    ..cmds = pack.cmds
-    ..dependencies = dependencies;
+    ..commands = pack.commands
+    ..dependencies = dependencies
+    ..macros = pack.macros
+    ..libDirectories = pack.libDirectories
+    ..libraries = pack.libraries;
 }

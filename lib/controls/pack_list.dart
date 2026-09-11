@@ -13,6 +13,7 @@ class PackList {
   static List<NavigationPaneItem> buildCards(
     List<PackModel> packs, {
     required Future<bool> Function(PackModel pack) onSave,
+    required Future<String?> Function() pickDirectory,
   }) {
     return [
       for (final PackModel pack in packs)
@@ -20,7 +21,12 @@ class PackList {
           icon: _iconFor(pack),
           title: pack.name,
           version: pack.version,
-          body: PackManage(pack: pack, allPacks: packs, onSave: onSave),
+          body: PackManage(
+            pack: pack,
+            allPacks: packs,
+            onSave: onSave,
+            pickDirectory: pickDirectory,
+          ),
         ),
     ];
   }

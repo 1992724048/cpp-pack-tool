@@ -1,5 +1,10 @@
+import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/models/library_model.dart';
+import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -50,6 +55,10 @@ void main() {
       expect(map.containsKey('sourcePath'), isFalse);
       expect(map['files'], isEmpty);
       expect(map['dependencies'], isEmpty);
+      expect(map['commands'], isEmpty);
+      expect(map['macros'], isEmpty);
+      expect(map['libDirectories'], isEmpty);
+      expect(map['libraries'], isEmpty);
     });
 
     test('fromMap 缺少 files 时默认空列表', () {
@@ -175,6 +184,128 @@ void main() {
           'author': 'tester',
           'dependencies': <Object?>[
             <String, Object?>{'name': 'libfoo'},
+          ],
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('toMap/fromMap 往返保留命令与编译设置列表', () {
+      final PackModel
+      pack = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+        ..commands = <CmdModel>[
+          const CmdModel(
+            command: 'echo hi',
+            type: CmdType.preBuild,
+            buildModel: BuildModel.debug,
+          ),
+        ]
+        ..macros = <MacroModel>[
+          const MacroModel(value: 'MY_MACRO=1', buildModel: BuildModel.release),
+        ]
+        ..libDirectories = <LibDirModel>[
+          const LibDirModel(
+            path: r'third_party\lib',
+            buildModel: BuildModel.debug,
+          ),
+        ]
+        ..libraries = <LibraryModel>[
+          const LibraryModel(name: 'mylib.lib', buildModel: BuildModel.release),
+        ];
+
+      final PackModel loaded = PackModel.fromMap(pack.toMap());
+
+      expect(loaded.commands, hasLength(1));
+      expect(loaded.commands.single.command, 'echo hi');
+      expect(loaded.commands.single.type, CmdType.preBuild);
+      expect(loaded.commands.single.buildModel, BuildModel.debug);
+      expect(loaded.macros.single.value, 'MY_MACRO=1');
+      expect(loaded.macros.single.buildModel, BuildModel.release);
+      expect(loaded.libDirectories.single.path, r'third_party\lib');
+      expect(loaded.libDirectories.single.buildModel, BuildModel.debug);
+      expect(loaded.libraries.single.name, 'mylib.lib');
+      expect(loaded.libraries.single.buildModel, BuildModel.release);
+    });
+
+    test('toMap 按顺序恒写编译设置列表键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      final List<String> keys = pack.toMap().keys.toList();
+
+      expect(
+        keys,
+        containsAllInOrder(<String>[
+          'commands',
+          'macros',
+          'libDirectories',
+          'libraries',
+        ]),
+      );
+    });
+
+    test('fromMap 缺少编译设置列表时默认空列表', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+
+      expect(pack.commands, isEmpty);
+      expect(pack.macros, isEmpty);
+      expect(pack.libDirectories, isEmpty);
+      expect(pack.libraries, isEmpty);
+    });
+
+    test('fromMap 编译设置列表类型错误时抛出 FormatException', () {
+      for (final String key in <String>[
+        'commands',
+        'macros',
+        'libDirectories',
+        'libraries',
+      ]) {
+        expect(
+          () => PackModel.fromMap(<String, Object?>{
+            'name': 'demo',
+            'version': '1.0.0',
+            'author': 'tester',
+            key: 'oops',
+          }),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('fromMap 编译设置列表项类型错误时抛出 FormatException', () {
+      for (final String key in <String>[
+        'commands',
+        'macros',
+        'libDirectories',
+        'libraries',
+      ]) {
+        expect(
+          () => PackModel.fromMap(<String, Object?>{
+            'name': 'demo',
+            'version': '1.0.0',
+            'author': 'tester',
+            key: <Object?>['oops'],
+          }),
+          throwsFormatException,
+        );
+      }
+    });
+
+    test('fromMap 命令项缺少 type 时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'commands': <Object?>[
+            <String, Object?>{'command': 'echo hi'},
           ],
         }),
         throwsFormatException,

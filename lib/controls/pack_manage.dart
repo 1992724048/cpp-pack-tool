@@ -2,6 +2,7 @@
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+import '../pages/pack_compile_settings.dart';
 import '../pages/pack_dependencies.dart';
 import '../pages/pack_files.dart';
 import '../pages/pack_info.dart';
@@ -12,11 +13,13 @@ class PackManage extends StatefulWidget {
     required this.pack,
     required this.allPacks,
     required this.onSave,
+    required this.pickDirectory,
   });
 
   final PackModel pack;
   final List<PackModel> allPacks;
   final Future<bool> Function(PackModel pack) onSave;
+  final Future<String?> Function() pickDirectory;
 
   @override
   State<PackManage> createState() => _PackManageState();
@@ -50,7 +53,7 @@ class _PackManageState extends State<PackManage> {
       Tab(
         icon: Svgs.projectSetup,
         text: const Text('编译设置'),
-        body: _body(const Center(child: Text('编译设置内容'))),
+        body: _body(_packCompileBody()),
       ),
       Tab(
         icon: Svgs.boxSettings,
@@ -98,6 +101,18 @@ class _PackManageState extends State<PackManage> {
             pack: pack,
             allPacks: widget.allPacks,
             onSave: widget.onSave,
+          ),
+    );
+  }
+
+  Widget _packCompileBody() {
+    return ValueListenableBuilder<PackModel>(
+      valueListenable: _pack,
+      builder: (BuildContext context, PackModel pack, Widget? child) =>
+          PackCompileSettings(
+            pack: pack,
+            onSave: widget.onSave,
+            pickDirectory: widget.pickDirectory,
           ),
     );
   }
