@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/controls/script_editor/editor_canvas.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
@@ -166,18 +167,19 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   }
 
   Widget _buildCanvasArea() {
-    return Container(
-      key: const Key('editorCanvas'),
-      color: UCColors.flavor.mantle,
-      child: _hasProject
-          ? const SizedBox.expand()
-          : Center(
-              child: Text(
-                '暂无脚本项目',
-                style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
-              ),
-            ),
-    );
+    final GraphEditorController? controller = _controller;
+    if (controller == null) {
+      return Container(
+        color: UCColors.flavor.mantle,
+        child: Center(
+          child: Text(
+            '暂无脚本项目',
+            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          ),
+        ),
+      );
+    }
+    return EditorCanvas(key: const Key('editorCanvas'), controller: controller);
   }
 
   Widget _buildOutputBar() {
