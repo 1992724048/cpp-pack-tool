@@ -1265,6 +1265,48 @@ void main() {
 
     expect(_dependencyGraphButton(tester).onPressed, isNull);
   });
+
+  testWidgets('选中设置项时依赖关系图按钮禁用', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_dependencyGraphButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_dependencyGraphButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('选中关于项时依赖关系图按钮禁用', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_dependencyGraphButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('关于'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_dependencyGraphButton(tester).onPressed, isNull);
+  });
 }
 
 Future<void> _pumpMainLayout(

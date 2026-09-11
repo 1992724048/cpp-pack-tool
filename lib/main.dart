@@ -609,7 +609,7 @@ class _MainLayoutState extends State<MainLayout> {
               message: '依赖关系图',
               child: IconButton(
                 icon: Svgs.internetConnection,
-                onPressed: _packs.isEmpty ? null : _openDependencyGraph,
+                onPressed: _hasSelectedPack ? _openDependencyGraph : null,
               ),
             ),
           ],
