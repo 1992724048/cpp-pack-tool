@@ -681,6 +681,39 @@ void main() {
       expect(find.byKey(const Key('pinRing_n2_source')), findsNothing);
     });
 
+    testWidgets('从引脚命中盒扩展区（视觉外 6.5px）起拖仍可建连', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+        ),
+      );
+
+      // 起拖点 = 引脚中心 + 6.5px：在引脚视觉（Ø10）之外、命中盒（Ø16）之内。
+      final TestGesture gesture = await _startPinDrag(
+        tester,
+        'n1',
+        'result',
+        offset: const Offset(6.5, 0),
+      );
+      await gesture.moveTo(
+        tester.getCenter(find.byKey(const Key('pin_n2_source'))),
+      );
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+
+      expect(controller.project.edges, hasLength(1));
+      final ScriptEdgeModel edge = controller.project.edges.single;
+      expect(edge.from.node, 'n1');
+      expect(edge.from.pin, 'result');
+      expect(edge.to.node, 'n2');
+      expect(edge.to.pin, 'source');
+    });
+
     testWidgets('拖到输出引脚拒绝：提示 + 红环红闪 + 图不变', (WidgetTester tester) async {
       final GraphEditorController controller = await _pumpCanvas(
         tester,
@@ -1024,10 +1057,11 @@ double _pinOpacity(WidgetTester tester, String nodeId, String pinId) {
 Future<TestGesture> _startPinDrag(
   WidgetTester tester,
   String nodeId,
-  String pinId,
-) async {
+  String pinId, {
+  Offset offset = Offset.zero,
+}) async {
   final TestGesture gesture = await tester.startGesture(
-    tester.getCenter(find.byKey(Key('pin_${nodeId}_$pinId'))),
+    tester.getCenter(find.byKey(Key('pin_${nodeId}_$pinId'))) + offset,
     kind: PointerDeviceKind.mouse,
   );
   await gesture.moveBy(const Offset(24, 0));

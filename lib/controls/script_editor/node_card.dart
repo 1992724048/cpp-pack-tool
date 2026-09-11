@@ -443,7 +443,7 @@ class _NodeCardState extends State<NodeCard> {
       );
     }
 
-    Widget pinBody = MouseRegion(
+    final Widget pinBody = MouseRegion(
       cursor: SystemMouseCursors.precise,
       child: Opacity(
         opacity: dimmed ? 0.35 : 1.0,
@@ -462,26 +462,28 @@ class _NodeCardState extends State<NodeCard> {
         ),
       ),
     );
-    if (!isInput && _pinDragEnabled) {
-      pinBody = RawGestureDetector(
-        behavior: HitTestBehavior.opaque,
-        gestures: _pinGestures(pin.id),
-        child: pinBody,
-      );
-    }
 
-    // 命中区 = 引脚视觉外扩 6（与候选/错误环同占位，§5.3）。
+    // 命中区 = 引脚视觉外扩 6（与候选/错误环同占位，§5.3）；手势层必须
+    // 包住整个命中区——若只包引脚视觉，Listener 随子节点收缩，外扩区不参与命中。
     final double hitWidth = pinWidth + 6;
     final double hitHeight = pinHeight + 6;
+    Widget hitArea = SizedBox(
+      width: hitWidth,
+      height: hitHeight,
+      child: Center(child: pinBody),
+    );
+    if (!isInput && _pinDragEnabled) {
+      hitArea = RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: _pinGestures(pin.id),
+        child: hitArea,
+      );
+    }
     widgets.add(
       Positioned(
         left: anchorX - hitWidth / 2,
         top: anchorY - hitHeight / 2,
-        child: SizedBox(
-          width: hitWidth,
-          height: hitHeight,
-          child: Center(child: pinBody),
-        ),
+        child: hitArea,
       ),
     );
     return widgets;
