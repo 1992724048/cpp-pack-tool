@@ -377,7 +377,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       ..macros = macros ?? pack.macros
       ..libDirectories = libDirectories ?? pack.libDirectories
       ..libraries = libraries ?? pack.libraries
-      ..history = pack.history;
+      ..history = pack.history
+      ..scripts = pack.scripts;
   }
 
   List<_CompileEntry> _macroEntries() {

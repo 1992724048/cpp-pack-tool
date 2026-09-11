@@ -358,5 +358,44 @@ void main() {
       expect(project.nodes.single.type, 'flow.entry');
       expect(project.edges, hasLength(1));
     });
+
+    test('重复节点 id 向 warnings 追加警告并保留首个', () {
+      final List<String> warnings = <String>[];
+      final ScriptProjectModel project = ScriptProjectModel.fromMap(
+        <String, Object?>{
+          'id': 'script_1',
+          'name': 'x',
+          'trigger': 'pre',
+          'nodes': <Object?>[
+            <String, Object?>{'id': 'n1', 'type': 'flow.entry'},
+            <String, Object?>{'id': 'n1', 'type': 'value.text'},
+          ],
+        },
+        warnings: warnings,
+      );
+
+      expect(project.nodes, hasLength(1));
+      expect(project.nodes.single.type, 'flow.entry');
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('script_1'));
+      expect(warnings.single, contains('n1'));
+    });
+
+    test('不传 warnings 时重复节点 id 静默去重', () {
+      final ScriptProjectModel project = ScriptProjectModel.fromMap(
+        <String, Object?>{
+          'id': 'script_1',
+          'name': 'x',
+          'trigger': 'pre',
+          'nodes': <Object?>[
+            <String, Object?>{'id': 'n1', 'type': 'flow.entry'},
+            <String, Object?>{'id': 'n1', 'type': 'value.text'},
+          ],
+        },
+      );
+
+      expect(project.nodes, hasLength(1));
+      expect(project.nodes.single.type, 'flow.entry');
+    });
   });
 }

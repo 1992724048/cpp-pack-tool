@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
+import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yaml/yaml.dart';
@@ -211,6 +213,60 @@ void main() {
       expect(result.errors, isEmpty);
       expect(result.packs.single.files, isEmpty);
       expect(result.packs.single.dependencies, isEmpty);
+    });
+
+    test('脚本项目写入 YAML 并可往返读回', () async {
+      final ScriptProjectModel script = ScriptProjectModel(
+        id: 'script_1',
+        name: '生成版本头',
+        trigger: ScriptTrigger.pre,
+        buildModel: BuildModel.release,
+      );
+      script.nodes.add(
+        ScriptNodeModel(id: 'n1', type: 'flow.entry', x: 40, y: 60),
+      );
+      script.edges.add(
+        ScriptEdgeModel(
+          from: const ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
+          to: const ScriptEdgeEndpoint(node: 'n1', pin: 'exec'),
+        ),
+      );
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      )..scripts.add(script);
+
+      await store.savePack(pack);
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.errors, isEmpty);
+      final ScriptProjectModel loaded = result.packs.single.scripts.single;
+      expect(loaded.id, 'script_1');
+      expect(loaded.name, '生成版本头');
+      expect(loaded.trigger, ScriptTrigger.pre);
+      expect(loaded.buildModel, BuildModel.release);
+      expect(loaded.nodes.single.type, 'flow.entry');
+      expect(loaded.nodes.single.x, 40);
+      expect(loaded.edges.single.to.pin, 'exec');
+    });
+
+    test('坏脚本被丢弃但包仍加载并记录脚本警告', () async {
+      await store.ensureConfigExist();
+      File('${tempDir.path}/packs/warned.yaml').writeAsStringSync(
+        'name: warned\nversion: 1.0.0\nauthor: tester\n'
+        'scripts:\n'
+        '  - id: script_1\n    name: x\n    trigger: bad\n'
+        '  - id: script_2\n    name: 好脚本\n    trigger: pre\n',
+      );
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.packs.single.name, 'warned');
+      expect(result.packs.single.scripts.single.id, 'script_2');
+      expect(result.errors, hasLength(1));
+      expect(result.errors.single.fileName, 'warned.yaml');
+      expect(result.errors.single.message, contains('脚本'));
     });
   });
 

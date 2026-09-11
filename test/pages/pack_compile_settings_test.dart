@@ -8,6 +8,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_compile_settings.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
@@ -201,6 +202,41 @@ void main() {
     expect(saved!.macros[1].buildModel, BuildModel.release);
     expect(saved!.libDirectories.single.path, 'libs');
     expect(saved!.libraries.single.name, 'old.lib');
+    expect(find.text('已添加'), findsOneWidget);
+  });
+
+  testWidgets('添加命令后保存的包保留 scripts', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+        ),
+      ];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+
+    await _addEntry(
+      tester,
+      addKey: const Key('addPreBuildCmdButton'),
+      text: 'echo hi',
+    );
+
+    expect(saved, isNotNull);
+    expect(saved!.commands.single.command, 'echo hi');
+    expect(saved!.scripts, hasLength(1));
+    expect(saved!.scripts.single.id, 'script_1');
     expect(find.text('已添加'), findsOneWidget);
   });
 

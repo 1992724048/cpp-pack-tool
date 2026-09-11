@@ -75,7 +75,8 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
           ..macros = widget.pack.macros
           ..libDirectories = widget.pack.libDirectories
           ..libraries = widget.pack.libraries
-          ..history = widget.pack.history;
+          ..history = widget.pack.history
+          ..scripts = widget.pack.scripts;
 
     setState(() {
       _stage = _RemapStage.applying;

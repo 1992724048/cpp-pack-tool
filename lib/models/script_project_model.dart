@@ -65,7 +65,10 @@ class ScriptProjectModel {
     'viewport': <String, Object?>{'x': viewX, 'y': viewY, 'scale': viewScale},
   };
 
-  factory ScriptProjectModel.fromMap(Map<String, Object?> map) {
+  factory ScriptProjectModel.fromMap(
+    Map<String, Object?> map, {
+    List<String>? warnings,
+  }) {
     final ScriptProjectModel project = ScriptProjectModel(
       id: _requiredString(map, 'id'),
       name: _requiredString(map, 'name'),
@@ -76,7 +79,11 @@ class ScriptProjectModel {
     final Set<String> nodeIds = <String>{};
     for (final Object? item in _listOrEmpty(map, 'nodes')) {
       final ScriptNodeModel? node = _nodeFromItem(item);
-      if (node == null || !nodeIds.add(node.id)) {
+      if (node == null) {
+        continue;
+      }
+      if (!nodeIds.add(node.id)) {
+        warnings?.add('脚本「${project.id}」节点 id 重复，已丢弃：${node.id}');
         continue;
       }
       project.nodes.add(node);

@@ -7,6 +7,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -382,6 +383,155 @@ void main() {
         }),
         throwsFormatException,
       );
+    });
+
+    test('toMap/fromMap 往返保留脚本项目（含节点、边与视口）', () {
+      final ScriptProjectModel script =
+          ScriptProjectModel(
+              id: 'script_1',
+              name: '生成版本头',
+              trigger: ScriptTrigger.pre,
+              buildModel: BuildModel.release,
+            )
+            ..viewX = 12
+            ..viewY = -3
+            ..viewScale = 0.75;
+      script.nodes.add(
+        ScriptNodeModel(id: 'n1', type: 'flow.entry', x: 40, y: 60),
+      );
+      script.edges.add(
+        ScriptEdgeModel(
+          from: const ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
+          to: const ScriptEdgeEndpoint(node: 'n1', pin: 'exec'),
+        ),
+      );
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      )..scripts.add(script);
+
+      final PackModel loaded = PackModel.fromMap(pack.toMap());
+
+      expect(loaded.scripts, hasLength(1));
+      final ScriptProjectModel back = loaded.scripts.single;
+      expect(back.id, 'script_1');
+      expect(back.name, '生成版本头');
+      expect(back.trigger, ScriptTrigger.pre);
+      expect(back.buildModel, BuildModel.release);
+      expect(back.nodes.single.id, 'n1');
+      expect(back.nodes.single.x, 40);
+      expect(back.edges.single.from.pin, 'out');
+      expect(back.viewX, 12);
+      expect(back.viewY, -3);
+      expect(back.viewScale, 0.75);
+    });
+
+    test('toMap 恒写 scripts 键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.toMap()['scripts'], isEmpty);
+    });
+
+    test('fromMap 缺少 scripts 时默认空列表', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+
+      expect(pack.scripts, isEmpty);
+    });
+
+    test('fromMap scripts 类型错误时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'scripts': 'oops',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('含 scripts 的往返与坏脚本容错', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'a',
+      );
+      pack.scripts.add(
+        ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+          buildModel: BuildModel.all,
+        ),
+      );
+      final PackModel back = PackModel.fromMap(pack.toMap());
+      expect(back.scripts.single.id, 'script_1');
+
+      final List<String> warnings = <String>[];
+      final PackModel broken = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'a',
+        'scripts': <Object?>[
+          <String, Object?>{'id': 's', 'name': 'x', 'trigger': 'bad'},
+        ],
+      }, warnings: warnings);
+      expect(broken.scripts, isEmpty);
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('脚本'));
+    });
+
+    test('fromMap 坏脚本不影响其他脚本且透传节点重复警告', () {
+      final List<String> warnings = <String>[];
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'a',
+        'scripts': <Object?>[
+          <String, Object?>{'id': 'bad', 'name': 'x', 'trigger': 'oops'},
+          <String, Object?>{
+            'id': 'script_1',
+            'name': '好脚本',
+            'trigger': 'pre',
+            'nodes': <Object?>[
+              <String, Object?>{'id': 'n1', 'type': 'flow.entry'},
+              <String, Object?>{'id': 'n1', 'type': 'value.text'},
+            ],
+          },
+        ],
+      }, warnings: warnings);
+
+      expect(pack.scripts.single.id, 'script_1');
+      expect(pack.scripts.single.nodes, hasLength(1));
+      expect(warnings, hasLength(2));
+      expect(warnings[0], contains('bad'));
+      expect(warnings[1], contains('n1'));
+    });
+
+    test('fromMap 脚本 id 重复时保留首个并警告', () {
+      final List<String> warnings = <String>[];
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'a',
+        'scripts': <Object?>[
+          <String, Object?>{'id': 'script_1', 'name': '第一个', 'trigger': 'pre'},
+          <String, Object?>{'id': 'script_1', 'name': '第二个', 'trigger': 'post'},
+        ],
+      }, warnings: warnings);
+
+      expect(pack.scripts.single.name, '第一个');
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('script_1'));
     });
   });
 

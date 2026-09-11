@@ -85,7 +85,8 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
       ..macros = widget.pack.macros
       ..libDirectories = widget.pack.libDirectories
       ..libraries = widget.pack.libraries
-      ..history = history;
+      ..history = history
+      ..scripts = widget.pack.scripts;
   }
 
   @override
