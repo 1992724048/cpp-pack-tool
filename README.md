@@ -85,9 +85,10 @@ config/
 
 ## 版本与发布
 
-- 版本号唯一来源是 `pubspec.yaml` 的 `version:`（如 `1.0.1+1`）；应用内「关于」页显示的版本来自 `lib/app_info.dart` 的 `appVersion`（同步去掉 `+build` 后缀），两者一致性由 `test/app_info_test.dart` 保障。
+- 版本号采用「年份.年内发布数量」方案：`26.1` 表示 2026 年第 1 次发布，年内依次递增（`26.2`、`26.3`…），次年从 `27.1` 重新计数；更早的 `1.0.x` 为历史版本号。
+- 版本号唯一来源是 `pubspec.yaml` 的 `version:`（格式 `26.1.0+<构建号>`，第三段固定为 0）；发布时同步更新 `lib/app_info.dart` 的 `appVersion`（去掉 `+build` 与末尾 `.0`，即 `26.1.0+1` → `26.1`），两者一致性由 `test/app_info_test.dart` 强制校验。
 - `dev` 分支：推送触发 CI（静态检查 → 测试 → Windows Release 构建），只验证不发布。
-- `master` 分支：验证通过后打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip`，并创建 GitHub Release（tag `v<版本>`）。
+- `master` 分支：验证通过后打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip`，并创建 GitHub Release（tag `v<版本>`，如 `v26.1`）。
 - 因此修改版本号并推送到 `master` 即等于发布；没有发布意图时不要改动版本号。
 
 ## 技术栈

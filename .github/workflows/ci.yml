@@ -31,6 +31,7 @@ jobs:
             $ver = ($line.ToString() -replace '^\s*version\s*:\s*','').Trim()
             $ver = $ver.Split('+')[0]
             if ($ver -match '^[\x22\x27](.*)[\x22\x27]$') { $ver = $matches[1] }
+            if ($ver -match '^(\d+\.\d+)\.0$') { $ver = $matches[1] }
           } else { $ver = (Get-Date -Format 'yyyyMMddHHmmss') }
           ('VERSION=' + $ver) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 

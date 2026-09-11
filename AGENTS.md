@@ -24,9 +24,9 @@ flutter run -d windows             # 本地运行
 
 ## 发布流程（勿误触发）
 
-- **CI 在 push `master` / `dev` 时触发**：`analyze → test → build windows --release`（Flutter SDK 与 pub 依赖由 `subosito/flutter-action` 缓存）。**仅 `master` 发布**：打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip` → 创建 GitHub Release（tag `v<版本>`）；`dev` 渠道只验证（测试+构建）不发布。无 PR 检查。
+- **CI 在 push `master` / `dev` 时触发**：`analyze → test → build windows --release`（Flutter SDK 与 pub 依赖由 `subosito/flutter-action` 缓存）。**仅 `master` 发布**：打包 `dist/cpp_nuget_pack-<版本>-win-x86_64.zip` → 创建 GitHub Release（tag `v<版本>`，如 `v26.1`）；`dev` 渠道只验证（测试+构建）不发布。无 PR 检查。
 - 开发在 `dev` 分支进行（日常推送不触发发布）；发布时把 `dev` 合并/推送到 `master` 并升级版本号。
-- 版本号唯一来源是 `pubspec.yaml` 的 `version:`（如 `1.0.1+1`；CI 去掉 `+build` 后缀，解析失败回退为时间戳）。同一版本经 CMake `FLUTTER_VERSION*` 宏注入 exe 文件版本（`windows/runner/Runner.rc`）。应用内「关于」页显示的版本来自 `lib/app_info.dart` 的 `appVersion`（去掉 `+build` 后缀）——升级版本号时须同步该常量（`test/app_info_test.dart` 强制校验一致性）。
+- 版本号采用「年份.年内发布数量」方案（如 `26.1` = 2026 年第 1 次发布；年内递增 `26.2`、`26.3`…；次年从 `27.1` 重计；更早的 `1.0.x` 为历史版本）。唯一来源是 `pubspec.yaml` 的 `version:`（存三段格式 `26.1.0+1`，第三段固定 0；CI 去掉 `+build` 并去掉尾部 `.0` → tag `v26.1`，解析失败回退为时间戳）。同一版本经 CMake `FLUTTER_VERSION*` 宏注入 exe 文件版本（`windows/runner/Runner.rc`）。应用内「关于」页显示的版本来自 `lib/app_info.dart` 的 `appVersion`（去掉 `+build` 与末尾 `.0`，即 `26.1`）——升级版本号时须同步该常量（`test/app_info_test.dart` 强制校验一致性）。
 - 所以「改 `pubspec.yaml` 版本号 + push `master` = 发 Release」——没有发布意图时不要动版本号。
 
 ## Architecture

@@ -13,6 +13,10 @@ void main() {
     expect(appVersion, pubspecVersion);
   });
 
+  test('appVersion 为「年份.发布数量」格式', () {
+    expect(appVersion, matches(RegExp(r'^\d{2}\.\d+$')));
+  });
+
   test('应用信息常量非空且仓库链接为 https', () {
     expect(appName, isNotEmpty);
     expect(appDescription, isNotEmpty);
@@ -31,5 +35,8 @@ String? _pubspecVersion(String content) {
   final String value = match
       .group(1)!
       .replaceAll(RegExp(r'''^["']|["']$'''), '');
-  return value.split('+').first;
+  final String version = value.split('+').first;
+  final RegExpMatch? releaseMatch = RegExp(r'^(\d+\.\d+)\.0$')
+      .firstMatch(version);
+  return releaseMatch?.group(1) ?? version;
 }
