@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/controls/script_editor/editor_canvas.dart';
+import 'package:cpp_nuget_pack/controls/script_editor/node_inspector.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_library_panel.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
@@ -142,7 +143,11 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
           panelKey: const Key('inspectorPanel'),
           width: _inspectorWidth,
           border: Border(left: BorderSide(color: UCColors.flavor.surface2)),
-          child: const SizedBox.expand(),
+          child: NodeInspector(
+            controller: _controller,
+            pack: widget.pack,
+            packagePaths: widget.packagePaths,
+          ),
         ),
       ],
     );

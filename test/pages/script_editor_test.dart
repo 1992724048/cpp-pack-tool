@@ -36,6 +36,7 @@ void main() {
     await _pumpEditor(tester, _pack('demo'));
 
     expect(find.text('暂无脚本项目'), findsOneWidget);
+    expect(find.text('请先新建脚本项目'), findsOneWidget);
     expect(_panelOpacity(tester, const Key('nodeLibraryPanel')), 0.5);
     expect(_panelOpacity(tester, const Key('inspectorPanel')), 0.5);
     expect(_panelIgnoring(tester, const Key('nodeLibraryPanel')), isTrue);
@@ -47,6 +48,8 @@ void main() {
     await _pumpEditor(tester, _packWithScript());
 
     expect(find.text('暂无脚本项目'), findsNothing);
+    expect(find.text('脚本项目'), findsOneWidget);
+    expect(find.text('执行顺序'), findsOneWidget);
     expect(_panelOpacity(tester, const Key('nodeLibraryPanel')), 1.0);
     expect(_panelOpacity(tester, const Key('inspectorPanel')), 1.0);
     expect(_panelIgnoring(tester, const Key('nodeLibraryPanel')), isFalse);

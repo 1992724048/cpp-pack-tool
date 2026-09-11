@@ -1,0 +1,635 @@
+import 'package:cpp_nuget_pack/controls/script_editor/node_inspector.dart';
+import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
+import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
+import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('节点属性模式', () {
+    testWidgets('头部显示显示名与类型键，无参数节点显示提示', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'file.copy');
+      await tester.pump();
+
+      expect(find.text('复制'), findsOneWidget);
+      expect(find.text('file.copy'), findsOneWidget);
+      expect(find.text('该节点没有可编辑参数'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('text 参数渲染 TextBox，编辑即时写回模型', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'value.text');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_value'));
+      expect(field, findsOneWidget);
+      expect(tester.widget<TextBox>(field).controller!.text, '');
+
+      await tester.enterText(field, 'abc');
+      await tester.pump();
+
+      expect(controller.project.nodes.single.params['value'], 'abc');
+    });
+
+    testWidgets('boolean 参数渲染 ToggleSwitch，点击写回模型', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'value.boolean');
+      await tester.pump();
+
+      final Finder toggle = find.byKey(const Key('inspectorField_value'));
+      expect(toggle, findsOneWidget);
+      expect(tester.widget<ToggleSwitch>(toggle).checked, isFalse);
+
+      await tester.tap(toggle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+
+      expect(controller.project.nodes.single.params['value'], isTrue);
+    });
+
+    testWidgets('macroKey 下拉列出全部 11 项 MSBuild 宏，选择后写回宏键', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.macro');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_macro'));
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(field);
+      expect(combo.value, 'OutDir');
+      expect(
+        combo.items!.map((ComboBoxItem<String> item) => item.value).toList(),
+        msbuildMacroKeys,
+      );
+
+      await _selectCombo(tester, field, r'$(Configuration)');
+
+      expect(controller.project.nodes.single.params['macro'], 'Configuration');
+    });
+
+    testWidgets('logLevel 下拉选项为 信息/警告/错误，选择后写回 info/warn/error', (
+      WidgetTester tester,
+    ) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'log.message');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_level'));
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(field);
+      expect(combo.value, 'info');
+      expect(
+        combo.items!.map((ComboBoxItem<String> item) => item.value).toList(),
+        <String>['info', 'warn', 'error'],
+      );
+
+      await tester.tap(field);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('信息'), findsWidgets);
+      expect(find.text('警告'), findsOneWidget);
+      expect(find.text('错误'), findsOneWidget);
+      await tester.tap(find.text('错误').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(controller.project.nodes.single.params['level'], 'error');
+    });
+
+    testWidgets('stringOperator 下拉选项为 等于/不等于/包含，选择后写回运算符', (
+      WidgetTester tester,
+    ) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'logic.compareString');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_operator'));
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(field);
+      expect(combo.value, 'eq');
+      expect(
+        combo.items!.map((ComboBoxItem<String> item) => item.value).toList(),
+        <String>['eq', 'ne', 'contains'],
+      );
+
+      await _selectCombo(tester, field, '包含');
+
+      expect(controller.project.nodes.single.params['operator'], 'contains');
+    });
+
+    testWidgets('packageFilePath 建议列表来自注入的 packagePaths，选择后写回路径', (
+      WidgetTester tester,
+    ) async {
+      final _Harness harness = await _pumpInspector(
+        tester,
+        packagePaths: const <String>['lib/x.lib', 'files/x.txt'],
+      );
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.packageFile');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_path'));
+      expect(field, findsOneWidget);
+
+      await tester.enterText(field, 'x.lib');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('lib/x.lib'), findsOneWidget);
+
+      await tester.tap(find.text('lib/x.lib'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+
+      expect(controller.project.nodes.single.params['path'], 'lib/x.lib');
+    });
+
+    testWidgets('packageFilePath 手填自由文本合法（非空即可）', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(
+        tester,
+        packagePaths: const <String>['build/native/lib/x.lib'],
+      );
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.packageFile');
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const Key('inspectorField_path')),
+        'custom/path.txt',
+      );
+      await tester.pump();
+
+      expect(controller.project.nodes.single.params['path'], 'custom/path.txt');
+    });
+
+    testWidgets('packageFilePath 无匹配时显示手填提示文案', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(
+        tester,
+        packagePaths: const <String>['build/native/lib/x.lib'],
+      );
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.packageFile');
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const Key('inspectorField_path')),
+        'zzz',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('无匹配路径，将按手填内容使用'), findsOneWidget);
+    });
+
+    testWidgets('未注入 packagePaths 时回退 NuGetBuilder 计划的包内路径', (WidgetTester tester) async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'x.lib', path: 'lib/x.lib', size: 4),
+        ];
+      final _Harness harness = await _pumpInspector(tester, pack: pack);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.packageFile');
+      await tester.pump();
+
+      final AutoSuggestBox<String> box = tester.widget<AutoSuggestBox<String>>(
+        find.byKey(const Key('inspectorField_path')),
+      );
+      expect(
+        box.items.map((AutoSuggestBoxItem<String> item) => item.value),
+        contains('build/native/lib/x.lib'),
+      );
+    });
+
+    testWidgets('环境变量名非法时显示红字，合法后消失', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.environment');
+      await tester.pump();
+
+      const String message = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
+      expect(find.text(message), findsOneWidget);
+
+      final Finder field = find.byKey(const Key('inspectorField_name'));
+      await tester.enterText(field, '1abc');
+      await tester.pump();
+      expect(find.text(message), findsOneWidget);
+      expect(controller.project.nodes.single.params['name'], '1abc');
+
+      await tester.enterText(field, 'abc_1');
+      await tester.pump();
+      expect(find.text(message), findsNothing);
+    });
+
+    testWidgets('输入过程中控件不重建，焦点保持', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'value.text');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_value'));
+      await tester.showKeyboard(field);
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'a',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'ab',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await tester.pump();
+
+      final EditableText editable = tester.widget<EditableText>(
+        find.descendant(of: field, matching: find.byType(EditableText)),
+      );
+      expect(editable.focusNode.hasFocus, isTrue);
+      expect(controller.project.nodes.single.params['value'], 'ab');
+    });
+
+    testWidgets('切换选中节点后字段刷新为新节点参数值', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      controller.addNode('value.text', Offset.zero);
+      controller.addNode('value.text', Offset.zero);
+      controller.project.nodes[0].params['value'] = 'A';
+      controller.project.nodes[1].params['value'] = 'B';
+
+      controller.selectNode('n1');
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('inspectorField_value')))
+            .controller!
+            .text,
+        'A',
+      );
+
+      controller.selectNode('n2');
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('inspectorField_value')))
+            .controller!
+            .text,
+        'B',
+      );
+    });
+
+    testWidgets('选中节点显示节点属性，清空选中回到项目属性', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      expect(find.text('脚本项目'), findsOneWidget);
+
+      _addAndSelect(controller, 'value.text');
+      await tester.pump();
+      expect(find.text('脚本项目'), findsNothing);
+      expect(find.text('文本'), findsOneWidget);
+
+      controller.clearSelection();
+      await tester.pump();
+      expect(find.text('脚本项目'), findsOneWidget);
+    });
+  });
+
+  group('项目属性模式', () {
+    testWidgets('无选中时显示名称/触发/构建模型/脚本 ID/执行顺序', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      final _Harness harness = await _pumpInspector(
+        tester,
+        pack: pack,
+        project: pack.scripts.first,
+      );
+      expect(harness.controller!.selectedNodeId, isNull);
+
+      expect(find.text('脚本项目'), findsOneWidget);
+      expect(find.text('脚本 1'), findsWidgets);
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('inspectorProjectName')))
+            .controller!
+            .text,
+        '脚本 1',
+      );
+      expect(find.text('编译前'), findsWidgets);
+      expect(find.text('ALL'), findsWidgets);
+      expect(find.text('脚本 ID'), findsOneWidget);
+      expect(find.text('script_1'), findsOneWidget);
+      expect(find.text('导出时决定包内文件名与 Target 名'), findsOneWidget);
+      expect(find.text('执行顺序'), findsOneWidget);
+      expect(find.text('同组内按列表顺序执行'), findsOneWidget);
+      for (final String id in <String>['script_1', 'script_2', 'script_3']) {
+        expect(find.byKey(Key('scriptProjectRow_$id')), findsOneWidget);
+      }
+    });
+
+    testWidgets('执行顺序列表按项目顺序渲染', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
+
+      final double first = _rowTop(tester, 'script_1');
+      final double second = _rowTop(tester, 'script_2');
+      final double third = _rowTop(tester, 'script_3');
+      expect(first, lessThan(second));
+      expect(second, lessThan(third));
+    });
+
+    testWidgets('当前项目行带选中背景与 accent 左缘竖条', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
+
+      final BoxDecoration current = _rowDecoration(tester, 'script_1');
+      expect(current.color, UCColors.accent.withValues(alpha: 0.35));
+      expect((current.border! as Border).left.color, UCColors.accent);
+      expect((current.border! as Border).left.width, 2);
+
+      final BoxDecoration other = _rowDecoration(tester, 'script_2');
+      expect(other.color, isNull);
+    });
+
+    testWidgets('非当前行悬停时背景变为 surface0，移出恢复', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
+
+      expect(_rowDecoration(tester, 'script_2').color, isNull);
+
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const Key('scriptProjectRow_script_2'))),
+      );
+      await tester.pump();
+
+      expect(_rowDecoration(tester, 'script_2').color, UCColors.flavor.surface0);
+
+      await mouse.moveTo(const Offset(1200, 700));
+      await tester.pump();
+
+      expect(_rowDecoration(tester, 'script_2').color, isNull);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('首末行上移/下移按钮禁用，中间行均可用', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
+
+      expect(_moveUp(tester, 'script_1').onPressed, isNull);
+      expect(_moveDown(tester, 'script_1').onPressed, isNotNull);
+      expect(_moveUp(tester, 'script_2').onPressed, isNotNull);
+      expect(_moveDown(tester, 'script_2').onPressed, isNotNull);
+      expect(_moveUp(tester, 'script_3').onPressed, isNotNull);
+      expect(_moveDown(tester, 'script_3').onPressed, isNull);
+      expect(find.byTooltip('上移'), findsNWidgets(3));
+      expect(find.byTooltip('下移'), findsNWidgets(3));
+    });
+
+    testWidgets('点击行回调选中项目，点击上移/下移回调排序', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      final List<String> selected = <String>[];
+      final List<String> movedUp = <String>[];
+      final List<String> movedDown = <String>[];
+      await _pumpInspector(
+        tester,
+        pack: pack,
+        project: pack.scripts.first,
+        onSelectProject: (ScriptProjectModel project) => selected.add(project.id),
+        onMoveProjectUp: (ScriptProjectModel project) => movedUp.add(project.id),
+        onMoveProjectDown: (ScriptProjectModel project) =>
+            movedDown.add(project.id),
+      );
+
+      await tester.tap(find.byKey(const Key('scriptProjectRow_script_2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(selected, <String>['script_2']);
+
+      await tester.tap(find.byKey(const Key('scriptProjectMoveDown_script_1')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(movedDown, <String>['script_1']);
+
+      await tester.tap(find.byKey(const Key('scriptProjectMoveUp_script_3')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(movedUp, <String>['script_3']);
+    });
+
+    testWidgets('构建标签预览按构建模型着色', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
+
+      final Tag tag = tester.widget<Tag>(
+        find.byKey(const Key('inspectorProjectBuildTag')),
+      );
+      expect(tag.text, 'ALL');
+      expect(tag.color, UCColors.flavor.blue);
+    });
+
+    testWidgets('项目名称回车提交：空名与重名显示红字且不回调', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      final List<String> renamed = <String>[];
+      await _pumpInspector(
+        tester,
+        pack: pack,
+        project: pack.scripts.first,
+        onRenameProject: (ScriptProjectModel project, String name) =>
+            renamed.add('${project.id}:$name'),
+      );
+      final Finder field = find.byKey(const Key('inspectorProjectName'));
+
+      await tester.enterText(field, '');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('名称不能为空'), findsOneWidget);
+      expect(renamed, isEmpty);
+
+      await tester.enterText(field, '脚本 2');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('名称已存在'), findsOneWidget);
+      expect(renamed, isEmpty);
+
+      await tester.enterText(field, '新脚本');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('名称已存在'), findsNothing);
+      expect(find.text('名称不能为空'), findsNothing);
+      expect(renamed, <String>['script_1:新脚本']);
+    });
+
+    testWidgets('触发时机下拉选择回调 post', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      final List<ScriptTrigger> triggers = <ScriptTrigger>[];
+      await _pumpInspector(
+        tester,
+        pack: pack,
+        project: pack.scripts.first,
+        onTriggerChanged: (ScriptProjectModel project, ScriptTrigger trigger) =>
+            triggers.add(trigger),
+      );
+
+      await _selectCombo(
+        tester,
+        find.byKey(const Key('inspectorProjectTrigger')),
+        '编译后',
+      );
+
+      expect(triggers, <ScriptTrigger>[ScriptTrigger.post]);
+    });
+
+    testWidgets('构建模型下拉选择回调 Debug', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      final List<BuildModel> models = <BuildModel>[];
+      await _pumpInspector(
+        tester,
+        pack: pack,
+        project: pack.scripts.first,
+        onBuildModelChanged: (ScriptProjectModel project, BuildModel model) =>
+            models.add(model),
+      );
+
+      await _selectCombo(
+        tester,
+        find.byKey(const Key('inspectorProjectBuildModel')),
+        'Debug',
+      );
+
+      expect(models, <BuildModel>[BuildModel.debug]);
+    });
+  });
+
+  group('空态', () {
+    testWidgets('无项目时显示空态提示', (WidgetTester tester) async {
+      await _pumpInspector(tester, noProject: true);
+
+      expect(find.text('请先新建脚本项目'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+}
+
+class _Harness {
+  _Harness(this.controller, this.pack);
+
+  final GraphEditorController? controller;
+  final PackModel pack;
+}
+
+PackModel _pack() =>
+    PackModel(name: 'demo', version: '1.0.0', author: 'tester');
+
+ScriptProjectModel _project({
+  String id = 'script_1',
+  String name = '脚本 1',
+  ScriptTrigger trigger = ScriptTrigger.pre,
+}) => ScriptProjectModel(id: id, name: name, trigger: trigger);
+
+PackModel _packWithProjects() {
+  final PackModel pack = _pack();
+  pack.scripts = <ScriptProjectModel>[
+    _project(id: 'script_1', name: '脚本 1'),
+    _project(id: 'script_2', name: '脚本 2', trigger: ScriptTrigger.post),
+    _project(id: 'script_3', name: '脚本 3'),
+  ];
+  return pack;
+}
+
+void _addAndSelect(GraphEditorController controller, String typeKey) {
+  final String nodeId = controller.addNode(typeKey, Offset.zero);
+  controller.selectNode(nodeId);
+}
+
+Future<_Harness> _pumpInspector(
+  WidgetTester tester, {
+  PackModel? pack,
+  ScriptProjectModel? project,
+  List<String>? packagePaths,
+  bool noProject = false,
+  ValueChanged<ScriptProjectModel>? onSelectProject,
+  void Function(ScriptProjectModel project, String name)? onRenameProject,
+  void Function(ScriptProjectModel project, ScriptTrigger trigger)?
+  onTriggerChanged,
+  void Function(ScriptProjectModel project, BuildModel buildModel)?
+  onBuildModelChanged,
+  void Function(ScriptProjectModel project)? onMoveProjectUp,
+  void Function(ScriptProjectModel project)? onMoveProjectDown,
+}) async {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final PackModel resolvedPack = pack ?? _pack();
+  final GraphEditorController? controller = noProject
+      ? null
+      : GraphEditorController(project ?? _project());
+  if (controller != null) {
+    addTearDown(controller.dispose);
+  }
+
+  await tester.pumpWidget(
+    FluentApp(
+      home: Align(
+        alignment: Alignment.topLeft,
+        child: SizedBox(
+          width: 280,
+          height: 800,
+          child: NodeInspector(
+            controller: controller,
+            pack: resolvedPack,
+            packagePaths: packagePaths,
+            onSelectProject: onSelectProject,
+            onRenameProject: onRenameProject,
+            onTriggerChanged: onTriggerChanged,
+            onBuildModelChanged: onBuildModelChanged,
+            onMoveProjectUp: onMoveProjectUp,
+            onMoveProjectDown: onMoveProjectDown,
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  return _Harness(controller, resolvedPack);
+}
+
+Future<void> _selectCombo(
+  WidgetTester tester,
+  Finder field,
+  String label,
+) async {
+  await tester.tap(field);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(label).last);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
+IconButton _moveUp(WidgetTester tester, String id) =>
+    tester.widget<IconButton>(find.byKey(Key('scriptProjectMoveUp_$id')));
+
+IconButton _moveDown(WidgetTester tester, String id) =>
+    tester.widget<IconButton>(find.byKey(Key('scriptProjectMoveDown_$id')));
+
+double _rowTop(WidgetTester tester, String id) =>
+    tester.getTopLeft(find.byKey(Key('scriptProjectRow_$id'))).dy;
+
+BoxDecoration _rowDecoration(WidgetTester tester, String id) => tester
+    .widget<Container>(find.byKey(Key('scriptProjectRow_$id')))
+    .decoration! as BoxDecoration;
