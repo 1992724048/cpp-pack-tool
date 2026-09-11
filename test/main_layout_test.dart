@@ -371,7 +371,7 @@ void main() {
     expect(_selectedIndex(tester), 1);
   });
 
-  testWidgets('删除被依赖的包时对话框显示依赖方名称', (tester) async {
+  testWidgets('删除被依赖的包时对话框以表格显示依赖方及版本范围', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -386,7 +386,7 @@ void main() {
           'gamma',
           '1.0.0',
           dependencies: <DependencyModel>[
-            const DependencyModel(name: 'BETA', version: '1.0'),
+            const DependencyModel(name: 'BETA', version: '[2.0,3.0)'),
           ],
         ),
       ],
@@ -406,8 +406,25 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
+    final Finder dialog = find.byKey(const Key('deletePackDialog'));
     expect(find.byKey(const Key('deletePackDependents')), findsOneWidget);
-    expect(find.text('以下包依赖它：alpha、gamma'), findsOneWidget);
+    expect(find.text('以下包依赖它：'), findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('alpha')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('gamma')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('1.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('[2.0,3.0)')),
+      findsOneWidget,
+    );
     expect(find.text('删除后这些依赖将显示为「缺失」。'), findsOneWidget);
   });
 

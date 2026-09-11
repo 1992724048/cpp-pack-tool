@@ -15,19 +15,52 @@ void main() {
     expect(find.text('将移除其配置文件，此操作不可恢复；源目录中的文件不会被删除。'), findsOneWidget);
   });
 
-  testWidgets('存在被依赖项时显示依赖方与提示', (tester) async {
-    await _pumpDialog(tester, dependents: <String>['alpha', 'gamma']);
+  testWidgets('存在被依赖项时以表格显示依赖方与版本范围', (tester) async {
+    await _pumpDialog(
+      tester,
+      dependents: const <PackDependent>[
+        (name: 'alpha', version: '1.0'),
+        (name: 'gamma', version: '[2.0,3.0)'),
+      ],
+    );
 
     expect(find.byKey(const Key('deletePackDependents')), findsOneWidget);
-    expect(find.text('以下包依赖它：alpha、gamma'), findsOneWidget);
+    expect(find.text('以下包依赖它：'), findsOneWidget);
+    expect(find.text('包名'), findsOneWidget);
+    expect(find.text('版本范围'), findsOneWidget);
+    expect(find.text('alpha'), findsOneWidget);
+    expect(find.text('1.0'), findsOneWidget);
+    expect(find.text('gamma'), findsOneWidget);
+    expect(find.text('[2.0,3.0)'), findsOneWidget);
     expect(find.text('删除后这些依赖将显示为「缺失」。'), findsOneWidget);
+    expect(find.byType(Divider), findsNWidgets(2));
+  });
+
+  testWidgets('被依赖表格的包名与版本范围列对齐', (tester) async {
+    await _pumpDialog(
+      tester,
+      dependents: const <PackDependent>[
+        (name: 'alpha', version: '1.0'),
+        (name: 'gamma', version: '[2.0,3.0)'),
+      ],
+    );
+
+    final Rect firstName = tester.getRect(find.text('alpha'));
+    final Rect secondName = tester.getRect(find.text('gamma'));
+    final Rect firstVersion = tester.getRect(find.text('1.0'));
+    final Rect secondVersion = tester.getRect(find.text('[2.0,3.0)'));
+    final Rect versionHeader = tester.getRect(find.text('版本范围'));
+
+    expect(firstName.left, secondName.left);
+    expect(firstVersion.left, secondVersion.left);
+    expect(firstVersion.left, versionHeader.left);
   });
 
   testWidgets('无被依赖项时不显示依赖提示', (tester) async {
     await _pumpDialog(tester);
 
     expect(find.byKey(const Key('deletePackDependents')), findsNothing);
-    expect(find.textContaining('以下包依赖它'), findsNothing);
+    expect(find.text('以下包依赖它：'), findsNothing);
     expect(find.text('删除后这些依赖将显示为「缺失」。'), findsNothing);
   });
 
@@ -84,7 +117,7 @@ void main() {
 Future<void> _pumpDialog(
   WidgetTester tester, {
   ValueChanged<bool>? onResult,
-  List<String> dependents = const <String>[],
+  List<PackDependent> dependents = const <PackDependent>[],
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;

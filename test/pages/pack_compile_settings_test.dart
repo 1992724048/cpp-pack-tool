@@ -95,8 +95,49 @@ void main() {
     expect(tags[4].color, UCColors.flavor.peach);
 
     expect(find.text('暂无宏定义'), findsNothing);
-    expect(find.byType(Divider), findsNothing);
+    expect(find.text('构建配置'), findsNWidgets(5));
+    expect(find.text('操作'), findsNWidgets(5));
+    expect(find.text('宏定义'), findsNWidgets(2));
+    expect(find.text('命令'), findsNWidgets(2));
+    expect(find.text('目录路径'), findsOneWidget);
+    expect(find.text('库名称'), findsOneWidget);
+    expect(find.byType(Divider), findsNWidgets(5));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('分区表格的表头与条目列对齐', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..macros = <MacroModel>[
+        const MacroModel(value: 'A=1', buildModel: BuildModel.all),
+        const MacroModel(value: 'B=2', buildModel: BuildModel.debug),
+      ];
+
+    await _pumpPage(tester, _page(pack));
+
+    final Rect firstText = tester.getRect(find.text('A=1'));
+    final Rect secondText = tester.getRect(find.text('B=2'));
+    final Rect firstTag = tester.getRect(find.byType(Tag).first);
+    final Rect secondTag = tester.getRect(find.byType(Tag).last);
+    final Rect buildHeader = tester.getRect(find.text('构建配置'));
+    final Rect actionHeader = tester.getRect(find.text('操作'));
+    final Rect firstEdit = tester.getRect(
+      find.byKey(const Key('macroEditButton_0')),
+    );
+    final Rect secondEdit = tester.getRect(
+      find.byKey(const Key('macroEditButton_1')),
+    );
+    final Rect firstDelete = tester.getRect(
+      find.byKey(const Key('macroDeleteButton_0')),
+    );
+
+    expect(firstText.left, secondText.left);
+    expect(firstTag.center.dx, secondTag.center.dx);
+    expect(firstTag.center.dx, buildHeader.center.dx);
+    expect(firstEdit.left, secondEdit.left);
+    expect(
+      (firstEdit.center.dx + firstDelete.center.dx) / 2,
+      actionHeader.center.dx,
+    );
   });
 
   testWidgets('添加宏定义后回调收到含新宏的完整包并提示已添加', (tester) async {
@@ -405,7 +446,7 @@ void main() {
     expect(find.text('已删除'), findsOneWidget);
   });
 
-  testWidgets('两条目分区渲染一条分隔线', (tester) async {
+  testWidgets('两条目分区渲染表头与行间两条分隔线', (tester) async {
     final PackModel pack = _pack('demo')
       ..macros = <MacroModel>[
         const MacroModel(value: 'A=1'),
@@ -414,7 +455,7 @@ void main() {
 
     await _pumpPage(tester, _page(pack));
 
-    expect(find.byType(Divider), findsOneWidget);
+    expect(find.byType(Divider), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 

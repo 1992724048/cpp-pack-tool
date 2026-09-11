@@ -6,6 +6,9 @@ import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+const double _versionColumnWidth = 160;
+const double _actionColumnWidth = 80;
+
 class PackDependencies extends StatefulWidget {
   const PackDependencies({
     super.key,
@@ -133,11 +136,44 @@ class _PackDependenciesState extends State<PackDependencies> {
           horizontalMargin: EdgeInsets.zero,
         ),
       ),
-      child: ListView.separated(
-        itemCount: widget.pack.dependencies.length,
-        separatorBuilder: (BuildContext context, int index) => const Divider(),
-        itemBuilder: (BuildContext context, int index) =>
-            _buildRow(context, widget.pack.dependencies[index]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeaderRow(),
+          const Divider(),
+          Expanded(
+            child: ListView.separated(
+              itemCount: widget.pack.dependencies.length,
+              separatorBuilder: (BuildContext context, int index) =>
+                  const Divider(),
+              itemBuilder: (BuildContext context, int index) =>
+                  _buildRow(context, widget.pack.dependencies[index]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow() {
+    final TextStyle style = TextStyle(
+      fontSize: 12,
+      color: FluentTheme.of(context).resources.textFillColorSecondary,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text('包名', style: style)),
+          SizedBox(
+            width: _versionColumnWidth,
+            child: Text('版本范围', style: style),
+          ),
+          SizedBox(
+            width: _actionColumnWidth,
+            child: Text('操作', style: style, textAlign: TextAlign.center),
+          ),
+        ],
       ),
     );
   }
@@ -174,26 +210,36 @@ class _PackDependenciesState extends State<PackDependencies> {
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            dependency.version,
-            style: TextStyle(color: theme.resources.textFillColorSecondary),
-          ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: '编辑',
-            child: IconButton(
-              key: Key('dependencyEditButton_${dependency.name}'),
-              icon: const Icon(FluentIcons.edit, size: 16),
-              onPressed: _saving ? null : () => _edit(dependency),
+          SizedBox(
+            width: _versionColumnWidth,
+            child: Text(
+              dependency.version,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.resources.textFillColorSecondary),
             ),
           ),
-          Tooltip(
-            message: '删除',
-            child: IconButton(
-              key: Key('dependencyDeleteButton_${dependency.name}'),
-              icon: const Icon(FluentIcons.delete, size: 16),
-              onPressed: _saving ? null : () => _remove(dependency),
+          SizedBox(
+            width: _actionColumnWidth,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Tooltip(
+                  message: '编辑',
+                  child: IconButton(
+                    key: Key('dependencyEditButton_${dependency.name}'),
+                    icon: const Icon(FluentIcons.edit, size: 16),
+                    onPressed: _saving ? null : () => _edit(dependency),
+                  ),
+                ),
+                Tooltip(
+                  message: '删除',
+                  child: IconButton(
+                    key: Key('dependencyDeleteButton_${dependency.name}'),
+                    icon: const Icon(FluentIcons.delete, size: 16),
+                    onPressed: _saving ? null : () => _remove(dependency),
+                  ),
+                ),
+              ],
             ),
           ),
         ],

@@ -286,14 +286,12 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     final PackModel pack = _packs[selected];
-    final List<String> dependents = <String>[
+    final List<PackDependent> dependents = <PackDependent>[
       for (final PackModel item in _packs)
-        if (item.name.toLowerCase() != pack.name.toLowerCase() &&
-            item.dependencies.any(
-              (DependencyModel dependency) =>
-                  dependency.name.toLowerCase() == pack.name.toLowerCase(),
-            ))
-          item.name,
+        if (item.name.toLowerCase() != pack.name.toLowerCase())
+          for (final DependencyModel dependency in item.dependencies)
+            if (dependency.name.toLowerCase() == pack.name.toLowerCase())
+              (name: item.name, version: dependency.version),
     ];
     final bool confirmed = await showDeletePackDialog(
       context,

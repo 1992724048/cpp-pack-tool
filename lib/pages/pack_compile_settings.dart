@@ -21,6 +21,9 @@ const Set<String> _commandScriptExtensions = <String>{
   'py',
 };
 
+const double _buildModelColumnWidth = 96;
+const double _actionColumnWidth = 80;
+
 class PackCompileSettings extends StatefulWidget {
   const PackCompileSettings({
     super.key,
@@ -449,6 +452,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             children: [
               _buildSection(
                 title: '宏定义',
+                columnLabel: '宏定义',
                 emptyText: '暂无宏定义',
                 addKey: const Key('addMacroButton'),
                 onAdd: _addMacro,
@@ -457,6 +461,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
               const SizedBox(height: 24),
               _buildSection(
                 title: '编译前命令',
+                columnLabel: '命令',
                 emptyText: '暂无编译前命令',
                 addKey: const Key('addPreBuildCmdButton'),
                 onAdd: () => _addCommand(CmdType.preBuild),
@@ -465,6 +470,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
               const SizedBox(height: 24),
               _buildSection(
                 title: '编译后命令',
+                columnLabel: '命令',
                 emptyText: '暂无编译后命令',
                 addKey: const Key('addPostBuildCmdButton'),
                 onAdd: () => _addCommand(CmdType.postBuild),
@@ -473,6 +479,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
               const SizedBox(height: 24),
               _buildSection(
                 title: '附加库目录',
+                columnLabel: '目录路径',
                 emptyText: '暂无附加库目录',
                 addKey: const Key('addLibDirButton'),
                 onAdd: _addLibDirectory,
@@ -481,6 +488,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
               const SizedBox(height: 24),
               _buildSection(
                 title: '附加库',
+                columnLabel: '库名称',
                 emptyText: '暂无附加库',
                 addKey: const Key('addLibraryButton'),
                 onAdd: _addLibrary,
@@ -495,6 +503,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
 
   Widget _buildSection({
     required String title,
+    required String columnLabel,
     required String emptyText,
     required Key addKey,
     required VoidCallback onAdd,
@@ -531,12 +540,12 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             ),
           )
         else
-          _buildEntryList(entries),
+          _buildEntryList(entries, columnLabel),
       ],
     );
   }
 
-  Widget _buildEntryList(List<_CompileEntry> entries) {
+  Widget _buildEntryList(List<_CompileEntry> entries, String columnLabel) {
     final FluentThemeData theme = FluentTheme.of(context);
     final DividerThemeData dividerTheme = theme.dividerTheme;
     return FluentTheme(
@@ -551,10 +560,35 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildHeaderRow(columnLabel),
+          const Divider(),
           for (int index = 0; index < entries.length; index++) ...[
             if (index > 0) const Divider(),
             _buildEntryRow(entries[index]),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow(String columnLabel) {
+    final TextStyle style = TextStyle(
+      fontSize: 12,
+      color: FluentTheme.of(context).resources.textFillColorSecondary,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(columnLabel, style: style)),
+          SizedBox(
+            width: _buildModelColumnWidth,
+            child: Text('构建配置', style: style, textAlign: TextAlign.center),
+          ),
+          SizedBox(
+            width: _actionColumnWidth,
+            child: Text('操作', style: style, textAlign: TextAlign.center),
+          ),
         ],
       ),
     );
@@ -565,36 +599,39 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Expanded(
+          Expanded(child: Text(entry.text, overflow: TextOverflow.ellipsis)),
+          SizedBox(
+            width: _buildModelColumnWidth,
+            child: Center(
+              child: Tag(
+                text: buildModelLabel(entry.buildModel),
+                color: _buildModelColor(entry.buildModel),
+                fontSize: 10,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _actionColumnWidth,
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Flexible(
-                  child: Text(entry.text, overflow: TextOverflow.ellipsis),
+                Tooltip(
+                  message: '编辑',
+                  child: IconButton(
+                    key: entry.editKey,
+                    icon: const Icon(FluentIcons.edit, size: 16),
+                    onPressed: _saving ? null : entry.onEdit,
+                  ),
                 ),
-                const SizedBox(width: 5),
-                Tag(
-                  text: buildModelLabel(entry.buildModel),
-                  color: _buildModelColor(entry.buildModel),
-                  fontSize: 10,
+                Tooltip(
+                  message: '删除',
+                  child: IconButton(
+                    key: entry.deleteKey,
+                    icon: const Icon(FluentIcons.delete, size: 16),
+                    onPressed: _saving ? null : entry.onDelete,
+                  ),
                 ),
               ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: '编辑',
-            child: IconButton(
-              key: entry.editKey,
-              icon: const Icon(FluentIcons.edit, size: 16),
-              onPressed: _saving ? null : entry.onEdit,
-            ),
-          ),
-          Tooltip(
-            message: '删除',
-            child: IconButton(
-              key: entry.deleteKey,
-              icon: const Icon(FluentIcons.delete, size: 16),
-              onPressed: _saving ? null : entry.onDelete,
             ),
           ),
         ],

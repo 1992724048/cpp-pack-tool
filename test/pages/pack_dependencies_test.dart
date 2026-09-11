@@ -45,7 +45,51 @@ void main() {
     expect(find.byIcon(FluentIcons.edit), findsNWidgets(2));
     expect(find.byIcon(FluentIcons.delete), findsNWidgets(2));
     expect(find.text('暂无依赖'), findsNothing);
-    expect(find.byType(Divider), findsOneWidget);
+    expect(find.text('包名'), findsOneWidget);
+    expect(find.text('版本范围'), findsOneWidget);
+    expect(find.text('操作'), findsOneWidget);
+    expect(find.byType(Divider), findsNWidgets(2));
+  });
+
+  testWidgets('表头与两行依赖的列对齐', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(name: 'libfoo', version: '[1.0,2.0)'),
+        const DependencyModel(name: 'libbar', version: '2.0'),
+      ];
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        allPacks: <PackModel>[_pack('demo'), _pack('libfoo'), _pack('libbar')],
+      ),
+    );
+
+    final Rect firstName = tester.getRect(find.text('libfoo'));
+    final Rect secondName = tester.getRect(find.text('libbar'));
+    final Rect firstVersion = tester.getRect(find.text('[1.0,2.0)'));
+    final Rect secondVersion = tester.getRect(find.text('2.0'));
+    final Rect versionHeader = tester.getRect(find.text('版本范围'));
+    final Rect actionHeader = tester.getRect(find.text('操作'));
+    final Rect firstEdit = tester.getRect(
+      find.byKey(const Key('dependencyEditButton_libfoo')),
+    );
+    final Rect secondEdit = tester.getRect(
+      find.byKey(const Key('dependencyEditButton_libbar')),
+    );
+    final Rect firstDelete = tester.getRect(
+      find.byKey(const Key('dependencyDeleteButton_libfoo')),
+    );
+
+    expect(firstName.left, secondName.left);
+    expect(firstVersion.left, secondVersion.left);
+    expect(firstVersion.left, versionHeader.left);
+    expect(firstEdit.left, secondEdit.left);
+    expect(
+      (firstEdit.center.dx + firstDelete.center.dx) / 2,
+      actionHeader.center.dx,
+    );
   });
 
   testWidgets('分隔线水平范围与列表内容区对齐', (tester) async {
@@ -65,21 +109,28 @@ void main() {
     );
 
     // Divider 外层包裹水平外边距，需取内部绘制层比较实际线体范围
-    final Rect lineRect = tester.getRect(
-      find
-          .descendant(
-            of: find.byType(Divider),
-            matching: find.byType(DecoratedBox),
-          )
-          .first,
-    );
+    final int dividerCount = tester.widgetList(find.byType(Divider)).length;
+    final List<Rect> lineRects = <Rect>[
+      for (int index = 0; index < dividerCount; index++)
+        tester.getRect(
+          find
+              .descendant(
+                of: find.byType(Divider).at(index),
+                matching: find.byType(DecoratedBox),
+              )
+              .first,
+        ),
+    ];
     final Rect listRect = tester.getRect(find.byType(ListView));
 
-    expect(lineRect.left, listRect.left);
-    expect(lineRect.right, listRect.right);
+    expect(lineRects, hasLength(2));
+    for (final Rect lineRect in lineRects) {
+      expect(lineRect.left, listRect.left);
+      expect(lineRect.right, listRect.right);
+    }
   });
 
-  testWidgets('单条依赖不渲染分隔线', (tester) async {
+  testWidgets('单条依赖仅渲染表头分隔线', (tester) async {
     final PackModel pack = _pack('demo')
       ..dependencies = <DependencyModel>[
         const DependencyModel(name: 'libfoo', version: '1.0'),
@@ -90,7 +141,7 @@ void main() {
       _page(pack, allPacks: <PackModel>[_pack('libfoo')]),
     );
 
-    expect(find.byType(Divider), findsNothing);
+    expect(find.byType(Divider), findsOneWidget);
   });
 
   testWidgets('依赖指向已删除的包时展示并标记缺失', (tester) async {
