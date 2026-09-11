@@ -317,11 +317,12 @@ class _EditorCanvasState extends State<EditorCanvas> {
       ..scaleByDouble(scale, scale, scale, 1);
   }
 
-  /// 模型视口被外部直接写入时（T9 诊断居中 / T11 恢复），同步到变换矩阵。
+  /// 模型视口被外部直接写入时（页面防抖写回等），同步到变换矩阵。
   ///
-  /// 以「模型值 vs 上次同步缓存」判断，而非与当前矩阵比较：fling 的
-  /// `onInteractionEnd` 在惯性动画开始前触发，惯性会令矩阵领先于模型，
-  /// 与矩阵比较会把惯性终点误判为外部改写并把视口回跳。
+  /// T9 诊断居中只改写注入的 [TransformationController]（不回写模型），
+  /// 不经此路径。以「模型值 vs 上次同步缓存」判断，而非与当前矩阵比较：
+  /// fling 的 `onInteractionEnd` 在惯性动画开始前触发，惯性会令矩阵领先于
+  /// 模型，与矩阵比较会把惯性终点误判为外部改写并把视口回跳。
   void _syncViewportFromProject(ScriptProjectModel project) {
     final ({double x, double y, double scale}) synced = _lastSyncedViewport;
     if (project.viewX == synced.x &&

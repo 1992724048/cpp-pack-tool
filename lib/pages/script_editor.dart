@@ -419,7 +419,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
           key: const Key('editorCanvas'),
           controller: controller,
           transformationController: _transformation,
-          onFlush: _flushPendingSave,
+          onFlush: _flushSaveQueue,
         );
       },
     );
@@ -793,7 +793,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
             height: 24,
             child: Button(
               key: const Key('retrySaveButton'),
-              onPressed: _retrySave,
+              onPressed: _flushSaveQueue,
               child: Text('重试', style: statusStyle),
             ),
           ),
@@ -873,12 +873,8 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     }
   }
 
-  void _retrySave() {
-    _saveQueue.flush();
-  }
-
-  /// 画布 `Ctrl+S` 快捷键（§10.3）：跳过防抖立即 flush 保存队列。
-  void _flushPendingSave() {
+  /// 跳过防抖立即 flush 保存队列（画布 `Ctrl+S` 与顶栏「重试」共用）。
+  void _flushSaveQueue() {
     _saveQueue.flush();
   }
 

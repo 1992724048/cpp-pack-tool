@@ -99,6 +99,31 @@ void main() {
       expect(stringInput.border!.top.color, UCColors.flavor.blue);
     });
 
+    testWidgets('data 引脚配色：bool 橙、list<string> 紫', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.boolean'),
+            _node('n2', 'file.list'),
+            _node('n3', 'flow.branch'),
+          ],
+        ),
+      );
+
+      final BoxDecoration boolOut = _pinDecoration(tester, 'n1', 'result');
+      expect(boolOut.border!.top.color, UCColors.flavor.peach);
+      expect(boolOut.color, UCColors.flavor.peach.withValues(alpha: 0.35));
+
+      final BoxDecoration listOut = _pinDecoration(tester, 'n2', 'result');
+      expect(listOut.border!.top.color, UCColors.flavor.mauve);
+      expect(listOut.color, UCColors.flavor.mauve.withValues(alpha: 0.35));
+
+      final BoxDecoration boolIn = _pinDecoration(tester, 'n3', 'condition');
+      expect(boolIn.border!.top.color, UCColors.flavor.peach);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('已连接引脚为实心类型色', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,
@@ -332,6 +357,39 @@ void main() {
       final ScriptNodeModel node = controller.project.nodes.single;
       expect(node.x, 40);
       expect(node.y, 60);
+    });
+
+    testWidgets('拖到负坐标时坐标归零且节点仍可继续拖动', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+
+      await tester.drag(
+        find.byKey(const Key('nodeCard_n1')),
+        const Offset(-60, -80),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+
+      final ScriptNodeModel node = controller.project.nodes.single;
+      expect(node.x, 0);
+      expect(node.y, 0);
+      expect(find.byKey(const Key('nodeCard_n1')), findsOneWidget);
+
+      // 归零后节点仍可达：从原点再次拖动正常写入。
+      await tester.drag(
+        find.byKey(const Key('nodeCard_n1')),
+        const Offset(30, 20),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+
+      expect(node.x, 30);
+      expect(node.y, 20);
+      expect(tester.takeException(), isNull);
     });
   });
 
@@ -955,6 +1013,46 @@ void main() {
       expect(ring.border!.top.width, 2);
       expect(find.byKey(const Key('pinRing_n1_exec')), findsOneWidget);
       expect(find.byKey(const Key('pinRing_n1_destination')), findsOneWidget);
+    });
+
+    testWidgets('手改 kind 不符边：真实校验诊断驱动目标引脚红环', (WidgetTester tester) async {
+      final ScriptProjectModel project = _project(
+        nodes: <ScriptNodeModel>[
+          _node('n1', 'value.boolean', x: 40, y: 60),
+          _node('n2', 'file.copy', x: 400, y: 60),
+        ],
+        edges: <ScriptEdgeModel>[
+          // 手改 YAML 场景：数据输出 → 执行输入。
+          ScriptEdgeModel(
+            from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+            to: ScriptEdgeEndpoint(node: 'n2', pin: 'exec'),
+          ),
+        ],
+      );
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        project,
+      );
+
+      // 真实消息路径：GraphValidator 诊断 → errorPinsByNode → 引脚红环。
+      expect(
+        controller.diagnostics.any(
+          (ScriptDiagnostic diagnostic) =>
+              diagnostic.isError &&
+              diagnostic.message.contains('引脚种类不匹配'),
+        ),
+        isTrue,
+      );
+      final Map<String, Set<String>> errorPins = errorPinsByNode(
+        project.nodes,
+        controller.diagnostics,
+      );
+      expect(errorPins['n2'], contains('exec'));
+      final BoxDecoration ring = _ringDecoration(tester, 'n2', 'exec');
+      expect(ring.border!.top.color, UCColors.flavor.red);
+      expect(ring.border!.top.width, 2);
+      expect(find.byKey(const Key('pinRing_n2_exec')), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     test('errorPinsByNode 按诊断消息定位引脚', () {

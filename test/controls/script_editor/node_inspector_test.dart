@@ -513,6 +513,42 @@ void main() {
       expect(renamed, <String>['script_1:新脚本']);
     });
 
+    testWidgets('切换到等名文本的另一项目后红字残留清除', (WidgetTester tester) async {
+      final PackModel pack = _packWithProjects();
+      final List<String> renamed = <String>[];
+      final _Harness harness = await _pumpInspector(
+        tester,
+        pack: pack,
+        project: pack.scripts.first,
+        onRenameProject: (ScriptProjectModel project, String name) =>
+            renamed.add('${project.id}:$name'),
+      );
+      final Finder field = find.byKey(const Key('inspectorProjectName'));
+
+      // 复现：在项目 1 名称框输入项目 2 的名字并提交 → 报「名称已存在」。
+      await tester.enterText(field, '脚本 2');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.text('名称已存在'), findsOneWidget);
+      expect(renamed, isEmpty);
+
+      // 页面切换路径：先失焦提交，再加载项目 2（其名称恰为「脚本 2」）。
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      harness.controller!.loadProject(pack.scripts[1]);
+      await tester.pump();
+
+      expect(find.text('名称已存在'), findsNothing);
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('inspectorProjectName')))
+            .controller!
+            .text,
+        '脚本 2',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('触发时机下拉选择回调 post', (WidgetTester tester) async {
       final PackModel pack = _packWithProjects();
       final List<ScriptTrigger> triggers = <ScriptTrigger>[];

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
@@ -74,14 +75,19 @@ class GraphEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 写入节点场景坐标；负坐标 clamp 到 0（与节点库/菜单落点口径一致）。
   void moveNode(String nodeId, Offset scenePosition) {
     final ScriptNodeModel? node = _findNode(nodeId);
-    if (node == null ||
-        (node.x == scenePosition.dx && node.y == scenePosition.dy)) {
+    if (node == null) {
       return;
     }
-    node.x = scenePosition.dx;
-    node.y = scenePosition.dy;
+    final double x = math.max(0, scenePosition.dx);
+    final double y = math.max(0, scenePosition.dy);
+    if (node.x == x && node.y == y) {
+      return;
+    }
+    node.x = x;
+    node.y = y;
     notifyListeners();
   }
 

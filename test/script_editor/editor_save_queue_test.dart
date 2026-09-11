@@ -8,7 +8,7 @@ void main() {
     test('初始状态为已保存', () {
       final EditorSaveQueue queue = EditorSaveQueue(
         save: () async => true,
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
       addTearDown(queue.dispose);
 
@@ -22,7 +22,7 @@ void main() {
           calls++;
           return true;
         },
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
       addTearDown(queue.dispose);
 
@@ -32,7 +32,7 @@ void main() {
       queue.markDirty();
       await Future<void>.delayed(const Duration(milliseconds: 8));
       queue.markDirty();
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       expect(calls, 1);
       expect(queue.status, EditorSaveStatus.saved);
@@ -69,7 +69,7 @@ void main() {
           pending.add(completer);
           return completer.future;
         },
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
       addTearDown(queue.dispose);
 
@@ -102,7 +102,7 @@ void main() {
           calls++;
           return succeed;
         },
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
       addTearDown(queue.dispose);
 
@@ -125,7 +125,7 @@ void main() {
           calls++;
           return succeed;
         },
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
       addTearDown(queue.dispose);
 
@@ -136,7 +136,7 @@ void main() {
       succeed = true;
       queue.markDirty();
       expect(queue.status, EditorSaveStatus.unsaved);
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       expect(calls, 2);
       expect(queue.status, EditorSaveStatus.saved);
@@ -152,7 +152,7 @@ void main() {
           pending.add(completer);
           return completer.future;
         },
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
       addTearDown(queue.dispose);
 
@@ -181,7 +181,7 @@ void main() {
       final List<EditorSaveStatus> states = <EditorSaveStatus>[];
       queue = EditorSaveQueue(
         save: () async => true,
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
         onStatusChanged: () => states.add(queue.status),
       );
       addTearDown(queue.dispose);
@@ -203,12 +203,12 @@ void main() {
           calls++;
           return true;
         },
-        debounce: const Duration(milliseconds: 20),
+        debounce: const Duration(milliseconds: 50),
       );
 
       queue.markDirty();
       queue.dispose();
-      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await Future<void>.delayed(const Duration(milliseconds: 150));
 
       expect(calls, 0);
     });

@@ -104,6 +104,28 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('生成后收起：代码内容不再构建', (WidgetTester tester) async {
+      final GraphEditorController controller = _controller(_validProject());
+      addTearDown(controller.dispose);
+      final GlobalKey<OutputPanelState> panelKey =
+          GlobalKey<OutputPanelState>();
+      await _pumpPanel(tester, controller: controller, panelKey: panelKey);
+
+      panelKey.currentState!.generatePreview();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.textContaining('由 cpp_nuget_pack 生成'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('收起'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(_panelHeight(tester), 34);
+      expect(find.textContaining('由 cpp_nuget_pack 生成'), findsNothing);
+      expect(find.byType(SelectableText), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('有错误：展开 + 诊断 tab + 错误清单与状态文本', (WidgetTester tester) async {
       final GraphEditorController controller = _controller(_project());
       addTearDown(controller.dispose);

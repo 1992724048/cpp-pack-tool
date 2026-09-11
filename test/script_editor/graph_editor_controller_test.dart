@@ -165,6 +165,30 @@ void main() {
       controller.moveNode('n1', const Offset(1, 2));
       expect(notifications, 0);
     });
+
+    test('负坐标 clamp 到 0 并通知', () {
+      final GraphEditorController controller = GraphEditorController(
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      controller.moveNode('n1', const Offset(-30, -50));
+      expect(controller.project.nodes.single.x, 0);
+      expect(controller.project.nodes.single.y, 0);
+      expect(notifications, 1);
+    });
+
+    test('已在原点时负坐标不再通知', () {
+      final GraphEditorController controller = GraphEditorController(
+        _project(nodes: <ScriptNodeModel>[_node('n1', 'value.text')]),
+      );
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      controller.moveNode('n1', const Offset(-1, -2));
+      expect(notifications, 0);
+    });
   });
 
   group('removeNode', () {

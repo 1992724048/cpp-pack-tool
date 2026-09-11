@@ -92,6 +92,9 @@ class _NodeInspectorState extends State<NodeInspector> {
   String? _nameError;
   String? _notifiedName;
 
+  /// 最近一次与名称框同步的项目实例；用于识别切换项目（含重命名替换）。
+  ScriptProjectModel? _nameProject;
+
   @override
   void initState() {
     super.initState();
@@ -199,7 +202,12 @@ class _NodeInspectorState extends State<NodeInspector> {
     if (project == null) {
       return;
     }
-    if (!_nameFocus.hasFocus && _nameEditor.text != project.name) {
+    final bool projectChanged = !identical(_nameProject, project);
+    if (!projectChanged && _nameFocus.hasFocus) {
+      return;
+    }
+    if (projectChanged || _nameEditor.text != project.name) {
+      _nameProject = project;
       _nameEditor.text = project.name;
       _nameError = null;
       _notifiedName = null;
