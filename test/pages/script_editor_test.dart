@@ -105,9 +105,9 @@ double _panelOpacity(WidgetTester tester, Key key) =>
 
 bool _panelIgnoring(WidgetTester tester, Key key) => tester
     .widget<IgnorePointer>(
-      find.descendant(
-        of: find.byKey(key),
-        matching: find.byType(IgnorePointer),
-      ),
+      // 面板子树可能含控件内建 IgnorePointer（如 TextBox），取最外层（页面级）
+      find
+          .descendant(of: find.byKey(key), matching: find.byType(IgnorePointer))
+          .first,
     )
     .ignoring;

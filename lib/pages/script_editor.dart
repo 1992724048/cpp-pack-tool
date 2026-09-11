@@ -1,8 +1,10 @@
 import 'package:cpp_nuget_pack/controls/script_editor/editor_canvas.dart';
+import 'package:cpp_nuget_pack/controls/script_editor/node_library_panel.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
+import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -41,6 +43,8 @@ class ScriptEditorPage extends StatefulWidget {
 
 class _ScriptEditorPageState extends State<ScriptEditorPage> {
   GraphEditorController? _controller;
+  final TransformationController _transformation = TransformationController();
+  Size? _canvasViewportSize;
 
   bool get _hasProject => _controller != null;
 
@@ -53,6 +57,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
 
   @override
   void dispose() {
+    _transformation.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -128,7 +133,9 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
           panelKey: const Key('nodeLibraryPanel'),
           width: _nodeLibraryWidth,
           border: Border(right: BorderSide(color: UCColors.flavor.surface2)),
-          child: const SizedBox.expand(),
+          child: NodeLibraryPanel(
+            onAddNode: _hasProject ? _addNodeFromLibrary : null,
+          ),
         ),
         Expanded(child: _buildCanvasArea()),
         _buildSidePanel(
@@ -179,7 +186,43 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
         ),
       );
     }
-    return EditorCanvas(key: const Key('editorCanvas'), controller: controller);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.hasBoundedWidth && constraints.hasBoundedHeight) {
+          _canvasViewportSize = constraints.biggest;
+        }
+        return EditorCanvas(
+          key: const Key('editorCanvas'),
+          controller: controller,
+          transformationController: _transformation,
+        );
+      },
+    );
+  }
+
+  /// 节点库点击添加（§4.2）：落点基于画布可见视口中心的场景坐标。
+  void _addNodeFromLibrary(ScriptNodeTypeDescriptor descriptor) {
+    final GraphEditorController? controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    controller.addNode(
+      descriptor.typeKey,
+      nodeLibraryAddPosition(
+        viewportCenterScene: _viewportCenterScene(),
+        descriptor: descriptor,
+        existingNodeCount: controller.project.nodes.length,
+      ),
+    );
+  }
+
+  /// 画布可见视口中心对应的场景坐标；与画布共用同一 [TransformationController]。
+  Offset _viewportCenterScene() {
+    final Size? viewport = _canvasViewportSize;
+    if (viewport == null) {
+      return Offset.zero;
+    }
+    return _transformation.toScene(viewport.center(Offset.zero));
   }
 
   Widget _buildOutputBar() {

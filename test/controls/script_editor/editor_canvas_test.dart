@@ -883,6 +883,65 @@ void main() {
     });
   });
 
+  group('节点库拖拽添加', () {
+    test('落点 = 指针场景坐标 − (24, 16)，负坐标 clamp 到 0', () {
+      expect(
+        nodeLibraryDropPosition(const Offset(100, 80)),
+        const Offset(76, 64),
+      );
+      expect(nodeLibraryDropPosition(const Offset(10, 8)), Offset.zero);
+    });
+
+    testWidgets('释放后在指针场景坐标 − (24, 16) 处新增节点', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpDropCanvas(
+        tester,
+        _project(),
+      );
+
+      await _dropLibraryNode(tester, const Offset(350, 90));
+
+      final ScriptNodeModel node = controller.project.nodes.single;
+      expect(node.type, 'value.text');
+      // 画布视口原点在 (200, 0)：指针场景 (150, 90) → 落点 (126, 74)
+      expect(node.x, 126);
+      expect(node.y, 74);
+    });
+
+    testWidgets('负坐标落点 clamp 到 0', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpDropCanvas(
+        tester,
+        _project(),
+      );
+
+      await _dropLibraryNode(tester, const Offset(210, 10));
+
+      final ScriptNodeModel node = controller.project.nodes.single;
+      expect(node.x, 0);
+      expect(node.y, 0);
+    });
+
+    testWidgets('视口偏移下按场景坐标换算落点', (WidgetTester tester) async {
+      final TransformationController transformation =
+          TransformationController();
+      addTearDown(transformation.dispose);
+      final GraphEditorController controller = await _pumpDropCanvas(
+        tester,
+        _project(),
+        sourceTypeKey: 'file.copy',
+        transformation: transformation,
+      );
+      transformation.value = Matrix4.identity()
+        ..translateByDouble(50, 20, 0, 1);
+
+      await _dropLibraryNode(tester, const Offset(350, 90));
+
+      final ScriptNodeModel node = controller.project.nodes.single;
+      // 指针场景 = (150, 90) − (50, 20) = (100, 70) → 落点 (76, 54)
+      expect(node.x, 76);
+      expect(node.y, 54);
+    });
+  });
+
   group('诊断错误引脚红标', () {
     testWidgets('必填未连接的输入引脚显示 2px 红环', (WidgetTester tester) async {
       await _pumpCanvas(
@@ -973,6 +1032,76 @@ Future<GraphEditorController> _pumpCanvas(
   );
   await tester.pump();
   return controller;
+}
+
+/// 左侧拖拽源 + 右侧 [EditorCanvas] 的节点库拖放测试台。
+Future<GraphEditorController> _pumpDropCanvas(
+  WidgetTester tester,
+  ScriptProjectModel project, {
+  String sourceTypeKey = 'value.text',
+  TransformationController? transformation,
+}) async {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final GraphEditorController controller = GraphEditorController(project);
+  addTearDown(controller.dispose);
+  await tester.pumpWidget(
+    FluentApp(
+      home: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 200,
+            child: _LibraryDragSource(typeKey: sourceTypeKey),
+          ),
+          Expanded(
+            child: EditorCanvas(
+              controller: controller,
+              transformationController: transformation,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+  await tester.pump();
+  return controller;
+}
+
+/// 从拖拽源按下并释放到全局坐标 [globalDrop]。
+Future<void> _dropLibraryNode(WidgetTester tester, Offset globalDrop) async {
+  final TestGesture gesture = await tester.startGesture(
+    tester.getCenter(find.byKey(const Key('libraryDragSource'))),
+    kind: PointerDeviceKind.mouse,
+  );
+  await tester.pump();
+  await gesture.moveTo(globalDrop);
+  await tester.pump();
+  await gesture.up();
+  await tester.pump();
+}
+
+class _LibraryDragSource extends StatelessWidget {
+  const _LibraryDragSource({required this.typeKey});
+
+  final String typeKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Draggable<ScriptNodeTypeDescriptor>(
+      data: NodeRegistry.byType(typeKey)!,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: const SizedBox(width: 160, height: 34),
+      child: Container(
+        key: const Key('libraryDragSource'),
+        height: 60,
+        color: UCColors.flavor.surface0,
+        alignment: Alignment.center,
+        child: Text(typeKey),
+      ),
+    );
+  }
 }
 
 TransformationController _transformation(WidgetTester tester) {

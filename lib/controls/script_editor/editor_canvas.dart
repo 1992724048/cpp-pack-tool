@@ -137,110 +137,120 @@ class _EditorCanvasState extends State<EditorCanvas> {
     final Size sceneSize = _sceneSize(project.nodes);
     final ScriptEdgeModel? hoveredEdge = _validHoveredEdge(project);
 
-    return Container(
-      color: UCColors.flavor.mantle,
-      child: Focus(
-        focusNode: _focusNode,
-        child: Listener(
-          onPointerDown: (PointerDownEvent event) => _focusNode.requestFocus(),
-          child: InteractiveViewer(
-            key: _viewerKey,
-            transformationController: _transformation,
-            constrained: false,
-            minScale: _minScale,
-            maxScale: _maxScale,
-            boundaryMargin: const EdgeInsets.all(80),
-            onInteractionEnd: (ScaleEndDetails details) => _persistViewport(),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapUp: _handleSceneTap,
-              child: MouseRegion(
-                opaque: true,
-                cursor: hoveredEdge == null
-                    ? SystemMouseCursors.basic
-                    : SystemMouseCursors.click,
-                onHover: _handleSceneHover,
-                onExit: (PointerExitEvent event) => _setHoveredEdge(null),
-                child: SizedBox(
-                  key: const Key('editorScene'),
-                  width: sceneSize.width,
-                  height: sceneSize.height,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: <Widget>[
-                      Positioned.fill(
-                        child: CustomPaint(
-                          key: const Key('editorGrid'),
-                          painter: EditorGridPainter(
-                            color: UCColors.flavor.overlay0,
+    return DragTarget<ScriptNodeTypeDescriptor>(
+      onAcceptWithDetails: _handleLibraryDrop,
+      builder: (BuildContext context, _, _) {
+        return Container(
+          color: UCColors.flavor.mantle,
+          child: Focus(
+            focusNode: _focusNode,
+            child: Listener(
+              onPointerDown: (PointerDownEvent event) =>
+                  _focusNode.requestFocus(),
+              child: InteractiveViewer(
+                key: _viewerKey,
+                transformationController: _transformation,
+                constrained: false,
+                minScale: _minScale,
+                maxScale: _maxScale,
+                boundaryMargin: const EdgeInsets.all(80),
+                onInteractionEnd: (ScaleEndDetails details) =>
+                    _persistViewport(),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: _handleSceneTap,
+                  child: MouseRegion(
+                    opaque: true,
+                    cursor: hoveredEdge == null
+                        ? SystemMouseCursors.basic
+                        : SystemMouseCursors.click,
+                    onHover: _handleSceneHover,
+                    onExit: (PointerExitEvent event) => _setHoveredEdge(null),
+                    child: SizedBox(
+                      key: const Key('editorScene'),
+                      width: sceneSize.width,
+                      height: sceneSize.height,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: <Widget>[
+                          Positioned.fill(
+                            child: CustomPaint(
+                              key: const Key('editorGrid'),
+                              painter: EditorGridPainter(
+                                color: UCColors.flavor.overlay0,
+                              ),
+                            ),
                           ),
-                        ),
+                          Positioned.fill(
+                            child: CustomPaint(
+                              key: const Key('editorEdges'),
+                              painter: EdgePainter(
+                                edges: _edgeVisuals(project, hoveredEdge),
+                                preview: _previewVisual(),
+                              ),
+                            ),
+                          ),
+                          for (final ScriptNodeModel node in orderedNodes)
+                            Positioned(
+                              left: _nodePosition(node).dx - nodeCardOverflow,
+                              top: _nodePosition(node).dy - nodeCardOverflow,
+                              child: NodeCard(
+                                nodeId: node.id,
+                                typeKey: node.type,
+                                descriptor: NodeRegistry.byType(node.type),
+                                selected: node.id == selectedNodeId,
+                                dragging: node.id == _dragNodeId,
+                                // 节点错误红点接线由 T9 完成；引脚错误红环在本任务接入。
+                                hasError: false,
+                                connectedPins:
+                                    connectedPins[node.id] ?? const <String>{},
+                                errorPins:
+                                    errorPins[node.id] ?? const <String>{},
+                                candidatePins:
+                                    highlights.candidate[node.id] ??
+                                    const <String>{},
+                                rejectedPins:
+                                    highlights.rejected[node.id] ??
+                                    const <String>{},
+                                dimmedPins:
+                                    highlights.dimmed[node.id] ??
+                                    const <String>{},
+                                showPinLabels: _showPinLabels,
+                                onTap: () =>
+                                    widget.controller.selectNode(node.id),
+                                onDragStart: (DragStartDetails details) =>
+                                    _beginNodeDrag(node.id, details),
+                                onDragUpdate: (DragUpdateDetails details) =>
+                                    _updateNodeDrag(node.id, details),
+                                onDragEnd: (DragEndDetails details) =>
+                                    _endNodeDrag(node.id, details),
+                                onDragCancel: () => _cancelNodeDrag(node.id),
+                                onPinDragStart: (
+                                  String pinId,
+                                  DragStartDetails details,
+                                ) => _beginPinDrag(node.id, pinId, details),
+                                onPinDragUpdate: (
+                                  String pinId,
+                                  DragUpdateDetails details,
+                                ) => _updatePinDrag(node.id, pinId, details),
+                                onPinDragEnd: (
+                                  String pinId,
+                                  DragEndDetails details,
+                                ) => _endPinDrag(node.id, pinId, details),
+                                onPinDragCancel: (String pinId) =>
+                                    _cancelPinDrag(node.id, pinId),
+                              ),
+                            ),
+                        ],
                       ),
-                      Positioned.fill(
-                        child: CustomPaint(
-                          key: const Key('editorEdges'),
-                          painter: EdgePainter(
-                            edges: _edgeVisuals(project, hoveredEdge),
-                            preview: _previewVisual(),
-                          ),
-                        ),
-                      ),
-                      for (final ScriptNodeModel node in orderedNodes)
-                        Positioned(
-                          left: _nodePosition(node).dx - nodeCardOverflow,
-                          top: _nodePosition(node).dy - nodeCardOverflow,
-                          child: NodeCard(
-                            nodeId: node.id,
-                            typeKey: node.type,
-                            descriptor: NodeRegistry.byType(node.type),
-                            selected: node.id == selectedNodeId,
-                            dragging: node.id == _dragNodeId,
-                            // 节点错误红点接线由 T9 完成；引脚错误红环在本任务接入。
-                            hasError: false,
-                            connectedPins:
-                                connectedPins[node.id] ?? const <String>{},
-                            errorPins: errorPins[node.id] ?? const <String>{},
-                            candidatePins:
-                                highlights.candidate[node.id] ??
-                                const <String>{},
-                            rejectedPins:
-                                highlights.rejected[node.id] ??
-                                const <String>{},
-                            dimmedPins:
-                                highlights.dimmed[node.id] ?? const <String>{},
-                            showPinLabels: _showPinLabels,
-                            onTap: () => widget.controller.selectNode(node.id),
-                            onDragStart: (DragStartDetails details) =>
-                                _beginNodeDrag(node.id, details),
-                            onDragUpdate: (DragUpdateDetails details) =>
-                                _updateNodeDrag(node.id, details),
-                            onDragEnd: (DragEndDetails details) =>
-                                _endNodeDrag(node.id, details),
-                            onDragCancel: () => _cancelNodeDrag(node.id),
-                            onPinDragStart: (
-                              String pinId,
-                              DragStartDetails details,
-                            ) => _beginPinDrag(node.id, pinId, details),
-                            onPinDragUpdate: (
-                              String pinId,
-                              DragUpdateDetails details,
-                            ) => _updatePinDrag(node.id, pinId, details),
-                            onPinDragEnd: (
-                              String pinId,
-                              DragEndDetails details,
-                            ) => _endPinDrag(node.id, pinId, details),
-                            onPinDragCancel: (String pinId) =>
-                                _cancelPinDrag(node.id, pinId),
-                          ),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -479,6 +489,21 @@ class _EditorCanvasState extends State<EditorCanvas> {
       return;
     }
     widget.controller.clearSelection();
+  }
+
+  /// 节点库拖拽释放（§4.2）：释放指针场景坐标 − (24, 16) 作为卡片左上角。
+  ///
+  /// 拖拽源使用 `pointerDragAnchorStrategy`，故 [DragTargetDetails.offset]
+  /// 即指针全局坐标。
+  void _handleLibraryDrop(DragTargetDetails<ScriptNodeTypeDescriptor> details) {
+    final Offset? scenePoint = _toScene(details.offset);
+    if (scenePoint == null) {
+      return;
+    }
+    widget.controller.addNode(
+      details.data.typeKey,
+      nodeLibraryDropPosition(scenePoint),
+    );
   }
 
   void _handleSceneHover(PointerHoverEvent event) {
@@ -814,6 +839,18 @@ class _EditorCanvasState extends State<EditorCanvas> {
     );
   }
 }
+
+/// 节点库拖拽添加落点（视觉规范 §4.2）：释放指针场景坐标 − (24, 16) 作为卡片
+/// 左上角；坐标 clamp 到 ≥ 0（负坐标裁决）。
+Offset nodeLibraryDropPosition(Offset pointerScene) {
+  return Offset(
+    math.max(0, pointerScene.dx - _nodeLibraryDropInset.dx),
+    math.max(0, pointerScene.dy - _nodeLibraryDropInset.dy),
+  );
+}
+
+/// 拖拽释放指针与新增卡片左上角的偏移（§4.2）。
+const Offset _nodeLibraryDropInset = Offset(24, 16);
 
 /// 画布侧连接兼容判定，与 [GraphEditorController.connect] 判定完全一致：
 /// 仅接受 output → input、排除自连、kind 相同、data 需 dataType 相同；
