@@ -691,7 +691,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       return ('$errors 个错误', UCColors.flavor.red);
     }
     if (warnings > 0) {
-      return ('$warnings 个警告', UCColors.flavor.peach);
+      return ('$warnings 个警告', UCColors.flavor.yellow);
     }
     return ('正常', UCColors.flavor.green);
   }

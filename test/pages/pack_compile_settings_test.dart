@@ -610,7 +610,7 @@ void main() {
     expect(tags[5].text, 'Debug');
     expect(tags[5].color, UCColors.flavor.peach);
 
-    expect(_statusText(tester, '1 个警告').style?.color, UCColors.flavor.peach);
+    expect(_statusText(tester, '1 个警告').style?.color, UCColors.flavor.yellow);
     expect(_statusText(tester, '1 个错误').style?.color, UCColors.flavor.red);
     expect(_statusText(tester, '正常').style?.color, UCColors.flavor.green);
     expect(tester.takeException(), isNull);
