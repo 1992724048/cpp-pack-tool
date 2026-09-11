@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/packaging/cmake_builder.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 
@@ -13,5 +14,6 @@ abstract interface class PackageBuilder {
 abstract final class PackageBuilderRegistry {
   static const List<PackageBuilder> all = <PackageBuilder>[
     NuGetPackageBuilder(),
+    CMakePackageBuilder(),
   ];
 }
