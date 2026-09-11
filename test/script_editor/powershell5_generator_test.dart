@@ -969,7 +969,7 @@ void main() {
       expect(result.code, contains('    Write-Host \$env:PATH\n'));
     });
 
-    test('context.packageFile：lib/x.lib → files\\lib\\x.lib', () {
+    test('context.packageFile：包内相对路径 lib/x.lib → lib\\x.lib', () {
       final ScriptCompileResult result = _compile(
         _dataLogGraph(
           _node(
@@ -983,12 +983,12 @@ void main() {
       expect(
         result.code,
         contains(
-          "    Write-Host (Join-Path \$env:CNP_PackageRoot 'files\\lib\\x.lib')\n",
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot 'lib\\x.lib')\n",
         ),
       );
     });
 
-    test('context.packageFile：嵌套相对路径 sub/a.h', () {
+    test('context.packageFile：嵌套包内相对路径 sub/a.h → sub\\a.h', () {
       final ScriptCompileResult result = _compile(
         _dataLogGraph(
           _node(
@@ -1002,7 +1002,27 @@ void main() {
       expect(
         result.code,
         contains(
-          "    Write-Host (Join-Path \$env:CNP_PackageRoot 'files\\sub\\a.h')\n",
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot 'sub\\a.h')\n",
+        ),
+      );
+    });
+
+    test('context.packageFile：files/scripts/task.bat 原样保留相对路径', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node(
+            'n2',
+            'context.packageFile',
+            params: <String, Object?>{'path': 'files/scripts/task.bat'},
+          ),
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot "
+          "'files\\scripts\\task.bat')\n",
         ),
       );
     });

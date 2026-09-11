@@ -321,7 +321,7 @@ class _PowerShellEmitter {
   String _packageFileExpression(ScriptNodeModel node) {
     final String relativePath = '${_param(node, 'path')}'.replaceAll('/', r'\');
     return '(Join-Path $_packageRootEnvExpression '
-        '${_textLiteral('files\\$relativePath')})';
+        '${_textLiteral(relativePath)})';
   }
 
   String _compareStringExpression(ScriptNodeModel node) {
