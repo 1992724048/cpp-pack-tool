@@ -1,8 +1,11 @@
+import 'package:cpp_nuget_pack/controls/script_editor/edge_painter.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/editor_canvas.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_card.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
+import 'package:cpp_nuget_pack/script_editor/node_type.dart';
+import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
@@ -214,6 +217,46 @@ void main() {
       expect(find.byKey(const Key('nodeErrorDot_n1')), findsOneWidget);
       expect(find.byKey(const Key('pinRing_n1_source')), findsOneWidget);
       expect(find.byKey(const Key('pinRing_n1_destination')), findsNothing);
+    });
+
+    testWidgets('引脚环优先级：error > rejected > candidate', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        FluentApp(
+          home: Center(
+            child: NodeCard(
+              nodeId: 'n1',
+              typeKey: 'file.copy',
+              descriptor: NodeRegistry.byType('file.copy'),
+              selected: false,
+              dragging: false,
+              hasError: false,
+              connectedPins: const <String>{},
+              errorPins: const <String>{'exec'},
+              rejectedPins: const <String>{'exec', 'source'},
+              candidatePins: const <String>{'source', 'destination'},
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        _ringDecoration(tester, 'n1', 'exec').border!.top.color,
+        UCColors.flavor.red,
+      );
+      expect(
+        _ringDecoration(tester, 'n1', 'source').border!.top.color,
+        UCColors.flavor.red,
+      );
+      expect(
+        _ringDecoration(tester, 'n1', 'destination').border!.top.color,
+        UCColors.flavor.blue.withValues(alpha: 0.75),
+      );
     });
   });
 
@@ -498,6 +541,364 @@ void main() {
       expect(EditorGridPainter.largeAlpha, 0.5);
     });
   });
+
+  group('连线渲染与选中', () {
+    testWidgets('连线为 EdgePainter 且端点锚点/类型正确', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'source'),
+            ),
+          ],
+        ),
+      );
+
+      final EdgePainter painter = _edgePainter(tester);
+      expect(painter.edges, hasLength(1));
+      final EdgeVisual edge = painter.edges.single;
+      expect(edge.from, const Offset(248, 109));
+      expect(edge.to, const Offset(400, 131));
+      expect(edge.kind, ScriptPinKind.data);
+      expect(edge.dataType, ScriptDataType.string);
+      expect(edge.selected, isFalse);
+      expect(edge.hovered, isFalse);
+    });
+
+    testWidgets('点击连线选中，点击空白取消选中', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'source'),
+            ),
+          ],
+        ),
+      );
+      final ScriptEdgeModel edge = controller.project.edges.single;
+
+      await tester.tapAt(const Offset(324, 120));
+      await tester.pump();
+
+      expect(controller.selectedEdge, same(edge));
+      expect(_edgePainter(tester).edges.single.selected, isTrue);
+
+      await tester.tapAt(const Offset(900, 700));
+      await tester.pump();
+
+      expect(controller.selectedEdge, isNull);
+      expect(_edgePainter(tester).edges.single.selected, isFalse);
+    });
+
+    testWidgets('悬停连线高亮并切换光标', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'source'),
+            ),
+          ],
+        ),
+      );
+
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      await mouse.moveTo(const Offset(324, 120));
+      await tester.pump();
+      expect(_edgePainter(tester).edges.single.hovered, isTrue);
+      expect(_sceneRegion(tester).cursor, SystemMouseCursors.click);
+
+      await mouse.moveTo(const Offset(900, 700));
+      await tester.pump();
+      expect(_edgePainter(tester).edges.single.hovered, isFalse);
+      expect(_sceneRegion(tester).cursor, SystemMouseCursors.basic);
+    });
+
+    test('连线几何与样式常量符合 §5.4', () {
+      expect(edgeControlOffset(const Offset(0, 0), const Offset(100, 0)), 74);
+      expect(edgeControlOffset(const Offset(0, 0), const Offset(10, 0)), 48);
+      expect(edgeControlOffset(const Offset(0, 0), const Offset(600, 0)), 160);
+      expect(
+        edgePointAt(const Offset(0, 0), const Offset(100, 0), 0.5),
+        const Offset(50, 0),
+      );
+      expect(edgeHitTolerance(1), 8);
+      expect(edgeHitTolerance(0.5), 16);
+      expect(edgeHitTolerance(2), 4);
+      expect(EdgePainter.execWidth, 2.5);
+      expect(EdgePainter.dataWidth, 2.0);
+      expect(EdgePainter.selectedWidth, 3.0);
+      expect(EdgePainter.endpointDotRadius, 4.0);
+      expect(EdgePainter.normalExecAlpha, 0.70);
+      expect(EdgePainter.normalDataAlpha, 0.95);
+      expect(EdgePainter.previewAlpha, 0.85);
+    });
+  });
+
+  group('引脚拖拽建连', () {
+    testWidgets('拖到兼容输入引脚建立连接并即时重算诊断', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+        ),
+      );
+      expect(find.byKey(const Key('pinRing_n2_source')), findsOneWidget);
+
+      await _dragPinToPin(tester, 'n1', 'result', 'n2', 'source');
+
+      final ScriptEdgeModel edge = controller.project.edges.single;
+      expect(edge.from.node, 'n1');
+      expect(edge.from.pin, 'result');
+      expect(edge.to.node, 'n2');
+      expect(edge.to.pin, 'source');
+      expect(find.byKey(const Key('floatingToast')), findsNothing);
+      expect(find.byKey(const Key('pinRing_n2_source')), findsNothing);
+    });
+
+    testWidgets('拖到输出引脚拒绝：提示 + 红环红闪 + 图不变', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+        ),
+      );
+
+      await _dragPinToPin(tester, 'n1', 'result', 'n2', 'out');
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('无法连接：请从输出引脚拖向输入引脚'), findsOneWidget);
+      expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+      expect(find.byKey(const Key('pinRing_n2_out')), findsOneWidget);
+      expect(controller.project.edges, isEmpty);
+
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(find.byKey(const Key('pinRing_n2_out')), findsNothing);
+    });
+
+    testWidgets('拖到 kind 不符引脚拒绝：提示原因且图不变', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n0', 'flow.entry', x: 40, y: 60),
+            _node('n1', 'value.text', x: 400, y: 60),
+            _node('n2', 'file.copy', x: 760, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n0', pin: 'out'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'exec'),
+            ),
+          ],
+        ),
+      );
+      expect(find.byKey(const Key('pinRing_n2_exec')), findsNothing);
+
+      await _dragPinToPin(tester, 'n1', 'result', 'n2', 'exec');
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('无法连接：目标引脚需要 执行'), findsOneWidget);
+      expect(find.byKey(const Key('pinRing_n2_exec')), findsOneWidget);
+      expect(controller.project.edges, hasLength(1));
+      expect(controller.project.edges.single.from.node, 'n0');
+    });
+
+    testWidgets('拖到占用输入引脚替换旧连接（静默）', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n0', 'flow.entry', x: 40, y: 60),
+            _node('n1', 'value.text', x: 400, y: 60),
+            _node('n2', 'file.copy', x: 760, y: 60),
+            _node('n3', 'value.text', x: 40, y: 300),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n0', pin: 'out'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'exec'),
+            ),
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'source'),
+            ),
+          ],
+        ),
+      );
+      expect(controller.project.edges, hasLength(2));
+
+      await _dragPinToPin(tester, 'n3', 'result', 'n2', 'source');
+      await tester.pump();
+
+      expect(controller.project.edges, hasLength(2));
+      expect(
+        controller.project.edges.any(
+          (ScriptEdgeModel edge) =>
+              edge.from.node == 'n3' && edge.to.pin == 'source',
+        ),
+        isTrue,
+      );
+      expect(
+        controller.project.edges.any(
+          (ScriptEdgeModel edge) => edge.from.node == 'n1',
+        ),
+        isFalse,
+      );
+      expect(find.byKey(const Key('floatingToast')), findsNothing);
+    });
+
+    testWidgets('拖拽预览线状态随悬停目标切换并随取消消失', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+        ),
+      );
+
+      final TestGesture gesture = await _startPinDrag(tester, 'n1', 'result');
+      EdgePainter painter = _edgePainter(tester);
+      expect(painter.preview, isNotNull);
+      expect(painter.preview!.state, EdgePreviewState.normal);
+      expect(painter.preview!.color, UCColors.flavor.blue);
+      expect(painter.preview!.from, const Offset(248, 109));
+      expect(painter.preview!.to, const Offset(272, 109));
+
+      await gesture.moveTo(
+        tester.getCenter(find.byKey(const Key('pin_n2_source'))),
+      );
+      await tester.pump();
+      painter = _edgePainter(tester);
+      expect(painter.preview!.state, EdgePreviewState.compatible);
+
+      await gesture.moveTo(
+        tester.getCenter(find.byKey(const Key('pin_n2_exec'))),
+      );
+      await tester.pump();
+      painter = _edgePainter(tester);
+      expect(painter.preview!.state, EdgePreviewState.incompatible);
+
+      await gesture.moveTo(const Offset(900, 700));
+      await tester.pump();
+      painter = _edgePainter(tester);
+      expect(painter.preview!.state, EdgePreviewState.normal);
+
+      await gesture.up();
+      await tester.pump();
+      expect(_edgePainter(tester).preview, isNull);
+    });
+
+    testWidgets('拖拽期间兼容引脚显示候选环、不可达引脚弱化', (WidgetTester tester) async {
+      await _pumpCanvas(tester, _connectedProject());
+
+      final TestGesture gesture = await _startPinDrag(tester, 'n3', 'result');
+
+      expect(find.byKey(const Key('pinRing_n4_source')), findsOneWidget);
+      expect(find.byKey(const Key('pinRing_n4_destination')), findsOneWidget);
+      expect(find.byKey(const Key('pinRing_n4_exec')), findsNothing);
+      final BoxDecoration candidateRing = _ringDecoration(
+        tester,
+        'n4',
+        'source',
+      );
+      expect(
+        candidateRing.border!.top.color,
+        UCColors.flavor.blue.withValues(alpha: 0.75),
+      );
+      expect(candidateRing.border!.top.width, 2);
+      expect(_pinOpacity(tester, 'n4', 'source'), 1.0);
+      expect(_pinOpacity(tester, 'n4', 'exec'), 0.35);
+
+      await gesture.up();
+      await tester.pump();
+
+      expect(find.byKey(const Key('pinRing_n4_source')), findsNothing);
+      expect(find.byKey(const Key('pinRing_n4_destination')), findsNothing);
+      expect(_pinOpacity(tester, 'n4', 'exec'), 1.0);
+    });
+  });
+
+  group('诊断错误引脚红标', () {
+    testWidgets('必填未连接的输入引脚显示 2px 红环', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(nodes: <ScriptNodeModel>[_node('n1', 'file.copy')]),
+      );
+
+      final BoxDecoration ring = _ringDecoration(tester, 'n1', 'source');
+      expect(ring.border!.top.color, UCColors.flavor.red);
+      expect(ring.border!.top.width, 2);
+      expect(find.byKey(const Key('pinRing_n1_exec')), findsOneWidget);
+      expect(find.byKey(const Key('pinRing_n1_destination')), findsOneWidget);
+    });
+
+    test('errorPinsByNode 按诊断消息定位引脚', () {
+      final List<ScriptNodeModel> nodes = <ScriptNodeModel>[
+        _node('n1', 'file.copy'),
+        _node('n2', 'value.text'),
+      ];
+      final Map<String, Set<String>> result = errorPinsByNode(
+        nodes,
+        <ScriptDiagnostic>[
+          const ScriptDiagnostic(
+            message: '节点「n1」的必填输入「源路径」未连接',
+            nodeId: 'n1',
+            isError: true,
+          ),
+          const ScriptDiagnostic(
+            message: '引脚种类不匹配：「n2.result」为数据引脚，「n1.exec」为执行引脚',
+            nodeId: 'n1',
+            isError: true,
+          ),
+          const ScriptDiagnostic(
+            message: '节点「n1」不存在引脚「destination」',
+            nodeId: 'n1',
+            isError: true,
+          ),
+          const ScriptDiagnostic(
+            message: '数据节点「n2」（文本）未被使用，不参与脚本生成',
+            nodeId: 'n2',
+            isError: false,
+          ),
+        ],
+      );
+
+      expect(result['n1'], <String>{'source', 'exec', 'destination'});
+      expect(result['n2'], isNull);
+    });
+  });
 }
 
 ScriptNodeModel _node(String id, String type, {double x = 0, double y = 0}) {
@@ -577,4 +978,103 @@ BoxDecoration _pinDecoration(WidgetTester tester, String nodeId, String pinId) {
     find.byKey(Key('pin_${nodeId}_$pinId')),
   );
   return container.decoration! as BoxDecoration;
+}
+
+EdgePainter _edgePainter(WidgetTester tester) {
+  final CustomPaint paint = tester.widget<CustomPaint>(
+    find.byKey(const Key('editorEdges')),
+  );
+  return paint.painter! as EdgePainter;
+}
+
+MouseRegion _sceneRegion(WidgetTester tester) {
+  return tester.widget<MouseRegion>(
+    find
+        .ancestor(
+          of: find.byKey(const Key('editorScene')),
+          matching: find.byType(MouseRegion),
+        )
+        .first,
+  );
+}
+
+BoxDecoration _ringDecoration(
+  WidgetTester tester,
+  String nodeId,
+  String pinId,
+) {
+  final Container container = tester.widget<Container>(
+    find.byKey(Key('pinRing_${nodeId}_$pinId')),
+  );
+  return container.decoration! as BoxDecoration;
+}
+
+double _pinOpacity(WidgetTester tester, String nodeId, String pinId) {
+  final Opacity opacity = tester.widget<Opacity>(
+    find
+        .ancestor(
+          of: find.byKey(Key('pin_${nodeId}_$pinId')),
+          matching: find.byType(Opacity),
+        )
+        .first,
+  );
+  return opacity.opacity;
+}
+
+Future<TestGesture> _startPinDrag(
+  WidgetTester tester,
+  String nodeId,
+  String pinId,
+) async {
+  final TestGesture gesture = await tester.startGesture(
+    tester.getCenter(find.byKey(Key('pin_${nodeId}_$pinId'))),
+    kind: PointerDeviceKind.mouse,
+  );
+  await gesture.moveBy(const Offset(24, 0));
+  await tester.pump();
+  return gesture;
+}
+
+Future<void> _dragPinToPin(
+  WidgetTester tester,
+  String fromNode,
+  String fromPin,
+  String toNode,
+  String toPin,
+) async {
+  final TestGesture gesture = await _startPinDrag(tester, fromNode, fromPin);
+  await gesture.moveTo(
+    tester.getCenter(find.byKey(Key('pin_${toNode}_$toPin'))),
+  );
+  await tester.pump();
+  await gesture.up();
+  await tester.pump();
+}
+
+/// 全部必填输入已连接的五节点图（无错误诊断）：
+/// n0 入口 → n4.exec，n1/n2 文本 → n4.source/destination，n3 为拖拽源。
+ScriptProjectModel _connectedProject() {
+  return _project(
+    nodes: <ScriptNodeModel>[
+      _node('n0', 'flow.entry', x: 40, y: 60),
+      _node('n1', 'value.text', x: 400, y: 100),
+      _node('n2', 'value.text', x: 400, y: 220),
+      _node('n3', 'value.text', x: 400, y: 340),
+      _node('n4', 'file.copy', x: 760, y: 60),
+    ],
+    edges: <ScriptEdgeModel>[
+      ScriptEdgeModel(
+        from: ScriptEdgeEndpoint(node: 'n0', pin: 'out'),
+        to: ScriptEdgeEndpoint(node: 'n4', pin: 'exec'),
+      ),
+      ScriptEdgeModel(
+        from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+        to: ScriptEdgeEndpoint(node: 'n4', pin: 'source'),
+      ),
+      ScriptEdgeModel(
+        from: ScriptEdgeEndpoint(node: 'n2', pin: 'result'),
+        to: ScriptEdgeEndpoint(node: 'n4', pin: 'destination'),
+      ),
+    ],
+  );
 }

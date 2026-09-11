@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:cpp_nuget_pack/controls/script_editor/edge_painter.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -108,8 +109,9 @@ bool _primaryButtonOnly(int buttons) => buttons == kPrimaryButton;
 
 /// 节点卡：头部（分类色 + 图标 + 标题）与引脚行列静态形态（视觉规范 §5.2/§5.3）。
 ///
-/// 拖动/单击回调由画布注入（拖动坐标换算属画布职责）；引脚交互与错误标记
-/// 接线留待 T6，[errorPins]/[hasError] 已是最终渲染接口。
+/// 拖动/单击回调由画布注入（拖动坐标换算属画布职责）；输出引脚的拖拽建连
+/// 经 [onPinDragStart] 等回调上报画布，引脚视觉状态集（[errorPins] /
+/// [candidatePins] / [rejectedPins] / [dimmedPins]）由画布按诊断与拖拽状态计算。
 class NodeCard extends StatefulWidget {
   const NodeCard({
     super.key,
@@ -121,12 +123,19 @@ class NodeCard extends StatefulWidget {
     required this.hasError,
     required this.connectedPins,
     this.errorPins = const <String>{},
+    this.candidatePins = const <String>{},
+    this.rejectedPins = const <String>{},
+    this.dimmedPins = const <String>{},
     this.showPinLabels = true,
     this.onTap,
     this.onDragStart,
     this.onDragUpdate,
     this.onDragEnd,
     this.onDragCancel,
+    this.onPinDragStart,
+    this.onPinDragUpdate,
+    this.onPinDragEnd,
+    this.onPinDragCancel,
   });
 
   final String nodeId;
@@ -139,6 +148,15 @@ class NodeCard extends StatefulWidget {
   final bool hasError;
   final Set<String> connectedPins;
   final Set<String> errorPins;
+
+  /// 拖拽建连时兼容目标引脚的候选环（2px 类型色 α0.75）。
+  final Set<String> candidatePins;
+
+  /// 拖拽悬停不兼容或非法落点红闪的引脚（2px `flavor.red` 外环）。
+  final Set<String> rejectedPins;
+
+  /// 拖拽建连期间不可达引脚（整体 α0.35）。
+  final Set<String> dimmedPins;
   final bool showPinLabels;
 
   final VoidCallback? onTap;
@@ -146,6 +164,10 @@ class NodeCard extends StatefulWidget {
   final void Function(DragUpdateDetails details)? onDragUpdate;
   final void Function(DragEndDetails details)? onDragEnd;
   final VoidCallback? onDragCancel;
+  final void Function(String pinId, DragStartDetails details)? onPinDragStart;
+  final void Function(String pinId, DragUpdateDetails details)? onPinDragUpdate;
+  final void Function(String pinId, DragEndDetails details)? onPinDragEnd;
+  final void Function(String pinId)? onPinDragCancel;
 
   @override
   State<NodeCard> createState() => _NodeCardState();
@@ -383,11 +405,20 @@ class _NodeCardState extends State<NodeCard> {
         ? nodeCardOverflow.toDouble()
         : nodeCardOverflow + nodeCardWidth;
     final double anchorY = nodeCardOverflow + nodePinRowCenterY(rowIndex);
-    final Color color = _pinColor(pin);
+    final Color color = pinStrokeColor(pin.kind, pin.dataType);
     final bool connected = widget.connectedPins.contains(pin.id);
+    final bool error = widget.errorPins.contains(pin.id);
+    final bool rejected = !error && widget.rejectedPins.contains(pin.id);
+    final bool candidate =
+        !error && !rejected && widget.candidatePins.contains(pin.id);
+    final bool dimmed =
+        !error && !rejected && widget.dimmedPins.contains(pin.id);
 
     final List<Widget> widgets = <Widget>[];
-    if (widget.errorPins.contains(pin.id)) {
+    if (error || rejected || candidate) {
+      final Color ringColor = error || rejected
+          ? UCColors.flavor.red
+          : color.withValues(alpha: 0.75);
       final double ringWidth = exec ? _execPinWidth + 6 : _dataPinDiameter + 6;
       final double ringHeight = exec
           ? _execPinHeight + 6
@@ -404,47 +435,88 @@ class _NodeCardState extends State<NodeCard> {
               decoration: BoxDecoration(
                 shape: exec ? BoxShape.rectangle : BoxShape.circle,
                 borderRadius: exec ? BorderRadius.circular(7) : null,
-                border: Border.all(color: UCColors.flavor.red, width: 2),
+                border: Border.all(color: ringColor, width: 2),
               ),
             ),
           ),
         ),
       );
     }
+
+    Widget pinBody = MouseRegion(
+      cursor: SystemMouseCursors.precise,
+      child: Opacity(
+        opacity: dimmed ? 0.35 : 1.0,
+        child: Container(
+          key: Key('pin_${widget.nodeId}_${pin.id}'),
+          width: pinWidth,
+          height: pinHeight,
+          decoration: BoxDecoration(
+            color: connected
+                ? color
+                : color.withValues(alpha: exec ? 0.30 : 0.35),
+            border: Border.all(color: color, width: _pinStrokeWidth),
+            shape: exec ? BoxShape.rectangle : BoxShape.circle,
+            borderRadius: exec ? BorderRadius.circular(4) : null,
+          ),
+        ),
+      ),
+    );
+    if (!isInput && _pinDragEnabled) {
+      pinBody = RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: _pinGestures(pin.id),
+        child: pinBody,
+      );
+    }
+
+    // 命中区 = 引脚视觉外扩 6（与候选/错误环同占位，§5.3）。
+    final double hitWidth = pinWidth + 6;
+    final double hitHeight = pinHeight + 6;
     widgets.add(
       Positioned(
-        left: anchorX - pinWidth / 2,
-        top: anchorY - pinHeight / 2,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.precise,
-          child: Container(
-            key: Key('pin_${widget.nodeId}_${pin.id}'),
-            width: pinWidth,
-            height: pinHeight,
-            decoration: BoxDecoration(
-              color: connected
-                  ? color
-                  : color.withValues(alpha: exec ? 0.30 : 0.35),
-              border: Border.all(color: color, width: _pinStrokeWidth),
-              shape: exec ? BoxShape.rectangle : BoxShape.circle,
-              borderRadius: exec ? BorderRadius.circular(4) : null,
-            ),
-          ),
+        left: anchorX - hitWidth / 2,
+        top: anchorY - hitHeight / 2,
+        child: SizedBox(
+          width: hitWidth,
+          height: hitHeight,
+          child: Center(child: pinBody),
         ),
       ),
     );
     return widgets;
   }
 
-  Color _pinColor(ScriptPinDescriptor pin) {
-    if (pin.kind == ScriptPinKind.exec) {
-      return UCColors.flavor.text;
-    }
-    return switch (pin.dataType) {
-      ScriptDataType.string => UCColors.flavor.blue,
-      ScriptDataType.boolean => UCColors.flavor.peach,
-      ScriptDataType.listString => UCColors.flavor.mauve,
-      null => UCColors.flavor.overlay1,
+  bool get _pinDragEnabled {
+    return widget.onPinDragStart != null ||
+        widget.onPinDragUpdate != null ||
+        widget.onPinDragEnd != null ||
+        widget.onPinDragCancel != null;
+  }
+
+  Map<Type, GestureRecognizerFactory> _pinGestures(String pinId) {
+    return <Type, GestureRecognizerFactory>{
+      PanGestureRecognizer:
+          GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+            () =>
+                PanGestureRecognizer(allowedButtonsFilter: _primaryButtonOnly),
+            (PanGestureRecognizer instance) {
+              instance
+                ..dragStartBehavior = DragStartBehavior.down
+                ..onStart = (DragStartDetails details) {
+                  widget.onPinDragStart?.call(pinId, details);
+                }
+                ..onUpdate = (DragUpdateDetails details) {
+                  widget.onPinDragUpdate?.call(pinId, details);
+                }
+                ..onEnd = (DragEndDetails details) {
+                  widget.onPinDragEnd?.call(pinId, details);
+                }
+                ..onCancel = () {
+                  widget.onPinDragCancel?.call(pinId);
+                };
+            },
+          ),
     };
   }
 
