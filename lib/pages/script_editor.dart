@@ -419,6 +419,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
           key: const Key('editorCanvas'),
           controller: controller,
           transformationController: _transformation,
+          onFlush: _flushPendingSave,
         );
       },
     );
@@ -873,6 +874,11 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   }
 
   void _retrySave() {
+    _saveQueue.flush();
+  }
+
+  /// 画布 `Ctrl+S` 快捷键（§10.3）：跳过防抖立即 flush 保存队列。
+  void _flushPendingSave() {
     _saveQueue.flush();
   }
 

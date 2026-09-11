@@ -13,6 +13,7 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart' show PointerExitEvent, PointerHoverEvent;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
 const double _minSceneWidth = 1600;
 const double _minSceneHeight = 1200;
@@ -27,7 +28,7 @@ const double _pinHitRadiusMin = 8;
 const double _pinHitRadiusMax = 22;
 
 /// 编辑器画布：网格背景、节点卡渲染与平移/缩放/拖动视口
-/// （视觉规范 §5.1/§5.2/§5.7/§10.1/§10.2）。
+/// （视觉规范 §5.1/§5.2/§5.7/§10.1/§10.2）、右键菜单与画布快捷键（§5.6/§10.3）。
 ///
 /// [controller] 是图状态的唯一来源；[transformationController] 与 [focusNode]
 /// 可注入（T9 视口定位 / T12 键盘复用），为 null 时由本组件创建并负责释放。
@@ -38,11 +39,15 @@ class EditorCanvas extends StatefulWidget {
     required this.controller,
     this.transformationController,
     this.focusNode,
+    this.onFlush,
   });
 
   final GraphEditorController controller;
   final TransformationController? transformationController;
   final FocusNode? focusNode;
+
+  /// `Ctrl+S` 快捷键回调（视觉规范 §10.3）：跳过防抖立即 flush 保存队列。
+  final VoidCallback? onFlush;
 
   @override
   State<EditorCanvas> createState() => _EditorCanvasState();
@@ -53,6 +58,8 @@ class _EditorCanvasState extends State<EditorCanvas> {
       widget.transformationController ?? TransformationController();
   late final FocusNode _focusNode = widget.focusNode ?? FocusNode();
   final GlobalKey _viewerKey = GlobalKey();
+  final GlobalKey _sceneKey = GlobalKey();
+  final FlyoutController _flyoutController = FlyoutController();
 
   ScriptProjectModel? _projectRef;
   bool _showPinLabels = true;
@@ -109,6 +116,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
   @override
   void dispose() {
     _rejectFlashTimer?.cancel();
+    _flyoutController.dispose();
     widget.controller.removeListener(_onControllerChanged);
     _transformation.removeListener(_onTransformChanged);
     if (widget.transformationController == null) {
@@ -143,7 +151,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
     return DragTarget<ScriptNodeTypeDescriptor>(
       onAcceptWithDetails: _handleLibraryDrop,
       builder: (BuildContext context, _, _) {
-        return Container(
+        final Widget canvas = Container(
           color: UCColors.flavor.mantle,
           child: Focus(
             focusNode: _focusNode,
@@ -160,8 +168,10 @@ class _EditorCanvasState extends State<EditorCanvas> {
                 onInteractionEnd: (ScaleEndDetails details) =>
                     _persistViewport(),
                 child: GestureDetector(
+                  key: _sceneKey,
                   behavior: HitTestBehavior.opaque,
                   onTapUp: _handleSceneTap,
+                  onSecondaryTapUp: _handleSceneSecondaryTap,
                   child: MouseRegion(
                     opaque: true,
                     cursor: hoveredEdge == null
@@ -250,6 +260,20 @@ class _EditorCanvasState extends State<EditorCanvas> {
                 ),
               ),
             ),
+          ),
+        );
+        return FlyoutTarget(
+          controller: _flyoutController,
+          child: CallbackShortcuts(
+            bindings: <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.delete):
+                  _handleDeleteShortcut,
+              const SingleActivator(LogicalKeyboardKey.escape):
+                  _handleEscapeShortcut,
+              const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+                  _handleFlushShortcut,
+            },
+            child: canvas,
           ),
         );
       },
@@ -491,6 +515,138 @@ class _EditorCanvasState extends State<EditorCanvas> {
       return;
     }
     widget.controller.clearSelection();
+  }
+
+  /// 画布快捷键（§10.3）：`Del` 删除选中节点（连带全部相邻边）或选中连线。
+  void _handleDeleteShortcut() {
+    final String? nodeId = widget.controller.selectedNodeId;
+    if (nodeId != null) {
+      widget.controller.removeNode(nodeId);
+      return;
+    }
+    widget.controller.removeSelectedEdge();
+  }
+
+  /// 画布快捷键（§10.3）：`Esc` 优先取消进行中的连线拖拽，否则取消选中；
+  /// 菜单打开时由菜单消费（Flyout 路由持焦，画布收不到键事件）。
+  void _handleEscapeShortcut() {
+    if (_connectSource != null) {
+      setState(_resetConnectState);
+      return;
+    }
+    widget.controller.clearSelection();
+  }
+
+  /// 画布快捷键（§10.3）：`Ctrl+S` 立即 flush 防抖中的保存（经页面注入）。
+  void _handleFlushShortcut() {
+    widget.onFlush?.call();
+  }
+
+  /// 右键菜单（§5.6）：空白或节点上均可弹出；节点上先选中该节点。
+  ///
+  /// 菜单弹出点为指针全局坐标；菜单内添加节点的落点 = 指针场景坐标
+  /// （[TapUpDetails.localPosition] 即场景坐标，命中盒位于场景树内）。
+  void _handleSceneSecondaryTap(TapUpDetails details) {
+    final Offset scenePoint = details.localPosition;
+    final ScriptNodeModel? node = _nodeAt(scenePoint);
+    if (node != null) {
+      widget.controller.selectNode(node.id);
+    }
+    _flyoutController.showFlyout(
+      position: _flyoutGlobalPosition(details),
+      builder: (BuildContext context) => _buildCanvasMenu(scenePoint),
+    );
+  }
+
+  /// 菜单弹出位置：场景局部坐标 → Navigator 坐标空间（§5.6）。
+  ///
+  /// 场景位于 `InteractiveViewer` 变换内，画布根盒坐标系与其不一致；
+  /// 以场景命中盒（[_sceneKey]）换算，并锚定到 Navigator 渲染盒
+  /// （fluent_ui 的 `position` 位于该坐标系）。
+  Offset _flyoutGlobalPosition(TapUpDetails details) {
+    final RenderObject? sceneBox = _sceneKey.currentContext?.findRenderObject();
+    final RenderObject? navigatorBox = Navigator.of(context).context
+        .findRenderObject();
+    if (sceneBox is RenderBox && navigatorBox is RenderBox) {
+      return sceneBox.localToGlobal(
+        details.localPosition,
+        ancestor: navigatorBox,
+      );
+    }
+    return details.globalPosition;
+  }
+
+  /// 右键菜单（§5.6）：添加节点（8 分类子菜单）、重置视图、删除所选。
+  ///
+  /// 「删除所选」无选中时禁用（`onPressed` 为 null）；分隔线仅在有选中时显示。
+  Widget _buildCanvasMenu(Offset scenePoint) {
+    final bool hasSelection =
+        widget.controller.selectedNodeId != null ||
+        widget.controller.selectedEdge != null;
+    return MenuFlyout(
+      items: <MenuFlyoutItemBase>[
+        MenuFlyoutSubItem(
+          key: const Key('canvasMenuAddNode'),
+          text: const Text('添加节点'),
+          items: _buildAddNodeItems(scenePoint),
+        ),
+        const MenuFlyoutSeparator(),
+        MenuFlyoutItem(
+          key: const Key('canvasMenuResetView'),
+          text: const Text('重置视图'),
+          leading: const Icon(FluentIcons.refresh, size: 14),
+          onPressed: _resetViewport,
+        ),
+        if (hasSelection) const MenuFlyoutSeparator(),
+        MenuFlyoutItem(
+          key: const Key('canvasMenuDeleteSelection'),
+          text: const Text('删除所选'),
+          leading: const Icon(FluentIcons.delete, size: 14),
+          onPressed: hasSelection ? _handleDeleteShortcut : null,
+        ),
+      ],
+    );
+  }
+
+  /// 添加节点子菜单（§5.6）：8 分类子菜单，项 = 该类节点，落点 = 弹出点场景坐标。
+  MenuItemsBuilder _buildAddNodeItems(Offset scenePoint) {
+    return (BuildContext context) => <MenuFlyoutItemBase>[
+      for (final ScriptNodeCategory category in ScriptNodeCategory.values)
+        MenuFlyoutSubItem(
+          key: Key('canvasMenuCategory_${category.name}'),
+          text: Text(category.label),
+          leading: Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: nodeCategoryColor(category),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          items: (BuildContext context) => <MenuFlyoutItemBase>[
+            for (final ScriptNodeTypeDescriptor descriptor
+                in NodeRegistry.byCategory(category))
+              MenuFlyoutItem(
+                key: Key('canvasMenuNode_${descriptor.typeKey}'),
+                text: Text(descriptor.displayName),
+                leading: Icon(
+                  nodeTypeIcon(descriptor.typeKey),
+                  size: 14,
+                  color: nodeCategoryColor(descriptor.category),
+                ),
+                onPressed: () =>
+                    widget.controller.addNode(descriptor.typeKey, scenePoint),
+              ),
+          ],
+        ),
+    ];
+  }
+
+  /// 重置视图（§5.6）：立即 scale=1.0、视口 (0, 0)，无动画。
+  void _resetViewport() {
+    _lastSyncedViewport = (x: 0, y: 0, scale: 1);
+    _transformation.value = Matrix4.identity();
+    widget.controller.setViewport(x: 0, y: 0, scale: 1);
   }
 
   /// 节点库拖拽释放（§4.2）：释放指针场景坐标 − (24, 16) 作为卡片左上角。

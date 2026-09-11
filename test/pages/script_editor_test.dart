@@ -11,6 +11,7 @@ import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/pages/script_editor.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/powershell5_generator.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -377,6 +378,67 @@ void main() {
     expect(persisted.viewX, closeTo(centeredX, 1e-9));
     expect(persisted.viewY, closeTo(transformation.value.storage[13], 1e-9));
     expect(persisted.viewScale, closeTo(1.0, 1e-9));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('画布 Ctrl+S 立即 flush 防抖中的保存', (WidgetTester tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _fullPackWithTextNode(),
+      debounce: const Duration(seconds: 5),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await _editTextNode(tester, 'hello');
+    expect(find.text('未保存'), findsOneWidget);
+
+    // 点击画布空白处让画布持焦，再按 Ctrl+S。
+    await tester.tapAt(const Offset(700, 500));
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(saved, hasLength(1));
+    expect(saved.single.scripts.single.nodes.single.params['value'], 'hello');
+    expect(find.text('已保存'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('检查器文本框聚焦时 Del 不删除画布选中节点', (WidgetTester tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _fullPackWithTextNode(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('nodeCard_n1')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const Key('inspectorField_value')),
+      'abc',
+    );
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await tester.pump();
+
+    expect(find.byKey(const Key('nodeCard_n1')), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 25));
+    expect(saved, isNotEmpty);
+    expect(saved.last.scripts.single.nodes, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 

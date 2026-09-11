@@ -9,6 +9,7 @@ import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -991,6 +992,314 @@ void main() {
       expect(result['n2'], isNull);
     });
   });
+
+  group('画布键盘（§10.3）', () {
+    testWidgets('Del 删除选中节点并连带删除其全部连线', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n0', 'flow.entry', x: 40, y: 60),
+            _node('n1', 'file.copy', x: 400, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n0', pin: 'out'),
+              to: ScriptEdgeEndpoint(node: 'n1', pin: 'exec'),
+            ),
+          ],
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('nodeCard_n1')));
+      await tester.pump();
+      expect(controller.selectedNodeId, 'n1');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+
+      expect(
+        controller.project.nodes
+            .map((ScriptNodeModel node) => node.id)
+            .toList(),
+        <String>['n0'],
+      );
+      expect(controller.project.edges, isEmpty);
+      expect(controller.selectedNodeId, isNull);
+      expect(find.byKey(const Key('nodeCard_n1')), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Del 删除选中连线且保留节点', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n1', pin: 'result'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'source'),
+            ),
+          ],
+        ),
+      );
+
+      await tester.tapAt(const Offset(324, 120));
+      await tester.pump();
+      expect(controller.selectedEdge, isNotNull);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+
+      expect(controller.project.edges, isEmpty);
+      expect(controller.project.nodes, hasLength(2));
+      expect(controller.selectedEdge, isNull);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Esc 优先取消进行中的连线拖拽且不清除选中', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'file.copy', x: 400, y: 60),
+          ],
+        ),
+      );
+
+      controller.selectNode('n1');
+      await tester.pump();
+
+      final TestGesture gesture = await _startPinDrag(tester, 'n1', 'result');
+      expect(_edgePainter(tester).preview, isNotNull);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+
+      expect(_edgePainter(tester).preview, isNull);
+      expect(controller.selectedNodeId, 'n1');
+
+      await gesture.up();
+      await tester.pump();
+      expect(controller.project.edges, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Esc 无拖拽时取消选中', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+
+      await tester.tap(find.byKey(const Key('nodeCard_n1')));
+      await tester.pump();
+      expect(controller.selectedNodeId, 'n1');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+
+      expect(controller.selectedNodeId, isNull);
+      expect(find.byKey(const Key('nodeCard_n1')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Ctrl+S 触发注入的 onFlush', (WidgetTester tester) async {
+      int flushCount = 0;
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+        onFlush: () => flushCount++,
+      );
+
+      await tester.tap(find.byKey(const Key('nodeCard_n1')));
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+
+      expect(flushCount, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('文本框聚焦时 Del 不冒泡到画布', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvasWithField(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+
+      await tester.showKeyboard(
+        find.descendant(
+          of: find.byKey(const Key('probeField')),
+          matching: find.byType(EditableText),
+        ),
+      );
+      await tester.pump();
+      expect(_canvasFocusNode(tester).hasFocus, isFalse);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+      expect(controller.project.nodes, hasLength(1));
+
+      // 画布重新聚焦后 Del 恢复生效，证明快捷键路径本身可用。
+      await tester.tap(find.byKey(const Key('nodeCard_n1')));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+      expect(controller.project.nodes, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('画布右键菜单（§5.6）', () {
+    testWidgets('空白右键弹出菜单，无选中时删除所选禁用', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+
+      await _rightClickAt(tester, const Offset(500, 300));
+
+      expect(find.text('添加节点'), findsOneWidget);
+      expect(find.text('重置视图'), findsOneWidget);
+      expect(find.text('删除所选'), findsOneWidget);
+      expect(controller.selectedNodeId, isNull);
+
+      await tester.tap(find.byKey(const Key('canvasMenuDeleteSelection')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(controller.project.nodes, hasLength(1));
+      expect(find.text('重置视图'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('节点上右键先选中该节点，删除所选等同 Del', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n0', 'flow.entry', x: 40, y: 60),
+            _node('n1', 'file.copy', x: 400, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n0', pin: 'out'),
+              to: ScriptEdgeEndpoint(node: 'n1', pin: 'exec'),
+            ),
+          ],
+        ),
+      );
+
+      await _rightClickAt(
+        tester,
+        tester.getCenter(find.byKey(const Key('nodeCard_n1'))),
+      );
+      expect(controller.selectedNodeId, 'n1');
+
+      await tester.tap(find.byKey(const Key('canvasMenuDeleteSelection')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(
+        controller.project.nodes
+            .map((ScriptNodeModel node) => node.id)
+            .toList(),
+        <String>['n0'],
+      );
+      expect(controller.project.edges, isEmpty);
+      expect(find.text('重置视图'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('添加节点子菜单含 8 分类，节点项在弹出点场景坐标添加', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(),
+      );
+
+      await _rightClickAt(tester, const Offset(500, 300));
+      await tester.tap(find.byKey(const Key('canvasMenuAddNode')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      for (final ScriptNodeCategory category in ScriptNodeCategory.values) {
+        expect(
+          find.byKey(Key('canvasMenuCategory_${category.name}')),
+          findsOneWidget,
+        );
+      }
+
+      await tester.tap(find.byKey(const Key('canvasMenuCategory_log')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.byKey(const Key('canvasMenuNode_log.message')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      final ScriptNodeModel node = controller.project.nodes.single;
+      expect(node.type, 'log.message');
+      expect(node.x, 500);
+      expect(node.y, 300);
+      expect(find.byKey(Key('nodeCard_${node.id}')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('重置视图立即恢复 scale=1 与视口原点', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+      _transformation(tester).value = Matrix4.identity()
+        ..translateByDouble(200, 120, 0, 1)
+        ..scaleByDouble(1.5, 1.5, 1.5, 1);
+      controller.setViewport(x: 200, y: 120, scale: 1.5);
+      await tester.pump();
+
+      await _rightClickAt(tester, const Offset(700, 500));
+      await tester.tap(find.byKey(const Key('canvasMenuResetView')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      final Matrix4 matrix = _transformation(tester).value;
+      expect(matrix.storage[12], 0);
+      expect(matrix.storage[13], 0);
+      expect(matrix.getMaxScaleOnAxis(), 1.0);
+      expect(controller.project.viewX, 0);
+      expect(controller.project.viewY, 0);
+      expect(controller.project.viewScale, 1.0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Esc 关闭菜单', (WidgetTester tester) async {
+      await _pumpCanvas(tester, _project());
+
+      await _rightClickAt(tester, const Offset(500, 300));
+      expect(find.text('重置视图'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.text('重置视图'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
 
 ScriptNodeModel _node(String id, String type, {double x = 0, double y = 0}) {
@@ -1019,6 +1328,27 @@ ScriptProjectModel _project({
 
 Future<GraphEditorController> _pumpCanvas(
   WidgetTester tester,
+  ScriptProjectModel project, {
+  VoidCallback? onFlush,
+}) async {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final GraphEditorController controller = GraphEditorController(project);
+  addTearDown(controller.dispose);
+  await tester.pumpWidget(
+    FluentApp(
+      home: EditorCanvas(controller: controller, onFlush: onFlush),
+    ),
+  );
+  await tester.pump();
+  return controller;
+}
+
+/// 顶部文本框 + 画布的键盘隔离测试台（文本框聚焦时键事件不进入画布）。
+Future<GraphEditorController> _pumpCanvasWithField(
+  WidgetTester tester,
   ScriptProjectModel project,
 ) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -1028,10 +1358,45 @@ Future<GraphEditorController> _pumpCanvas(
   final GraphEditorController controller = GraphEditorController(project);
   addTearDown(controller.dispose);
   await tester.pumpWidget(
-    FluentApp(home: EditorCanvas(controller: controller)),
+    FluentApp(
+      home: Column(
+        children: <Widget>[
+          SizedBox(height: 40, child: TextBox(key: const Key('probeField'))),
+          Expanded(child: EditorCanvas(controller: controller)),
+        ],
+      ),
+    ),
   );
   await tester.pump();
   return controller;
+}
+
+/// 画布内部持有显式 [FocusNode] 的 Focus（点击画布请求焦点的那个）；
+/// `CallbackShortcuts` 的内部 Focus 无显式 focusNode，按非空过滤。
+FocusNode _canvasFocusNode(WidgetTester tester) {
+  return tester
+      .widgetList<Focus>(
+        find.descendant(
+          of: find.byType(EditorCanvas),
+          matching: find.byType(Focus),
+        ),
+      )
+      .firstWhere((Focus focus) => focus.focusNode != null)
+      .focusNode!;
+}
+
+/// 右键点击 [globalPosition]：以鼠标右键按下并抬起（打开画布右键菜单）。
+Future<void> _rightClickAt(WidgetTester tester, Offset globalPosition) async {
+  final TestGesture mouse = await tester.createGesture(
+    kind: PointerDeviceKind.mouse,
+    buttons: kSecondaryMouseButton,
+  );
+  await mouse.addPointer(location: Offset.zero);
+  addTearDown(mouse.removePointer);
+  await mouse.down(globalPosition);
+  await mouse.up();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 200));
 }
 
 /// 左侧拖拽源 + 右侧 [EditorCanvas] 的节点库拖放测试台。
