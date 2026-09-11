@@ -32,6 +32,38 @@ void main() {
     });
   });
 
+  group('formatError', () {
+    test('FormatException 返回去前缀的消息文本', () {
+      expect(
+        formatError(const FormatException('缺少 version 字段')),
+        '缺少 version 字段',
+      );
+    });
+
+    test('FormatException 带来源与偏移时仍只返回消息文本', () {
+      expect(
+        formatError(
+          const FormatException('字段 name 类型错误，应为字符串', 'packs/foo.yaml', 3),
+        ),
+        '字段 name 类型错误，应为字符串',
+      );
+    });
+
+    test('FormatException 无消息时回退为 toString', () {
+      final FormatException error = const FormatException();
+      expect(formatError(error), error.toString());
+    });
+
+    test('ArgumentError 消息非空时原样返回', () {
+      expect(formatError(ArgumentError('自定义消息')), '自定义消息');
+    });
+
+    test('未知异常回退为 toString', () {
+      final StateError error = StateError('boom');
+      expect(formatError(error), error.toString());
+    });
+  });
+
   group('formatTimestamp', () {
     test('输出 yyyy-MM-dd HH:mm:ss', () {
       expect(

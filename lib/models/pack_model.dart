@@ -6,6 +6,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 
 class PackModel {
   final String name;
@@ -188,15 +189,5 @@ String? _optionalString(Map<String, Object?> map, String key) {
 String _describeScriptError(Map<String, Object?> item, Object error) {
   final Object? id = item['id'];
   final String label = id is String && id.isNotEmpty ? id : '未知 id';
-  return '脚本「$label」解析失败，已丢弃：${_describeError(error)}';
-}
-
-String _describeError(Object error) {
-  if (error is FormatException) {
-    final Object message = error.message;
-    if (message is String && message.isNotEmpty) {
-      return message;
-    }
-  }
-  return error.toString();
+  return '脚本「$label」解析失败，已丢弃：${formatError(error)}';
 }

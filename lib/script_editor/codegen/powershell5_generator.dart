@@ -7,8 +7,6 @@ import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 
-const String _entryTypeKey = 'flow.entry';
-const String _defaultExecPinId = 'out';
 const String _packageRootEnvExpression = r'$env:CNP_PackageRoot';
 
 class PowerShell5Generator implements ScriptCodeGenerator {
@@ -61,11 +59,11 @@ class _PowerShellEmitter {
   int _processCounter = 0;
 
   void emitEntryChain() {
-    final ScriptNodeModel? entry = _index.firstNodeOfType(_entryTypeKey);
+    final ScriptNodeModel? entry = _index.firstNodeOfType(entryTypeKey);
     if (entry == null) {
       return; // 校验保证恰好一个入口；此处仅防御
     }
-    _emitChain(_index.execTarget(entry.id, _defaultExecPinId));
+    _emitChain(_index.execTarget(entry.id, defaultExecPinId));
   }
 
   void _emitChain(String? startNodeId) {
@@ -89,7 +87,7 @@ class _PowerShellEmitter {
       case 'flow.while':
         return _index.execTarget(node.id, 'completed');
       default:
-        return _index.execTarget(node.id, _defaultExecPinId);
+        return _index.execTarget(node.id, defaultExecPinId);
     }
   }
 
@@ -363,8 +361,6 @@ class _PowerShellEmitter {
   }
 }
 
-typedef _PinKey = ({String nodeId, String pinId});
-
 class _GraphIndex {
   _GraphIndex(ScriptProjectModel project) {
     for (final ScriptNodeModel node in project.nodes) {
@@ -382,10 +378,10 @@ class _GraphIndex {
   }
 
   final Map<String, ScriptNodeModel> nodeById = <String, ScriptNodeModel>{};
-  final Map<_PinKey, ScriptEdgeModel> incomingEdges =
-      <_PinKey, ScriptEdgeModel>{};
-  final Map<_PinKey, List<ScriptEdgeModel>> outgoingEdges =
-      <_PinKey, List<ScriptEdgeModel>>{};
+  final Map<PinKey, ScriptEdgeModel> incomingEdges =
+      <PinKey, ScriptEdgeModel>{};
+  final Map<PinKey, List<ScriptEdgeModel>> outgoingEdges =
+      <PinKey, List<ScriptEdgeModel>>{};
 
   ScriptNodeModel? firstNodeOfType(String typeKey) {
     for (final ScriptNodeModel node in nodeById.values) {

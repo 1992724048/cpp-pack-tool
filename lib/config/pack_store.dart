@@ -76,7 +76,7 @@ class PackStore {
         errors.add(
           PackLoadError(
             fileName: baseName(file.path),
-            message: _describeError(error),
+            message: formatError(error),
           ),
         );
       }
@@ -177,14 +177,4 @@ int _compareNames(String first, String second) {
     return insensitive;
   }
   return first.compareTo(second);
-}
-
-String _describeError(Object error) {
-  if (error is FormatException) {
-    final Object message = error.message;
-    if (message is String && message.isNotEmpty) {
-      return message;
-    }
-  }
-  return error.toString();
 }

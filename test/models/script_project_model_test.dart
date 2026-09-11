@@ -5,15 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('ScriptProjectModel 序列化', () {
     test('序列化往返（含参数与视口）', () {
-      final ScriptProjectModel project = ScriptProjectModel(
-        id: 'script_1',
-        name: '生成版本头',
-        trigger: ScriptTrigger.pre,
-        buildModel: BuildModel.release,
-      )
-        ..viewX = 10
-        ..viewY = -5
-        ..viewScale = 0.8;
+      final ScriptProjectModel project =
+          ScriptProjectModel(
+              id: 'script_1',
+              name: '生成版本头',
+              trigger: ScriptTrigger.pre,
+              buildModel: BuildModel.release,
+            )
+            ..viewX = 10
+            ..viewY = -5
+            ..viewScale = 0.8;
       project.nodes.add(
         ScriptNodeModel(id: 'n1', type: 'flow.entry', x: 40, y: 60),
       );
@@ -69,7 +70,10 @@ void main() {
     });
 
     test('toMap 仅写出 string/bool/List<String> 参数', () {
-      final ScriptNodeModel node = ScriptNodeModel(id: 'n1', type: 'value.text');
+      final ScriptNodeModel node = ScriptNodeModel(
+        id: 'n1',
+        type: 'value.text',
+      );
       node.params['text'] = 'hi';
       node.params['enabled'] = false;
       node.params['names'] = <String>['a'];
@@ -247,8 +251,18 @@ void main() {
           'name': 'x',
           'trigger': 'pre',
           'nodes': <Object?>[
-            <String, Object?>{'id': 'n1', 'type': 'flow.entry', 'x': 'left', 'y': null},
-            <String, Object?>{'id': 'n2', 'type': 'flow.entry', 'x': 5, 'y': 6.5},
+            <String, Object?>{
+              'id': 'n1',
+              'type': 'flow.entry',
+              'x': 'left',
+              'y': null,
+            },
+            <String, Object?>{
+              'id': 'n2',
+              'type': 'flow.entry',
+              'x': 5,
+              'y': 6.5,
+            },
           ],
         },
       );

@@ -15,6 +15,12 @@ String formatError(Object error) {
       return message;
     }
   }
+  if (error is FormatException) {
+    final Object message = error.message;
+    if (message is String && message.isNotEmpty) {
+      return message;
+    }
+  }
   return error.toString();
 }
 

@@ -4,13 +4,10 @@ import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 
-const String _entryTypeKey = 'flow.entry';
 const String _branchTypeKey = 'flow.branch';
 const Set<String> _logLevels = <String>{'info', 'warn', 'error'};
 const Set<String> _stringOperators = <String>{'eq', 'ne', 'contains'};
 final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
-
-typedef _PinKey = ({String nodeId, String pinId});
 
 class GraphValidator {
   static List<ScriptDiagnostic> validate(ScriptProjectModel project) {
@@ -62,7 +59,7 @@ class GraphValidator {
     List<ScriptDiagnostic> diagnostics,
   ) {
     final int count = nodes
-        .where((ScriptNodeModel node) => node.type == _entryTypeKey)
+        .where((ScriptNodeModel node) => node.type == entryTypeKey)
         .length;
     if (count == 1) {
       return;
@@ -226,8 +223,8 @@ class GraphValidator {
       return;
     }
 
-    final _PinKey fromKey = (nodeId: edge.from.node, pinId: edge.from.pin);
-    final _PinKey toKey = (nodeId: edge.to.node, pinId: edge.to.pin);
+    final PinKey fromKey = (nodeId: edge.from.node, pinId: edge.from.pin);
+    final PinKey toKey = (nodeId: edge.to.node, pinId: edge.to.pin);
     facts.connectedOutputs.add(fromKey);
     facts.connectedInputs.add(toKey);
     facts.connectionCounts.update(
@@ -284,7 +281,7 @@ class GraphValidator {
     _GraphFacts facts,
     List<ScriptDiagnostic> diagnostics,
   ) {
-    for (final MapEntry<_PinKey, int> entry in facts.connectionCounts.entries) {
+    for (final MapEntry<PinKey, int> entry in facts.connectionCounts.entries) {
       if (entry.value < 2) {
         continue;
       }
@@ -380,7 +377,7 @@ class GraphValidator {
           _hasConnectedOutput(descriptor, node.id, facts)) {
         continue;
       }
-      if (descriptor.typeKey == _entryTypeKey) {
+      if (descriptor.typeKey == entryTypeKey) {
         diagnostics.add(
           ScriptDiagnostic(
             message: '入口节点「${node.id}」的输出未连接',
@@ -458,7 +455,7 @@ class GraphValidator {
     final Set<String> active = <String>{};
     final List<String> queue = <String>[];
     for (final ScriptNodeModel node in nodes) {
-      if (node.type == _entryTypeKey) {
+      if (node.type == entryTypeKey) {
         active.add(node.id);
         queue.add(node.id);
       }
@@ -531,11 +528,11 @@ class GraphValidator {
 }
 
 class _GraphFacts {
-  final Set<_PinKey> connectedInputs = <_PinKey>{};
-  final Set<_PinKey> connectedOutputs = <_PinKey>{};
-  final Map<_PinKey, int> connectionCounts = <_PinKey, int>{};
-  final Map<_PinKey, ScriptPinDescriptor> pinByKey =
-      <_PinKey, ScriptPinDescriptor>{};
+  final Set<PinKey> connectedInputs = <PinKey>{};
+  final Set<PinKey> connectedOutputs = <PinKey>{};
+  final Map<PinKey, int> connectionCounts = <PinKey, int>{};
+  final Map<PinKey, ScriptPinDescriptor> pinByKey =
+      <PinKey, ScriptPinDescriptor>{};
   final Map<String, List<String>> execEdges = <String, List<String>>{};
   final Map<String, List<String>> dataEdges = <String, List<String>>{};
   final Map<String, List<String>> reverseDataEdges = <String, List<String>>{};

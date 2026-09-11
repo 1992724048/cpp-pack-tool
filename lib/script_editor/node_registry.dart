@@ -1,5 +1,14 @@
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 
+/// 入口节点类型键（校验器与生成器共享的入口约定）。
+const String entryTypeKey = 'flow.entry';
+
+/// 默认执行输出引脚 id（校验器与生成器共享的引脚约定）。
+const String defaultExecPinId = 'out';
+
+/// 引脚定位键：节点 id + 引脚 id（校验器与生成器共享）。
+typedef PinKey = ({String nodeId, String pinId});
+
 const ScriptPinDescriptor _execInput = ScriptPinDescriptor(
   id: 'exec',
   label: '执行',
@@ -9,7 +18,7 @@ const ScriptPinDescriptor _execInput = ScriptPinDescriptor(
 );
 
 const ScriptPinDescriptor _execOutput = ScriptPinDescriptor(
-  id: 'out',
+  id: defaultExecPinId,
   label: '执行',
   isInput: false,
   kind: ScriptPinKind.exec,
@@ -19,7 +28,7 @@ class NodeRegistry {
   static const List<ScriptNodeTypeDescriptor> _types =
       <ScriptNodeTypeDescriptor>[
         ScriptNodeTypeDescriptor(
-          typeKey: 'flow.entry',
+          typeKey: entryTypeKey,
           displayName: '开始',
           category: ScriptNodeCategory.flow,
           pins: <ScriptPinDescriptor>[_execOutput],
