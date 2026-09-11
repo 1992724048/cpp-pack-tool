@@ -1,6 +1,7 @@
 import 'package:cpp_nuget_pack/controls/compile_entry_dialog.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
@@ -11,6 +12,14 @@ import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+
+const Set<String> _commandScriptExtensions = <String>{
+  'bat',
+  'cmd',
+  'exe',
+  'ps1',
+  'py',
+};
 
 class PackCompileSettings extends StatefulWidget {
   const PackCompileSettings({
@@ -97,6 +106,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     final CompileEntryResult? result = await _openEntryDialog(
       title: preBuild ? '添加编译前命令' : '添加编译后命令',
       label: '命令',
+      selectableScripts: _commandScripts(),
+      showMacroHelper: true,
     );
     if (result == null || !mounted) {
       return;
@@ -125,6 +136,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       label: '命令',
       initialText: command.command,
       initialBuildModel: command.buildModel,
+      selectableScripts: _commandScripts(),
+      showMacroHelper: true,
     );
     if (result == null || !mounted) {
       return;
@@ -292,6 +305,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     bool showBrowse = false,
     String initialText = '',
     BuildModel initialBuildModel = BuildModel.all,
+    List<FileModel> selectableScripts = const <FileModel>[],
+    bool showMacroHelper = false,
   }) {
     return showDialog<CompileEntryResult>(
       context: context,
@@ -303,8 +318,18 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         pickDirectory: widget.pickDirectory,
         initialText: initialText,
         initialBuildModel: initialBuildModel,
+        selectableScripts: selectableScripts,
+        showMacroHelper: showMacroHelper,
       ),
     );
+  }
+
+  List<FileModel> _commandScripts() {
+    return <FileModel>[
+      for (final FileModel file in widget.pack.files)
+        if (_commandScriptExtensions.contains(file.extension.toLowerCase()))
+          file,
+    ];
   }
 
   Future<void> _persist(

@@ -15,6 +15,7 @@ void main() {
     expect(find.byKey(const Key('packPreviewButton')), findsOneWidget);
     expect(find.text('预览打包内容'), findsOneWidget);
     expect(find.textContaining('build/native/include/'), findsOneWidget);
+    expect(find.textContaining('build/native/files/'), findsOneWidget);
     expect(find.textContaining('预览打包内容」可查看'), findsOneWidget);
   });
 

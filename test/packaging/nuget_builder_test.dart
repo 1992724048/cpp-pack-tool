@@ -16,8 +16,8 @@ const NuGetPackageBuilder _builder = NuGetPackageBuilder();
 
 void main() {
   group('文件映射', () {
-    test('头文件与模块映射到 build/native/include 并剥离 include 前缀', () async {
-      final PackModel pack = _pack()
+    test('头文件与模块映射到含源目录命名空间的 include 并剥离 include 前缀', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
         ..files = <FileModel>[
           FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
           FileModel(name: 'bar.hpp', path: 'Include/detail/bar.hpp', size: 20),
@@ -29,17 +29,43 @@ void main() {
 
       expect(
         _packagePathOf(plan, 'include/foo.h'),
-        'build/native/include/foo.h',
+        'build/native/include/mylib/foo.h',
       );
       expect(
         _packagePathOf(plan, 'Include/detail/bar.hpp'),
-        'build/native/include/detail/bar.hpp',
+        'build/native/include/mylib/detail/bar.hpp',
       );
       expect(
         _packagePathOf(plan, 'src/mod.ixx'),
-        'build/native/include/src/mod.ixx',
+        'build/native/include/mylib/src/mod.ixx',
       );
-      expect(_packagePathOf(plan, 'plain.h'), 'build/native/include/plain.h');
+      expect(
+        _packagePathOf(plan, 'plain.h'),
+        'build/native/include/mylib/plain.h',
+      );
+    });
+
+    test('源目录缺失或 basename 为空时顶层命名空间回退为包名', () async {
+      final PackModel noSource = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ];
+      final PackModel trailingSeparator = _pack(sourcePath: r'D:\libs\demo\')
+        ..files = <FileModel>[
+          FileModel(name: 'bar.h', path: 'include/bar.h', size: 10),
+        ];
+
+      expect(
+        _packagePathOf(await _builder.buildPlan(noSource), 'include/foo.h'),
+        'build/native/include/demo/foo.h',
+      );
+      expect(
+        _packagePathOf(
+          await _builder.buildPlan(trailingSeparator),
+          'include/bar.h',
+        ),
+        'build/native/include/demo/bar.h',
+      );
     });
 
     test('库文件映射到 build/native/lib 并剥离 lib/bin 前缀保留子目录', () async {
@@ -70,20 +96,39 @@ void main() {
       expect(_packagePathOf(plan, 'plain.lib'), 'build/native/lib/plain.lib');
     });
 
-    test('源码、资源、可执行文件等其他类型不打包', () async {
+    test('源码、资源、可执行文件等其他类型映射到 files 且不剥离路径段', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 10),
           FileModel(name: 'README.md', path: 'README.md', size: 20),
           FileModel(name: 'logo.png', path: 'assets/logo.png', size: 30),
           FileModel(name: 'app.exe', path: 'bin/app.exe', size: 40),
+          FileModel(name: 'util.cpp', path: 'lib/util.cpp', size: 50),
+          FileModel(name: 'build.bat', path: 'scripts/build.bat', size: 60),
         ];
 
       final PackagePlan plan = await _builder.buildPlan(pack);
 
       expect(
-        plan.entries.map((PackageEntry entry) => entry.packagePath),
-        <String>['build/native/demo.targets', 'demo.nuspec'],
+        _packagePathOf(plan, 'src/main.cpp'),
+        'build/native/files/src/main.cpp',
+      );
+      expect(_packagePathOf(plan, 'README.md'), 'build/native/files/README.md');
+      expect(
+        _packagePathOf(plan, 'assets/logo.png'),
+        'build/native/files/assets/logo.png',
+      );
+      expect(
+        _packagePathOf(plan, 'bin/app.exe'),
+        'build/native/files/bin/app.exe',
+      );
+      expect(
+        _packagePathOf(plan, 'lib/util.cpp'),
+        'build/native/files/lib/util.cpp',
+      );
+      expect(
+        _packagePathOf(plan, 'scripts/build.bat'),
+        'build/native/files/scripts/build.bat',
       );
     });
 
@@ -97,21 +142,25 @@ void main() {
       );
     });
 
-    test('二进制标记仅用于库文件', () async {
+    test('二进制标记覆盖库文件与可执行文件', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 15),
           FileModel(name: 'foo.lib', path: 'lib/foo.lib', size: 20),
           FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 30),
           FileModel(name: 'foo.pdb', path: 'lib/foo.pdb', size: 40),
+          FileModel(name: 'app.exe', path: 'bin/app.exe', size: 50),
         ];
 
       final PackagePlan plan = await _builder.buildPlan(pack);
 
       expect(_fileSource(plan, 'include/foo.h').isBinary, isFalse);
+      expect(_fileSource(plan, 'src/main.cpp').isBinary, isFalse);
       expect(_fileSource(plan, 'lib/foo.lib').isBinary, isTrue);
       expect(_fileSource(plan, 'bin/foo.dll').isBinary, isTrue);
       expect(_fileSource(plan, 'lib/foo.pdb').isBinary, isTrue);
+      expect(_fileSource(plan, 'bin/app.exe').isBinary, isTrue);
     });
   });
 
@@ -294,6 +343,62 @@ void main() {
       expect(r"=='Release'".allMatches(targets).length, 1);
     });
 
+    test('库文件自动按构建配置加入库目录与附加库并去重', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
+          FileModel(name: 'FOO.LIB', path: 'lib/x64/Release/FOO.LIB', size: 11),
+          FileModel(name: 'bar.lib', path: 'lib/Debug/bar.lib', size: 20),
+          FileModel(name: 'baz.lib', path: 'lib/baz.lib', size: 30),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalDependencies>bar.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalDependencies>baz.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        r'$(MSBuildThisFileDirectory)lib\x64\Release'
+            .allMatches(targets)
+            .length,
+        1,
+      );
+      expect(r'FOO.LIB'.allMatches(targets).length, 0);
+    });
+
     test('附加库按构建配置分组', () async {
       final PackModel pack = _pack()
         ..libraries = <LibraryModel>[
@@ -317,26 +422,275 @@ void main() {
       );
     });
 
-    test('编译命令不写入 targets', () async {
+    test('编译命令按类型追加消费者值并转义 XML 特殊字符', () async {
       final PackModel pack = _pack()
         ..commands = <CmdModel>[
-          const CmdModel(command: 'echo pre', type: CmdType.preBuild),
-          const CmdModel(command: 'echo post', type: CmdType.postBuild),
+          const CmdModel(command: 'echo one', type: CmdType.preBuild),
+          const CmdModel(command: 'echo two', type: CmdType.preBuild),
+          const CmdModel(
+            command: r'echo $(ProjectDir) & <done>',
+            type: CmdType.postBuild,
+          ),
         ];
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      expect(targets, isNot(contains('echo pre')));
-      expect(targets, isNot(contains('echo post')));
+      expect(
+        targets,
+        contains(
+          r'<PreBuildEvent>$(PreBuildEvent)&#x0D;&#x0A;echo one&#x0D;&#x0A;echo two</PreBuildEvent>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<PostBuildEvent>$(PostBuildEvent)&#x0D;&#x0A;echo $(ProjectDir) &amp; &lt;done&gt;</PostBuildEvent>',
+        ),
+      );
+      expect(targets, contains('<PropertyGroup>'));
+      expect(targets, isNot(contains('PropertyGroup Condition')));
     });
 
-    test('无宏、库目录、附加库时仅保留 include 行', () async {
+    test('编译命令按构建配置写入条件 PropertyGroup', () async {
+      final PackModel pack = _pack()
+        ..commands = <CmdModel>[
+          const CmdModel(
+            command: 'echo pre-rel',
+            type: CmdType.preBuild,
+            buildModel: BuildModel.release,
+          ),
+          const CmdModel(
+            command: 'echo post-dbg',
+            type: CmdType.postBuild,
+            buildModel: BuildModel.debug,
+          ),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      const String releaseGroup =
+          r'''<PropertyGroup Condition="'$(Configuration)'=='Release'">''';
+      const String debugGroup =
+          r'''<PropertyGroup Condition="'$(Configuration)'=='Debug'">''';
+      expect(targets, contains(releaseGroup));
+      expect(targets, contains(debugGroup));
+      expect(
+        targets.indexOf('echo pre-rel'),
+        greaterThan(targets.indexOf(releaseGroup)),
+      );
+      expect(
+        targets.indexOf('echo post-dbg'),
+        greaterThan(targets.indexOf(debugGroup)),
+      );
+      expect(targets, isNot(contains('<PropertyGroup>')));
+    });
+
+    test('无编译命令时不生成命令 PropertyGroup', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('PreBuildEvent')));
+      expect(targets, isNot(contains('PostBuildEvent')));
+      expect(targets, isNot(contains('<PropertyGroup')));
+    });
+
+    test('dll/pdb 生成条件运行时项与硬链接部署目标', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/bar.dll', size: 20),
+          FileModel(name: 'foo.pdb', path: 'bin/x64/Debug/foo.pdb', size: 30),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(r'''<ItemGroup Condition="'$(Configuration)'=='Release'">'''),
+      );
+      expect(
+        targets,
+        contains(r'''<ItemGroup Condition="'$(Configuration)'=='Debug'">'''),
+      );
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\x64\Release\foo.dll" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\bar.dll" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\x64\Debug\foo.pdb" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'''<Target Name="DeployPkgRuntimeBinaries" AfterTargets="Build" Condition="'@(PkgRuntimeBinary)' != ''">''',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Copy SourceFiles="@(PkgRuntimeBinary)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r"""<FileWrites Include="@(PkgRuntimeBinary->'$(OutDir)%(Filename)%(Extension)')" />""",
+        ),
+      );
+      expect(
+        targets.indexOf('<Target Name="DeployPkgRuntimeBinaries"'),
+        greaterThan(targets.indexOf('<PkgRuntimeBinary')),
+      );
+    });
+
+    test('运行时二进制无构建标签时仅生成无条件项组', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\foo.dll" />',
+        ),
+      );
+      expect(targets, isNot(contains('<ItemGroup Condition')));
+    });
+
+    test('资源文件生成 ResourceCompile 项并附加所在目录', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'app.rc', path: 'res/app.rc', size: 10),
+          FileModel(name: 'version.rc', path: 'version.rc', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\res\app.rc">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files\res;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\version.rc">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        ),
+      );
+    });
+
+    test('汇编文件生成 MASM 条件导入与唯一 ObjectFileName', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'x.asm', path: 'src/x.asm', size: 10),
+          FileModel(name: 'y.asm', path: 'asm/vendor/y.asm', size: 20),
+          FileModel(name: 'z.s', path: 'src/z.s', size: 30),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, contains('<ImportGroup Condition="'));
+      expect(targets, contains(r"'$(MASMBeforeTargets)' == ''"));
+      expect(targets, contains(r"'$(VCTargetsPath)' != ''"));
+      expect(
+        targets,
+        contains(r"Exists('$(VCTargetsPath)\BuildCustomizations\masm.props')"),
+      );
+      expect(
+        targets,
+        contains(
+          r"Exists('$(VCTargetsPath)\BuildCustomizations\masm.targets')",
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\src\x.asm">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ObjectFileName>$(IntDir)asm_files_src_x.asm.obj</ObjectFileName>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\asm\vendor\y.asm">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ObjectFileName>$(IntDir)asm_files_asm_vendor_y.asm.obj</ObjectFileName>',
+        ),
+      );
+      expect(targets, isNot(contains('z.s')));
+    });
+
+    test('无 .asm 文件时不生成 MASM 导入与项', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, isNot(contains('<ImportGroup')));
+      expect(targets, isNot(contains('<MASM')));
+    });
+
+    test('无宏、库目录、附加库、命令与特殊文件时仅保留 include 行', () async {
       final String targets = _targetsOf(await _builder.buildPlan(_pack()));
 
       expect(targets, isNot(contains('<PreprocessorDefinitions>')));
       expect(targets, isNot(contains('<AdditionalLibraryDirectories>')));
       expect(targets, isNot(contains('<AdditionalDependencies>')));
       expect(targets, isNot(contains('ItemDefinitionGroup Condition')));
+      expect(targets, isNot(contains('<PropertyGroup')));
+      expect(targets, isNot(contains('<ImportGroup')));
+      expect(targets, isNot(contains('<MASM')));
+      expect(targets, isNot(contains('<ResourceCompile')));
+      expect(targets, isNot(contains('PkgRuntimeBinary')));
     });
   });
 
@@ -356,8 +710,8 @@ void main() {
 
       expect(paths, <String>[
         'build/native/demo.targets',
-        'build/native/include/a.h',
-        'build/native/include/B.h',
+        'build/native/include/demo/a.h',
+        'build/native/include/demo/B.h',
         'build/native/lib/zeta.lib',
         'demo.nuspec',
       ]);
@@ -394,6 +748,7 @@ PackModel _pack({
   String author = 'tester',
   String? description,
   String? license,
+  String? sourcePath,
 }) {
   return PackModel(
     name: name,
@@ -401,6 +756,7 @@ PackModel _pack({
     author: author,
     description: description,
     license: license,
+    sourcePath: sourcePath,
   );
 }
 

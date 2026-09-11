@@ -133,8 +133,9 @@ class _PackPackagingState extends State<PackPackaging> {
               ),
               const SizedBox(height: 16),
               Text(
-                '按所选格式生成包内容：头文件与模块放入 build/native/include/，'
-                '库文件（lib/dll/pdb）放入 build/native/lib/，其余文件不打包；'
+                '按所选格式生成包内容：头文件与模块按源目录命名空间放入 '
+                'build/native/include/，库文件（lib/dll/pdb）放入 '
+                'build/native/lib/，其余文件放入 build/native/files/；'
                 '同时生成 .nuspec 与 .targets 构建集成文件。',
                 style: TextStyle(color: theme.resources.textFillColorSecondary),
               ),

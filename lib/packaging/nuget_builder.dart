@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
@@ -8,6 +9,7 @@ import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 
 class NuGetPackageBuilder implements PackageBuilder {
   const NuGetPackageBuilder();
@@ -15,6 +17,11 @@ class NuGetPackageBuilder implements PackageBuilder {
   static const String _buildNative = 'build/native';
   static const String _includePrefix = '$_buildNative/include';
   static const String _libPrefix = '$_buildNative/lib';
+  static const String _filesPrefix = '$_buildNative/files';
+  static const String _masmImportCondition =
+      r"'$(MASMBeforeTargets)' == '' And '$(VCTargetsPath)' != '' "
+      r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.props') "
+      r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.targets')";
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
   @override
@@ -27,7 +34,7 @@ class NuGetPackageBuilder implements PackageBuilder {
   Future<PackagePlan> buildPlan(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
-      final String? packagePath = _packagePath(file);
+      final String? packagePath = _packagePath(pack, file);
       if (packagePath == null) {
         continue;
       }
@@ -60,22 +67,29 @@ class NuGetPackageBuilder implements PackageBuilder {
     );
   }
 
-  static String? _packagePath(FileModel file) {
+  static String? _packagePath(PackModel pack, FileModel file) {
     final String path = _normalizePath(file.path);
     if (path.isEmpty) {
       return null;
     }
     return switch (file.type) {
       FileType.header || FileType.module =>
-        '$_includePrefix/${_withoutLeadingSegment(path, const <String>['include'])}',
+        '$_includePrefix/${_includeNamespace(pack)}/${_withoutLeadingSegment(path, const <String>['include'])}',
       FileType.lib || FileType.dll || FileType.pdb =>
         '$_libPrefix/${_withoutLeadingSegment(path, const <String>['lib', 'bin'])}',
-      _ => null,
+      _ => '$_filesPrefix/$path',
     };
   }
 
+  /// 头文件顶层命名空间目录：源目录文件夹名，缺失时回退为包名。
+  static String _includeNamespace(PackModel pack) {
+    final String sourcePath = pack.sourcePath ?? '';
+    final String folder = sourcePath.isEmpty ? '' : baseName(sourcePath);
+    return folder.isEmpty ? pack.name : folder;
+  }
+
   static bool _isBinaryType(FileType type) => switch (type) {
-    FileType.lib || FileType.dll || FileType.pdb => true,
+    FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
     _ => false,
   };
 
@@ -179,13 +193,34 @@ class NuGetPackageBuilder implements PackageBuilder {
         dedupe: true,
       );
     }
-    for (final PackageEntry entry in fileEntries) {
-      _addDerivedLibDirectory(libDirectories, entry.packagePath);
-    }
 
     final _BuildValueGroup libraries = _BuildValueGroup();
     for (final LibraryModel library in pack.libraries) {
       libraries.add(library.name, library.buildModel);
+    }
+
+    final _BuildValueGroup runtimeBinaries = _BuildValueGroup();
+    final List<String> asmFiles = <String>[];
+    final List<String> resourceFiles = <String>[];
+    for (final PackageEntry entry in fileEntries) {
+      _addDerivedLibEntries(libDirectories, libraries, entry.packagePath);
+      final String? relative = _relativeUnderBuildNative(entry.packagePath);
+      if (relative == null) {
+        continue;
+      }
+      final String lower = relative.toLowerCase();
+      if (lower.startsWith('files/') && lower.endsWith('.asm')) {
+        asmFiles.add(relative);
+      } else if (lower.startsWith('files/') && lower.endsWith('.rc')) {
+        resourceFiles.add(relative);
+      } else if (lower.startsWith('lib/') &&
+          (lower.endsWith('.dll') || lower.endsWith('.pdb'))) {
+        runtimeBinaries.add(
+          _msbuildPath(relative),
+          _buildModelOf(relative),
+          dedupe: true,
+        );
+      }
     }
 
     final StringBuffer buffer = StringBuffer()
@@ -193,6 +228,9 @@ class NuGetPackageBuilder implements PackageBuilder {
       ..writeln(
         '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
       );
+    if (asmFiles.isNotEmpty) {
+      _writeMasmImportGroup(buffer);
+    }
     _writeItemDefinitionGroup(
       buffer,
       condition: null,
@@ -215,37 +253,55 @@ class NuGetPackageBuilder implements PackageBuilder {
       libDirectories: libDirectories.debug,
       libraries: libraries.debug,
     );
+    _writeCommandGroups(buffer, pack);
+    _writeAsmItems(buffer, asmFiles);
+    _writeResourceItems(buffer, resourceFiles);
+    _writeRuntimeBinaryItems(buffer, runtimeBinaries);
+    _writeDeployTarget(buffer, runtimeBinaries);
     buffer.writeln('</Project>');
     return buffer.toString();
   }
 
-  static void _addDerivedLibDirectory(
-    _BuildValueGroup group,
+  static void _addDerivedLibEntries(
+    _BuildValueGroup libDirectories,
+    _BuildValueGroup libraries,
     String packagePath,
   ) {
-    if (!packagePath.toLowerCase().endsWith('.lib')) {
+    final String lower = packagePath.toLowerCase();
+    if (!lower.endsWith('.lib') || !lower.startsWith('$_libPrefix/')) {
       return;
     }
-    final int separator = packagePath.lastIndexOf('/');
-    if (separator <= 0) {
-      return;
+    final String relative = packagePath.substring(_buildNative.length + 1);
+    final String relativeDirectory = relative.substring(
+      0,
+      relative.lastIndexOf('/'),
+    );
+    final BuildModel buildModel = _buildModelOf(relative);
+    libDirectories.add(
+      _msbuildPath(relativeDirectory),
+      buildModel,
+      dedupe: true,
+    );
+    libraries.add(baseName(packagePath), buildModel, dedupe: true);
+  }
+
+  static String? _relativeUnderBuildNative(String packagePath) {
+    if (!packagePath.startsWith('$_buildNative/')) {
+      return null;
     }
-    final String directory = packagePath.substring(0, separator);
-    if (!directory.startsWith('$_buildNative/')) {
-      return;
-    }
-    final String relative = directory.substring(_buildNative.length + 1);
-    final BuildModel buildModel = switch (inferBuildLabel(relative)) {
+    return packagePath.substring(_buildNative.length + 1);
+  }
+
+  static BuildModel _buildModelOf(String relativePath) {
+    return switch (inferBuildLabel(relativePath)) {
       releaseBuildLabel => BuildModel.release,
       debugBuildLabel => BuildModel.debug,
       _ => BuildModel.all,
     };
-    group.add(
-      r'$(MSBuildThisFileDirectory)' + relative.replaceAll('/', r'\'),
-      buildModel,
-      dedupe: true,
-    );
   }
+
+  static String _msbuildPath(String relativePath) =>
+      r'$(MSBuildThisFileDirectory)' + relativePath.replaceAll('/', r'\');
 
   static void _writeConfigurationGroup(
     StringBuffer buffer, {
@@ -259,12 +315,177 @@ class NuGetPackageBuilder implements PackageBuilder {
     }
     _writeItemDefinitionGroup(
       buffer,
-      condition: "'\$(Configuration)'=='$configuration'",
+      condition: _configurationCondition(configuration),
       includeLine: false,
       macros: macros,
       libDirectories: libDirectories,
       libraries: libraries,
     );
+  }
+
+  static String _configurationCondition(String configuration) =>
+      "'\$(Configuration)'=='$configuration'";
+
+  static void _writeCommandGroups(StringBuffer buffer, PackModel pack) {
+    final _CommandGroup commands = _CommandGroup();
+    for (final CmdModel command in pack.commands) {
+      commands.add(command);
+    }
+    _writeCommandPropertyGroup(buffer, commands.all);
+    _writeCommandPropertyGroup(
+      buffer,
+      commands.release,
+      condition: _configurationCondition(releaseBuildLabel),
+    );
+    _writeCommandPropertyGroup(
+      buffer,
+      commands.debug,
+      condition: _configurationCondition(debugBuildLabel),
+    );
+  }
+
+  static void _writeCommandPropertyGroup(
+    StringBuffer buffer,
+    _CommandBuildGroup commands, {
+    String? condition,
+  }) {
+    if (commands.isEmpty) {
+      return;
+    }
+    final String attribute = condition == null ? '' : ' Condition="$condition"';
+    buffer.writeln('  <PropertyGroup$attribute>');
+    _writeCommandEvent(buffer, 'PreBuildEvent', commands.preBuild);
+    _writeCommandEvent(buffer, 'PostBuildEvent', commands.postBuild);
+    buffer.writeln('  </PropertyGroup>');
+  }
+
+  static void _writeCommandEvent(
+    StringBuffer buffer,
+    String name,
+    List<String> commands,
+  ) {
+    if (commands.isEmpty) {
+      return;
+    }
+    final String value = <String>[
+      '\$($name)',
+      for (final String command in commands) _escapeXml(command),
+    ].join('&#x0D;&#x0A;');
+    buffer.writeln('    <$name>$value</$name>');
+  }
+
+  static void _writeMasmImportGroup(StringBuffer buffer) {
+    buffer
+      ..writeln('  <ImportGroup Condition="$_masmImportCondition">')
+      ..writeln(
+        r'    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />',
+      )
+      ..writeln(
+        r'    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />',
+      )
+      ..writeln('  </ImportGroup>');
+  }
+
+  static void _writeAsmItems(StringBuffer buffer, List<String> asmFiles) {
+    if (asmFiles.isEmpty) {
+      return;
+    }
+    buffer.writeln('  <ItemGroup>');
+    for (final String path in asmFiles) {
+      final String objectName = path.replaceAll(_pathSeparator, '_');
+      buffer
+        ..writeln('    <MASM Include="${_escapeXml(_msbuildPath(path))}">')
+        ..writeln(
+          '      <ObjectFileName>\$(IntDir)asm_${_escapeXml(objectName)}.obj</ObjectFileName>',
+        )
+        ..writeln('    </MASM>');
+    }
+    buffer.writeln('  </ItemGroup>');
+  }
+
+  static void _writeResourceItems(
+    StringBuffer buffer,
+    List<String> resourceFiles,
+  ) {
+    if (resourceFiles.isEmpty) {
+      return;
+    }
+    buffer.writeln('  <ItemGroup>');
+    for (final String path in resourceFiles) {
+      final int separator = path.lastIndexOf('/');
+      final String directory = separator < 0
+          ? ''
+          : path.substring(0, separator);
+      buffer
+        ..writeln(
+          '    <ResourceCompile Include="${_escapeXml(_msbuildPath(path))}">',
+        )
+        ..writeln(
+          '      <AdditionalIncludeDirectories>${_escapeXml(_msbuildPath(directory))};%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        )
+        ..writeln('    </ResourceCompile>');
+    }
+    buffer.writeln('  </ItemGroup>');
+  }
+
+  static void _writeRuntimeBinaryItems(
+    StringBuffer buffer,
+    _BuildValueGroup runtimeBinaries,
+  ) {
+    _writeBinaryItemGroup(buffer, runtimeBinaries.all);
+    _writeBinaryItemGroup(
+      buffer,
+      runtimeBinaries.release,
+      condition: _configurationCondition(releaseBuildLabel),
+    );
+    _writeBinaryItemGroup(
+      buffer,
+      runtimeBinaries.debug,
+      condition: _configurationCondition(debugBuildLabel),
+    );
+  }
+
+  static void _writeBinaryItemGroup(
+    StringBuffer buffer,
+    List<String> binaries, {
+    String? condition,
+  }) {
+    if (binaries.isEmpty) {
+      return;
+    }
+    final String attribute = condition == null ? '' : ' Condition="$condition"';
+    buffer.writeln('  <ItemGroup$attribute>');
+    for (final String binary in binaries) {
+      buffer.writeln(
+        '    <PkgRuntimeBinary Include="${_escapeXml(binary)}" />',
+      );
+    }
+    buffer.writeln('  </ItemGroup>');
+  }
+
+  static void _writeDeployTarget(
+    StringBuffer buffer,
+    _BuildValueGroup runtimeBinaries,
+  ) {
+    if (runtimeBinaries.isEmpty) {
+      return;
+    }
+    buffer
+      ..writeln(
+        '  <Target Name="DeployPkgRuntimeBinaries" AfterTargets="Build" '
+        "Condition=\"'@(PkgRuntimeBinary)' != ''\">",
+      )
+      ..writeln(
+        '    <Copy SourceFiles="@(PkgRuntimeBinary)" '
+        'DestinationFolder="\$(OutDir)" SkipUnchangedFiles="true" '
+        'UseHardlinksIfPossible="true" />',
+      )
+      ..writeln('    <ItemGroup>')
+      ..writeln(
+        "      <FileWrites Include=\"@(PkgRuntimeBinary->'\$(OutDir)%(Filename)%(Extension)')\" />",
+      )
+      ..writeln('    </ItemGroup>')
+      ..writeln('  </Target>');
   }
 
   static void _writeItemDefinitionGroup(
@@ -322,6 +543,8 @@ class _BuildValueGroup {
   final List<String> release = <String>[];
   final List<String> debug = <String>[];
 
+  bool get isEmpty => all.isEmpty && release.isEmpty && debug.isEmpty;
+
   void add(String value, BuildModel buildModel, {bool dedupe = false}) {
     final List<String> values = switch (buildModel) {
       BuildModel.all => all,
@@ -336,4 +559,31 @@ class _BuildValueGroup {
     }
     values.add(value);
   }
+}
+
+class _CommandGroup {
+  final _CommandBuildGroup all = _CommandBuildGroup();
+  final _CommandBuildGroup release = _CommandBuildGroup();
+  final _CommandBuildGroup debug = _CommandBuildGroup();
+
+  void add(CmdModel command) {
+    final _CommandBuildGroup group = switch (command.buildModel) {
+      BuildModel.all => all,
+      BuildModel.release => release,
+      BuildModel.debug => debug,
+    };
+    switch (command.type) {
+      case CmdType.preBuild:
+        group.preBuild.add(command.command);
+      case CmdType.postBuild:
+        group.postBuild.add(command.command);
+    }
+  }
+}
+
+class _CommandBuildGroup {
+  final List<String> preBuild = <String>[];
+  final List<String> postBuild = <String>[];
+
+  bool get isEmpty => preBuild.isEmpty && postBuild.isEmpty;
 }

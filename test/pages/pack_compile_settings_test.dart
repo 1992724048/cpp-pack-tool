@@ -197,6 +197,81 @@ void main() {
     expect(find.text('已添加'), findsOneWidget);
   });
 
+  testWidgets('命令对话框提供脚本与宏下拉，其他分区对话框不提供', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..files = <FileModel>[
+        FileModel(name: 'build.bat', path: 'scripts/build.bat'),
+        FileModel(name: 'gen.py', path: 'tools/gen.py'),
+        FileModel(name: 'app.exe', path: 'bin/app.exe'),
+        FileModel(name: 'main.cpp', path: 'src/main.cpp'),
+        FileModel(name: 'notes.md', path: 'docs/notes.md'),
+      ];
+
+    await _pumpPage(tester, _page(pack));
+
+    await _openAddDialog(tester, const Key('addPreBuildCmdButton'));
+    expect(
+      _scriptCombo(tester).items!
+          .map((ComboBoxItem<FileModel> item) => item.value!.path)
+          .toList(),
+      <String>['scripts/build.bat', 'tools/gen.py', 'bin/app.exe'],
+    );
+    expect(find.byKey(const Key('compileEntryScriptField')), findsOneWidget);
+    expect(find.byKey(const Key('compileEntryMacroField')), findsOneWidget);
+    await _tapCancel(tester);
+
+    for (final Key addKey in <Key>[
+      const Key('addMacroButton'),
+      const Key('addLibDirButton'),
+      const Key('addLibraryButton'),
+    ]) {
+      await _openAddDialog(tester, addKey);
+      expect(find.byKey(const Key('compileEntryScriptField')), findsNothing);
+      expect(find.byKey(const Key('compileEntryMacroField')), findsNothing);
+      await _tapCancel(tester);
+    }
+  });
+
+  testWidgets('命令对话框选择脚本与宏后插入并保存引用文本', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..files = <FileModel>[
+        FileModel(name: 'build.bat', path: 'scripts/build.bat'),
+      ];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+
+    await _openAddDialog(tester, const Key('addPreBuildCmdButton'));
+    await _selectDialogComboItem(
+      tester,
+      const Key('compileEntryScriptField'),
+      'scripts/build.bat',
+    );
+    await _selectDialogComboItem(
+      tester,
+      const Key('compileEntryMacroField'),
+      r'$(OutDir)',
+    );
+    await _tapConfirm(tester);
+
+    expect(saved, isNotNull);
+    expect(
+      saved!.commands.single.command,
+      r'"$(MSBuildThisFileDirectory)files\scripts\build.bat"$(OutDir)',
+    );
+    expect(saved!.commands.single.type, CmdType.preBuild);
+    expect(find.text('已添加'), findsOneWidget);
+  });
+
   testWidgets('添加附加库目录经浏览填入并保存', (tester) async {
     int pickCount = 0;
     PackModel? saved;
@@ -461,6 +536,19 @@ Future<void> _selectBuildModel(WidgetTester tester, String label) async {
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+Future<void> _selectDialogComboItem(
+  WidgetTester tester,
+  Key fieldKey,
+  String label,
+) async {
+  await tester.tap(find.byKey(fieldKey));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(label).last);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
 Future<void> _tapConfirm(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('compileEntryConfirmButton')));
   await tester.pump();
@@ -476,6 +564,11 @@ Future<void> _tapCancel(WidgetTester tester) async {
 
 TextBox _dialogTextBox(WidgetTester tester) =>
     tester.widget<TextBox>(find.byKey(const Key('compileEntryTextField')));
+
+ComboBox<FileModel> _scriptCombo(WidgetTester tester) =>
+    tester.widget<ComboBox<FileModel>>(
+      find.byKey(const Key('compileEntryScriptField')),
+    );
 
 BuildModel _dialogBuildModel(WidgetTester tester) => tester
     .widget<ComboBox<BuildModel>>(

@@ -48,7 +48,7 @@ void main() {
     );
 
     expect(result.outputPath, joinPath(outputDirectory, 'demo.1.2.3.nupkg'));
-    expect(result.fileCount, 8);
+    expect(result.fileCount, 9);
     expect(result.packageSize, greaterThan(0));
     final File nupkg = File(result.outputPath);
     expect(nupkg.existsSync(), isTrue);
@@ -59,15 +59,23 @@ void main() {
       _relationshipsPath,
       'demo.nuspec',
       'build/native/demo.targets',
-      'build/native/include/empty.h',
-      'build/native/include/foo.h',
+      'build/native/files/src/main.cpp',
+      'build/native/include/source/empty.h',
+      'build/native/include/source/foo.h',
       'build/native/lib/x64/Release/foo.lib',
       _contentTypesPath,
       _corePropertiesPath,
     ]);
 
-    expect(_textOf(archive, 'build/native/include/foo.h'), 'int foo();\n');
-    expect(_bytesOf(archive, 'build/native/include/empty.h'), isEmpty);
+    expect(
+      _textOf(archive, 'build/native/include/source/foo.h'),
+      'int foo();\n',
+    );
+    expect(_bytesOf(archive, 'build/native/include/source/empty.h'), isEmpty);
+    expect(
+      _bytesOf(archive, 'build/native/files/src/main.cpp'),
+      utf8.encode('int main() {}\n'),
+    );
     expect(_bytesOf(archive, 'build/native/lib/x64/Release/foo.lib'), <int>[
       1,
       2,
@@ -75,12 +83,12 @@ void main() {
       4,
     ]);
     expect(
-      _textOf(archive, 'build/native/include/foo.h'),
+      _textOf(archive, 'build/native/include/source/foo.h'),
       isNot(contains('main')),
     );
     expect(
-      archive.files.any((ArchiveFile file) => file.name.endsWith('.cpp')),
-      isFalse,
+      _textOf(archive, 'build/native/files/src/main.cpp'),
+      contains('int main() {}'),
     );
 
     final String nuspec = _textOf(archive, 'demo.nuspec');
@@ -93,7 +101,7 @@ void main() {
     );
   });
 
-  test('Content_Types 覆盖包内扩展名且不包含未打包类型', () async {
+  test('Content_Types 覆盖包内全部文件扩展名', () async {
     final String source = joinPath(root.path, 'source');
     _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
     _writeFile(joinPath(source, 'src/main.cpp'), 'int main() {}\n');
@@ -137,7 +145,10 @@ void main() {
       contentTypes,
       contains('<Default Extension="h" ContentType="application/octet" />'),
     );
-    expect(contentTypes, isNot(contains('Extension="cpp"')));
+    expect(
+      contentTypes,
+      contains('<Default Extension="cpp" ContentType="application/octet" />'),
+    );
   });
 
   test('relationships 与 core-properties 指向 nuspec 与包内条目', () async {
@@ -224,7 +235,10 @@ void main() {
     final Archive archive = ZipDecoder().decodeBytes(
       File(second.outputPath).readAsBytesSync(),
     );
-    expect(_textOf(archive, 'build/native/include/foo.h'), 'new-content');
+    expect(
+      _textOf(archive, 'build/native/include/source/foo.h'),
+      'new-content',
+    );
 
     final List<FileSystemEntity> files = Directory(outputDirectory).listSync();
     expect(files, hasLength(1));
