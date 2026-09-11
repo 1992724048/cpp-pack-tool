@@ -6,6 +6,7 @@ import '../pages/pack_compile_settings.dart';
 import '../pages/pack_dependencies.dart';
 import '../pages/pack_files.dart';
 import '../pages/pack_info.dart';
+import '../pages/pack_packaging.dart';
 
 class PackManage extends StatefulWidget {
   const PackManage({
@@ -58,7 +59,7 @@ class _PackManageState extends State<PackManage> {
       Tab(
         icon: Svgs.boxSettings,
         text: const Text('打包设置'),
-        body: _body(const Center(child: Text('打包设置内容'))),
+        body: _body(_packPackagingBody()),
       ),
     ];
   }
@@ -114,6 +115,14 @@ class _PackManageState extends State<PackManage> {
             onSave: widget.onSave,
             pickDirectory: widget.pickDirectory,
           ),
+    );
+  }
+
+  Widget _packPackagingBody() {
+    return ValueListenableBuilder<PackModel>(
+      valueListenable: _pack,
+      builder: (BuildContext context, PackModel pack, Widget? child) =>
+          PackPackaging(pack: pack),
     );
   }
 
