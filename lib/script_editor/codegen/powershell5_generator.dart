@@ -56,6 +56,7 @@ class _PowerShellEmitter {
   final _GraphIndex _index;
   final Map<String, String> _itemVariableByNodeId = <String, String>{};
   int _itemCounter = 0;
+  int _processCounter = 0;
 
   void emitEntryChain() {
     final ScriptNodeModel? entry = _index.firstNodeOfType(_entryTypeKey);
@@ -94,6 +95,16 @@ class _PowerShellEmitter {
     switch (node.type) {
       case 'log.message':
         _emitLogMessage(node);
+      case 'file.copy':
+        _emitFileCopy(node);
+      case 'file.move':
+        _emitFileMove(node);
+      case 'file.delete':
+        _emitFileDelete(node);
+      case 'file.makeDirectory':
+        _emitFileMakeDirectory(node);
+      case 'process.run':
+        _emitProcessRun(node);
       case 'flow.branch':
         _emitBranch(node);
       case 'flow.foreach':
@@ -101,7 +112,7 @@ class _PowerShellEmitter {
       case 'flow.while':
         _emitWhile(node);
       default:
-        // T7/T8 扩展点：文件/进程、上下文/字符串/逻辑节点在此登记发射
+        // T8 扩展点：上下文/字符串/逻辑节点在此登记发射
         throw UnsupportedError('节点类型「${node.type}」的代码生成尚未实现');
     }
   }
@@ -117,6 +128,72 @@ class _PowerShellEmitter {
         writer.writeln("Write-Host ('[错误] ' + $message) -ForegroundColor Red");
       default:
         writer.writeln('Write-Host $message');
+    }
+  }
+
+  void _emitFileCopy(ScriptNodeModel node) {
+    final String source = _expression(node, 'source');
+    final String destination = _expression(node, 'destination');
+    writer.writeln(
+      'Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force',
+    );
+  }
+
+  void _emitFileMove(ScriptNodeModel node) {
+    final String source = _expression(node, 'source');
+    final String destination = _expression(node, 'destination');
+    writer.writeln(
+      'Move-Item -LiteralPath $source -Destination $destination -Force',
+    );
+  }
+
+  void _emitFileDelete(ScriptNodeModel node) {
+    final String path = _expression(node, 'path');
+    final String ignoreMissing = _param(node, 'missingIgnored') == true
+        ? ' -ErrorAction SilentlyContinue'
+        : '';
+    writer.writeln(
+      'Remove-Item -LiteralPath $path -Recurse -Force$ignoreMissing',
+    );
+  }
+
+  void _emitFileMakeDirectory(ScriptNodeModel node) {
+    final String path = _expression(node, 'path');
+    writer.writeln('New-Item -ItemType Directory -Force -Path $path');
+  }
+
+  void _emitProcessRun(ScriptNodeModel node) {
+    final int index = ++_processCounter;
+    final String process = '\$proc_$index';
+    final String argumentsName = 'args_$index';
+    final String arguments = '\$$argumentsName';
+    final String? argumentsExpression = _optionalExpression(node, 'arguments');
+    final String? workingDirectory = _optionalExpression(
+      node,
+      'workingDirectory',
+    );
+    writer.writeln('$process = ${_expression(node, 'program')}');
+    writer.writeln(
+      argumentsExpression == null
+          ? '$arguments = @()'
+          : '$arguments = @($argumentsExpression -split "\\r?\\n" | '
+                'Where-Object { \$_ -ne \'\' })',
+    );
+    if (workingDirectory != null) {
+      writer.writeln('Push-Location -LiteralPath $workingDirectory');
+    }
+    writer.writeln('& $process @$argumentsName');
+    if (workingDirectory != null) {
+      writer.writeln('Pop-Location');
+    }
+    if (_param(node, 'abortOnFailure') == true) {
+      writer.writeln(
+        r'if ($LASTEXITCODE -ne 0) { throw "外部程序退出码 $LASTEXITCODE" }',
+      );
+    } else {
+      writer.writeln(
+        r"Write-Host ('[警告] 外部程序退出码 ' + $LASTEXITCODE) -ForegroundColor Yellow",
+      );
     }
   }
 
@@ -161,6 +238,14 @@ class _PowerShellEmitter {
     return _outputExpression(_index.nodeById[edge.from.node]!, edge.from.pin);
   }
 
+  /// 可选输入引脚的表达式；未连接时返回 null（可选输入不参与必填校验）。
+  String? _optionalExpression(ScriptNodeModel node, String pinId) {
+    if (_index.incomingEdge(node.id, pinId) == null) {
+      return null;
+    }
+    return _expression(node, pinId);
+  }
+
   /// 数据节点输出引脚的表达式；T8 补充上下文/字符串/逻辑节点。
   String _outputExpression(ScriptNodeModel node, String pinId) {
     switch (node.type) {
@@ -170,6 +255,9 @@ class _PowerShellEmitter {
         return _param(node, 'value') == true ? r'$true' : r'$false';
       case 'file.list':
         return _fileListExpression(node);
+      case 'file.exists':
+        return '(Test-Path -LiteralPath ${_expression(node, 'path')} '
+            '-PathType Any)';
       case 'flow.foreach':
         if (pinId != 'item') {
           throw UnsupportedError('节点类型「${node.type}」的引脚「$pinId」不支持数据表达式');

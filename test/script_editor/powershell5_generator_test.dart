@@ -560,6 +560,324 @@ void main() {
     });
   });
 
+  group('文件节点发射', () {
+    test('file.copy：复制命令并续接 out 链', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\b'},
+          ),
+          _node('n4', 'file.copy'),
+          _node('n5', 'value.text', params: <String, Object?>{'value': '完成'}),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'source'),
+          _edge('n3', 'result', 'n4', 'destination'),
+          _edge('n4', 'out', 'n6', 'exec'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Copy-Item -LiteralPath 'C:\\a' -Destination 'D:\\b' -Recurse -Force\n"
+          "    Write-Host '完成'\n",
+        ),
+      );
+    });
+
+    test('file.move：移动命令', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\b'},
+          ),
+          _node('n4', 'file.move'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'source'),
+          _edge('n3', 'result', 'n4', 'destination'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Move-Item -LiteralPath 'C:\\a' -Destination 'D:\\b' -Force\n",
+        ),
+      );
+    });
+
+    test('file.delete：默认缺失时忽略，追加 -ErrorAction SilentlyContinue', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\x'},
+          ),
+          _node('n3', 'file.delete'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'path'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Remove-Item -LiteralPath 'C:\\x' -Recurse -Force "
+          '-ErrorAction SilentlyContinue\n',
+        ),
+      );
+    });
+
+    test('file.delete：missingIgnored=false 时不追加静默参数', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\x'},
+          ),
+          _node(
+            'n3',
+            'file.delete',
+            params: <String, Object?>{'missingIgnored': false},
+          ),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'path'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Remove-Item -LiteralPath 'C:\\x' -Recurse -Force\n"),
+      );
+    });
+
+    test('file.makeDirectory：创建目录命令', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\out'},
+          ),
+          _node('n3', 'file.makeDirectory'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'path'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    New-Item -ItemType Directory -Force -Path 'C:\\out'\n"),
+      );
+    });
+
+    test('file.exists：布尔表达式内联进分支条件', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\x'},
+          ),
+          _node('n3', 'file.exists'),
+          _node('n4', 'flow.branch'),
+          _node('n5', 'value.text', params: <String, Object?>{'value': '存在'}),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n3', 'path'),
+          _edge('n3', 'result', 'n4', 'condition'),
+          _edge('n4', 'then', 'n6', 'exec'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    if ((Test-Path -LiteralPath \'C:\\x\' -PathType Any)) {\n'
+          "        Write-Host '存在'\n"
+          '    } else {\n'
+          '    }\n',
+        ),
+      );
+    });
+  });
+
+  group('process.run 发射', () {
+    test('默认（失败中断）：参数按行拆分并以数组 splatting 调用', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'value.text', params: <String, Object?>{'value': 'cmd'}),
+          _node('n3', 'value.text', params: <String, Object?>{'value': 'a'}),
+          _node('n4', 'process.run'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'program'),
+          _edge('n3', 'result', 'n4', 'arguments'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    \$proc_1 = \'cmd\'\n'
+          '    \$args_1 = @(\'a\' -split "\\r?\\n" | '
+          'Where-Object { \$_ -ne \'\' })\n'
+          '    & \$proc_1 @args_1\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n',
+        ),
+      );
+    });
+
+    test('abortOnFailure=false：警告替代 throw，参数未连接为 @()', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': 'x.exe'},
+          ),
+          _node(
+            'n3',
+            'process.run',
+            params: <String, Object?>{'abortOnFailure': false},
+          ),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'program'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    \$proc_1 = \'x.exe\'\n'
+          '    \$args_1 = @()\n'
+          '    & \$proc_1 @args_1\n'
+          "    Write-Host ('[警告] 外部程序退出码 ' + \$LASTEXITCODE) "
+          '-ForegroundColor Yellow\n',
+        ),
+      );
+    });
+
+    test('工作目录已连接：Push-Location / Pop-Location 包裹调用行', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'value.text', params: <String, Object?>{'value': 'cmd'}),
+          _node('n3', 'value.text', params: <String, Object?>{'value': 'a'}),
+          _node(
+            'n4',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\work'},
+          ),
+          _node('n5', 'process.run'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n5', 'exec'),
+          _edge('n2', 'result', 'n5', 'program'),
+          _edge('n3', 'result', 'n5', 'arguments'),
+          _edge('n4', 'result', 'n5', 'workingDirectory'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    \$proc_1 = \'cmd\'\n'
+          '    \$args_1 = @(\'a\' -split "\\r?\\n" | '
+          'Where-Object { \$_ -ne \'\' })\n'
+          "    Push-Location -LiteralPath 'C:\\work'\n"
+          '    & \$proc_1 @args_1\n'
+          '    Pop-Location\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n',
+        ),
+      );
+    });
+
+    test('多个运行节点：\$proc_N / \$args_N 按序递增且全局唯一', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'value.text', params: <String, Object?>{'value': '一'}),
+          _node('n3', 'process.run'),
+          _node('n4', 'value.text', params: <String, Object?>{'value': '二'}),
+          _node('n5', 'process.run'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'program'),
+          _edge('n3', 'out', 'n5', 'exec'),
+          _edge('n4', 'result', 'n5', 'program'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    \$proc_1 = \'一\'\n'
+          '    \$args_1 = @()\n'
+          '    & \$proc_1 @args_1\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n'
+          '    \$proc_2 = \'二\'\n'
+          '    \$args_2 = @()\n'
+          '    & \$proc_2 @args_2\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n',
+        ),
+      );
+    });
+  });
+
   group('编译错误', () {
     test('无入口图 → code 为 null 且含诊断', () {
       final ScriptCompileResult result = _compile(
@@ -621,30 +939,7 @@ void main() {
       );
     });
 
-    test('未实现节点类型按扩展点抛出（T5 边界，T6/T7/T8 补齐后替换）', () {
-      final ScriptProjectModel execBoundary = _project(
-        <ScriptNodeModel>[
-          _node('n1', 'flow.entry'),
-          _node(
-            'n2',
-            'value.text',
-            params: <String, Object?>{'value': 'C:\\a'},
-          ),
-          _node(
-            'n3',
-            'value.text',
-            params: <String, Object?>{'value': 'D:\\b'},
-          ),
-          _node('n4', 'file.copy'),
-        ],
-        edges: <ScriptEdgeModel>[
-          _edge('n1', 'out', 'n4', 'exec'),
-          _edge('n2', 'result', 'n4', 'source'),
-          _edge('n3', 'result', 'n4', 'destination'),
-        ],
-      );
-      expect(() => _compile(execBoundary), throwsUnsupportedError);
-
+    test('未实现节点类型按扩展点抛出（context.macro 边界，T8 补齐后替换）', () {
       final ScriptProjectModel dataBoundary = _project(
         <ScriptNodeModel>[
           _node('n1', 'flow.entry'),
@@ -660,7 +955,16 @@ void main() {
           _edge('n2', 'result', 'n3', 'message'),
         ],
       );
-      expect(() => _compile(dataBoundary), throwsUnsupportedError);
+      expect(
+        () => _compile(dataBoundary),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (UnsupportedError error) => error.message,
+            'message',
+            contains('context.macro'),
+          ),
+        ),
+      );
     });
   });
 }
