@@ -4,14 +4,21 @@ import 'package:cpp_nuget_pack/controls/script_editor/editor_canvas.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_inspector.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_library_panel.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/output_panel.dart';
+import 'package:cpp_nuget_pack/controls/script_editor/script_project_dialogs.dart';
+import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
 import 'package:cpp_nuget_pack/script_editor/editor_save_queue.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
+import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
+import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/licenses.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 const double _topBarHeight = 48;
@@ -19,12 +26,14 @@ const double _nodeLibraryWidth = 232;
 const double _inspectorWidth = 280;
 const double _titleMaxWidth = 240;
 
-/// 节点编辑器全屏页（T4 外壳，各面板经后续任务装配）。
+/// 节点编辑器全屏页：顶栏（返回 / 标题 / 项目选择器与新建、重命名、删除 /
+/// 保存状态 / 生成预览）、左侧节点库、中间画布、右侧检查器与底部输出面板。
 ///
 /// 布局数值与分隔线取自视觉规范 §1/§3（顶栏 48、左 232、右 280、底部收起 34、
-/// 1px `surface2` 分隔）；[pack] 无脚本项目时页面为空态（中区占位文案、两侧面板禁用）。
-/// 控制器变更与视口变化经 400ms 防抖保存队列写回（§10.1/§10.4），
-/// 返回按钮在队列清空后 pop，保存失败时弹确认对话框（§8.4）。
+/// 1px `surface2` 分隔）。无脚本项目时画布区为空态引导（§5.8，含「新建脚本项目」
+/// 按钮）、两侧面板整体禁用。项目 CRUD 见 §8.1-8.3，切换/排序见 §10.5/§10.6：
+/// 切换前先收口视口防抖并 flush 保存队列；控制器变更与视口变化经 400ms 防抖保存
+/// 队列写回（§10.1/§10.4），返回按钮在队列清空后 pop，保存失败时弹确认对话框（§8.4）。
 class ScriptEditorPage extends StatefulWidget {
   const ScriptEditorPage({
     super.key,
@@ -63,7 +72,14 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   Object? _lastSaveError;
   bool _backing = false;
 
+  /// 免脏加载标记：控制器 `loadProject` 的选中清空/诊断重算通知不是编辑，
+  /// 不应进入保存队列（切换/重命名/元数据变更共用）。
+  bool _suppressSaveMark = false;
+
   bool get _hasProject => _controller != null;
+
+  /// 会话内的脚本项目工作列表（就地增删改）；保存时经 `_buildUpdatedPack` 拷贝。
+  List<ScriptProjectModel> get _scripts => widget.pack.scripts;
 
   @override
   void initState() {
@@ -143,6 +159,31 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
               ),
             ),
           ),
+          const SizedBox(width: 12),
+          Container(width: 1, height: 20, color: UCColors.flavor.surface2),
+          const SizedBox(width: 16),
+          _buildScriptProjectSelector(),
+          const SizedBox(width: 8),
+          _buildScriptActionButton(
+            buttonKey: const Key('newScriptButton'),
+            icon: FluentIcons.add,
+            tooltip: '新建脚本项目',
+            onPressed: _handleCreateScriptProject,
+          ),
+          const SizedBox(width: 8),
+          _buildScriptActionButton(
+            buttonKey: const Key('renameScriptButton'),
+            icon: FluentIcons.rename,
+            tooltip: '重命名脚本项目',
+            onPressed: _hasProject ? _openRenameScriptProjectDialog : null,
+          ),
+          const SizedBox(width: 8),
+          _buildScriptActionButton(
+            buttonKey: const Key('deleteScriptButton'),
+            icon: FluentIcons.delete,
+            tooltip: '删除脚本项目',
+            onPressed: _hasProject ? _handleDeleteScriptProject : null,
+          ),
           const Spacer(),
           _buildTopBarActions(),
         ],
@@ -188,6 +229,91 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     );
   }
 
+  /// 顶栏项目选择器（§3.1/§3.2）：宽 200、高 32；按钮态显示项目名，
+  /// 下拉项含项目名 + 触发时机与构建标签；无项目时禁用。
+  Widget _buildScriptProjectSelector() {
+    final List<ScriptProjectModel> scripts = _scripts;
+    return SizedBox(
+      width: 200,
+      height: 32,
+      child: FluentTheme(
+        data: FluentTheme.of(context).copyWith(visualDensity: comboBoxDensity),
+        child: ComboBox<ScriptProjectModel>(
+          key: const Key('scriptProjectComboBox'),
+          value: _controller?.project,
+          isExpanded: true,
+          onChanged: _hasProject
+              ? (ScriptProjectModel? next) {
+                  if (next != null) {
+                    _handleSelectScriptProject(next);
+                  }
+                }
+              : null,
+          selectedItemBuilder: (BuildContext context) => <Widget>[
+            for (final ScriptProjectModel project in scripts)
+              Text(
+                project.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: UCColors.flavor.text),
+              ),
+          ],
+          items: <ComboBoxItem<ScriptProjectModel>>[
+            for (final ScriptProjectModel project in scripts)
+              ComboBoxItem<ScriptProjectModel>(
+                value: project,
+                child: Row(
+                  children: <Widget>[
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      child: Text(
+                        project.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Tag(
+                      text: _scriptTriggerLabel(project.trigger),
+                      color: _scriptTriggerColor(project.trigger),
+                      fontSize: 10,
+                    ),
+                    const SizedBox(width: 4),
+                    Tag(
+                      text: buildModelLabel(project.buildModel),
+                      color: _scriptBuildModelColor(project.buildModel),
+                      fontSize: 10,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScriptActionButton({
+    required Key buttonKey,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: IconButton(
+          key: buttonKey,
+          icon: Icon(icon, size: 16),
+          onPressed: onPressed,
+        ),
+      ),
+    );
+  }
+
   Widget _buildBody() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -209,6 +335,12 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
             controller: _controller,
             pack: widget.pack,
             packagePaths: widget.packagePaths,
+            onSelectProject: _handleSelectScriptProject,
+            onRenameProject: _handleRenameScriptProject,
+            onTriggerChanged: _handleTriggerChanged,
+            onBuildModelChanged: _handleBuildModelChanged,
+            onMoveProjectUp: _handleMoveScriptProjectUp,
+            onMoveProjectDown: _handleMoveScriptProjectDown,
           ),
         ),
       ],
@@ -246,9 +378,34 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
       return Container(
         color: UCColors.flavor.mantle,
         child: Center(
-          child: Text(
-            '暂无脚本项目',
-            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                FluentIcons.power_shell,
+                size: 40,
+                color: UCColors.flavor.subtext1,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '尚未创建脚本项目',
+                style: TextStyle(fontSize: 14, color: UCColors.flavor.text),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '节点图将编译为编译前/后 PowerShell 脚本',
+                style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 32,
+                child: FilledButton(
+                  key: const Key('emptyNewScriptButton'),
+                  onPressed: _handleCreateScriptProject,
+                  child: const Text('新建脚本项目', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -290,6 +447,292 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
       return Offset.zero;
     }
     return _transformation.toScene(viewport.center(Offset.zero));
+  }
+
+  /// 新建项目（§8.1）：对话框收集名称与触发/构建配置；id 取 `script_N`
+  /// 最大序号 +1，自动放置入口节点 (40, 60)，追加后选中并走保存队列。
+  Future<void> _handleCreateScriptProject() async {
+    final NewScriptProjectRequest? request =
+        await showCreateScriptProjectDialog(context, existing: _scripts);
+    if (request == null || !mounted) {
+      return;
+    }
+    final ScriptProjectModel project = ScriptProjectModel(
+      id: nextScriptProjectId(_scripts),
+      name: request.name,
+      trigger: request.trigger,
+      buildModel: request.buildModel,
+    );
+    _scripts.add(project);
+    await _activateScriptProject(project, addEntryNode: true);
+    if (!mounted) {
+      return;
+    }
+    _saveQueue.markDirty();
+    showFloatingToast(context, '已创建');
+  }
+
+  /// 顶栏「重命名」（§8.2）：对话框返回新名称后走 [_handleRenameScriptProject]
+  /// （检查器内联提交共用同一入口）。
+  Future<void> _openRenameScriptProjectDialog() async {
+    final GraphEditorController? controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    final ScriptProjectModel project = controller.project;
+    final String? name = await showRenameScriptProjectDialog(
+      context,
+      project: project,
+      existing: _scripts,
+    );
+    if (name == null || !mounted) {
+      return;
+    }
+    _handleRenameScriptProject(project, name);
+  }
+
+  /// 删除项目（§8.3）：确认后移除；选择按「保持索引位 → 越界回退末项 →
+  /// 空列表回空态」调整（§8.3/§10.5）。
+  Future<void> _handleDeleteScriptProject() async {
+    final GraphEditorController? controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    final ScriptProjectModel project = controller.project;
+    final bool confirmed = await showDeleteScriptProjectDialog(
+      context,
+      project: project,
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+    final int index = _indexOfScript(project);
+    if (index < 0) {
+      return;
+    }
+    await _removeScriptAt(index);
+    if (!mounted) {
+      return;
+    }
+    showFloatingToast(context, '已删除');
+  }
+
+  /// 切换项目入口（顶栏下拉 / 执行顺序行）：先 flush 视口与保存队列再加载新图。
+  void _handleSelectScriptProject(ScriptProjectModel project) {
+    if (identical(project, _controller?.project)) {
+      return;
+    }
+    unawaited(_switchToScriptProject(project));
+  }
+
+  /// 切换项目（§10.5）：保存队列 flush 后加载新图（画布恢复其 viewport、
+  /// 清空选中、诊断与底部面板随新图重算）；切换不写历史记录。
+  Future<void> _switchToScriptProject(ScriptProjectModel next) async {
+    final GraphEditorController? controller = _controller;
+    if (controller == null || identical(controller.project, next)) {
+      return;
+    }
+    await _settleFocusBeforeProjectChange();
+    if (!mounted || !identical(_controller, controller)) {
+      return;
+    }
+    _flushViewportWriteBack();
+    await _saveQueue.flush();
+    if (!mounted || !identical(_controller, controller)) {
+      return;
+    }
+    _loadScriptProject(controller, next);
+    setState(() {});
+  }
+
+  /// 项目切换/替换前的焦点收口：让检查器字段失焦并等焦点变更微任务落地，
+  /// 未提交文本经失焦提交写回原项目（否则会残留或提交到新项目上）。
+  Future<void> _settleFocusBeforeProjectChange() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await null;
+  }
+
+  /// 重命名（检查器内联与顶栏对话框共用）：写回列表、同步控制器并保存。
+  void _handleRenameScriptProject(ScriptProjectModel project, String name) {
+    if (_replaceScriptProject(project, name: name) == null) {
+      return;
+    }
+    _saveQueue.markDirty();
+    showFloatingToast(context, '已重命名');
+  }
+
+  void _handleTriggerChanged(
+    ScriptProjectModel project,
+    ScriptTrigger trigger,
+  ) {
+    if (_replaceScriptProject(project, trigger: trigger) == null) {
+      return;
+    }
+    _saveQueue.markDirty();
+  }
+
+  void _handleBuildModelChanged(
+    ScriptProjectModel project,
+    BuildModel buildModel,
+  ) {
+    if (_replaceScriptProject(project, buildModel: buildModel) == null) {
+      return;
+    }
+    _saveQueue.markDirty();
+  }
+
+  void _handleMoveScriptProjectUp(ScriptProjectModel project) {
+    _moveScriptProject(project, -1);
+  }
+
+  void _handleMoveScriptProjectDown(ScriptProjectModel project) {
+    _moveScriptProject(project, 1);
+  }
+
+  /// 执行顺序排序（§10.6）：列表顺序即同组执行顺序；重排保持当前选中并即时保存。
+  void _moveScriptProject(ScriptProjectModel project, int delta) {
+    final List<ScriptProjectModel> scripts = _scripts;
+    final int index = _indexOfScript(project);
+    final int target = index + delta;
+    if (index < 0 || target < 0 || target >= scripts.length) {
+      return;
+    }
+    setState(() {
+      scripts.removeAt(index);
+      scripts.insert(target, project);
+    });
+    _saveQueue.markDirty();
+  }
+
+  /// 激活项目：无控制器时创建（含可选入口节点），否则免脏加载后追加入口节点。
+  Future<void> _activateScriptProject(
+    ScriptProjectModel project, {
+    bool addEntryNode = false,
+  }) async {
+    await _settleFocusBeforeProjectChange();
+    if (!mounted) {
+      return;
+    }
+    final GraphEditorController? controller = _controller;
+    if (controller == null) {
+      final GraphEditorController created = GraphEditorController(project);
+      created.addListener(_handleControllerChanged);
+      _controller = created;
+      if (addEntryNode) {
+        created.addNode(entryTypeKey, const Offset(40, 60));
+      }
+      setState(() {});
+      return;
+    }
+    _loadScriptProject(controller, project);
+    if (addEntryNode) {
+      controller.addNode(entryTypeKey, const Offset(40, 60));
+    }
+    setState(() {});
+  }
+
+  /// 移除列表项并调整选择：保持索引位、越界回退末项、空列表回空态。
+  Future<void> _removeScriptAt(int index) async {
+    await _settleFocusBeforeProjectChange();
+    if (!mounted) {
+      return;
+    }
+    final List<ScriptProjectModel> scripts = _scripts;
+    final GraphEditorController? controller = _controller;
+    scripts.removeAt(index);
+    if (scripts.isEmpty || controller == null) {
+      _detachController();
+    } else {
+      final int nextIndex = index < scripts.length ? index : scripts.length - 1;
+      _loadScriptProject(controller, scripts[nextIndex]);
+      setState(() {});
+    }
+    _saveQueue.markDirty();
+  }
+
+  /// 回到无项目空态：注销监听并释放控制器（画布/检查器/输出面板随之为 null）。
+  void _detachController() {
+    final GraphEditorController? controller = _controller;
+    _controller = null;
+    controller?.removeListener(_handleControllerChanged);
+    controller?.dispose();
+    setState(() {});
+  }
+
+  /// 免脏加载：`loadProject` 的选中清空/诊断重算通知不视为编辑。
+  void _loadScriptProject(
+    GraphEditorController controller,
+    ScriptProjectModel project,
+  ) {
+    _suppressSaveMark = true;
+    try {
+      controller.loadProject(project);
+    } finally {
+      _suppressSaveMark = false;
+    }
+  }
+
+  /// 替换列表中项目实例（名称/触发/构建配置不可变，需全字段拷贝）；
+  /// 无实际变化或找不到时返回 null。当前项目同步免脏加载。
+  ScriptProjectModel? _replaceScriptProject(
+    ScriptProjectModel project, {
+    String? name,
+    ScriptTrigger? trigger,
+    BuildModel? buildModel,
+  }) {
+    if ((name == null || name == project.name) &&
+        (trigger == null || trigger == project.trigger) &&
+        (buildModel == null || buildModel == project.buildModel)) {
+      return null;
+    }
+    final int index = _indexOfScript(project);
+    if (index < 0) {
+      return null;
+    }
+    final ScriptProjectModel updated = _copyScriptProject(
+      project,
+      name: name,
+      trigger: trigger,
+      buildModel: buildModel,
+    );
+    setState(() => _scripts[index] = updated);
+    final GraphEditorController? controller = _controller;
+    if (controller != null && identical(controller.project, project)) {
+      _loadScriptProject(controller, updated);
+    }
+    return updated;
+  }
+
+  /// 全字段拷贝（节点/连线/视口保持引用与数值），仅替换可变元数据。
+  ScriptProjectModel _copyScriptProject(
+    ScriptProjectModel source, {
+    String? name,
+    ScriptTrigger? trigger,
+    BuildModel? buildModel,
+  }) {
+    final ScriptProjectModel copy = ScriptProjectModel(
+      id: source.id,
+      name: name ?? source.name,
+      trigger: trigger ?? source.trigger,
+      buildModel: buildModel ?? source.buildModel,
+    );
+    copy.nodes = source.nodes;
+    copy.edges = source.edges;
+    copy.viewX = source.viewX;
+    copy.viewY = source.viewY;
+    copy.viewScale = source.viewScale;
+    return copy;
+  }
+
+  int _indexOfScript(ScriptProjectModel project) {
+    final List<ScriptProjectModel> scripts = _scripts;
+    for (int index = 0; index < scripts.length; index++) {
+      if (identical(scripts[index], project) ||
+          scripts[index].id == project.id) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   Widget _buildOutputBar() {
@@ -364,8 +807,12 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     }
   }
 
-  /// 控制器任意变更（参数/节点/选中/视口写回）统一进入防抖保存（§10.4）。
+  /// 控制器任意变更（参数/节点/选中/视口写回）统一进入防抖保存（§10.4）；
+  /// 项目切换/重命名/元数据变更的免脏加载（见 `_suppressSaveMark`）除外。
   void _handleControllerChanged() {
+    if (_suppressSaveMark) {
+      return;
+    }
     _saveQueue.markDirty();
   }
 
@@ -406,6 +853,13 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
 
   bool _sameViewport(double left, double right) => (left - right).abs() < 1e-9;
 
+  /// 立即收口视口：取消防抖计时并把当前矩阵写回项目（切换/返回前调用），
+  /// 避免 400ms 窗口内的矩阵尾段变更（fling 惯性终点等）随操作丢失。
+  void _flushViewportWriteBack() {
+    _viewportDebounceTimer?.cancel();
+    _persistViewportFromTransformation();
+  }
+
   /// 保存回调（队列串行调用）：构造新包并交给 [ScriptEditorPage.onSave]。
   Future<bool> _saveProject() async {
     try {
@@ -422,13 +876,14 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     _saveQueue.flush();
   }
 
-  /// 返回（§8.4）：先 flush + 等待队列清空；失败未清时弹确认对话框
+  /// 返回（§8.4）：先收口视口并 flush + 等待队列清空；失败未清时弹确认对话框
   /// （重试 / 仍返回），重试成功后照常返回。
   Future<void> _handleBack() async {
     if (_backing) {
       return;
     }
     setState(() => _backing = true);
+    _flushViewportWriteBack();
     await _flushAndWait();
     if (!mounted) {
       return;
@@ -514,16 +969,29 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     if (current == null) {
       return scripts;
     }
-    for (int index = 0; index < scripts.length; index++) {
-      if (identical(scripts[index], current) ||
-          scripts[index].id == current.id) {
-        final List<ScriptProjectModel> updated = List<ScriptProjectModel>.of(
-          scripts,
-        );
-        updated[index] = current;
-        return updated;
-      }
+    final int index = _indexOfScript(current);
+    if (index < 0) {
+      return <ScriptProjectModel>[...scripts, current];
     }
-    return <ScriptProjectModel>[...scripts, current];
+    final List<ScriptProjectModel> updated = List<ScriptProjectModel>.of(
+      scripts,
+    );
+    updated[index] = current;
+    return updated;
   }
 }
+
+String _scriptTriggerLabel(ScriptTrigger trigger) =>
+    trigger == ScriptTrigger.pre ? '编译前' : '编译后';
+
+/// 触发时机着色（§2.2）：编译前 sky / 编译后 lavender。
+Color _scriptTriggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
+    ? UCColors.flavor.sky
+    : UCColors.flavor.lavender;
+
+/// 构建标签着色（§2.2）：ALL 蓝 / Release 绿 / Debug 橙。
+Color _scriptBuildModelColor(BuildModel buildModel) => switch (buildModel) {
+  BuildModel.all => UCColors.flavor.blue,
+  BuildModel.release => UCColors.flavor.green,
+  BuildModel.debug => UCColors.flavor.peach,
+};

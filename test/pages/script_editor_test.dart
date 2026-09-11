@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -39,10 +40,13 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('无脚本项目时中区显示空态占位且左右面板禁用', (tester) async {
+  testWidgets('无脚本项目时中区显示空态引导且左右面板禁用', (tester) async {
     await _pumpEditor(tester, _pack('demo'));
 
-    expect(find.text('暂无脚本项目'), findsOneWidget);
+    expect(find.byKey(const Key('emptyNewScriptButton')), findsOneWidget);
+    expect(find.text('尚未创建脚本项目'), findsOneWidget);
+    expect(find.text('节点图将编译为编译前/后 PowerShell 脚本'), findsOneWidget);
+    expect(find.byIcon(FluentIcons.power_shell), findsOneWidget);
     expect(find.text('请先新建脚本项目'), findsOneWidget);
     expect(_panelOpacity(tester, const Key('nodeLibraryPanel')), 0.5);
     expect(_panelOpacity(tester, const Key('inspectorPanel')), 0.5);
@@ -54,7 +58,7 @@ void main() {
   testWidgets('有脚本项目时中区无空态占位且左右面板可用', (tester) async {
     await _pumpEditor(tester, _packWithScript());
 
-    expect(find.text('暂无脚本项目'), findsNothing);
+    expect(find.text('尚未创建脚本项目'), findsNothing);
     expect(find.text('脚本项目'), findsOneWidget);
     expect(find.text('执行顺序'), findsOneWidget);
     expect(_panelOpacity(tester, const Key('nodeLibraryPanel')), 1.0);
@@ -389,6 +393,540 @@ void main() {
     expect(page.generator, isA<PowerShell5Generator>());
     expect(page.packagePaths, const <String>['lib/x.lib']);
   });
+
+  testWidgets('顶栏渲染脚本项目选择器与新建/重命名/删除按钮', (tester) async {
+    await _pumpEditor(tester, _packWithScript());
+
+    final Finder combo = find.byKey(const Key('scriptProjectComboBox'));
+    expect(combo, findsOneWidget);
+    expect(tester.getSize(combo).width, 200);
+    expect(tester.getSize(combo).height, 32);
+    expect(find.byKey(const Key('newScriptButton')), findsOneWidget);
+    expect(find.byKey(const Key('renameScriptButton')), findsOneWidget);
+    expect(find.byKey(const Key('deleteScriptButton')), findsOneWidget);
+    expect(find.byTooltip('新建脚本项目'), findsOneWidget);
+    expect(find.byTooltip('重命名脚本项目'), findsOneWidget);
+    expect(find.byTooltip('删除脚本项目'), findsOneWidget);
+    expect(_projectCombo(tester).value!.id, 'script_1');
+
+    final double titleX = tester.getTopLeft(find.text('节点编辑器 — demo')).dx;
+    final double comboX = tester.getTopLeft(combo).dx;
+    final double newX = tester
+        .getTopLeft(find.byKey(const Key('newScriptButton')))
+        .dx;
+    final double renameX = tester
+        .getTopLeft(find.byKey(const Key('renameScriptButton')))
+        .dx;
+    final double deleteX = tester
+        .getTopLeft(find.byKey(const Key('deleteScriptButton')))
+        .dx;
+    final double saveX = tester
+        .getTopLeft(find.byKey(const Key('saveStatus')))
+        .dx;
+    expect(titleX, lessThan(comboX));
+    expect(comboX, lessThan(newX));
+    expect(newX, lessThan(renameX));
+    expect(renameX, lessThan(deleteX));
+    expect(deleteX, lessThan(saveX));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('无脚本项目时选择器与重命名/删除禁用、新建可用', (tester) async {
+    await _pumpEditor(tester, _pack('demo'));
+
+    expect(_iconButton(tester, 'newScriptButton').onPressed, isNotNull);
+    expect(_iconButton(tester, 'renameScriptButton').onPressed, isNull);
+    expect(_iconButton(tester, 'deleteScriptButton').onPressed, isNull);
+    expect(_projectCombo(tester).onChanged, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('空态「新建脚本项目」按钮创建首个项目', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _pack('demo'),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    expect(find.byKey(const Key('emptyNewScriptButton')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('emptyNewScriptButton')));
+    await _pumpDialogTransition(tester);
+    expect(find.byKey(const Key('createScriptProjectDialog')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('createScriptProjectConfirmButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(find.byKey(const Key('createScriptProjectDialog')), findsNothing);
+    expect(saved, isNotEmpty);
+    final ScriptProjectModel created = saved.last.scripts.single;
+    expect(created.id, 'script_1');
+    expect(created.name, '脚本 1');
+    expect(created.trigger, ScriptTrigger.pre);
+    expect(created.buildModel, BuildModel.all);
+    expect(created.nodes.single.type, 'flow.entry');
+    expect(created.nodes.single.x, 40);
+    expect(created.nodes.single.y, 60);
+    expect(_projectCombo(tester).value!.id, 'script_1');
+    expect(find.byKey(const Key('editorCanvas')), findsOneWidget);
+    expect(find.byKey(const Key('nodeCard_n1')), findsOneWidget);
+    expect(_panelOpacity(tester, const Key('nodeLibraryPanel')), 1.0);
+    expect(find.text('已创建'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('新建项目：id 取既有 script_N 最大序号 +1、默认名称递增', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+          id: 'script_5',
+          name: '生成版本头',
+          trigger: ScriptTrigger.post,
+        ),
+      ];
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      pack,
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('newScriptButton')));
+    await _pumpDialogTransition(tester);
+    expect(
+      tester
+          .widget<TextBox>(
+            find.byKey(const Key('createScriptProjectNameField')),
+          )
+          .controller!
+          .text,
+      '脚本 1',
+    );
+
+    await tester.tap(find.byKey(const Key('createScriptProjectConfirmButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts, hasLength(2));
+    expect(saved.last.scripts.first.id, 'script_5');
+    expect(saved.last.scripts.last.id, 'script_6');
+    expect(saved.last.scripts.last.name, '脚本 1');
+    expect(_projectCombo(tester).value!.id, 'script_6');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('新建对话框重名报错且取消不新增', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('newScriptButton')));
+    await _pumpDialogTransition(tester);
+    await tester.enterText(
+      find.byKey(const Key('createScriptProjectNameField')),
+      ' 脚本 1 ',
+    );
+    await tester.pump();
+
+    expect(find.text('名称已存在'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const Key('createScriptProjectConfirmButton')),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.byKey(const Key('createScriptProjectCancelButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(find.byKey(const Key('createScriptProjectDialog')), findsNothing);
+    expect(saved, isEmpty);
+    expect(_projectCombo(tester).value!.id, 'script_1');
+  });
+
+  testWidgets('重命名项目：顶栏对话框写回列表、控制器与保存', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('renameScriptButton')));
+    await _pumpDialogTransition(tester);
+    expect(find.byKey(const Key('renameScriptProjectDialog')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const Key('renameScriptProjectNameField')),
+      '生成版本头',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('renameScriptProjectConfirmButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts.single.name, '生成版本头');
+    expect(_projectCombo(tester).value!.name, '生成版本头');
+    expect(
+      tester
+          .widget<TextBox>(find.byKey(const Key('inspectorProjectName')))
+          .controller!
+          .text,
+      '生成版本头',
+    );
+    expect(find.text('已重命名'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('检查器内联重命名经页面写回并保存', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('inspectorProjectName')),
+      '内联改名',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts.single.name, '内联改名');
+    expect(_projectCombo(tester).value!.name, '内联改名');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('检查器触发时机与构建标签变更写回并保存', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await _selectCombo(
+      tester,
+      find.byKey(const Key('inspectorProjectTrigger')),
+      '编译后',
+    );
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts.single.trigger, ScriptTrigger.post);
+    expect(_projectCombo(tester).value!.trigger, ScriptTrigger.post);
+
+    await _selectCombo(
+      tester,
+      find.byKey(const Key('inspectorProjectBuildModel')),
+      'Debug',
+    );
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts.single.buildModel, BuildModel.debug);
+    expect(_projectCombo(tester).value!.buildModel, BuildModel.debug);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('删除项目：确认后按索引位选中相邻项并保存', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScripts(3),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('scriptProjectRow_script_2')));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('deleteScriptButton')));
+    await _pumpDialogTransition(tester);
+    expect(find.byKey(const Key('deleteScriptProjectDialog')), findsOneWidget);
+    expect(find.text('确定要删除脚本项目「脚本 2」吗？'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('deleteScriptProjectConfirmButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(
+      saved.last.scripts.map((ScriptProjectModel script) => script.id).toList(),
+      <String>['script_1', 'script_3'],
+    );
+    expect(_projectCombo(tester).value!.id, 'script_3');
+    expect(find.text('已删除'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('删除唯一项目后回到空态并保存空列表', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('deleteScriptButton')));
+    await _pumpDialogTransition(tester);
+    await tester.tap(find.byKey(const Key('deleteScriptProjectConfirmButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts, isEmpty);
+    expect(find.byKey(const Key('emptyNewScriptButton')), findsOneWidget);
+    expect(find.text('尚未创建脚本项目'), findsOneWidget);
+    expect(find.byKey(const Key('editorCanvas')), findsNothing);
+    expect(_panelOpacity(tester, const Key('nodeLibraryPanel')), 0.5);
+    expect(_projectCombo(tester).onChanged, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('切换项目：先 flush 当前编辑、恢复目标视口并清空选中', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithTwoScripts(),
+      debounce: const Duration(seconds: 5),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await _editTextNode(tester, 'hello');
+    expect(find.text('未保存'), findsOneWidget);
+
+    await _selectScriptProject(tester, '脚本 2');
+    await tester.pump();
+    await tester.pump();
+
+    expect(saved, hasLength(1));
+    expect(saved.single.scripts[0].nodes.single.params['value'], 'hello');
+    expect(find.text('已保存'), findsOneWidget);
+    expect(_projectCombo(tester).value!.id, 'script_2');
+    final Matrix4 matrix = _editorTransformation(tester).value;
+    expect(matrix.storage[12], closeTo(30, 1e-9));
+    expect(matrix.storage[13], closeTo(-10, 1e-9));
+    expect(matrix.getMaxScaleOnAxis(), closeTo(1.25, 1e-9));
+    expect(
+      tester
+          .widget<TextBox>(find.byKey(const Key('inspectorProjectName')))
+          .controller!
+          .text,
+      '脚本 2',
+    );
+    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('切换项目时收口检查器未提交的名称编辑', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithTwoScripts(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('inspectorProjectName')),
+      'A 改名',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('scriptProjectRow_script_2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts[0].name, 'A 改名');
+    expect(saved.last.scripts[1].name, '脚本 2');
+    expect(
+      tester
+          .widget<TextBox>(find.byKey(const Key('inspectorProjectName')))
+          .controller!
+          .text,
+      '脚本 2',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('切换前收口视口防抖：矩阵尾段变更先写回当前项目', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithTwoScripts(),
+      debounce: const Duration(seconds: 5),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    final TransformationController transformation = _editorTransformation(
+      tester,
+    );
+    transformation.value = Matrix4.identity()
+      ..translateByDouble(120, 80, 0, 1)
+      ..scaleByDouble(1, 1, 1, 1);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('scriptProjectRow_script_2')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(saved, hasLength(1));
+    expect(saved.single.scripts[0].viewX, closeTo(120, 1e-9));
+    expect(saved.single.scripts[0].viewY, closeTo(80, 1e-9));
+    expect(saved.single.scripts[0].viewScale, closeTo(1, 1e-9));
+    expect(_projectCombo(tester).value!.id, 'script_2');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('返回前收口视口防抖：矩阵尾段变更写回后再 pop', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditorInRoute(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(seconds: 5),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    final TransformationController transformation = _editorTransformation(
+      tester,
+    );
+    transformation.value = Matrix4.identity()
+      ..translateByDouble(60, 30, 0, 1)
+      ..scaleByDouble(1, 1, 1, 1);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('返回包管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.byKey(const Key('nodeEditorPage')), findsNothing);
+    expect(saved, isNotEmpty);
+    expect(saved.last.scripts.single.viewX, closeTo(60, 1e-9));
+    expect(saved.last.scripts.single.viewY, closeTo(30, 1e-9));
+    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('执行顺序上移/下移：重排、保持选中并即时保存', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScripts(3),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('scriptProjectRow_script_2')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      _iconButton(tester, 'scriptProjectMoveUp_script_1').onPressed,
+      isNull,
+    );
+    expect(
+      _iconButton(tester, 'scriptProjectMoveDown_script_3').onPressed,
+      isNull,
+    );
+
+    await tester.tap(find.byKey(const Key('scriptProjectMoveUp_script_2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(
+      saved.last.scripts.map((ScriptProjectModel script) => script.id).toList(),
+      <String>['script_2', 'script_1', 'script_3'],
+    );
+    expect(_projectCombo(tester).value!.id, 'script_2');
+    expect(
+      _iconButton(tester, 'scriptProjectMoveUp_script_2').onPressed,
+      isNull,
+    );
+    expect(
+      _iconButton(tester, 'scriptProjectMoveDown_script_2').onPressed,
+      isNotNull,
+    );
+
+    await tester.tap(find.byKey(const Key('scriptProjectMoveDown_script_2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(
+      saved.last.scripts.map((ScriptProjectModel script) => script.id).toList(),
+      <String>['script_1', 'script_2', 'script_3'],
+    );
+    expect(_projectCombo(tester).value!.id, 'script_2');
+    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.takeException(), isNull);
+  });
 }
 
 PackModel _pack(String name) =>
@@ -460,6 +998,46 @@ PackModel _fullPackWithTextNode() {
     ScriptProjectModel(id: 'script_1', name: '脚本 1', trigger: ScriptTrigger.pre)
       ..nodes.add(ScriptNodeModel(id: 'n1', type: 'value.text', x: 40, y: 60)),
   ];
+  return pack;
+}
+
+/// 双脚本包：`script_1` 含 `value.text` 节点与视口 (10, 20, 1.5)；
+/// `script_2` 视口 (30, -10, 1.25)，用于切换/视口收口断言。
+PackModel _packWithTwoScripts() {
+  final ScriptProjectModel first =
+      ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+        )
+        ..nodes.add(ScriptNodeModel(id: 'n1', type: 'value.text', x: 40, y: 60))
+        ..viewX = 10
+        ..viewY = 20
+        ..viewScale = 1.5;
+  final ScriptProjectModel second =
+      ScriptProjectModel(
+          id: 'script_2',
+          name: '脚本 2',
+          trigger: ScriptTrigger.post,
+        )
+        ..viewX = 30
+        ..viewY = -10
+        ..viewScale = 1.25;
+  return _pack('demo')..scripts = <ScriptProjectModel>[first, second];
+}
+
+/// 含 [count] 个脚本（script_1..script_N）的包，用于排序/删除用例。
+PackModel _packWithScripts(int count) {
+  final PackModel pack = _pack('demo');
+  for (int index = 1; index <= count; index++) {
+    pack.scripts.add(
+      ScriptProjectModel(
+        id: 'script_$index',
+        name: '脚本 $index',
+        trigger: ScriptTrigger.pre,
+      ),
+    );
+  }
   return pack;
 }
 
@@ -549,3 +1127,39 @@ bool _panelIgnoring(WidgetTester tester, Key key) => tester
           .first,
     )
     .ignoring;
+
+ComboBox<ScriptProjectModel> _projectCombo(WidgetTester tester) =>
+    tester.widget<ComboBox<ScriptProjectModel>>(
+      find.byKey(const Key('scriptProjectComboBox')),
+    );
+
+IconButton _iconButton(WidgetTester tester, String key) =>
+    tester.widget<IconButton>(find.byKey(Key(key)));
+
+Future<void> _pumpDialogTransition(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
+/// 经顶栏选择器切换项目：打开下拉并点选目标名称。
+Future<void> _selectScriptProject(WidgetTester tester, String name) async {
+  await tester.tap(find.byKey(const Key('scriptProjectComboBox')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(name).last);
+  await tester.pump();
+  await tester.pump();
+}
+
+Future<void> _selectCombo(
+  WidgetTester tester,
+  Finder field,
+  String label,
+) async {
+  await tester.tap(field);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(label).last);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+}
