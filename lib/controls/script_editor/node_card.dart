@@ -422,7 +422,9 @@ class _NodeCardState extends State<NodeCard> {
             width: pinWidth,
             height: pinHeight,
             decoration: BoxDecoration(
-              color: connected ? color : color.withValues(alpha: 0.35),
+              color: connected
+                  ? color
+                  : color.withValues(alpha: exec ? 0.30 : 0.35),
               border: Border.all(color: color, width: _pinStrokeWidth),
               shape: exec ? BoxShape.rectangle : BoxShape.circle,
               borderRadius: exec ? BorderRadius.circular(4) : null,

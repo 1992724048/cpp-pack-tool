@@ -47,6 +47,9 @@ class _EditorCanvasState extends State<EditorCanvas> {
   ScriptProjectModel? _projectRef;
   bool _showPinLabels = true;
 
+  /// 最近一次与变换矩阵对齐的模型视口；模型值与其不同时才视为外部改写。
+  late ({double x, double y, double scale}) _lastSyncedViewport;
+
   String? _dragNodeId;
   Offset _dragNodeStart = Offset.zero;
   Offset _dragStartScene = Offset.zero;
@@ -144,7 +147,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                         descriptor: NodeRegistry.byType(node.type),
                         selected: node.id == selectedNodeId,
                         dragging: node.id == _dragNodeId,
-                        // 错误红点接线（controller.diagnostics）由 T6 完成。
+                        // 错误引脚红环接线由 T6 完成，节点错误红点接线由 T9 完成。
                         hasError: false,
                         connectedPins:
                             connectedPins[node.id] ?? const <String>{},
@@ -195,17 +198,26 @@ class _EditorCanvasState extends State<EditorCanvas> {
     final double scale = project.viewScale
         .clamp(_minScale, _maxScale)
         .toDouble();
+    _lastSyncedViewport = (
+      x: project.viewX,
+      y: project.viewY,
+      scale: project.viewScale,
+    );
     _transformation.value = Matrix4.identity()
       ..translateByDouble(project.viewX, project.viewY, 0, 1)
       ..scaleByDouble(scale, scale, scale, 1);
   }
 
   /// 模型视口被外部直接写入时（T9 诊断居中 / T11 恢复），同步到变换矩阵。
+  ///
+  /// 以「模型值 vs 上次同步缓存」判断，而非与当前矩阵比较：fling 的
+  /// `onInteractionEnd` 在惯性动画开始前触发，惯性会令矩阵领先于模型，
+  /// 与矩阵比较会把惯性终点误判为外部改写并把视口回跳。
   void _syncViewportFromProject(ScriptProjectModel project) {
-    final Matrix4 matrix = _transformation.value;
-    if (matrix.storage[12] == project.viewX &&
-        matrix.storage[13] == project.viewY &&
-        matrix.getMaxScaleOnAxis() == project.viewScale) {
+    final ({double x, double y, double scale}) synced = _lastSyncedViewport;
+    if (project.viewX == synced.x &&
+        project.viewY == synced.y &&
+        project.viewScale == synced.scale) {
       return;
     }
     _applyProjectViewport();
@@ -213,11 +225,11 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   void _persistViewport() {
     final Matrix4 matrix = _transformation.value;
-    widget.controller.setViewport(
-      x: matrix.storage[12],
-      y: matrix.storage[13],
-      scale: matrix.getMaxScaleOnAxis(),
-    );
+    final double x = matrix.storage[12];
+    final double y = matrix.storage[13];
+    final double scale = matrix.getMaxScaleOnAxis();
+    _lastSyncedViewport = (x: x, y: y, scale: scale);
+    widget.controller.setViewport(x: x, y: y, scale: scale);
   }
 
   Offset? _toScene(Offset globalPosition) {

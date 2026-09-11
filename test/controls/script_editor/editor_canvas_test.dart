@@ -81,7 +81,7 @@ void main() {
         const Size(14, 8),
       );
       expect(execInput.shape, BoxShape.rectangle);
-      expect(execInput.color, UCColors.flavor.text.withValues(alpha: 0.35));
+      expect(execInput.color, UCColors.flavor.text.withValues(alpha: 0.30));
       expect(execInput.border!.top.color, UCColors.flavor.text);
       expect(execInput.border!.top.width, 1.5);
 
@@ -122,7 +122,7 @@ void main() {
       );
       expect(
         _pinDecoration(tester, 'n1', 'exec').color,
-        UCColors.flavor.text.withValues(alpha: 0.35),
+        UCColors.flavor.text.withValues(alpha: 0.30),
       );
     });
 
@@ -370,6 +370,43 @@ void main() {
       expect(controller.project.viewX, matrix.storage[12]);
       expect(controller.project.viewY, matrix.storage[13]);
       expect(controller.project.viewScale, matrix.getMaxScaleOnAxis());
+    });
+
+    testWidgets('fling 惯性结束后外部通知不回跳视口', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'value.text', x: 40, y: 60)],
+        ),
+      );
+
+      // 甩动：onInteractionEnd 在惯性开始前先把当时的矩阵写回模型。
+      await tester.flingFrom(
+        const Offset(640, 400),
+        const Offset(-160, -110),
+        1200,
+      );
+      // 有界推进惯性动画（约 0.3s）至结束。
+      for (int frame = 0; frame < 60; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      final Matrix4 inertiaEnd = _transformation(tester).value.clone();
+      expect(
+        inertiaEnd.storage[12] == controller.project.viewX &&
+            inertiaEnd.storage[13] == controller.project.viewY,
+        isFalse,
+        reason: '前置条件：惯性后矩阵应领先于 onInteractionEnd 写回的模型视口',
+      );
+
+      // 任一控制器通知（此处选中节点）不得把视口回跳到惯性起点。
+      controller.selectNode('n1');
+      await tester.pump();
+
+      final Matrix4 afterNotify = _transformation(tester).value;
+      expect(afterNotify.storage[12], inertiaEnd.storage[12]);
+      expect(afterNotify.storage[13], inertiaEnd.storage[13]);
+      expect(afterNotify.getMaxScaleOnAxis(), inertiaEnd.getMaxScaleOnAxis());
     });
 
     testWidgets('滚轮缩放改变变换并写回视口', (WidgetTester tester) async {
