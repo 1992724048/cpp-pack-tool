@@ -16,6 +16,7 @@ class Svgs {
   static final mapAsDrive = SvgPicture.asset('assets/icons/map_as_drive.svg', semanticsLabel: '映射为驱动器', width: 20, height: 20);
   static final moveToFolder = SvgPicture.asset('assets/icons/move_to_folder.svg', semanticsLabel: '移动到文件夹', width: 20, height: 20);
   static final historyFolder = SvgPicture.asset('assets/icons/history_folder.svg', semanticsLabel: '历史文件夹', width: 20, height: 20);
+  static final SvgPicture internetConnection = SvgPicture.asset('assets/icons/internet_connection.svg', semanticsLabel: '依赖关系图', width: 20, height: 20);
   static final save = SvgPicture.asset('assets/icons/save.svg', semanticsLabel: '保存', width: 20, height: 20);
   static final info = SvgPicture.asset('assets/icons/info.svg', semanticsLabel: '信息', width: 20, height: 20);
 }

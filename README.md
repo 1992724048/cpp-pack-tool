@@ -1,6 +1,6 @@
 ﻿# C++ NuGet 打包工具
 
-把 C++ 头文件、源码与库可视化为原生 NuGet 包的 Windows 桌面工具。通过图形界面完成包信息编辑、目录映射、依赖与编译设置，并一键导出可直接被 Visual Studio C++ 工程引用的 `.nupkg`。
+把 C++ 头文件、源码与库可视化为原生 NuGet 包的 Windows 桌面工具。通过图形界面完成包信息编辑、目录映射、依赖与编译设置，并一键导出 Visual Studio C++ 工程可直接引用的 `.nupkg`，或供 CMake `find_package` 消费的配置包。
 
 - 平台：仅 Windows 桌面
 - 界面：全中文、Win11 风格（fluent_ui）、Catppuccin 配色
@@ -14,7 +14,7 @@
 | 文件管理 | 目录树展示包内文件（目录大小按后代聚合）；双击用系统默认程序打开；lib/dll/pdb/exe 按路径显示 Release/Debug 构建标签 |
 | 依赖管理 | 从现有包选择依赖，自定义 NuGet 版本范围并实时校验；指向不存在包的依赖显示「缺失」 |
 | 编译设置 | 宏定义、编译前/后命令（可从包内选择脚本、插入 MSBuild 常用宏）、附加库目录、附加库；条目可按 ALL/Release/Debug 分组 |
-| 打包设置 | 选择打包格式（当前支持 NuGet）；预览包内文件树与文本内容；一键导出 `.nupkg` |
+| 打包设置 | 选择打包格式（NuGet / CMake）；预览包内文件树与文本内容；按所选格式导出（缺失依赖时弹窗提醒，可继续） |
 | 历史记录 | 时间线记录创建、版本变更、重新映射、打包导出四类事件（上限 100 条，可删除） |
 | 设置 | 打包输出目录；主题模式（系统/深色/浅色）、深色配色（Frappe/Macchiato/Mocha）与强调色，即时生效并持久化 |
 
@@ -39,6 +39,24 @@
 - 包内 dll/pdb 由 `DeployPkgRuntimeBinaries` 目标在构建后硬链接到 `$(OutDir)`（失败回退为拷贝，并登记 `FileWrites` 供清理）
 - 包内包含 `.asm` 时条件导入 VS 的 `masm.props`/`masm.targets`，生成 `MASM` 项
 - 包内包含 `.rc` 时生成 `ResourceCompile` 项
+
+### CMake 配置包
+
+选择 CMake 格式导出时生成 `<包ID>-<版本>-cmake.zip`；解压后将目录加入 `CMAKE_PREFIX_PATH` 即可在 CMake 工程中消费：
+
+```cmake
+find_package(<包名> CONFIG REQUIRED)
+target_link_libraries(app PRIVATE <包名>::<包名>)
+```
+
+| 内容 | 包内路径 | 说明 |
+| ---- | -------- | ---- |
+| 头文件 / 模块 | `include/<源目录名>/...` | 与 NuGet 产物相同的命名空间策略，`#include <源目录名/foo.h>` |
+| lib / dll / pdb | `lib/...` | 剥离开头 `lib/`、`bin/`，保留 Release/Debug 子目录结构 |
+| 其余文件 | `files/...` | 保留原相对路径 |
+| CMake 配置 | `lib/cmake/<包名>/` | `Config.cmake`、`Targets.cmake`（`<包名>::<包名>` INTERFACE IMPORTED 目标、`.lib` 按 Debug/Release 分组条件链接）与 `ConfigVersion.cmake`（版本为数字点分时生成） |
+
+> DLL 不参与链接，需消费方自行拷贝到运行目录（例如 `$<TARGET_RUNTIME_DLLS>` 或手动复制）。
 
 ## 构建与运行
 
@@ -100,7 +118,7 @@ config/
 | [flutter_svg](https://pub.dev/packages/flutter_svg) | SVG 图标渲染 |
 | [catppuccin_flutter](https://pub.dev/packages/catppuccin_flutter) | Catppuccin 配色方案 |
 | [yaml](https://pub.dev/packages/yaml) / [yaml_edit](https://pub.dev/packages/yaml_edit) | YAML 配置解析与生成 |
-| [archive](https://pub.dev/packages/archive) | `.nupkg`（ZIP/OPC）组装 |
+| [archive](https://pub.dev/packages/archive) | `.nupkg` / CMake 配置包（ZIP）组装 |
 | [file_selector](https://pub.dev/packages/file_selector) | 系统原生目录选择 |
 
 ## 第三方声明
