@@ -7,6 +7,7 @@ import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -626,6 +627,118 @@ void main() {
     expect(find.text('该包缺少源目录信息，无法重新映射'), findsOneWidget);
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
   });
+
+  testWidgets('无包时打包按钮禁用', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      store: _FakePackStore(),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_packButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('选中设置项时打包按钮禁用', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_packButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_packButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('未设置输出目录时提示错误且不弹出导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('请先在设置页配置打包输出目录'), findsOneWidget);
+    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+  });
+
+  testWidgets('缺少源目录时提示错误且不弹出导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('该包缺少源目录信息，无法打包'), findsOneWidget);
+    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+  });
+
+  testWidgets('设置输出目录后打开导出对话框并传入选中包与目录', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+    PackModel? exportedPack;
+    String? exportedDirectory;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportedPack = pack;
+        exportedDirectory = outputDirectory;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 8,
+          packageSize: 1024,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportedPack, isNotNull);
+    expect(exportedPack!.name, 'demo');
+    expect(exportedDirectory, r'D:\out');
+    expect(find.text('打包完成'), findsOneWidget);
+    expect(find.text('文件数量：8'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -635,6 +748,8 @@ Future<void> _pumpMainLayout(
   PackStore? store,
   SettingsModel settings = const SettingsModel(),
   Future<void> Function(SettingsModel settings)? onSaveSettings,
+  Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
+  exportPackage,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -648,6 +763,7 @@ Future<void> _pumpMainLayout(
         store: store ?? _FakePackStore(),
         settings: settings,
         onSaveSettings: onSaveSettings ?? (SettingsModel settings) async {},
+        exportPackage: exportPackage ?? exportNuGetPackage,
       ),
     ),
   );
@@ -683,6 +799,13 @@ IconButton _deleteButton(WidgetTester tester) => tester.widget<IconButton>(
 IconButton _remapButton(WidgetTester tester) => tester.widget<IconButton>(
   find.descendant(
     of: find.byTooltip('重新映射'),
+    matching: find.byType(IconButton),
+  ),
+);
+
+IconButton _packButton(WidgetTester tester) => tester.widget<IconButton>(
+  find.descendant(
+    of: find.byTooltip('打包文件夹'),
     matching: find.byType(IconButton),
   ),
 );

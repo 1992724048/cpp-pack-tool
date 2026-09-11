@@ -17,3 +17,20 @@ Future<bool> openWithDefaultApp(String filePath) async {
     return false;
   }
 }
+
+/// 在资源管理器中定位文件（打开所在目录并选中该文件）。
+///
+/// 返回 false 表示文件不存在或系统调用失败。
+Future<bool> revealInExplorer(String filePath) async {
+  final File file = File(filePath);
+  if (!file.existsSync()) {
+    return false;
+  }
+  try {
+    // `/select,` 与路径必须是两个独立参数；explorer 成功时退出码也恒为 1。
+    await Process.run('explorer', <String>['/select,', file.absolute.path]);
+    return true;
+  } on ProcessException {
+    return false;
+  }
+}

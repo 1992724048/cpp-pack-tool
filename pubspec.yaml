@@ -15,6 +15,7 @@ dependencies:
   catppuccin_flutter: ^1.0.0
   yaml: ^3.1.4
   yaml_edit: ^2.2.4
+  archive: ^4.2.0
   
 dev_dependencies:
   flutter_test:

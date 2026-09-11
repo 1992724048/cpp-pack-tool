@@ -4,6 +4,7 @@ import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
@@ -14,6 +15,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
+import 'controls/pack_export_dialog.dart';
 import 'controls/pack_list.dart';
 import 'controls/remap_pack_dialog.dart';
 import 'pages/setting.dart';
@@ -92,6 +94,7 @@ class MainLayout extends StatefulWidget {
     this.store = const PackStore(),
     this.settings = const SettingsModel(),
     this.onSaveSettings = _noopSaveSettings,
+    this.exportPackage = exportNuGetPackage,
   });
 
   final Future<String?> Function() pickDirectory;
@@ -99,6 +102,11 @@ class MainLayout extends StatefulWidget {
   final PackStore store;
   final SettingsModel settings;
   final Future<void> Function(SettingsModel settings) onSaveSettings;
+  final Future<PackageExportResult> Function(
+    PackModel pack,
+    String outputDirectory,
+  )
+  exportPackage;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -318,6 +326,41 @@ class _MainLayoutState extends State<MainLayout> {
     _upsertPack(pack);
   }
 
+  Future<void> _packSelectedPack() async {
+    final int? selected = _selected;
+    if (selected == null || selected < 0 || selected >= _packs.length) {
+      return;
+    }
+    final PackModel pack = _packs[selected];
+    final String? outputDirectory = widget.settings.outputDirectory;
+    if (outputDirectory == null || outputDirectory.isEmpty) {
+      showFloatingToast(
+        context,
+        '请先在设置页配置打包输出目录',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (pack.sourcePath == null) {
+      showFloatingToast(
+        context,
+        '该包缺少源目录信息，无法打包',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (_) => PackExportDialog(
+        pack: pack,
+        outputDirectory: outputDirectory,
+        exportPackage: widget.exportPackage,
+      ),
+    );
+  }
+
   void _sortPacks() {
     _packs.sort((PackModel first, PackModel second) {
       final int insensitive = first.name.toLowerCase().compareTo(
@@ -383,7 +426,10 @@ class _MainLayoutState extends State<MainLayout> {
             ),
             Tooltip(
               message: '打包文件夹',
-              child: IconButton(icon: Svgs.moveToFolder, onPressed: () {}),
+              child: IconButton(
+                icon: Svgs.moveToFolder,
+                onPressed: _hasSelectedPack ? _packSelectedPack : null,
+              ),
             ),
             Tooltip(
               message: '历史记录',

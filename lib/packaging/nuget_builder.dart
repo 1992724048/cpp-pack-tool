@@ -104,7 +104,7 @@ class NuGetPackageBuilder implements PackageBuilder {
       ..writeln('  <metadata>')
       ..writeln('    <id>${_escapeXml(pack.name)}</id>')
       ..writeln(
-        '    <version>${_escapeXml(_normalizedVersion(pack.version))}</version>',
+        '    <version>${_escapeXml(normalizedVersion(pack.version))}</version>',
       )
       ..writeln('    <authors>${_escapeXml(pack.author)}</authors>')
       ..writeln(
@@ -153,7 +153,8 @@ class NuGetPackageBuilder implements PackageBuilder {
     return description;
   }
 
-  static String _normalizedVersion(String version) {
+  /// 去掉 `+build` 元数据后缀，得到 NuGet 接受的版本号。
+  static String normalizedVersion(String version) {
     final int metadata = version.indexOf('+');
     if (metadata <= 0) {
       return version;
