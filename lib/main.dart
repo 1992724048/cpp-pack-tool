@@ -5,7 +5,9 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/packaging/cmake_exporter.dart' as cmake_exporter;
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
+import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -18,6 +20,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'app_info.dart';
 import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
+import 'controls/missing_dependencies_dialog.dart';
 import 'controls/pack_export_dialog.dart';
 import 'controls/pack_history_dialog.dart';
 import 'controls/pack_list.dart';
@@ -100,6 +103,7 @@ class MainLayout extends StatefulWidget {
     this.settings = const SettingsModel(),
     this.onSaveSettings = _noopSaveSettings,
     this.exportPackage = exportNuGetPackage,
+    this.exportCmakePackage = cmake_exporter.exportCmakePackage,
     this.now = DateTime.now,
   });
 
@@ -113,6 +117,11 @@ class MainLayout extends StatefulWidget {
     String outputDirectory,
   )
   exportPackage;
+  final Future<PackageExportResult> Function(
+    PackModel pack,
+    String outputDirectory,
+  )
+  exportCmakePackage;
   final DateTime Function() now;
 
   @override
@@ -120,8 +129,11 @@ class MainLayout extends StatefulWidget {
 }
 
 class _MainLayoutState extends State<MainLayout> {
+  static const String _cmakeBuilderId = 'cmake';
+
   List<PackModel> _packs = [];
   int? _selected;
+  PackageBuilder _packagingBuilder = PackageBuilderRegistry.all.first;
 
   @override
   void initState() {
@@ -395,6 +407,10 @@ class _MainLayoutState extends State<MainLayout> {
     _upsertPack(pack);
   }
 
+  void _selectPackagingBuilder(PackageBuilder builder) {
+    setState(() => _packagingBuilder = builder);
+  }
+
   Future<void> _packSelectedPack() async {
     final int? selected = _selected;
     if (selected == null || selected < 0 || selected >= _packs.length) {
@@ -420,15 +436,46 @@ class _MainLayoutState extends State<MainLayout> {
       );
       return;
     }
+    final List<PackDependent> missing = _missingDependencies(pack);
+    if (missing.isNotEmpty) {
+      final bool proceed = await showMissingDependenciesDialog(
+        context,
+        missing: missing,
+      );
+      if (!proceed || !mounted) {
+        return;
+      }
+    }
+    final Future<PackageExportResult> Function(
+      PackModel pack,
+      String outputDirectory,
+    )
+    exportPackage = _packagingBuilder.id == _cmakeBuilderId
+        ? widget.exportCmakePackage
+        : widget.exportPackage;
     await showDialog<void>(
       context: context,
       builder: (_) => PackExportDialog(
         pack: pack,
         outputDirectory: outputDirectory,
-        exportPackage: widget.exportPackage,
+        exportPackage: exportPackage,
         onExported: (PackageExportResult result) => _recordExport(pack, result),
       ),
     );
+  }
+
+  List<PackDependent> _missingDependencies(PackModel pack) {
+    final List<PackDependent> missing = <PackDependent>[];
+    final Set<String> seen = <String>{};
+    for (final DependencyModel dependency in pack.dependencies) {
+      if (!seen.add(dependency.name.toLowerCase())) {
+        continue;
+      }
+      if (_findPack(dependency.name) == null) {
+        missing.add((name: dependency.name, version: dependency.version));
+      }
+    }
+    return missing;
   }
 
   Future<void> _recordExport(PackModel pack, PackageExportResult result) async {
@@ -561,6 +608,8 @@ class _MainLayoutState extends State<MainLayout> {
           _packs,
           onSave: _savePack,
           pickDirectory: widget.pickDirectory,
+          packagingBuilder: _packagingBuilder,
+          onPackagingBuilderChanged: _selectPackagingBuilder,
         ),
         footerItems: [
           PaneItemSeparator(),

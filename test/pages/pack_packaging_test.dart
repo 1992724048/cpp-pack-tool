@@ -40,7 +40,7 @@ void main() {
     expect(find.byKey(const Key('packPreviewDialog')), findsOneWidget);
   });
 
-  testWidgets('下拉可切换打包格式', (tester) async {
+  testWidgets('下拉可切换打包格式并上抛选择', (tester) async {
     final _FakePackageBuilder first = _FakePackageBuilder(
       id: 'fake-one',
       displayName: '格式一',
@@ -51,10 +51,15 @@ void main() {
       displayName: '格式二',
       plan: _plan(<PackageEntry>[]),
     );
+    final List<PackageBuilder> changed = <PackageBuilder>[];
 
     await _pumpPage(
       tester,
-      PackPackaging(pack: _pack(), builders: <PackageBuilder>[first, second]),
+      PackPackaging(
+        pack: _pack(),
+        builders: <PackageBuilder>[first, second],
+        onBuilderChanged: changed.add,
+      ),
     );
 
     await tester.tap(find.byKey(const Key('packagingBuilderField')));
@@ -64,10 +69,82 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    final ComboBox<String> field = tester.widget<ComboBox<String>>(
-      find.byKey(const Key('packagingBuilderField')),
+    expect(_builderFieldValue(tester), 'fake-two');
+    expect(changed.single, same(second));
+  });
+
+  testWidgets('受控选中格式优先显示且父级更新后跟随', (tester) async {
+    final _FakePackageBuilder first = _FakePackageBuilder(
+      id: 'fake-one',
+      displayName: '格式一',
+      plan: _plan(<PackageEntry>[]),
     );
-    expect(field.value, 'fake-two');
+    final _FakePackageBuilder second = _FakePackageBuilder(
+      id: 'fake-two',
+      displayName: '格式二',
+      plan: _plan(<PackageEntry>[]),
+    );
+    final List<PackageBuilder> changed = <PackageBuilder>[];
+
+    await _pumpPage(
+      tester,
+      PackPackaging(
+        pack: _pack(),
+        builders: <PackageBuilder>[first, second],
+        selectedBuilder: second,
+        onBuilderChanged: changed.add,
+      ),
+    );
+
+    expect(_builderFieldValue(tester), 'fake-two');
+
+    await tester.tap(find.byKey(const Key('packagingBuilderField')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('格式一').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(changed.single, same(first));
+    expect(_builderFieldValue(tester), 'fake-two');
+
+    await _pumpPage(
+      tester,
+      PackPackaging(
+        pack: _pack(),
+        builders: <PackageBuilder>[first, second],
+        selectedBuilder: first,
+        onBuilderChanged: changed.add,
+      ),
+    );
+
+    expect(_builderFieldValue(tester), 'fake-one');
+  });
+
+  testWidgets('选中 CMake 格式后说明文案切换为 find_package 说明', (tester) async {
+    final List<PackageBuilder> changed = <PackageBuilder>[];
+
+    await _pumpPage(
+      tester,
+      PackPackaging(pack: _pack(), onBuilderChanged: changed.add),
+    );
+
+    expect(find.textContaining('build/native/files/'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('packagingBuilderField')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('CMake').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_builderFieldValue(tester), 'cmake');
+    expect(changed.single.id, 'cmake');
+    expect(find.textContaining('build/native/files/'), findsNothing);
+    expect(find.textContaining('CONFIG REQUIRED'), findsOneWidget);
+    expect(find.textContaining('lib/cmake/'), findsOneWidget);
+    expect(find.textContaining('CMAKE_PREFIX_PATH'), findsOneWidget);
+    expect(find.textContaining('<包名>::<包名>'), findsOneWidget);
   });
 
   testWidgets('缺少源目录时提示且不生成计划', (tester) async {
@@ -176,3 +253,7 @@ Future<void> _pumpPage(WidgetTester tester, PackPackaging page) async {
   await tester.pumpWidget(FluentApp(home: page));
   await tester.pump();
 }
+
+String? _builderFieldValue(WidgetTester tester) => tester
+    .widget<ComboBox<String>>(find.byKey(const Key('packagingBuilderField')))
+    .value;

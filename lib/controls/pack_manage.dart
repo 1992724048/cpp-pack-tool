@@ -1,4 +1,5 @@
 ﻿import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -15,12 +16,16 @@ class PackManage extends StatefulWidget {
     required this.allPacks,
     required this.onSave,
     required this.pickDirectory,
+    this.packagingBuilder,
+    this.onPackagingBuilderChanged,
   });
 
   final PackModel pack;
   final List<PackModel> allPacks;
   final Future<bool> Function(PackModel pack) onSave;
   final Future<String?> Function() pickDirectory;
+  final PackageBuilder? packagingBuilder;
+  final ValueChanged<PackageBuilder>? onPackagingBuilderChanged;
 
   @override
   State<PackManage> createState() => _PackManageState();
@@ -29,12 +34,14 @@ class PackManage extends StatefulWidget {
 class _PackManageState extends State<PackManage> {
   int _index = 0;
   late final ValueNotifier<PackModel> _pack;
+  late final ValueNotifier<PackageBuilder?> _packagingBuilder;
   late final List<Tab> _tabs;
 
   @override
   void initState() {
     super.initState();
     _pack = ValueNotifier<PackModel>(widget.pack);
+    _packagingBuilder = ValueNotifier<PackageBuilder?>(widget.packagingBuilder);
     _tabs = <Tab>[
       Tab(
         icon: Svgs.showPermitCard,
@@ -70,11 +77,15 @@ class _PackManageState extends State<PackManage> {
     if (oldWidget.pack != widget.pack) {
       _pack.value = widget.pack;
     }
+    if (oldWidget.packagingBuilder != widget.packagingBuilder) {
+      _packagingBuilder.value = widget.packagingBuilder;
+    }
   }
 
   @override
   void dispose() {
     _pack.dispose();
+    _packagingBuilder.dispose();
     super.dispose();
   }
 
@@ -122,7 +133,19 @@ class _PackManageState extends State<PackManage> {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackPackaging(pack: pack),
+          ValueListenableBuilder<PackageBuilder?>(
+            valueListenable: _packagingBuilder,
+            builder:
+                (
+                  BuildContext context,
+                  PackageBuilder? builder,
+                  Widget? child,
+                ) => PackPackaging(
+                  pack: pack,
+                  selectedBuilder: builder,
+                  onBuilderChanged: widget.onPackagingBuilderChanged,
+                ),
+          ),
     );
   }
 

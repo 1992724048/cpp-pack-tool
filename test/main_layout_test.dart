@@ -9,6 +9,7 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/packaging/cmake_exporter.dart' as cmake_exporter;
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/pages/about.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
@@ -771,12 +772,183 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump();
 
+    expect(find.byKey(const Key('missingDependenciesDialog')), findsNothing);
     expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
     expect(exportedPack, isNotNull);
     expect(exportedPack!.name, 'demo');
     expect(exportedDirectory, r'D:\out');
     expect(find.text('打包完成'), findsOneWidget);
     expect(find.text('文件数量：8'), findsOneWidget);
+  });
+
+  testWidgets('存在缺失依赖时先弹警告，继续后打开导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          dependencies: <DependencyModel>[
+            const DependencyModel(name: 'missinglib', version: '[1.0,2.0)'),
+            const DependencyModel(name: 'MISSINGLIB', version: '9.9'),
+            const DependencyModel(name: 'other', version: '3.0'),
+          ],
+        ),
+        _pack('other', '3.0.0', sourcePath: r'C:\libs\other'),
+      ],
+    );
+    PackModel? exportedPack;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportedPack = pack;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 2,
+          packageSize: 128,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('missingDependenciesDialog'));
+    expect(dialog, findsOneWidget);
+    expect(find.text('缺失依赖'), findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('missinglib')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('[1.0,2.0)')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('9.9')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('other')),
+      findsNothing,
+    );
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+
+    await tester.tap(
+      find.byKey(const Key('missingDependenciesContinueButton')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(dialog, findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportedPack?.name, 'demo');
+  });
+
+  testWidgets('缺失依赖警告取消时不打开导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          dependencies: <DependencyModel>[
+            const DependencyModel(name: 'missinglib', version: '1.0'),
+          ],
+        ),
+      ],
+    );
+    int exportCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('missingDependenciesCancelButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.byKey(const Key('missingDependenciesDialog')), findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+    expect(exportCalls, 0);
+  });
+
+  testWidgets('选择 CMake 格式后打包调用 CMake 导出器', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+    int nugetCalls = 0;
+    int cmakeCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        nugetCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      exportCmakePackage: (PackModel pack, String outputDirectory) async {
+        cmakeCalls++;
+        return (
+          outputPath: r'D:\out\demo-1.0.0-cmake.zip',
+          fileCount: 2,
+          packageSize: 128,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('打包设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('packagingBuilderField')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('CMake').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(cmakeCalls, 1);
+    expect(nugetCalls, 0);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(find.text('打包完成'), findsOneWidget);
+    expect(find.text('文件数量：2'), findsOneWidget);
   });
 
   testWidgets('无包时历史按钮禁用', (tester) async {
@@ -1049,6 +1221,8 @@ Future<void> _pumpMainLayout(
   Future<void> Function(SettingsModel settings)? onSaveSettings,
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportPackage,
+  Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
+  exportCmakePackage,
   DateTime Function()? now,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -1064,6 +1238,8 @@ Future<void> _pumpMainLayout(
         settings: settings,
         onSaveSettings: onSaveSettings ?? (SettingsModel settings) async {},
         exportPackage: exportPackage ?? exportNuGetPackage,
+        exportCmakePackage:
+            exportCmakePackage ?? cmake_exporter.exportCmakePackage,
         now: now ?? DateTime.now,
       ),
     ),

@@ -1,4 +1,5 @@
 ﻿import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -14,6 +15,8 @@ class PackList {
     List<PackModel> packs, {
     required Future<bool> Function(PackModel pack) onSave,
     required Future<String?> Function() pickDirectory,
+    PackageBuilder? packagingBuilder,
+    ValueChanged<PackageBuilder>? onPackagingBuilderChanged,
   }) {
     return [
       for (final PackModel pack in packs)
@@ -26,6 +29,8 @@ class PackList {
             allPacks: packs,
             onSave: onSave,
             pickDirectory: pickDirectory,
+            packagingBuilder: packagingBuilder,
+            onPackagingBuilderChanged: onPackagingBuilderChanged,
           ),
         ),
     ];
