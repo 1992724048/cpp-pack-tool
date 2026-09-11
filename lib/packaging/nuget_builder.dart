@@ -132,7 +132,9 @@ class NuGetPackageBuilder implements PackageBuilder {
       );
     }
 
+    // 导出器恒定嵌入 images/icon.png，因此图标无需条件判断。
     buffer
+      ..writeln(r'    <icon>images\icon.png</icon>')
       ..writeln(
         '    <requireLicenseAcceptance>false</requireLicenseAcceptance>',
       )

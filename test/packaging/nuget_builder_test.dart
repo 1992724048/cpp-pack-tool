@@ -195,6 +195,22 @@ void main() {
       expect(nuspec, contains('<dependency id="libfoo" version="[1.0,)" />'));
     });
 
+    test('恒定声明包图标且位于许可证声明与许可接受之间', () async {
+      final String nuspec = _nuspecOf(
+        await _builder.buildPlan(_pack(license: 'MIT')),
+      );
+
+      expect(nuspec, contains(r'<icon>images\icon.png</icon>'));
+      expect(
+        nuspec.indexOf(r'<icon>images\icon.png</icon>'),
+        greaterThan(nuspec.indexOf('<license type="expression">MIT</license>')),
+      );
+      expect(
+        nuspec.indexOf(r'<icon>images\icon.png</icon>'),
+        lessThan(nuspec.indexOf('<requireLicenseAcceptance>')),
+      );
+    });
+
     test('多个依赖全部写入依赖组', () async {
       final PackModel pack = _pack()
         ..dependencies = <DependencyModel>[

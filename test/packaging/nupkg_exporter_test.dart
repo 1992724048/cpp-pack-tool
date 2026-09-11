@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -10,8 +11,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 const String _contentTypesPath = '[Content_Types].xml';
 const String _relationshipsPath = '_rels/.rels';
+const String _iconPath = 'images/icon.png';
 const String _corePropertiesPath =
     'package/services/metadata/core-properties/nuget.psmdcp';
+
+/// 1×1 透明 PNG，供导出测试替代真实图标渲染。
+final Uint8List _fakeIconPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+);
+
+Future<Uint8List> _fakeIconResolver(PackModel pack) async => _fakeIconPng;
 
 void main() {
   late Directory root;
@@ -45,10 +54,11 @@ void main() {
     final PackageExportResult result = await exportNuGetPackage(
       pack,
       outputDirectory,
+      iconResolver: _fakeIconResolver,
     );
 
     expect(result.outputPath, joinPath(outputDirectory, 'demo.1.2.3.nupkg'));
-    expect(result.fileCount, 9);
+    expect(result.fileCount, 10);
     expect(result.packageSize, greaterThan(0));
     final File nupkg = File(result.outputPath);
     expect(nupkg.existsSync(), isTrue);
@@ -63,9 +73,12 @@ void main() {
       'build/native/include/source/empty.h',
       'build/native/include/source/foo.h',
       'build/native/lib/x64/Release/foo.lib',
+      _iconPath,
       _contentTypesPath,
       _corePropertiesPath,
     ]);
+
+    expect(_bytesOf(archive, _iconPath), _fakeIconPng);
 
     expect(
       _textOf(archive, 'build/native/include/source/foo.h'),
@@ -140,6 +153,10 @@ void main() {
       contains(
         '<Default Extension="targets" ContentType="application/octet" />',
       ),
+    );
+    expect(
+      contentTypes,
+      contains('<Default Extension="png" ContentType="application/octet" />'),
     );
     expect(
       contentTypes,
@@ -224,11 +241,13 @@ void main() {
     final PackageExportResult first = await exportNuGetPackage(
       pack,
       outputDirectory,
+      iconResolver: _fakeIconResolver,
     );
     _writeFile(joinPath(source, 'include/foo.h'), 'new-content');
     final PackageExportResult second = await exportNuGetPackage(
       pack,
       outputDirectory,
+      iconResolver: _fakeIconResolver,
     );
 
     expect(second.outputPath, first.outputPath);
@@ -252,7 +271,11 @@ void main() {
       ];
 
     await expectLater(
-      exportNuGetPackage(pack, joinPath(root.path, 'out')),
+      exportNuGetPackage(
+        pack,
+        joinPath(root.path, 'out'),
+        iconResolver: _fakeIconResolver,
+      ),
       throwsA(isA<FileSystemException>()),
     );
   });
@@ -261,12 +284,42 @@ void main() {
     final String outputDirectory = joinPath(root.path, 'out');
 
     await expectLater(
-      exportNuGetPackage(_pack(), outputDirectory),
+      exportNuGetPackage(
+        _pack(),
+        outputDirectory,
+        iconResolver: _fakeIconResolver,
+      ),
       throwsA(
         isA<ArgumentError>().having(
           (ArgumentError error) => error.message,
           'message',
           '该包缺少源目录信息，无法打包',
+        ),
+      ),
+    );
+    expect(Directory(outputDirectory).existsSync(), isFalse);
+  });
+
+  test('图标解析失败时抛出异常且不创建输出目录', () async {
+    final String source = joinPath(root.path, 'source');
+    _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
+    final PackModel pack = _pack(sourcePath: source)
+      ..files = <FileModel>[
+        FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+      ];
+    final String outputDirectory = joinPath(root.path, 'out');
+
+    await expectLater(
+      exportNuGetPackage(
+        pack,
+        outputDirectory,
+        iconResolver: (PackModel pack) async => throw StateError('默认包图标渲染失败'),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.message,
+          'message',
+          '默认包图标渲染失败',
         ),
       ),
     );
@@ -298,6 +351,7 @@ Future<Archive> _exportAndDecode(
   final PackageExportResult result = await exportNuGetPackage(
     pack,
     joinPath(root.path, outputName),
+    iconResolver: _fakeIconResolver,
   );
   return ZipDecoder().decodeBytes(File(result.outputPath).readAsBytesSync());
 }

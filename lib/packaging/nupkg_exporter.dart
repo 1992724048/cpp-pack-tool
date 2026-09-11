@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
+import 'package:cpp_nuget_pack/packaging/package_icon.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
@@ -16,6 +17,7 @@ typedef PackageExportResult = ({
 
 const String _contentTypesPath = '[Content_Types].xml';
 const String _relationshipsPath = '_rels/.rels';
+const String _iconPath = 'images/icon.png';
 const String _corePropertiesPath =
     'package/services/metadata/core-properties/nuget.psmdcp';
 const String _manifestRelationshipType =
@@ -32,21 +34,28 @@ const String _corePropertiesNamespace =
 const String _relationshipsNamespace =
     'http://schemas.openxmlformats.org/package/2006/relationships';
 const int _opcFileCount = 3;
+const int _iconFileCount = 1;
 
 /// 将 [pack] 的打包计划导出为 NuGet 包（.nupkg），输出到 [outputDirectory]。
 ///
-/// 包内条目顺序对齐官方包：`_rels/.rels` → nuspec → 负载 →
-/// `[Content_Types].xml` → core-properties。源文件缺失或读取失败时抛出异常。
+/// 包内条目顺序对齐官方包：`_rels/.rels` → nuspec → 负载 → `images/icon.png` →
+/// `[Content_Types].xml` → core-properties。图标恒以 PNG 嵌入（[iconResolver]
+/// 可注入以测试，默认经 [resolvePackageIconPng] 转换 `iconPath`，缺失时用默认
+/// 图标）。源文件缺失或读取失败时抛出异常。
 Future<PackageExportResult> exportNuGetPackage(
   PackModel pack,
-  String outputDirectory,
-) async {
+  String outputDirectory, {
+  Future<Uint8List> Function(PackModel pack)? iconResolver,
+}) async {
   final String? sourcePath = pack.sourcePath;
   if (sourcePath == null) {
     throw ArgumentError('该包缺少源目录信息，无法打包');
   }
 
   final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(pack);
+  final Uint8List iconBytes = await (iconResolver ?? resolvePackageIconPng)(
+    pack,
+  );
   final String nuspecPath = '${pack.name}.nuspec';
   final PackageEntry nuspecEntry = plan.entries.firstWhere(
     (PackageEntry entry) => entry.packagePath == nuspecPath,
@@ -63,8 +72,12 @@ Future<PackageExportResult> exportNuGetPackage(
       _addEntry(archive, entry, sourcePath);
     }
   }
+  archive.addFile(ArchiveFile.bytes(_iconPath, iconBytes));
   archive.addFile(
-    ArchiveFile.string(_contentTypesPath, _contentTypesContent(plan)),
+    ArchiveFile.string(
+      _contentTypesPath,
+      _contentTypesContent(plan, extraExtensions: const <String>{'png'}),
+    ),
   );
   archive.addFile(
     ArchiveFile.string(_corePropertiesPath, _corePropertiesContent(pack)),
@@ -89,7 +102,7 @@ Future<PackageExportResult> exportNuGetPackage(
 
   return (
     outputPath: outputPath,
-    fileCount: plan.fileCount + _opcFileCount,
+    fileCount: plan.fileCount + _opcFileCount + _iconFileCount,
     packageSize: bytes.length,
   );
 }
@@ -121,8 +134,12 @@ String _relationshipsContent(PackModel pack) {
   return buffer.toString();
 }
 
-String _contentTypesContent(PackagePlan plan) {
-  final Set<String> extensions = <String>{};
+/// [extraExtensions] 收录计划外条目（如恒定嵌入的 `images/icon.png`）的扩展名。
+String _contentTypesContent(
+  PackagePlan plan, {
+  Set<String> extraExtensions = const <String>{},
+}) {
+  final Set<String> extensions = <String>{...extraExtensions};
   final List<String> overrides = <String>[];
   for (final PackageEntry entry in plan.entries) {
     final String? extension = _extensionOf(entry.packagePath);
