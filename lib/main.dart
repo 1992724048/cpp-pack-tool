@@ -20,6 +20,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'app_info.dart';
 import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
+import 'controls/dependency_graph_dialog.dart';
 import 'controls/missing_dependencies_dialog.dart';
 import 'controls/pack_export_dialog.dart';
 import 'controls/pack_history_dialog.dart';
@@ -519,6 +520,14 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
+  Future<void> _openDependencyGraph() async {
+    await showDependencyGraphDialog(
+      context,
+      packs: _packs,
+      selectedPackName: _hasSelectedPack ? _packs[_selected!].name : null,
+    );
+  }
+
   void _sortPacks() {
     _packs.sort((PackModel first, PackModel second) {
       final int insensitive = first.name.toLowerCase().compareTo(
@@ -594,6 +603,13 @@ class _MainLayoutState extends State<MainLayout> {
               child: IconButton(
                 icon: Svgs.historyFolder,
                 onPressed: _hasSelectedPack ? _historySelectedPack : null,
+              ),
+            ),
+            Tooltip(
+              message: '依赖关系图',
+              child: IconButton(
+                icon: Svgs.internetConnection,
+                onPressed: _packs.isEmpty ? null : _openDependencyGraph,
               ),
             ),
           ],

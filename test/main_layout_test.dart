@@ -1210,6 +1210,61 @@ void main() {
     expect(find.text(r'打包导出：D:\out\demo.nupkg'), findsNothing);
     expect(find.text('已删除'), findsOneWidget);
   });
+
+  testWidgets('有包时点击依赖关系图按钮打开对话框并显示节点', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('alpha', '1.0.0'),
+        _pack(
+          'beta',
+          '1.0.0',
+          dependencies: <DependencyModel>[
+            const DependencyModel(name: 'alpha', version: '1.0'),
+          ],
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('依赖关系图'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('dependencyGraphDialog'));
+    expect(dialog, findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('alpha')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('beta')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('dependencyGraphCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.byKey(const Key('dependencyGraphDialog')), findsNothing);
+  });
+
+  testWidgets('无包时依赖关系图按钮禁用', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      store: _FakePackStore(),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_dependencyGraphButton(tester).onPressed, isNull);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -1293,6 +1348,14 @@ IconButton _historyButton(WidgetTester tester) => tester.widget<IconButton>(
     matching: find.byType(IconButton),
   ),
 );
+
+IconButton _dependencyGraphButton(WidgetTester tester) =>
+    tester.widget<IconButton>(
+      find.descendant(
+        of: find.byTooltip('依赖关系图'),
+        matching: find.byType(IconButton),
+      ),
+    );
 
 int? _selectedIndex(WidgetTester tester) =>
     tester.widget<NavigationView>(find.byType(NavigationView)).pane?.selected;
