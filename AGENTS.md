@@ -13,7 +13,7 @@
 ```text
 flutter pub get
 flutter analyze                    # 静态检查（CI 门禁，须零问题）；analysis_options.yaml 排除 build/**、windows/**、android/**
-flutter test                       # 运行测试（test/：冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具 + 悬浮提示 + 图标映射 + 构建标签 + 依赖管理/版本范围 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + 历史记录 + 关于页/应用信息）
+flutter test                       # 运行测试（test/：冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具（含 file_opener 路径规范化）+ 悬浮提示 + 图标映射 + 构建标签 + 依赖管理/版本范围 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + 历史记录 + 关于页/应用信息）
 flutter build windows --release    # 产物：build/windows/x64/runner/Release/
 flutter run -d windows             # 本地运行
 ```
@@ -48,7 +48,7 @@ flutter run -d windows             # 本地运行
 - 「关于」页（`lib/pages/about.dart`，footer「关于」）：纸箱 Logo + 应用名 + 版本标签 + 描述 + 「项目主页」按钮（`openExternalUrl()` 经 explorer 打开默认浏览器，失败悬浮提示）+ 第三方声明指引；应用信息常量在 `lib/app_info.dart`（应用名/版本/描述/仓库地址）。
 - UI 提示统一走 `lib/widgets/floating_toast.dart` 的 `showFloatingToast()`（右上角悬浮、success/info/error 图标配色、默认 3 秒自动关闭 + 手动关闭、同时最多一条、新提示替换旧提示）；「已保存」（3 秒）与配置加载失败警告（error、5 秒、多条合并）均用它。
 - 领域模型在 `lib/models/`：`PackModel`（含可选 `license`/`iconPath`/`sourcePath` 与 `files`/`dependencies`/`commands`/`macros`/`libDirectories`/`libraries`/`history` 七类列表，`toMap`/`fromMap` 序列化）、`DependencyModel`（`name`/`version`）、`CmdModel`（`command`/`type`）+`CmdType`、`MacroModel`（`value`）、`LibDirModel`（`path`）、`LibraryModel`（`name`）——后三类与命令均含 `buildModel` 三态标签、`FileModel`/`FileType`（序列化只存 `path`/`size`，读回时由 basename 推导 name/type；类型识别覆盖 C++ 系与 pdb/asm/fortran/脚本/LLVM/Python/数据库/exe 等扩展）、`BuildModel`（`all`/`release`/`debug`，`fromName()` 容错解析：缺失→all、非法→FormatException）、`HistoryModel`（`time`/`type`/`message`，`HistoryType`：created/versionChanged/filesChanged/exported）、`SettingsModel`（全局设置：`outputDirectory`/`themeMode`/`darkFlavor`/`accent`，容错反序列化）。
-- `dart:io` 用法集中在 `lib/scanner/file_scan.dart`（`FileScan.scan()` 异步单次遍历包目录，输出相对路径、稳定排序的 `FileModel` 列表；跳过隐藏目录与 `build`/`out`；`FileModel` 含 `size` 字节数）、`lib/util/file_opener.dart`（`openWithDefaultApp()` 用 `Process.run('explorer', ...)` 以系统默认程序打开文件；`revealInExplorer()` 以 `/select,` 两参数在资源管理器中定位文件；`openExternalUrl()` 以 explorer 打开 http/https 链接（默认浏览器）；前二者预检存在性、均不检查退出码——explorer 成功时也恒为 1）、`lib/controls/pack_preview_dialog.dart`（预览时 `File(path).readAsString()` 读取源文件文本）、`lib/packaging/nupkg_exporter.dart`（读取源文件字节并写出 .nupkg）与 `lib/packaging/package_icon.dart`（读取图标文件、渲染默认图标资产并输出 PNG 字节）。
+- `dart:io` 用法集中在 `lib/scanner/file_scan.dart`（`FileScan.scan()` 异步单次遍历包目录，输出相对路径、稳定排序的 `FileModel` 列表；跳过隐藏目录与 `build`/`out`；`FileModel` 含 `size` 字节数）、`lib/util/file_opener.dart`（`openWithDefaultApp()` 用 `Process.run('explorer', ...)` 以系统默认程序打开文件；`revealInExplorer()` 以 `/select,` 两参数在资源管理器中定位文件；`openExternalUrl()` 以 explorer 打开 http/https 链接（默认浏览器）；前二者预检存在性、打开/定位前经 `explorerPath()` 把路径绝对化并将 `/` 统一为 `\`（explorer 对混合分隔符路径静默失败、只打开默认位置）、均不检查退出码——explorer 成功时也恒为 1）、`lib/controls/pack_preview_dialog.dart`（预览时 `File(path).readAsString()` 读取源文件文本）、`lib/packaging/nupkg_exporter.dart`（读取源文件字节并写出 .nupkg）与 `lib/packaging/package_icon.dart`（读取图标文件、渲染默认图标资产并输出 PNG 字节）。
 - **Dart ↔ C++ 无任何桥接**（无 MethodChannel / FFI）；`windows/` 是 Flutter runner 模板，唯一自定义处是窗口标题（`windows/runner/main.cpp`）。要加原生能力需从零自建通道。
 - 生成物禁止手改：`windows/flutter/generated_plugin_registrant.*`、`windows/flutter/generated_plugins.cmake`、`windows/flutter/ephemeral/`（均由 Flutter 重新生成）。
 
@@ -57,7 +57,7 @@ flutter run -d windows             # 本地运行
 - **所有用户可见文案为中文**（硬编码，无 i18n 框架）；新增 UI 文案保持中文。
 - UI 使用 `fluent_ui`（Win11 风格）而非 Material；主题色统一走 `lib/util/colors.dart`（`UCColors` / `buildTheme`；深色 flavor 与强调色可配置）。
 - 图标：应用自绘 SVG 放 `assets/icons/` 并在 `lib/util/svgs.dart` 注册；目录树图标为第三方子集 `assets/icons/catppuccin/{latte,mocha}/`（catppuccin/vscode-icons v1.26.0，MIT，声明见 `THIRD_PARTY_NOTICES.md`），经 `lib/util/catppuccin_icons.dart` 解析（新增第三方资产须同步声明文件）。
-- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具 + 悬浮提示 + 图标映射 + 依赖管理 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + 历史记录 + 关于页/应用信息；widget 测试均用有界 `pump`，禁 `pumpAndSettle`）；新增测试放 `test/`。
+- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具（含 file_opener 路径规范化）+ 悬浮提示 + 图标映射 + 依赖管理 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + 历史记录 + 关于页/应用信息；widget 测试均用有界 `pump`，禁 `pumpAndSettle`）；新增测试放 `test/`。
 - `file_selector` 用于「添加文件夹」的系统原生目录选择（`getDirectoryPath()`，取消返回 null）。
 - YAML 配置读写用 Dart 官方 `yaml`/`yaml_edit` 包（封装在 `lib/config/pack_store.dart`）；打包 zip 生成用 `archive` 包（封装在 `lib/packaging/nupkg_exporter.dart`）。
 - `README.md` 为正式项目文档（简介/功能特性/打包产物/构建运行/配置文件/版本发布/技术栈/第三方声明）；关键事实以本文件、`ci.yml`、CMake 与代码为准。
