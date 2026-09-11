@@ -14,6 +14,7 @@ class PackExportDialog extends StatefulWidget {
     required this.outputDirectory,
     this.exportPackage = exportNuGetPackage,
     this.revealFile = revealInExplorer,
+    this.onExported,
   });
 
   final PackModel pack;
@@ -24,6 +25,7 @@ class PackExportDialog extends StatefulWidget {
   )
   exportPackage;
   final Future<bool> Function(String filePath) revealFile;
+  final ValueChanged<PackageExportResult>? onExported;
 
   @override
   State<PackExportDialog> createState() => _PackExportDialogState();
@@ -61,6 +63,7 @@ class _PackExportDialogState extends State<PackExportDialog> {
       _stage = _ExportStage.completed;
       _result = result;
     });
+    widget.onExported?.call(result);
   }
 
   Future<void> _reveal() async {

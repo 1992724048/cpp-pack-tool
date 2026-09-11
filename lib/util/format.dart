@@ -30,3 +30,10 @@ String formatBytes(int bytes) {
   }
   return '${value.toStringAsFixed(1)} ${_sizeUnits[unitIndex]}';
 }
+
+String formatTimestamp(DateTime time) {
+  String pad(int value, [int width = 2]) =>
+      value.toString().padLeft(width, '0');
+  return '${pad(time.year, 4)}-${pad(time.month)}-${pad(time.day)} '
+      '${pad(time.hour)}:${pad(time.minute)}:${pad(time.second)}';
+}

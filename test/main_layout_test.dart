@@ -5,6 +5,7 @@ import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
@@ -739,6 +740,266 @@ void main() {
     expect(find.text('打包完成'), findsOneWidget);
     expect(find.text('文件数量：8'), findsOneWidget);
   });
+
+  testWidgets('无包时历史按钮禁用', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      store: _FakePackStore(),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_historyButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('选中设置项时历史按钮禁用', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(_historyButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_historyButton(tester).onPressed, isNull);
+  });
+
+  testWidgets('创建包后追加创建历史条目', (tester) async {
+    final _FakePackStore store = _FakePackStore();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 11, 14, 30, 5),
+      pickDirectory: () async => r'C:\libs\foo',
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'foo.h', path: 'include/foo.h', size: 128),
+      ],
+    );
+
+    await tester.tap(find.byTooltip('添加文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await _fillRequiredFields(tester, name: 'demo');
+    await _tapDialogButton(tester, '确定');
+
+    expect(store.packs, hasLength(1));
+    expect(store.packs.single.history, hasLength(1));
+    final HistoryModel entry = store.packs.single.history.single;
+    expect(entry.type, HistoryType.created);
+    expect(entry.time, DateTime(2026, 9, 11, 14, 30, 5));
+    expect(entry.message, '创建包：1 个文件，总大小 128 B');
+  });
+
+  testWidgets('版本变更保存后追加版本历史条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 11, 14, 30, 5),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byKey(const Key('packInfoEditButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.version, '2.0.0');
+    expect(store.packs.single.history, hasLength(1));
+    final HistoryModel entry = store.packs.single.history.single;
+    expect(entry.type, HistoryType.versionChanged);
+    expect(entry.time, DateTime(2026, 9, 11, 14, 30, 5));
+    expect(entry.message, '版本变更：1.0.0 → 2.0.0');
+  });
+
+  testWidgets('重新映射有变化时追加映射历史条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
+        ),
+      ],
+    );
+    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 11, 14, 30, 5),
+      pickDirectory: () async => null,
+      scanFiles: (String path) => completer.future,
+    );
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    completer.complete(<FileModel>[
+      FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs.single.files.single.path, 'new/new.h');
+    expect(store.packs.single.history, hasLength(1));
+    final HistoryModel entry = store.packs.single.history.single;
+    expect(entry.type, HistoryType.filesChanged);
+    expect(entry.time, DateTime(2026, 9, 11, 14, 30, 5));
+    expect(entry.message, '重新映射：新增 1 个文件、移除 1 个；总大小 64 B → 2.0 KB');
+  });
+
+  testWidgets('重新映射无变化时不追加历史条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'foo.h', path: 'include/foo.h', size: 128),
+          ],
+          history: <HistoryModel>[
+            HistoryModel(
+              time: DateTime(2026, 9, 11, 14, 30, 5),
+              type: HistoryType.created,
+              message: '创建包：1 个文件，总大小 128 B',
+            ),
+          ],
+        ),
+      ],
+    );
+    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 12, 9, 0, 0),
+      pickDirectory: () async => null,
+      scanFiles: (String path) => completer.future,
+    );
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    completer.complete(<FileModel>[
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 128),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.saveCount, 1);
+    expect(store.packs.single.history, hasLength(1));
+    expect(store.packs.single.history.single.type, HistoryType.created);
+    expect(store.packs.single.history.single.message, '创建包：1 个文件，总大小 128 B');
+  });
+
+  testWidgets('导出成功后追加打包历史条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 11, 14, 30, 5),
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async => (
+        outputPath: r'D:\out\demo.1.0.0.nupkg',
+        fileCount: 8,
+        packageSize: 1024,
+      ),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.saveCount, 1);
+    expect(store.packs.single.history, hasLength(1));
+    final HistoryModel entry = store.packs.single.history.single;
+    expect(entry.type, HistoryType.exported);
+    expect(entry.time, DateTime(2026, 9, 11, 14, 30, 5));
+    expect(entry.message, r'打包导出：D:\out\demo.1.0.0.nupkg');
+  });
+
+  testWidgets('删除历史条目后保存并更新列表', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          history: <HistoryModel>[
+            HistoryModel(
+              time: DateTime(2026, 9, 11, 14, 30, 5),
+              type: HistoryType.created,
+              message: '创建包：1 个文件',
+            ),
+            HistoryModel(
+              time: DateTime(2026, 9, 12, 9, 0, 0),
+              type: HistoryType.exported,
+              message: r'打包导出：D:\out\demo.nupkg',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('历史记录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('packHistoryDialog')), findsOneWidget);
+    expect(find.text(r'打包导出：D:\out\demo.nupkg'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('historyDeleteButton_0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.saveCount, 1);
+    expect(store.packs.single.history, hasLength(1));
+    expect(store.packs.single.history.single.type, HistoryType.created);
+    expect(find.text(r'打包导出：D:\out\demo.nupkg'), findsNothing);
+    expect(find.text('已删除'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -750,6 +1011,7 @@ Future<void> _pumpMainLayout(
   Future<void> Function(SettingsModel settings)? onSaveSettings,
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportPackage,
+  DateTime Function()? now,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -764,6 +1026,7 @@ Future<void> _pumpMainLayout(
         settings: settings,
         onSaveSettings: onSaveSettings ?? (SettingsModel settings) async {},
         exportPackage: exportPackage ?? exportNuGetPackage,
+        now: now ?? DateTime.now,
       ),
     ),
   );
@@ -810,6 +1073,13 @@ IconButton _packButton(WidgetTester tester) => tester.widget<IconButton>(
   ),
 );
 
+IconButton _historyButton(WidgetTester tester) => tester.widget<IconButton>(
+  find.descendant(
+    of: find.byTooltip('历史记录'),
+    matching: find.byType(IconButton),
+  ),
+);
+
 int? _selectedIndex(WidgetTester tester) =>
     tester.widget<NavigationView>(find.byType(NavigationView)).pane?.selected;
 
@@ -819,6 +1089,7 @@ PackModel _pack(
   String? sourcePath,
   List<FileModel>? files,
   List<DependencyModel>? dependencies,
+  List<HistoryModel>? history,
 }) {
   final PackModel pack = PackModel(
     name: name,
@@ -831,6 +1102,9 @@ PackModel _pack(
   }
   if (dependencies != null) {
     pack.dependencies.addAll(dependencies);
+  }
+  if (history != null) {
+    pack.history.addAll(history);
   }
   return pack;
 }

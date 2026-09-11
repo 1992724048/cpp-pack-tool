@@ -31,4 +31,20 @@ void main() {
       );
     });
   });
+
+  group('formatTimestamp', () {
+    test('输出 yyyy-MM-dd HH:mm:ss', () {
+      expect(
+        formatTimestamp(DateTime(2026, 9, 11, 14, 30, 5)),
+        '2026-09-11 14:30:05',
+      );
+    });
+
+    test('个位数月/日/时/分/秒补零', () {
+      expect(
+        formatTimestamp(DateTime(2026, 1, 2, 3, 4, 5)),
+        '2026-01-02 03:04:05',
+      );
+    });
+  });
 }

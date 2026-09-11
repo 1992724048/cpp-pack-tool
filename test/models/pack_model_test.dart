@@ -2,6 +2,7 @@ import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
@@ -307,6 +308,77 @@ void main() {
           'commands': <Object?>[
             <String, Object?>{'command': 'echo hi'},
           ],
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('toMap/fromMap 往返保留历史记录', () {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..history = <HistoryModel>[
+              HistoryModel(
+                time: DateTime(2026, 9, 11, 14, 30, 5),
+                type: HistoryType.created,
+                message: '创建包：1 个文件，总大小 128 B',
+              ),
+              HistoryModel(
+                time: DateTime(2026, 9, 12, 9, 0, 0),
+                type: HistoryType.exported,
+                message: r'打包导出：D:\out\demo.1.0.0.nupkg',
+              ),
+            ];
+
+      final PackModel loaded = PackModel.fromMap(pack.toMap());
+
+      expect(loaded.history, hasLength(2));
+      expect(loaded.history[0].time, DateTime(2026, 9, 11, 14, 30, 5));
+      expect(loaded.history[0].type, HistoryType.created);
+      expect(loaded.history[0].message, '创建包：1 个文件，总大小 128 B');
+      expect(loaded.history[1].time, DateTime(2026, 9, 12, 9, 0, 0));
+      expect(loaded.history[1].type, HistoryType.exported);
+      expect(loaded.history[1].message, r'打包导出：D:\out\demo.1.0.0.nupkg');
+    });
+
+    test('toMap 恒写 history 键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.toMap()['history'], isEmpty);
+    });
+
+    test('fromMap 缺少 history 时默认空列表', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+
+      expect(pack.history, isEmpty);
+    });
+
+    test('fromMap history 类型错误时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'history': 'oops',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('fromMap history 项类型错误时抛出 FormatException', () {
+      expect(
+        () => PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'history': <Object?>['oops'],
         }),
         throwsFormatException,
       );

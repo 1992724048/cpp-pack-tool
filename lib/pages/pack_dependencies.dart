@@ -220,5 +220,6 @@ PackModel _withDependencies(
     ..dependencies = dependencies
     ..macros = pack.macros
     ..libDirectories = pack.libDirectories
-    ..libraries = pack.libraries;
+    ..libraries = pack.libraries
+    ..history = pack.history;
 }

@@ -115,7 +115,8 @@ class _PackInfoState extends State<PackInfo> {
           ..dependencies = widget.pack.dependencies
           ..macros = widget.pack.macros
           ..libDirectories = widget.pack.libDirectories
-          ..libraries = widget.pack.libraries;
+          ..libraries = widget.pack.libraries
+          ..history = widget.pack.history;
 
     setState(() => _saving = true);
     final bool saved = await widget.onSave(updated);

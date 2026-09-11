@@ -1,6 +1,7 @@
 ﻿import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
@@ -20,6 +21,7 @@ class PackModel {
   List<MacroModel> macros = [];
   List<LibDirModel> libDirectories = [];
   List<LibraryModel> libraries = [];
+  List<HistoryModel> history = [];
 
   static List<PackModel> packs = [];
 
@@ -62,6 +64,9 @@ class PackModel {
       'libraries': <Map<String, Object?>>[
         for (final LibraryModel library in libraries) library.toMap(),
       ],
+      'history': <Map<String, Object?>>[
+        for (final HistoryModel entry in history) entry.toMap(),
+      ],
     };
   }
 
@@ -99,6 +104,10 @@ class PackModel {
     pack.libraries.addAll(<LibraryModel>[
       for (final Map<String, Object?> item in _mapList(map, 'libraries'))
         LibraryModel.fromMap(item),
+    ]);
+    pack.history.addAll(<HistoryModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'history'))
+        HistoryModel.fromMap(item),
     ]);
     return pack;
   }

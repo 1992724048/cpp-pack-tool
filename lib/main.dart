@@ -2,11 +2,13 @@ import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
@@ -16,6 +18,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/pack_export_dialog.dart';
+import 'controls/pack_history_dialog.dart';
 import 'controls/pack_list.dart';
 import 'controls/remap_pack_dialog.dart';
 import 'pages/setting.dart';
@@ -95,6 +98,7 @@ class MainLayout extends StatefulWidget {
     this.settings = const SettingsModel(),
     this.onSaveSettings = _noopSaveSettings,
     this.exportPackage = exportNuGetPackage,
+    this.now = DateTime.now,
   });
 
   final Future<String?> Function() pickDirectory;
@@ -107,6 +111,7 @@ class MainLayout extends StatefulWidget {
     String outputDirectory,
   )
   exportPackage;
+  final DateTime Function() now;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -185,10 +190,33 @@ class _MainLayoutState extends State<MainLayout> {
     if (pack == null || !mounted) {
       return;
     }
+    final int totalSize = pack.files.fold<int>(
+      0,
+      (int sum, FileModel file) => sum + file.size,
+    );
+    pack.history = appendHistoryEntry(
+      pack.history,
+      HistoryModel(
+        time: widget.now(),
+        type: HistoryType.created,
+        message: '创建包：${pack.files.length} 个文件，总大小 ${formatBytes(totalSize)}',
+      ),
+    );
     await _savePack(pack);
   }
 
   Future<bool> _savePack(PackModel pack) async {
+    final PackModel? previous = _findPack(pack.name);
+    if (previous != null && previous.version != pack.version) {
+      pack.history = appendHistoryEntry(
+        pack.history,
+        HistoryModel(
+          time: widget.now(),
+          type: HistoryType.versionChanged,
+          message: '版本变更：${previous.version} → ${pack.version}',
+        ),
+      );
+    }
     try {
       await widget.store.savePack(pack);
     } catch (error) {
@@ -238,6 +266,16 @@ class _MainLayoutState extends State<MainLayout> {
   bool get _hasSelectedPack {
     final int? selected = _selected;
     return selected != null && selected >= 0 && selected < _packs.length;
+  }
+
+  PackModel? _findPack(String name) {
+    final String lower = name.toLowerCase();
+    for (final PackModel pack in _packs) {
+      if (pack.name.toLowerCase() == lower) {
+        return pack;
+      }
+    }
+    return null;
   }
 
   Future<void> _deleteSelectedPack() async {
@@ -319,6 +357,37 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _applyRemap(PackModel pack) async {
+    final PackModel? previous = _findPack(pack.name);
+    if (previous != null) {
+      final Set<String> oldPaths = <String>{
+        for (final FileModel file in previous.files) file.path.toLowerCase(),
+      };
+      final Set<String> newPaths = <String>{
+        for (final FileModel file in pack.files) file.path.toLowerCase(),
+      };
+      final int added = newPaths.difference(oldPaths).length;
+      final int removed = oldPaths.difference(newPaths).length;
+      final int oldSize = previous.files.fold<int>(
+        0,
+        (int sum, FileModel file) => sum + file.size,
+      );
+      final int newSize = pack.files.fold<int>(
+        0,
+        (int sum, FileModel file) => sum + file.size,
+      );
+      if (added != 0 || removed != 0 || oldSize != newSize) {
+        pack.history = appendHistoryEntry(
+          pack.history,
+          HistoryModel(
+            time: widget.now(),
+            type: HistoryType.filesChanged,
+            message:
+                '重新映射：新增 $added 个文件、移除 $removed 个；'
+                '总大小 ${formatBytes(oldSize)} → ${formatBytes(newSize)}',
+          ),
+        );
+      }
+    }
     await widget.store.savePack(pack);
     if (!mounted) {
       return;
@@ -357,7 +426,49 @@ class _MainLayoutState extends State<MainLayout> {
         pack: pack,
         outputDirectory: outputDirectory,
         exportPackage: widget.exportPackage,
+        onExported: (PackageExportResult result) => _recordExport(pack, result),
       ),
+    );
+  }
+
+  Future<void> _recordExport(PackModel pack, PackageExportResult result) async {
+    pack.history = appendHistoryEntry(
+      pack.history,
+      HistoryModel(
+        time: widget.now(),
+        type: HistoryType.exported,
+        message: '打包导出：${result.outputPath}',
+      ),
+    );
+    try {
+      await widget.store.savePack(pack);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '保存历史记录失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    _upsertPack(pack);
+  }
+
+  Future<void> _historySelectedPack() async {
+    final int? selected = _selected;
+    if (selected == null || selected < 0 || selected >= _packs.length) {
+      return;
+    }
+    await showPackHistoryDialog(
+      context,
+      pack: _packs[selected],
+      onSave: _savePack,
     );
   }
 
@@ -433,7 +544,10 @@ class _MainLayoutState extends State<MainLayout> {
             ),
             Tooltip(
               message: '历史记录',
-              child: IconButton(icon: Svgs.historyFolder, onPressed: () {}),
+              child: IconButton(
+                icon: Svgs.historyFolder,
+                onPressed: _hasSelectedPack ? _historySelectedPack : null,
+              ),
             ),
           ],
         ),
