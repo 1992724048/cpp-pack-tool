@@ -190,7 +190,9 @@ void main() {
       expect(find.text('无匹配路径，将按手填内容使用'), findsOneWidget);
     });
 
-    testWidgets('未注入 packagePaths 时回退 NuGetBuilder 计划的包内路径', (WidgetTester tester) async {
+    testWidgets('未注入 packagePaths 时回退 NuGetBuilder 计划路径，浮层可显示并选择', (
+      WidgetTester tester,
+    ) async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'x.lib', path: 'lib/x.lib', size: 4),
@@ -200,13 +202,51 @@ void main() {
       _addAndSelect(controller, 'context.packageFile');
       await tester.pump();
 
-      final AutoSuggestBox<String> box = tester.widget<AutoSuggestBox<String>>(
+      await tester.enterText(
         find.byKey(const Key('inspectorField_path')),
+        'x.lib',
       );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final Finder suggestion = find.text('build/native/lib/x.lib');
+      expect(suggestion, findsOneWidget);
+
+      await tester.tap(suggestion);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+
       expect(
-        box.items.map((AutoSuggestBoxItem<String> item) => item.value),
-        contains('build/native/lib/x.lib'),
+        controller.project.nodes.single.params['path'],
+        'build/native/lib/x.lib',
       );
+    });
+
+    testWidgets('超长路径建议项单行省略显示且不触发布局溢出', (WidgetTester tester) async {
+      const String longPath =
+          'build/native/files/some/deeply/nested/directory/with/many/'
+          'segments/and_a_very_long_header_file_name.hpp';
+      final _Harness harness = await _pumpInspector(
+        tester,
+        packagePaths: const <String>[longPath],
+      );
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.packageFile');
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const Key('inspectorField_path')),
+        'segments',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final Finder suggestion = find.text(longPath);
+      expect(suggestion, findsOneWidget);
+      final Text tileText = tester.widget<Text>(suggestion);
+      expect(tileText.maxLines, 1);
+      expect(tileText.overflow, TextOverflow.ellipsis);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('环境变量名非法时显示红字，合法后消失', (WidgetTester tester) async {

@@ -410,7 +410,15 @@ class _NodeInspectorState extends State<NodeInspector> {
           ),
           items: <AutoSuggestBoxItem<String>>[
             for (final String path in _packagePaths)
-              AutoSuggestBoxItem<String>(value: path, label: path),
+              AutoSuggestBoxItem<String>(
+                value: path,
+                label: path,
+                child: Text(
+                  path,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
           ],
           sorter: _sortPackagePaths,
           noResultsFoundBuilder: (BuildContext context) => Align(
