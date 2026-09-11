@@ -6,6 +6,10 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
+import 'package:cpp_nuget_pack/pages/script_editor.dart';
+import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
+import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
@@ -22,6 +26,8 @@ const Set<String> _commandScriptExtensions = <String>{
 };
 
 const double _buildModelColumnWidth = 96;
+const double _triggerColumnWidth = 96;
+const double _statusColumnWidth = 80;
 const double _actionColumnWidth = 80;
 
 class PackCompileSettings extends StatefulWidget {
@@ -478,6 +484,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                 entries: _commandEntries(CmdType.postBuild, 'postBuildCmd'),
               ),
               const SizedBox(height: 24),
+              _buildScriptSection(),
+              const SizedBox(height: 24),
               _buildSection(
                 title: '附加库目录',
                 columnLabel: '目录路径',
@@ -510,7 +518,43 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     required VoidCallback onAdd,
     required List<_CompileEntry> entries,
   }) {
+    return _buildSectionFrame(
+      title: title,
+      action: FilledButton(
+        key: addKey,
+        onPressed: _saving ? null : onAdd,
+        child: const Text('添加'),
+      ),
+      body: entries.isEmpty
+          ? _buildEmptyText(emptyText)
+          : _buildEntryList(entries, columnLabel),
+    );
+  }
+
+  Widget _buildScriptSection() {
+    final List<ScriptProjectModel> scripts = widget.pack.scripts;
+    return _buildSectionFrame(
+      sectionKey: const Key('nodeScriptsSection'),
+      title: '节点脚本',
+      action: FilledButton(
+        key: const Key('openScriptEditorButton'),
+        onPressed: _saving ? null : _openScriptEditor,
+        child: const Text('打开节点编辑器'),
+      ),
+      body: scripts.isEmpty
+          ? _buildEmptyText('暂无节点脚本')
+          : _buildScriptList(scripts),
+    );
+  }
+
+  Widget _buildSectionFrame({
+    required String title,
+    required Widget action,
+    required Widget body,
+    Key? sectionKey,
+  }) {
     return Column(
+      key: sectionKey,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -525,28 +569,143 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                 ),
               ),
             ),
-            FilledButton(
-              key: addKey,
-              onPressed: _saving ? null : onAdd,
-              child: const Text('添加'),
-            ),
+            action,
           ],
         ),
         const SizedBox(height: 4),
-        if (entries.isEmpty)
-          Text(
-            emptyText,
-            style: TextStyle(
-              color: FluentTheme.of(context).resources.textFillColorSecondary,
-            ),
-          )
-        else
-          _buildEntryList(entries, columnLabel),
+        body,
       ],
     );
   }
 
+  Widget _buildEmptyText(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: FluentTheme.of(context).resources.textFillColorSecondary,
+      ),
+    );
+  }
+
+  void _openScriptEditor() {
+    Navigator.of(context).push<void>(
+      FluentPageRoute(
+        builder: (_) =>
+            ScriptEditorPage(pack: widget.pack, onSave: widget.onSave),
+      ),
+    );
+  }
+
+  Widget _buildScriptList(List<ScriptProjectModel> scripts) {
+    return _buildTable(
+      header: _buildScriptHeaderRow(),
+      rows: <Widget>[
+        for (final ScriptProjectModel script in scripts)
+          _buildScriptRow(script),
+      ],
+    );
+  }
+
+  Widget _buildScriptHeaderRow() {
+    final TextStyle style = _headerTextStyle();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text('名称', style: style)),
+          SizedBox(
+            width: _triggerColumnWidth,
+            child: Text('触发时机', style: style, textAlign: TextAlign.center),
+          ),
+          SizedBox(
+            width: _buildModelColumnWidth,
+            child: Text('构建标签', style: style, textAlign: TextAlign.center),
+          ),
+          SizedBox(
+            width: _statusColumnWidth,
+            child: Text('状态', style: style, textAlign: TextAlign.center),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScriptRow(ScriptProjectModel script) {
+    final (String statusText, Color statusColor) = _scriptStatus(script);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(script.name, overflow: TextOverflow.ellipsis)),
+          SizedBox(
+            width: _triggerColumnWidth,
+            child: Center(
+              child: Tag(
+                text: _triggerLabel(script.trigger),
+                color: _triggerColor(script.trigger),
+                fontSize: 10,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _buildModelColumnWidth,
+            child: Center(
+              child: Tag(
+                text: buildModelLabel(script.buildModel),
+                color: _buildModelColor(script.buildModel),
+                fontSize: 10,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: _statusColumnWidth,
+            child: Center(
+              child: Text(
+                statusText,
+                style: TextStyle(fontSize: 12, color: statusColor),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _triggerLabel(ScriptTrigger trigger) {
+    return trigger == ScriptTrigger.pre ? '编译前' : '编译后';
+  }
+
+  Color _triggerColor(ScriptTrigger trigger) {
+    return trigger == ScriptTrigger.pre
+        ? UCColors.flavor.sky
+        : UCColors.flavor.lavender;
+  }
+
+  (String, Color) _scriptStatus(ScriptProjectModel script) {
+    final List<ScriptDiagnostic> diagnostics = GraphValidator.validate(script);
+    final int errors = diagnostics
+        .where((ScriptDiagnostic diagnostic) => diagnostic.isError)
+        .length;
+    final int warnings = diagnostics.length - errors;
+    if (errors > 0) {
+      return ('$errors 个错误', UCColors.flavor.red);
+    }
+    if (warnings > 0) {
+      return ('$warnings 个警告', UCColors.flavor.peach);
+    }
+    return ('正常', UCColors.flavor.green);
+  }
+
   Widget _buildEntryList(List<_CompileEntry> entries, String columnLabel) {
+    return _buildTable(
+      header: _buildHeaderRow(columnLabel),
+      rows: <Widget>[
+        for (final _CompileEntry entry in entries) _buildEntryRow(entry),
+      ],
+    );
+  }
+
+  Widget _buildTable({required Widget header, required List<Widget> rows}) {
     final FluentThemeData theme = FluentTheme.of(context);
     final DividerThemeData dividerTheme = theme.dividerTheme;
     return FluentTheme(
@@ -561,11 +720,11 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeaderRow(columnLabel),
+          header,
           const Divider(),
-          for (int index = 0; index < entries.length; index++) ...[
+          for (int index = 0; index < rows.length; index++) ...[
             if (index > 0) const Divider(),
-            _buildEntryRow(entries[index]),
+            rows[index],
           ],
         ],
       ),
@@ -573,10 +732,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   }
 
   Widget _buildHeaderRow(String columnLabel) {
-    final TextStyle style = TextStyle(
-      fontSize: 12,
-      color: FluentTheme.of(context).resources.textFillColorSecondary,
-    );
+    final TextStyle style = _headerTextStyle();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -592,6 +748,13 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
           ),
         ],
       ),
+    );
+  }
+
+  TextStyle _headerTextStyle() {
+    return TextStyle(
+      fontSize: 12,
+      color: FluentTheme.of(context).resources.textFillColorSecondary,
     );
   }
 

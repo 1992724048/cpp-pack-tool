@@ -554,10 +554,130 @@ void main() {
     expect(find.text('B=2'), findsOneWidget);
     expect(find.text('A=1'), findsNothing);
   });
+
+  testWidgets('节点脚本分区空态渲染标题与打开按钮', (tester) async {
+    await _pumpPage(tester, _page(_pack('demo')));
+
+    expect(find.byKey(const Key('nodeScriptsSection')), findsOneWidget);
+    expect(find.text('节点脚本'), findsOneWidget);
+    expect(find.text('暂无节点脚本'), findsOneWidget);
+    expect(find.byKey(const Key('openScriptEditorButton')), findsOneWidget);
+    expect(find.text('打开节点编辑器'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('节点脚本分区渲染四列表格与状态着色', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+            id: 'script_1',
+            name: '构建头文件',
+            trigger: ScriptTrigger.pre,
+          )
+          ..nodes = <ScriptNodeModel>[
+            ScriptNodeModel(id: 'n1', type: 'flow.entry'),
+          ],
+        ScriptProjectModel(
+          id: 'script_2',
+          name: '收集产物',
+          trigger: ScriptTrigger.post,
+          buildModel: BuildModel.release,
+        ),
+        _validScript(),
+      ];
+
+    await _pumpPage(tester, _page(pack));
+
+    for (final String header in <String>['名称', '触发时机', '构建标签', '状态']) {
+      expect(find.text(header), findsOneWidget);
+    }
+    expect(find.text('构建头文件'), findsOneWidget);
+    expect(find.text('收集产物'), findsOneWidget);
+    expect(find.text('输出日志'), findsOneWidget);
+
+    final List<Tag> tags = tester.widgetList<Tag>(find.byType(Tag)).toList();
+    expect(tags, hasLength(6));
+    expect(tags[0].text, '编译前');
+    expect(tags[0].color, UCColors.flavor.sky);
+    expect(tags[1].text, 'ALL');
+    expect(tags[1].color, UCColors.flavor.blue);
+    expect(tags[2].text, '编译后');
+    expect(tags[2].color, UCColors.flavor.lavender);
+    expect(tags[3].text, 'Release');
+    expect(tags[3].color, UCColors.flavor.green);
+    expect(tags[4].text, '编译前');
+    expect(tags[4].color, UCColors.flavor.sky);
+    expect(tags[5].text, 'Debug');
+    expect(tags[5].color, UCColors.flavor.peach);
+
+    expect(_statusText(tester, '1 个警告').style?.color, UCColors.flavor.peach);
+    expect(_statusText(tester, '1 个错误').style?.color, UCColors.flavor.red);
+    expect(_statusText(tester, '正常').style?.color, UCColors.flavor.green);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('点击打开节点编辑器进入编辑页并可返回编译设置', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+        ),
+      ];
+    await _pumpPage(tester, _page(pack));
+
+    final Finder openButton = find.byKey(const Key('openScriptEditorButton'));
+    await tester.ensureVisible(openButton);
+    await tester.pump();
+    await tester.tap(openButton);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('nodeEditorPage')), findsOneWidget);
+    expect(find.text('节点编辑器 — demo'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('返回包管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('nodeEditorPage')), findsNothing);
+    expect(find.text('节点脚本'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 PackModel _pack(String name) =>
     PackModel(name: name, version: '1.0.0', author: 'tester');
+
+/// 结构完整且无诊断的脚本：开始 → 输出信息，消息来自文本常量。
+ScriptProjectModel _validScript() {
+  final ScriptProjectModel script = ScriptProjectModel(
+    id: 'script_3',
+    name: '输出日志',
+    trigger: ScriptTrigger.pre,
+    buildModel: BuildModel.debug,
+  );
+  script.nodes = <ScriptNodeModel>[
+    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
+    ScriptNodeModel(id: 'n2', type: 'log.message'),
+    ScriptNodeModel(id: 'n3', type: 'value.text'),
+  ];
+  script.edges = <ScriptEdgeModel>[
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
+      to: ScriptEdgeEndpoint(node: 'n2', pin: 'exec'),
+    ),
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n3', pin: 'result'),
+      to: ScriptEdgeEndpoint(node: 'n2', pin: 'message'),
+    ),
+  ];
+  return script;
+}
+
+Text _statusText(WidgetTester tester, String text) =>
+    tester.widget<Text>(find.text(text));
 
 PackCompileSettings _page(
   PackModel pack, {
