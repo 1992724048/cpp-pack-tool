@@ -110,6 +110,21 @@ void main() {
       }
     });
 
+    test('输入引脚除 process.run 两个可选参数外全部必填', () {
+      final Set<String> optionalInputs = <String>{};
+      for (final ScriptNodeTypeDescriptor type in NodeRegistry.all) {
+        for (final ScriptPinDescriptor pin in type.pins) {
+          if (pin.isInput && !pin.required) {
+            optionalInputs.add('${type.typeKey}.${pin.id}');
+          }
+        }
+      }
+      expect(optionalInputs, <String>{
+        'process.run.arguments',
+        'process.run.workingDirectory',
+      });
+    });
+
     test('未知类型键返回 null', () {
       expect(NodeRegistry.byType('nope.unknown'), isNull);
       expect(NodeRegistry.byType(''), isNull);
@@ -182,8 +197,8 @@ void main() {
         'flow.branch',
       )!;
       expect(
-        branch.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'condition', 'then', 'else']),
+        branch.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'condition', 'then', 'else'},
       );
       expect(
         branch.pins
@@ -253,8 +268,8 @@ void main() {
         'flow.foreach',
       )!;
       expect(
-        foreach.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'list', 'body', 'item', 'completed']),
+        foreach.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'list', 'body', 'item', 'completed'},
       );
       expect(
         foreach.pins
@@ -300,8 +315,8 @@ void main() {
         'flow.while',
       )!;
       expect(
-        whileType.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'condition', 'body', 'completed']),
+        whileType.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'condition', 'body', 'completed'},
       );
       expect(
         whileType.pins
@@ -328,8 +343,8 @@ void main() {
       final ScriptNodeTypeDescriptor copy = NodeRegistry.byType('file.copy')!;
       expect(copy.category, ScriptNodeCategory.file);
       expect(
-        copy.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'source', 'destination', 'out']),
+        copy.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'source', 'destination', 'out'},
       );
       expect(
         copy.pins
@@ -373,8 +388,8 @@ void main() {
     test('file.move / file.delete / file.makeDirectory 引脚', () {
       final ScriptNodeTypeDescriptor move = NodeRegistry.byType('file.move')!;
       expect(
-        move.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'source', 'destination', 'out']),
+        move.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'source', 'destination', 'out'},
       );
       expect(move.params, isEmpty);
 
@@ -382,8 +397,8 @@ void main() {
         'file.delete',
       )!;
       expect(
-        delete.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'path', 'out']),
+        delete.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'path', 'out'},
       );
       expect(
         delete.pins
@@ -397,8 +412,8 @@ void main() {
         'file.makeDirectory',
       )!;
       expect(
-        makeDirectory.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'path', 'out']),
+        makeDirectory.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'path', 'out'},
       );
       expect(makeDirectory.params, isEmpty);
     });
@@ -406,8 +421,8 @@ void main() {
     test('file.list：目录 → 文件列表，筛选与递归参数', () {
       final ScriptNodeTypeDescriptor list = NodeRegistry.byType('file.list')!;
       expect(
-        list.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['directory', 'result']),
+        list.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'directory', 'result'},
       );
       expect(
         list.pins
@@ -450,8 +465,8 @@ void main() {
         'file.exists',
       )!;
       expect(
-        exists.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['path', 'result']),
+        exists.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'path', 'result'},
       );
       expect(
         exists.pins
@@ -478,14 +493,8 @@ void main() {
       final ScriptNodeTypeDescriptor run = NodeRegistry.byType('process.run')!;
       expect(run.category, ScriptNodeCategory.process);
       expect(
-        run.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>[
-          'exec',
-          'program',
-          'arguments',
-          'workingDirectory',
-          'out',
-        ]),
+        run.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'program', 'arguments', 'workingDirectory', 'out'},
       );
       expect(
         run.pins
@@ -565,34 +574,39 @@ void main() {
     test('string / path 六节点引脚', () {
       expect(
         NodeRegistry.byType('string.concat')!.pins
-            .map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['a', 'b', 'result']),
+            .map((ScriptPinDescriptor pin) => pin.id)
+            .toSet(),
+        <String>{'a', 'b', 'result'},
       );
       expect(
         NodeRegistry.byType('string.replace')!.pins
-            .map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['input', 'find', 'replace', 'result']),
+            .map((ScriptPinDescriptor pin) => pin.id)
+            .toSet(),
+        <String>{'input', 'find', 'replace', 'result'},
       );
       expect(
         NodeRegistry.byType('string.lowerCase')!.pins
-            .map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['input', 'result']),
+            .map((ScriptPinDescriptor pin) => pin.id)
+            .toSet(),
+        <String>{'input', 'result'},
       );
       expect(
         NodeRegistry.byType('string.fileName')!.pins
-            .map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['path', 'result']),
+            .map((ScriptPinDescriptor pin) => pin.id)
+            .toSet(),
+        <String>{'path', 'result'},
       );
       expect(
         NodeRegistry.byType('string.directoryName')!.pins
-            .map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['path', 'result']),
+            .map((ScriptPinDescriptor pin) => pin.id)
+            .toSet(),
+        <String>{'path', 'result'},
       );
       final ScriptNodeTypeDescriptor join = NodeRegistry.byType('path.join')!;
       expect(join.category, ScriptNodeCategory.string);
       expect(
-        join.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['left', 'right', 'result']),
+        join.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'left', 'right', 'result'},
       );
       for (final String typeKey in <String>[
         'string.concat',
@@ -622,8 +636,8 @@ void main() {
       final ScriptNodeTypeDescriptor log = NodeRegistry.byType('log.message')!;
       expect(log.category, ScriptNodeCategory.log);
       expect(
-        log.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['exec', 'message', 'out']),
+        log.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'message', 'out'},
       );
       expect(
         log.pins
@@ -650,8 +664,8 @@ void main() {
       )!;
       expect(compare.category, ScriptNodeCategory.logic);
       expect(
-        compare.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['a', 'b', 'result']),
+        compare.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'a', 'b', 'result'},
       );
       expect(
         compare.pins
@@ -668,8 +682,8 @@ void main() {
 
       final ScriptNodeTypeDescriptor not = NodeRegistry.byType('logic.not')!;
       expect(
-        not.pins.map((ScriptPinDescriptor pin) => pin.id),
-        containsAll(<String>['input', 'result']),
+        not.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'input', 'result'},
       );
       expect(
         not.pins

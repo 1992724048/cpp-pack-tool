@@ -8,6 +8,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -125,6 +126,34 @@ void main() {
     expect(applied!.macros.single.value, 'MY_MACRO=1');
     expect(applied!.libDirectories.single.path, 'third_party/lib');
     expect(applied!.libraries.single.name, 'mylib.lib');
+  });
+
+  testWidgets('重新映射保留脚本列表', (tester) async {
+    final PackModel pack = _pack()
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+        ),
+      ];
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      pack: pack,
+      scanFuture: Future<List<FileModel>>.value(<FileModel>[
+        FileModel(name: 'new.h', path: 'include/new.h', size: 10),
+      ]),
+      onApply: (PackModel updated) async {
+        applied = updated;
+      },
+    );
+
+    expect(applied, isNotNull);
+    expect(applied!.files, hasLength(1));
+    expect(applied!.scripts, hasLength(1));
+    expect(applied!.scripts.single.id, 'script_1');
   });
 
   testWidgets('扫描结果无图片文件时 iconPath 为空', (tester) async {

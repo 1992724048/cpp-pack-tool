@@ -6,6 +6,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_info.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -229,6 +230,44 @@ void main() {
     expect(saved!.macros.single.value, 'MY_MACRO=1');
     expect(saved!.libDirectories.single.path, 'third_party/lib');
     expect(saved!.libraries.single.name, 'mylib.lib');
+  });
+
+  testWidgets('保存包信息时保留脚本列表', (tester) async {
+    final PackModel pack = _pack()
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+        ),
+      ];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackInfo(
+        pack: pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+    await _tapEdit(tester);
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.version, '2.0.0');
+    expect(saved!.scripts, hasLength(1));
+    expect(saved!.scripts.single.id, 'script_1');
   });
 
   testWidgets('清空描述并选择无许可证时保存为空值', (tester) async {

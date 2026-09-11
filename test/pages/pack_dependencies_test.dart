@@ -6,6 +6,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_dependencies.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -222,6 +223,37 @@ void main() {
     expect(saved!.libraries.single.name, 'mylib.lib');
     expect(find.text('已添加'), findsOneWidget);
     expect(find.byKey(const Key('dependencyDialog')), findsNothing);
+  });
+
+  testWidgets('添加依赖后保存的包保留脚本', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..scripts = <ScriptProjectModel>[
+        ScriptProjectModel(
+          id: 'script_1',
+          name: '脚本 1',
+          trigger: ScriptTrigger.pre,
+        ),
+      ];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        allPacks: <PackModel>[_pack('demo'), _pack('libfoo')],
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+
+    await _addDependency(tester, package: 'libfoo', version: '1.0');
+
+    expect(saved, isNotNull);
+    expect(saved!.dependencies, hasLength(1));
+    expect(saved!.scripts, hasLength(1));
+    expect(saved!.scripts.single.id, 'script_1');
   });
 
   testWidgets('候选包排除自身与已添加的依赖', (tester) async {
