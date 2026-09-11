@@ -54,6 +54,8 @@ class _PowerShellEmitter {
 
   final CodeWriter writer;
   final _GraphIndex _index;
+  final Map<String, String> _itemVariableByNodeId = <String, String>{};
+  int _itemCounter = 0;
 
   void emitEntryChain() {
     final ScriptNodeModel? entry = _index.firstNodeOfType(_entryTypeKey);
@@ -75,17 +77,31 @@ class _PowerShellEmitter {
     }
   }
 
-  /// 线性链默认沿普通 exec 输出 `out` 继续；T6 的循环节点将改由 `completed` 续接。
+  /// 线性链默认沿 `out` 续接；循环沿 `completed` 续接，分支无续接出口。
   String? _continuationNodeId(ScriptNodeModel node) {
-    return _index.execTarget(node.id, _defaultExecPinId);
+    switch (node.type) {
+      case 'flow.branch':
+        return null;
+      case 'flow.foreach':
+      case 'flow.while':
+        return _index.execTarget(node.id, 'completed');
+      default:
+        return _index.execTarget(node.id, _defaultExecPinId);
+    }
   }
 
   void _emitNode(ScriptNodeModel node) {
     switch (node.type) {
       case 'log.message':
         _emitLogMessage(node);
+      case 'flow.branch':
+        _emitBranch(node);
+      case 'flow.foreach':
+        _emitForeach(node);
+      case 'flow.while':
+        _emitWhile(node);
       default:
-        // T6/T7/T8 扩展点：分支/循环、文件/进程、上下文/字符串/逻辑节点在此登记发射
+        // T7/T8 扩展点：文件/进程、上下文/字符串/逻辑节点在此登记发射
         throw UnsupportedError('节点类型「${node.type}」的代码生成尚未实现');
     }
   }
@@ -104,6 +120,38 @@ class _PowerShellEmitter {
     }
   }
 
+  void _emitBranch(ScriptNodeModel node) {
+    final String condition = _expression(node, 'condition');
+    writer.writeln('if ($condition) {');
+    writer.indent(() => _emitChain(_index.execTarget(node.id, 'then')));
+    writer.writeln('} else {');
+    writer.indent(() => _emitChain(_index.execTarget(node.id, 'else')));
+    writer.writeln('}');
+  }
+
+  void _emitForeach(ScriptNodeModel node) {
+    final String itemVariable = _itemVariable(node);
+    final String list = _expression(node, 'list');
+    writer.writeln('foreach ($itemVariable in $list) {');
+    writer.indent(() => _emitChain(_index.execTarget(node.id, 'body')));
+    writer.writeln('}');
+  }
+
+  void _emitWhile(ScriptNodeModel node) {
+    final String condition = _expression(node, 'condition');
+    writer.writeln('while ($condition) {');
+    writer.indent(() => _emitChain(_index.execTarget(node.id, 'body')));
+    writer.writeln('}');
+  }
+
+  /// 循环变量按首次使用顺序分配，全局唯一（`$item_1`、`$item_2`…），保证生成确定性。
+  String _itemVariable(ScriptNodeModel node) {
+    return _itemVariableByNodeId.putIfAbsent(
+      node.id,
+      () => '\$item_${++_itemCounter}',
+    );
+  }
+
   /// 内联 `node` 输入引脚处的数据表达式（递归展开上游数据节点）。
   String _expression(ScriptNodeModel node, String pinId) {
     final ScriptEdgeModel? edge = _index.incomingEdge(node.id, pinId);
@@ -113,16 +161,37 @@ class _PowerShellEmitter {
     return _outputExpression(_index.nodeById[edge.from.node]!, edge.from.pin);
   }
 
-  /// 数据节点输出引脚的表达式；T6 补充循环项、T8 补充上下文/字符串/逻辑节点。
+  /// 数据节点输出引脚的表达式；T8 补充上下文/字符串/逻辑节点。
   String _outputExpression(ScriptNodeModel node, String pinId) {
     switch (node.type) {
       case 'value.text':
         return _textLiteral(_param(node, 'value'));
       case 'value.boolean':
         return _param(node, 'value') == true ? r'$true' : r'$false';
+      case 'file.list':
+        return _fileListExpression(node);
+      case 'flow.foreach':
+        if (pinId != 'item') {
+          throw UnsupportedError('节点类型「${node.type}」的引脚「$pinId」不支持数据表达式');
+        }
+        return _itemVariable(node);
       default:
         throw UnsupportedError('节点类型「${node.type}」的表达式生成尚未实现');
     }
+  }
+
+  String _fileListExpression(ScriptNodeModel node) {
+    final String directory = _expression(node, 'directory');
+    final Object? filterValue = _param(node, 'filter');
+    final String filter = filterValue == null ? '' : '$filterValue';
+    final String filterPart = filter.isEmpty
+        ? ''
+        : ' -Filter ${_textLiteral(filter)}';
+    final String recursePart = _param(node, 'recursive') == true
+        ? ' -Recurse'
+        : '';
+    return '@(Get-ChildItem -LiteralPath $directory$filterPart$recursePart '
+        '-File | Select-Object -ExpandProperty FullName)';
   }
 
   Object? _param(ScriptNodeModel node, String key) {

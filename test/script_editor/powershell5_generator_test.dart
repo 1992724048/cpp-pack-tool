@@ -232,6 +232,334 @@ void main() {
     });
   });
 
+  group('控制流发射', () {
+    test('分支：then/else 双链', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n3', 'flow.branch'),
+          _node('n4', 'value.text', params: <String, Object?>{'value': '满足'}),
+          _node('n5', 'log.message'),
+          _node('n6', 'value.text', params: <String, Object?>{'value': '不满足'}),
+          _node('n7', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'condition'),
+          _edge('n3', 'then', 'n5', 'exec'),
+          _edge('n4', 'result', 'n5', 'message'),
+          _edge('n3', 'else', 'n7', 'exec'),
+          _edge('n6', 'result', 'n7', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    if (\$true) {\n'
+          "        Write-Host '满足'\n"
+          '    } else {\n'
+          "        Write-Host '不满足'\n"
+          '    }\n',
+        ),
+      );
+    });
+
+    test('分支：空 else 输出空块', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n3', 'flow.branch'),
+          _node('n4', 'value.text', params: <String, Object?>{'value': '满足'}),
+          _node('n5', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'condition'),
+          _edge('n3', 'then', 'n5', 'exec'),
+          _edge('n4', 'result', 'n5', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    if (\$true) {\n'
+          "        Write-Host '满足'\n"
+          '    } else {\n'
+          '    }\n',
+        ),
+      );
+    });
+
+    test('分支：空 then 输出空块', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n3', 'flow.branch'),
+          _node('n4', 'value.text', params: <String, Object?>{'value': '不满足'}),
+          _node('n5', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'condition'),
+          _edge('n3', 'else', 'n5', 'exec'),
+          _edge('n4', 'result', 'n5', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    if (\$true) {\n'
+          '    } else {\n'
+          "        Write-Host '不满足'\n"
+          '    }\n',
+        ),
+      );
+    });
+
+    test('分支：两个出口均未连接时输出双空块并保留警告', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n3', 'flow.branch'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'condition'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    if (\$true) {\n'
+          '    } else {\n'
+          '    }\n',
+        ),
+      );
+      expect(
+        result.diagnostics.any(
+          (ScriptDiagnostic diagnostic) =>
+              !diagnostic.isError && diagnostic.message.contains('两个出口均未连接'),
+        ),
+        isTrue,
+      );
+    });
+
+    test('foreach：循环体与 completed 后继续链', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\in'},
+          ),
+          _node('n3', 'file.list'),
+          _node('n4', 'flow.foreach'),
+          _node('n5', 'log.message'),
+          _node('n6', 'value.text', params: <String, Object?>{'value': '完成'}),
+          _node('n7', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n3', 'directory'),
+          _edge('n3', 'result', 'n4', 'list'),
+          _edge('n4', 'body', 'n5', 'exec'),
+          _edge('n4', 'item', 'n5', 'message'),
+          _edge('n4', 'completed', 'n7', 'exec'),
+          _edge('n6', 'result', 'n7', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    foreach (\$item_1 in @(Get-ChildItem -LiteralPath 'C:\\in' -File | Select-Object -ExpandProperty FullName)) {\n"
+          '        Write-Host \$item_1\n'
+          '    }\n'
+          "    Write-Host '完成'\n",
+        ),
+      );
+    });
+
+    test('while：条件内联与 completed 后继续链', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n3', 'flow.while'),
+          _node('n4', 'value.text', params: <String, Object?>{'value': '循环体'}),
+          _node('n5', 'log.message'),
+          _node('n6', 'value.text', params: <String, Object?>{'value': '完成'}),
+          _node('n7', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'condition'),
+          _edge('n3', 'body', 'n5', 'exec'),
+          _edge('n4', 'result', 'n5', 'message'),
+          _edge('n3', 'completed', 'n7', 'exec'),
+          _edge('n6', 'result', 'n7', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    while (\$true) {\n'
+          "        Write-Host '循环体'\n"
+          '    }\n'
+          "    Write-Host '完成'\n",
+        ),
+      );
+    });
+
+    test('嵌套：foreach 体内含 branch', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\src'},
+          ),
+          _node('n3', 'file.list'),
+          _node('n4', 'flow.foreach'),
+          _node('n5', 'flow.branch'),
+          _node(
+            'n6',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n7', 'log.message'),
+          _node('n8', 'value.text', params: <String, Object?>{'value': '跳过'}),
+          _node('n9', 'log.message'),
+          _node('n10', 'value.text', params: <String, Object?>{'value': '完成'}),
+          _node('n11', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n3', 'directory'),
+          _edge('n3', 'result', 'n4', 'list'),
+          _edge('n4', 'body', 'n5', 'exec'),
+          _edge('n6', 'result', 'n5', 'condition'),
+          _edge('n5', 'then', 'n7', 'exec'),
+          _edge('n4', 'item', 'n7', 'message'),
+          _edge('n5', 'else', 'n9', 'exec'),
+          _edge('n8', 'result', 'n9', 'message'),
+          _edge('n4', 'completed', 'n11', 'exec'),
+          _edge('n10', 'result', 'n11', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    foreach (\$item_1 in @(Get-ChildItem -LiteralPath 'C:\\src' -File | Select-Object -ExpandProperty FullName)) {\n"
+          '        if (\$true) {\n'
+          '            Write-Host \$item_1\n'
+          '        } else {\n'
+          "            Write-Host '跳过'\n"
+          '        }\n'
+          '    }\n'
+          "    Write-Host '完成'\n",
+        ),
+      );
+    });
+
+    test('循环变量唯一化：两个 foreach → \$item_1 / \$item_2', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a'},
+          ),
+          _node('n3', 'file.list'),
+          _node('n4', 'flow.foreach'),
+          _node('n5', 'log.message'),
+          _node(
+            'n6',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\b'},
+          ),
+          _node(
+            'n7',
+            'file.list',
+            params: <String, Object?>{'filter': '*.dll', 'recursive': true},
+          ),
+          _node('n8', 'flow.foreach'),
+          _node('n9', 'log.message'),
+          _node('n10', 'value.text', params: <String, Object?>{'value': '双完成'}),
+          _node('n11', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n3', 'directory'),
+          _edge('n3', 'result', 'n4', 'list'),
+          _edge('n4', 'body', 'n5', 'exec'),
+          _edge('n4', 'item', 'n5', 'message'),
+          _edge('n4', 'completed', 'n8', 'exec'),
+          _edge('n6', 'result', 'n7', 'directory'),
+          _edge('n7', 'result', 'n8', 'list'),
+          _edge('n8', 'body', 'n9', 'exec'),
+          _edge('n8', 'item', 'n9', 'message'),
+          _edge('n8', 'completed', 'n11', 'exec'),
+          _edge('n10', 'result', 'n11', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    foreach (\$item_1 in @(Get-ChildItem -LiteralPath 'C:\\a' -File | Select-Object -ExpandProperty FullName)) {\n"
+          '        Write-Host \$item_1\n'
+          '    }\n'
+          "    foreach (\$item_2 in @(Get-ChildItem -LiteralPath 'C:\\b' -Filter '*.dll' -Recurse -File | Select-Object -ExpandProperty FullName)) {\n"
+          '        Write-Host \$item_2\n'
+          '    }\n'
+          "    Write-Host '双完成'\n",
+        ),
+      );
+    });
+  });
+
   group('编译错误', () {
     test('无入口图 → code 为 null 且含诊断', () {
       final ScriptCompileResult result = _compile(
