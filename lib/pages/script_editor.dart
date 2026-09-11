@@ -1,6 +1,7 @@
 import 'package:cpp_nuget_pack/controls/script_editor/editor_canvas.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_inspector.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_library_panel.dart';
+import 'package:cpp_nuget_pack/controls/script_editor/output_panel.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
@@ -12,7 +13,6 @@ import 'package:fluent_ui/fluent_ui.dart';
 const double _topBarHeight = 48;
 const double _nodeLibraryWidth = 232;
 const double _inspectorWidth = 280;
-const double _outputPanelCollapsedHeight = 34;
 const double _titleMaxWidth = 240;
 
 /// 节点编辑器全屏页（T4 外壳，各面板经后续任务装配）。
@@ -45,6 +45,8 @@ class ScriptEditorPage extends StatefulWidget {
 class _ScriptEditorPageState extends State<ScriptEditorPage> {
   GraphEditorController? _controller;
   final TransformationController _transformation = TransformationController();
+  final GlobalKey<OutputPanelState> _outputPanelKey =
+      GlobalKey<OutputPanelState>();
   Size? _canvasViewportSize;
 
   bool get _hasProject => _controller != null;
@@ -117,12 +119,39 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     );
   }
 
-  /// 顶栏动作预留区：项目选择器（T11）、保存状态（T10）、生成预览（T9）逐步追加。
+  /// 顶栏动作区（Spacer 之后）：生成预览（T9）、保存状态（T10）逐步追加。
   Widget _buildTopBarActions() {
-    return const Row(
-      key: Key('editorTopBarActions'),
+    return Row(
+      key: const Key('editorTopBarActions'),
       mainAxisSize: MainAxisSize.min,
-      children: <Widget>[],
+      children: <Widget>[
+        Tooltip(
+          message: '生成 PowerShell 代码预览',
+          child: SizedBox(
+            height: 32,
+            child: FilledButton(
+              key: const Key('generatePreviewButton'),
+              style: ButtonStyle(
+                foregroundColor: WidgetStateProperty.resolveWith(
+                  (Set<WidgetState> states) =>
+                      states.contains(WidgetState.disabled)
+                      ? UCColors.flavor.subtext0
+                      : UCColors.flavor.crust,
+                ),
+              ),
+              onPressed: _hasProject ? _generatePreview : null,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(FluentIcons.code, size: 16),
+                  const SizedBox(width: 8),
+                  const Text('生成预览', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -231,13 +260,18 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   }
 
   Widget _buildOutputBar() {
-    return Container(
-      key: const Key('outputPanel'),
-      height: _outputPanelCollapsedHeight,
-      decoration: BoxDecoration(
-        color: UCColors.flavor.base,
-        border: Border(top: BorderSide(color: UCColors.flavor.surface2)),
-      ),
+    return OutputPanel(
+      key: _outputPanelKey,
+      controller: _controller,
+      pack: widget.pack,
+      generator: widget.generator,
+      transformationController: _transformation,
+      viewportSizeProvider: () => _canvasViewportSize,
     );
+  }
+
+  /// 顶栏「生成预览」（§10.8）：交给底部面板编译并呈现。
+  void _generatePreview() {
+    _outputPanelKey.currentState?.generatePreview();
   }
 }

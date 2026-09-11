@@ -129,6 +129,9 @@ class _EditorCanvasState extends State<EditorCanvas> {
       project.nodes,
       widget.controller.diagnostics,
     );
+    final Set<String> errorNodeIds = _errorNodeIds(
+      widget.controller.diagnostics,
+    );
     final _ConnectHighlights highlights = _connectHighlights(project);
     final List<ScriptNodeModel> orderedNodes = _orderedNodes(
       project.nodes,
@@ -200,8 +203,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                                 descriptor: NodeRegistry.byType(node.type),
                                 selected: node.id == selectedNodeId,
                                 dragging: node.id == _dragNodeId,
-                                // 节点错误红点接线由 T9 完成；引脚错误红环在本任务接入。
-                                hasError: false,
+                                hasError: errorNodeIds.contains(node.id),
                                 connectedPins:
                                     connectedPins[node.id] ?? const <String>{},
                                 errorPins:
@@ -909,6 +911,18 @@ Map<String, Set<String>> errorPinsByNode(
     }
   }
   return result;
+}
+
+/// 节点错误红点数据源（§10.7）：诊断为错误且指向节点的 id 集合。
+Set<String> _errorNodeIds(List<ScriptDiagnostic> diagnostics) {
+  final Set<String> ids = <String>{};
+  for (final ScriptDiagnostic diagnostic in diagnostics) {
+    final String? nodeId = diagnostic.nodeId;
+    if (diagnostic.isError && nodeId != null) {
+      ids.add(nodeId);
+    }
+  }
+  return ids;
 }
 
 ScriptNodeModel? _findNodeById(List<ScriptNodeModel> nodes, String nodeId) {

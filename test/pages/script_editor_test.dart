@@ -58,6 +58,50 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('顶栏生成预览按钮：无项目时禁用，有项目时可用', (WidgetTester tester) async {
+    await _pumpEditor(tester, _pack('demo'));
+
+    expect(find.byTooltip('生成 PowerShell 代码预览'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('generatePreviewButton')))
+          .onPressed,
+      isNull,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await _pumpEditor(tester, _packWithEntryScript());
+
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('generatePreviewButton')))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
+  testWidgets('顶栏生成预览：点击后展开底部面板并显示生成代码', (WidgetTester tester) async {
+    await _pumpEditor(tester, _packWithEntryScript());
+
+    await tester.tap(find.byKey(const Key('generatePreviewButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(tester.getSize(find.byKey(const Key('outputPanel'))).height, 220);
+    expect(find.textContaining('由 cpp_nuget_pack 生成'), findsOneWidget);
+    expect(find.textContaining('已生成 · 7 行'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('画布节点错误红点：诊断为错误的节点显示红点', (WidgetTester tester) async {
+    await _pumpEditor(tester, _packWithInvalidNodeScript());
+
+    // n1（复制）缺必填输入 → 错误红点；n0（入口）仅警告 → 无红点。
+    expect(find.byKey(const Key('nodeErrorDot_n1')), findsOneWidget);
+    expect(find.byKey(const Key('nodeErrorDot_n0')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   test('页面构造接受 generator 与 packagePaths 注入', () {
     final PackModel pack = _pack('demo');
     final ScriptEditorPage page = ScriptEditorPage(
@@ -85,6 +129,24 @@ PackModel _packWithScript() {
         trigger: ScriptTrigger.pre,
       ),
     ];
+}
+
+/// 仅含一个未连线入口节点的脚本（生成 7 行 PowerShell、含一条警告）。
+PackModel _packWithEntryScript() {
+  final PackModel pack = _packWithScript();
+  pack.scripts.single.nodes.add(
+    ScriptNodeModel(id: 'n1', type: 'flow.entry', x: 40, y: 60),
+  );
+  return pack;
+}
+
+/// 入口（仅警告）+ 缺必填输入的复制节点（错误）的脚本。
+PackModel _packWithInvalidNodeScript() {
+  final PackModel pack = _packWithScript();
+  pack.scripts.single.nodes
+    ..add(ScriptNodeModel(id: 'n0', type: 'flow.entry', x: 40, y: 60))
+    ..add(ScriptNodeModel(id: 'n1', type: 'file.copy', x: 400, y: 60));
+  return pack;
 }
 
 Future<void> _pumpEditor(WidgetTester tester, PackModel pack) async {
