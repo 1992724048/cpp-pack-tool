@@ -66,7 +66,6 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
   void initState() {
     super.initState();
     _tree = _buildTree(widget.plan.entries);
-    _collectDirectories(_tree, _expandedDirs);
   }
 
   @override
@@ -98,13 +97,6 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
       parent.files.add(_PreviewFile(name: segments.last, entry: entry));
     }
     return root;
-  }
-
-  static void _collectDirectories(_PreviewNode node, Set<String> paths) {
-    for (final _PreviewNode child in node.children.values) {
-      paths.add(child.path);
-      _collectDirectories(child, paths);
-    }
   }
 
   void _toggleDirectory(String path) {

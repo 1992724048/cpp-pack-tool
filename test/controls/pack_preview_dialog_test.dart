@@ -5,9 +5,9 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('默认全部展开并渲染目录与文件', (tester) async {
+  testWidgets('默认全部折叠，仅根级条目可见', (tester) async {
     final PackagePlan plan = _plan(<PackageEntry>[
-      _generated('build/native/demo.nuspec', '<package>nuspec</package>'),
+      _generated('demo.nuspec', '<package>nuspec</package>'),
       _generated('build/native/demo.targets', '<Project>targets</Project>'),
       _file('build/native/include/foo.h', 'include/foo.h'),
       _file('build/native/include/detail/bar.h', 'include/detail/bar.h'),
@@ -18,40 +18,61 @@ void main() {
     expect(find.byKey(const Key('packPreviewDialog')), findsOneWidget);
     expect(find.text('打包预览'), findsOneWidget);
     expect(find.text('build'), findsOneWidget);
-    expect(find.text('native'), findsOneWidget);
-    expect(find.text('include'), findsOneWidget);
-    expect(find.text('detail'), findsOneWidget);
     expect(find.text('demo.nuspec'), findsOneWidget);
-    expect(find.text('demo.targets'), findsOneWidget);
-    expect(find.text('foo.h'), findsOneWidget);
-    expect(find.text('bar.h'), findsOneWidget);
+    expect(find.text('native'), findsNothing);
+    expect(find.text('include'), findsNothing);
+    expect(find.text('detail'), findsNothing);
+    expect(find.text('demo.targets'), findsNothing);
+    expect(find.text('foo.h'), findsNothing);
+    expect(find.text('bar.h'), findsNothing);
+    expect(find.byIcon(FluentIcons.chevron_right), findsOneWidget);
+    expect(find.byIcon(FluentIcons.chevron_down), findsNothing);
     expect(find.text('选择左侧文件预览内容'), findsOneWidget);
   });
 
-  testWidgets('点击目录行与箭头均可折叠展开', (tester) async {
+  testWidgets('默认折叠后点击目录行与箭头均可展开折叠', (tester) async {
     final PackagePlan plan = _plan(<PackageEntry>[
       _file('build/native/include/foo.h', 'include/foo.h'),
       _file('build/native/include/detail/bar.h', 'include/detail/bar.h'),
     ]);
 
     await _pumpDialog(tester, plan: plan);
+    expect(find.text('build'), findsOneWidget);
+    expect(find.text('native'), findsNothing);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('previewDirectory_build')),
+        matching: find.byIcon(FluentIcons.chevron_right),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('native'), findsOneWidget);
+
+    await tester.tap(find.text('native'));
+    await tester.pump();
+    expect(find.text('include'), findsOneWidget);
+    expect(find.text('foo.h'), findsNothing);
+
+    await tester.tap(find.text('include'));
+    await tester.pump();
     expect(find.text('foo.h'), findsOneWidget);
     expect(find.text('detail'), findsOneWidget);
 
-    await tester.tap(find.text('include'));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('previewDirectory_build/native/include')),
+        matching: find.byIcon(FluentIcons.chevron_down),
+      ),
+    );
     await tester.pump();
     expect(find.text('foo.h'), findsNothing);
     expect(find.text('detail'), findsNothing);
+    expect(find.text('include'), findsOneWidget);
 
-    await tester.tap(find.text('include'));
+    await tester.tap(find.text('build'));
     await tester.pump();
-    expect(find.text('foo.h'), findsOneWidget);
-    expect(find.text('detail'), findsOneWidget);
-
-    await tester.tap(find.byIcon(FluentIcons.chevron_down).first);
-    await tester.pump();
-    expect(find.text('include'), findsNothing);
-    expect(find.text('foo.h'), findsNothing);
+    expect(find.text('native'), findsNothing);
   });
 
   testWidgets('点击生成文件显示内容与信息头', (tester) async {
@@ -60,6 +81,7 @@ void main() {
     ]);
 
     await _pumpDialog(tester, plan: plan);
+    await _expandDirectories(tester, <String>['build', 'build/native']);
     await tester.tap(find.text('demo.nuspec'));
     await tester.pump();
 
@@ -82,6 +104,11 @@ void main() {
         return '#pragma once\nint foo();';
       },
     );
+    await _expandDirectories(tester, <String>[
+      'build',
+      'build/native',
+      'build/native/include',
+    ]);
     await tester.tap(find.text('foo.h'));
     await tester.pump();
     await tester.pump();
@@ -101,6 +128,11 @@ void main() {
       plan: plan,
       readFile: (String path) async => throw ArgumentError('无法读取文件'),
     );
+    await _expandDirectories(tester, <String>[
+      'build',
+      'build/native',
+      'build/native/include',
+    ]);
     await tester.tap(find.text('foo.h'));
     await tester.pump();
     await tester.pump();
@@ -119,6 +151,13 @@ void main() {
     ]);
 
     await _pumpDialog(tester, plan: plan);
+    await _expandDirectories(tester, <String>[
+      'build',
+      'build/native',
+      'build/native/lib',
+      'build/native/lib/x64',
+      'build/native/lib/x64/Release',
+    ]);
     await tester.tap(find.text('foo.lib'));
     await tester.pump();
 
@@ -161,6 +200,13 @@ PackageEntry _generated(String packagePath, String content) {
     packagePath: packagePath,
     source: PackageGeneratedSource(content: content),
   );
+}
+
+Future<void> _expandDirectories(WidgetTester tester, List<String> paths) async {
+  for (final String path in paths) {
+    await tester.tap(find.byKey(Key('previewDirectory_$path')));
+    await tester.pump();
+  }
 }
 
 Future<void> _pumpDialog(
