@@ -34,3 +34,19 @@ Future<bool> revealInExplorer(String filePath) async {
     return false;
   }
 }
+
+/// 用系统默认浏览器打开外部链接。
+///
+/// 返回 false 表示链接不是 http/https 或系统调用失败。
+Future<bool> openExternalUrl(String url) async {
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return false;
+  }
+  try {
+    // explorer 可打开 URL；成功时退出码也恒为 1，因此不检查退出码。
+    await Process.run('explorer', <String>[url]);
+    return true;
+  } on ProcessException {
+    return false;
+  }
+}

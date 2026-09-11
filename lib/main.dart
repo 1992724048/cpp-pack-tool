@@ -15,12 +15,14 @@ import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+import 'app_info.dart';
 import 'controls/add_directory_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/pack_export_dialog.dart';
 import 'controls/pack_history_dialog.dart';
 import 'controls/pack_list.dart';
 import 'controls/remap_pack_dialog.dart';
+import 'pages/about.dart';
 import 'pages/setting.dart';
 
 void main() {
@@ -576,8 +578,8 @@ class _MainLayoutState extends State<MainLayout> {
           LibraryItem(
             icon: Svgs.info,
             title: '关于',
-            version: '26.0.0',
-            body: const Center(child: Text('关于内容')),
+            version: appVersion,
+            body: const About(),
           ),
         ],
       ),

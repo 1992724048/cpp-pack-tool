@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/app_info.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -9,6 +10,7 @@ import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
+import 'package:cpp_nuget_pack/pages/about.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +119,25 @@ void main() {
     final Finder surface = _pageSurface(tester);
     expect(surface, findsOneWidget);
     expect(tester.getRect(surface), contentArea);
+  });
+
+  testWidgets('点击「关于」显示关于页', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('关于'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(About), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(About), matching: find.text(appName)),
+      findsOneWidget,
+    );
+    expect(find.text('v$appVersion'), findsOneWidget);
   });
 
   testWidgets('启动后显示已加载的包', (tester) async {
