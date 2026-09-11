@@ -2,12 +2,14 @@ import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/code_writer.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
+import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 
 const String _entryTypeKey = 'flow.entry';
 const String _defaultExecPinId = 'out';
+const String _packageRootEnvExpression = r'$env:CNP_PackageRoot';
 
 class PowerShell5Generator implements ScriptCodeGenerator {
   @override
@@ -112,7 +114,7 @@ class _PowerShellEmitter {
       case 'flow.while':
         _emitWhile(node);
       default:
-        // T8 扩展点：上下文/字符串/逻辑节点在此登记发射
+        // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的代码生成尚未实现');
     }
   }
@@ -246,7 +248,7 @@ class _PowerShellEmitter {
     return _expression(node, pinId);
   }
 
-  /// 数据节点输出引脚的表达式；T8 补充上下文/字符串/逻辑节点。
+  /// 数据节点输出引脚的表达式（递归内联上游数据节点）。
   String _outputExpression(ScriptNodeModel node, String pinId) {
     switch (node.type) {
       case 'value.text':
@@ -263,7 +265,32 @@ class _PowerShellEmitter {
           throw UnsupportedError('节点类型「${node.type}」的引脚「$pinId」不支持数据表达式');
         }
         return _itemVariable(node);
+      case 'context.macro':
+        return _macroExpression(node);
+      case 'context.environment':
+        return _environmentExpression(node);
+      case 'context.packageFile':
+        return _packageFileExpression(node);
+      case 'string.concat':
+        return '(${_expression(node, 'a')} + ${_expression(node, 'b')})';
+      case 'string.replace':
+        return '(${_expression(node, 'input')}.Replace('
+            '${_expression(node, 'find')}, ${_expression(node, 'replace')}))';
+      case 'string.lowerCase':
+        return '(${_expression(node, 'input')}.ToLowerInvariant())';
+      case 'string.fileName':
+        return '(Split-Path -Leaf ${_expression(node, 'path')})';
+      case 'string.directoryName':
+        return '(Split-Path -Parent ${_expression(node, 'path')})';
+      case 'path.join':
+        return '(Join-Path ${_expression(node, 'left')} '
+            '${_expression(node, 'right')})';
+      case 'logic.compareString':
+        return _compareStringExpression(node);
+      case 'logic.not':
+        return '(-not (${_expression(node, 'input')}))';
       default:
+        // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的表达式生成尚未实现');
     }
   }
@@ -280,6 +307,39 @@ class _PowerShellEmitter {
         : '';
     return '@(Get-ChildItem -LiteralPath $directory$filterPart$recursePart '
         '-File | Select-Object -ExpandProperty FullName)';
+  }
+
+  String _macroExpression(ScriptNodeModel node) {
+    final String macroKey = '${_param(node, 'macro')}';
+    return '\$env:${macroEnvName(macroKey)}';
+  }
+
+  String _environmentExpression(ScriptNodeModel node) {
+    return '\$env:${_param(node, 'name')}';
+  }
+
+  String _packageFileExpression(ScriptNodeModel node) {
+    final String relativePath = '${_param(node, 'path')}'.replaceAll('/', r'\');
+    return '(Join-Path $_packageRootEnvExpression '
+        '${_textLiteral('files\\$relativePath')})';
+  }
+
+  String _compareStringExpression(ScriptNodeModel node) {
+    final String left = _expression(node, 'a');
+    final String right = _expression(node, 'b');
+    final bool ignoreCase = _param(node, 'ignoreCase') == true;
+    switch (_param(node, 'operator')) {
+      case 'ne':
+        return '($left ${ignoreCase ? '-ine' : '-cne'} $right)';
+      case 'contains':
+        if (ignoreCase) {
+          return '($left.IndexOf($right, '
+              '[System.StringComparison]::OrdinalIgnoreCase) -ge 0)';
+        }
+        return '($left.Contains($right))';
+      default:
+        return '($left ${ignoreCase ? '-ieq' : '-ceq'} $right)';
+    }
   }
 
   Object? _param(ScriptNodeModel node, String key) {

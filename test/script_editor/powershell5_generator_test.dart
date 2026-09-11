@@ -59,6 +59,60 @@ ScriptProjectModel _linearLogGraph({required String message, String? level}) {
   );
 }
 
+ScriptProjectModel _dataLogGraph(
+  ScriptNodeModel dataNode, {
+  List<ScriptNodeModel> inputs = const <ScriptNodeModel>[],
+  List<ScriptEdgeModel> inputEdges = const <ScriptEdgeModel>[],
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      ...inputs,
+      dataNode,
+      _node('n9', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n9', 'exec'),
+      ...inputEdges,
+      _edge(dataNode.id, 'result', 'n9', 'message'),
+    ],
+  );
+}
+
+ScriptProjectModel _compareStringGraph({
+  String? operator,
+  bool? ignoreCase,
+  String a = 'a',
+  String b = 'A',
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': a}),
+      _node('n3', 'value.text', params: <String, Object?>{'value': b}),
+      _node(
+        'n4',
+        'logic.compareString',
+        params: <String, Object?>{
+          'operator': ?operator,
+          'ignoreCase': ?ignoreCase,
+        },
+      ),
+      _node('n5', 'flow.branch'),
+      _node('n6', 'value.text', params: <String, Object?>{'value': '相等'}),
+      _node('n7', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n5', 'exec'),
+      _edge('n2', 'result', 'n4', 'a'),
+      _edge('n3', 'result', 'n4', 'b'),
+      _edge('n4', 'result', 'n5', 'condition'),
+      _edge('n5', 'then', 'n7', 'exec'),
+      _edge('n6', 'result', 'n7', 'message'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -878,6 +932,343 @@ void main() {
     });
   });
 
+  group('上下文节点发射', () {
+    test('context.macro：未填写参数取注册表默认 OutDir', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(_node('n2', 'context.macro')),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains('    Write-Host \$env:CNP_OutDir\n'));
+    });
+
+    test('context.macro：宏键经 macroEnvName 映射（TargetPath）', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node(
+            'n2',
+            'context.macro',
+            params: <String, Object?>{'macro': 'TargetPath'},
+          ),
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains('    Write-Host \$env:CNP_TargetPath\n'));
+    });
+
+    test('context.environment：输出 \$env:<NAME>', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node(
+            'n2',
+            'context.environment',
+            params: <String, Object?>{'name': 'PATH'},
+          ),
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains('    Write-Host \$env:PATH\n'));
+    });
+
+    test('context.packageFile：lib/x.lib → files\\lib\\x.lib', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node(
+            'n2',
+            'context.packageFile',
+            params: <String, Object?>{'path': 'lib/x.lib'},
+          ),
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot 'files\\lib\\x.lib')\n",
+        ),
+      );
+    });
+
+    test('context.packageFile：嵌套相对路径 sub/a.h', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node(
+            'n2',
+            'context.packageFile',
+            params: <String, Object?>{'path': 'sub/a.h'},
+          ),
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot 'files\\sub\\a.h')\n",
+        ),
+      );
+    });
+  });
+
+  group('字符串与路径节点发射', () {
+    test('string.concat：双操作数相加并加括号', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'string.concat'),
+          inputs: <ScriptNodeModel>[
+            _node('n2', 'value.text', params: <String, Object?>{'value': 'a'}),
+            _node('n3', 'value.text', params: <String, Object?>{'value': 'b'}),
+          ],
+          inputEdges: <ScriptEdgeModel>[
+            _edge('n2', 'result', 'n4', 'a'),
+            _edge('n3', 'result', 'n4', 'b'),
+          ],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains("    Write-Host ('a' + 'b')\n"));
+    });
+
+    test('string.replace：字面替换（.Replace）', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'string.replace'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n2',
+              'value.text',
+              params: <String, Object?>{'value': 'a-b-c'},
+            ),
+            _node('n3', 'value.text', params: <String, Object?>{'value': '-'}),
+            _node('n5', 'value.text', params: <String, Object?>{'value': '_'}),
+          ],
+          inputEdges: <ScriptEdgeModel>[
+            _edge('n2', 'result', 'n4', 'input'),
+            _edge('n3', 'result', 'n4', 'find'),
+            _edge('n5', 'result', 'n4', 'replace'),
+          ],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host ('a-b-c'.Replace('-', '_'))\n"),
+      );
+    });
+
+    test('string.lowerCase：ToLowerInvariant', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'string.lowerCase'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n2',
+              'value.text',
+              params: <String, Object?>{'value': 'ABC'},
+            ),
+          ],
+          inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'input')],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host ('ABC'.ToLowerInvariant())\n"),
+      );
+    });
+
+    test('string.fileName：Split-Path -Leaf', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'string.fileName'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n2',
+              'value.text',
+              params: <String, Object?>{'value': r'C:\a\b.txt'},
+            ),
+          ],
+          inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'path')],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host (Split-Path -Leaf 'C:\\a\\b.txt')\n"),
+      );
+    });
+
+    test('string.directoryName：Split-Path -Parent', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'string.directoryName'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n2',
+              'value.text',
+              params: <String, Object?>{'value': r'C:\a\b.txt'},
+            ),
+          ],
+          inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'path')],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host (Split-Path -Parent 'C:\\a\\b.txt')\n"),
+      );
+    });
+
+    test('path.join：Join-Path 双操作数', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'path.join'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n2',
+              'value.text',
+              params: <String, Object?>{'value': r'C:\a'},
+            ),
+            _node(
+              'n3',
+              'value.text',
+              params: <String, Object?>{'value': 'b.txt'},
+            ),
+          ],
+          inputEdges: <ScriptEdgeModel>[
+            _edge('n2', 'result', 'n4', 'left'),
+            _edge('n3', 'result', 'n4', 'right'),
+          ],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host (Join-Path 'C:\\a' 'b.txt')\n"),
+      );
+    });
+
+    test('嵌套组合：lowerCase(concat) 递归内联加括号', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'value.text', params: <String, Object?>{'value': 'A'}),
+          _node('n3', 'value.text', params: <String, Object?>{'value': 'B'}),
+          _node('n4', 'string.concat'),
+          _node('n5', 'string.lowerCase'),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n6', 'exec'),
+          _edge('n2', 'result', 'n4', 'a'),
+          _edge('n3', 'result', 'n4', 'b'),
+          _edge('n4', 'result', 'n5', 'input'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host (('A' + 'B').ToLowerInvariant())\n"),
+      );
+    });
+  });
+
+  group('逻辑节点发射', () {
+    test('logic.not：内联进分支条件', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.boolean',
+            params: <String, Object?>{'value': true},
+          ),
+          _node('n3', 'logic.not'),
+          _node('n4', 'flow.branch'),
+          _node('n5', 'value.text', params: <String, Object?>{'value': '跳过'}),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n3', 'input'),
+          _edge('n3', 'result', 'n4', 'condition'),
+          _edge('n4', 'then', 'n6', 'exec'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    if ((-not (\$true))) {\n'
+          "        Write-Host '跳过'\n"
+          '    } else {\n'
+          '    }\n',
+        ),
+      );
+    });
+
+    test('logic.compareString：等于（大小写敏感，默认参数）→ -ceq', () {
+      expect(
+        _compile(_compareStringGraph()).code,
+        contains("    if (('a' -ceq 'A')) {\n"),
+      );
+    });
+
+    test('logic.compareString：不等于（大小写敏感）→ -cne', () {
+      expect(
+        _compile(_compareStringGraph(operator: 'ne', ignoreCase: false)).code,
+        contains("    if (('a' -cne 'A')) {\n"),
+      );
+    });
+
+    test('logic.compareString：包含（大小写敏感）→ .Contains', () {
+      expect(
+        _compile(
+          _compareStringGraph(
+            operator: 'contains',
+            ignoreCase: false,
+            a: 'Abc',
+            b: 'b',
+          ),
+        ).code,
+        contains("    if (('Abc'.Contains('b'))) {\n"),
+      );
+    });
+
+    test('logic.compareString：等于（忽略大小写）→ -ieq', () {
+      expect(
+        _compile(_compareStringGraph(operator: 'eq', ignoreCase: true)).code,
+        contains("    if (('a' -ieq 'A')) {\n"),
+      );
+    });
+
+    test('logic.compareString：不等于（忽略大小写）→ -ine', () {
+      expect(
+        _compile(_compareStringGraph(operator: 'ne', ignoreCase: true)).code,
+        contains("    if (('a' -ine 'A')) {\n"),
+      );
+    });
+
+    test('logic.compareString：包含（忽略大小写）→ OrdinalIgnoreCase', () {
+      expect(
+        _compile(
+          _compareStringGraph(
+            operator: 'contains',
+            ignoreCase: true,
+            a: 'Abc',
+            b: 'b',
+          ),
+        ).code,
+        contains(
+          "    if (('Abc'.IndexOf('b', "
+          '[System.StringComparison]::OrdinalIgnoreCase) -ge 0)) {\n',
+        ),
+      );
+    });
+  });
+
   group('编译错误', () {
     test('无入口图 → code 为 null 且含诊断', () {
       final ScriptCompileResult result = _compile(
@@ -936,34 +1327,6 @@ void main() {
       expect(
         result.diagnostics.map((ScriptDiagnostic d) => d.message),
         expected.map((ScriptDiagnostic d) => d.message),
-      );
-    });
-
-    test('未实现节点类型按扩展点抛出（context.macro 边界，T8 补齐后替换）', () {
-      final ScriptProjectModel dataBoundary = _project(
-        <ScriptNodeModel>[
-          _node('n1', 'flow.entry'),
-          _node(
-            'n2',
-            'context.macro',
-            params: <String, Object?>{'macro': 'OutDir'},
-          ),
-          _node('n3', 'log.message'),
-        ],
-        edges: <ScriptEdgeModel>[
-          _edge('n1', 'out', 'n3', 'exec'),
-          _edge('n2', 'result', 'n3', 'message'),
-        ],
-      );
-      expect(
-        () => _compile(dataBoundary),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (UnsupportedError error) => error.message,
-            'message',
-            contains('context.macro'),
-          ),
-        ),
       );
     });
   });
