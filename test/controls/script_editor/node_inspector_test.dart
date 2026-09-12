@@ -449,7 +449,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('scriptFilePath 项来自包源目录脚本映射 files/ 前缀，非脚本与生成脚本不出现', (
+    testWidgets('scriptFilePath 项来自包源目录脚本映射 files/ 前缀，大小写不敏感排序，非脚本与生成脚本不出现', (
       WidgetTester tester,
     ) async {
       final ScriptProjectModel project = _project();
@@ -466,6 +466,10 @@ void main() {
           FileModel(name: 'script_9.ps1', path: 'scripts/script_9.ps1', size: 4),
           FileModel(name: 'INSTALL.BAT', path: 'INSTALL.BAT', size: 4),
           FileModel(name: 'setup.exe', path: 'tools/setup.exe', size: 4),
+          // apple.bat 与 Zeta.ps1 用于判别排序口径：大小写敏感比较会先排
+          // INSTALL.BAT/Zeta.ps1 再排小写项，与大小写不敏感序不同。
+          FileModel(name: 'apple.bat', path: 'apple.bat', size: 4),
+          FileModel(name: 'Zeta.ps1', path: 'Zeta.ps1', size: 4),
         ];
       final _Harness harness = await _pumpInspector(
         tester,
@@ -488,10 +492,12 @@ void main() {
           .map((ComboBoxItem<String> item) => item.value)
           .toList();
       expect(items, <String>[
+        'files/apple.bat',
         'files/INSTALL.BAT',
         'files/scripts/run.bat',
         'files/scripts/script_9.ps1',
         'files/tools/setup.exe',
+        'files/Zeta.ps1',
       ]);
       expect(items, isNot(contains('lib/x.lib')));
       expect(items, isNot(contains('files/docs/data.txt')));
@@ -525,8 +531,16 @@ void main() {
       await tester.pump();
 
       final Finder field = find.byKey(const Key('inspectorField_script'));
-      // 当前值在项列表内时正常选中（不插入额外首项）。
+      // 当前值在项列表内时正常选中：不插入额外首项、不重复（精确项序）。
       expect(tester.widget<ComboBox<String>>(field).value, 'files/build.ps1');
+      expect(
+        tester
+            .widget<ComboBox<String>>(field)
+            .items!
+            .map((ComboBoxItem<String> item) => item.value)
+            .toList(),
+        <String>['files/build.ps1', 'files/tools/deploy.bat'],
+      );
       expect(find.text('files/build.ps1'), findsOneWidget);
 
       await _selectCombo(tester, field, 'files/tools/deploy.bat');
@@ -572,6 +586,15 @@ void main() {
         combo.items!.map((ComboBoxItem<String> item) => item.value).toList(),
         <String>['files/legacy/old.ps1', 'files/new.bat'],
       );
+      // 缺列回显时项非空 → 触发按钮按库 isEnabled 口径启用（onPressed 非空）。
+      expect(
+        tester
+            .widget<Button>(
+              find.descendant(of: field, matching: find.byType(Button)),
+            )
+            .onPressed,
+        isNotNull,
+      );
       expect(find.text('files/legacy/old.ps1'), findsOneWidget);
 
       await _selectCombo(tester, field, 'files/new.bat');
@@ -580,7 +603,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('scriptFilePath 无源脚本时空态显示「选择脚本」占位且不禁用', (
+    testWidgets('scriptFilePath 无源脚本时显示「选择脚本」占位且接线保持（空 items 库渲染为禁用）', (
       WidgetTester tester,
     ) async {
       final ScriptProjectModel project = _project();
@@ -592,13 +615,22 @@ void main() {
       controller.selectNode('n1');
       await tester.pump();
 
-      final ComboBox<String> combo = tester.widget<ComboBox<String>>(
-        find.byKey(const Key('inspectorField_file')),
-      );
+      final Finder field = find.byKey(const Key('inspectorField_file'));
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(field);
       expect(combo.items, isEmpty);
       expect(combo.value, isNull);
       expect(combo.onChanged, isNotNull);
       expect(find.text('选择脚本'), findsOneWidget);
+      // fluent_ui 4.16.1：空 items 时 isEnabled 为 false，触发按钮必然渲染禁用
+      // （onPressed 为 null）。此处锁定库行为，不作为「可用」保证。
+      expect(
+        tester
+            .widget<Button>(
+              find.descendant(of: field, matching: find.byType(Button)),
+            )
+            .onPressed,
+        isNull,
+      );
       expect(tester.takeException(), isNull);
     });
 
