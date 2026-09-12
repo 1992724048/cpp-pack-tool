@@ -58,3 +58,7 @@ docs/superpowers/
 
 # Runtime pack configuration
 /config/
+
+# Runtime build cache & auto-downloaded tools
+/cache/
+/tools/

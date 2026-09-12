@@ -1,7 +1,7 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/file_image.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 enum _RemapStage { scanning, applying, completed, scanFailed, applyFailed }
@@ -53,36 +53,14 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
       return;
     }
 
-    final Set<String> oldPaths = <String>{
-      for (final FileModel file in widget.pack.files) file.path.toLowerCase(),
-    };
-    final Set<String> newPaths = <String>{
-      for (final FileModel file in files) file.path.toLowerCase(),
-    };
-    final PackModel updated =
-        PackModel(
-            name: widget.pack.name,
-            version: widget.pack.version,
-            author: widget.pack.author,
-            description: widget.pack.description,
-            license: widget.pack.license,
-            iconPath: findIconFile(files)?.path,
-            sourcePath: widget.pack.sourcePath,
-          )
-          ..files = files
-          ..commands = widget.pack.commands
-          ..dependencies = widget.pack.dependencies
-          ..macros = widget.pack.macros
-          ..libDirectories = widget.pack.libDirectories
-          ..libraries = widget.pack.libraries
-          ..history = widget.pack.history
-          ..scripts = widget.pack.scripts;
+    final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
+    final PackModel updated = copyPackWithFiles(widget.pack, files);
 
     setState(() {
       _stage = _RemapStage.applying;
       _files = files;
-      _addedCount = newPaths.difference(oldPaths).length;
-      _removedCount = oldPaths.difference(newPaths).length;
+      _addedCount = diff.added;
+      _removedCount = diff.removed;
     });
 
     try {
@@ -152,10 +130,7 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
   }
 
   Widget _buildResult() {
-    final int totalSize = _files.fold<int>(
-      0,
-      (int sum, FileModel file) => sum + file.size,
-    );
+    final int totalSize = totalFileSize(_files);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,

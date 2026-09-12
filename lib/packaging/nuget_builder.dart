@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -38,6 +39,9 @@ class NuGetPackageBuilder implements PackageBuilder {
   Future<PackagePlan> buildPlan(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
+      if (isBuildScriptPath(file.path)) {
+        continue;
+      }
       final String? packagePath = _packagePath(pack, file);
       if (packagePath == null) {
         continue;

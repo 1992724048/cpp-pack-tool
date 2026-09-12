@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
@@ -15,10 +16,12 @@ class PackFiles extends StatefulWidget {
     super.key,
     required this.pack,
     this.openFile = openWithDefaultApp,
+    this.onBuildPack,
   });
 
   final PackModel pack;
   final Future<bool> Function(String path) openFile;
+  final Future<void> Function(PackModel pack)? onBuildPack;
 
   @override
   State<PackFiles> createState() => _PackFilesState();
@@ -251,18 +254,43 @@ class _PackFilesState extends State<PackFiles> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.pack.files.isEmpty) {
-      return const Center(child: Text('该包暂无文件'));
-    }
+    final bool canBuild =
+        widget.onBuildPack != null &&
+        findBuildScript(widget.pack.files) != null;
     final Color sizeColor = FluentTheme.of(context)
         .resources
         .textFillColorSecondary;
-    return TreeView(
-      items: _buildTreeItems(_buildTree(widget.pack.files), sizeColor),
-      onItemInvoked: _onItemInvoked,
-      onItemExpandToggle: _onExpandToggle,
-      shrinkWrap: false,
-      scrollPrimary: false,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (canBuild)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(
+              children: [
+                FilledButton(
+                  key: const Key('buildPackButton'),
+                  onPressed: () => widget.onBuildPack!(widget.pack),
+                  child: const Text('构建'),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: widget.pack.files.isEmpty
+              ? const Center(child: Text('该包暂无文件'))
+              : TreeView(
+                  items: _buildTreeItems(
+                    _buildTree(widget.pack.files),
+                    sizeColor,
+                  ),
+                  onItemInvoked: _onItemInvoked,
+                  onItemExpandToggle: _onExpandToggle,
+                  shrinkWrap: false,
+                  scrollPrimary: false,
+                ),
+        ),
+      ],
     );
   }
 }

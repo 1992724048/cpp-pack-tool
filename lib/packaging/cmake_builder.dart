@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
@@ -30,6 +31,9 @@ class CMakePackageBuilder implements PackageBuilder {
   Future<PackagePlan> buildPlan(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
+      if (isBuildScriptPath(file.path)) {
+        continue;
+      }
       final String? packagePath = _packagePath(pack, file);
       if (packagePath == null) {
         continue;

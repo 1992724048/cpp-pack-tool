@@ -1,4 +1,5 @@
 import 'package:catppuccin_flutter/catppuccin_flutter.dart';
+import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -21,6 +22,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 import 'app_info.dart';
 import 'controls/add_directory_dialog.dart';
+import 'controls/build_pack_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/dependency_graph_dialog.dart';
 import 'controls/missing_dependencies_dialog.dart';
@@ -108,6 +110,7 @@ class MainLayout extends StatefulWidget {
     this.onSaveSettings = _noopSaveSettings,
     this.exportPackage = exportNuGetPackage,
     this.exportCmakePackage = cmake_exporter.exportCmakePackage,
+    this.buildPack = runPackBuild,
     this.now = DateTime.now,
   });
 
@@ -126,6 +129,7 @@ class MainLayout extends StatefulWidget {
     String outputDirectory,
   )
   exportCmakePackage;
+  final PackBuildRunner buildPack;
   final DateTime Function() now;
 
   @override
@@ -416,6 +420,18 @@ class _MainLayoutState extends State<MainLayout> {
     setState(() => _packagingBuilder = builder);
   }
 
+  Future<void> _buildPack(PackModel pack) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => BuildPackDialog(
+        pack: pack,
+        build: widget.buildPack,
+        scanFiles: widget.scanFiles,
+        onApply: _applyRemap,
+      ),
+    );
+  }
+
   Future<void> _packSelectedPack() async {
     final int? selected = _selected;
     if (selected == null || selected < 0 || selected >= _packs.length) {
@@ -659,6 +675,7 @@ class _MainLayoutState extends State<MainLayout> {
           _packs,
           onSave: _savePack,
           pickDirectory: widget.pickDirectory,
+          onBuildPack: _buildPack,
           packagingBuilder: _packagingBuilder,
           onPackagingBuilderChanged: _selectPackagingBuilder,
         ),

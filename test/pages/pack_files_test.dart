@@ -426,6 +426,71 @@ void main() {
         .toList();
     expect(exeIcons.length, 2);
   });
+
+  testWidgets('根级 build.py 且注入回调时显示构建按钮并回调当前包', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'build.py', path: 'build.py', size: 10),
+      FileModel(name: 'main.cpp', path: 'main.cpp', size: 20),
+    ]);
+    PackModel? built;
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {
+          built = value;
+        },
+      ),
+    );
+
+    final Finder button = find.byKey(const Key('buildPackButton'));
+    expect(button, findsOneWidget);
+    expect(find.text('构建'), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(built, same(pack));
+  });
+
+  testWidgets('无回调时不显示构建按钮', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'Build.py', path: 'Build.py', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+    expect(find.text('构建'), findsNothing);
+    expect(find.text('Build.py'), findsOneWidget);
+  });
+
+  testWidgets('子目录 build.py 不显示构建按钮', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'build.py', path: 'scripts/build.py', size: 10),
+    ]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(pack: pack, onBuildPack: (PackModel value) async {}),
+    );
+
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+  });
+
+  testWidgets('空文件列表不显示构建按钮', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(pack: pack, onBuildPack: (PackModel value) async {}),
+    );
+
+    expect(find.text('该包暂无文件'), findsOneWidget);
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+  });
 }
 
 PackModel _pack(String name, List<FileModel> files, {String? sourcePath}) {

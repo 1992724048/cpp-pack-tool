@@ -16,6 +16,7 @@ class PackManage extends StatefulWidget {
     required this.allPacks,
     required this.onSave,
     required this.pickDirectory,
+    this.onBuildPack,
     this.packagingBuilder,
     this.onPackagingBuilderChanged,
   });
@@ -24,6 +25,7 @@ class PackManage extends StatefulWidget {
   final List<PackModel> allPacks;
   final Future<bool> Function(PackModel pack) onSave;
   final Future<String?> Function() pickDirectory;
+  final Future<void> Function(PackModel pack)? onBuildPack;
   final PackageBuilder? packagingBuilder;
   final ValueChanged<PackageBuilder>? onPackagingBuilderChanged;
 
@@ -101,7 +103,7 @@ class _PackManageState extends State<PackManage> {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackFiles(pack: pack),
+          PackFiles(pack: pack, onBuildPack: widget.onBuildPack),
     );
   }
 

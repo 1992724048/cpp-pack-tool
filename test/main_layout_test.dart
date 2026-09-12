@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/app_info.dart';
+import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -667,6 +668,64 @@ void main() {
     expect(find.byKey(const Key('remapPackDialog')), findsNothing);
     expect(find.text('该包缺少源目录信息，无法重新映射'), findsOneWidget);
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+  });
+
+  testWidgets('文件管理页点击构建打开对话框并完成重新映射', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'build.py', path: 'build.py', size: 10),
+            FileModel(name: 'old.h', path: 'old/old.h', size: 64),
+          ],
+        ),
+      ],
+    );
+    PackModel? builtPack;
+    final List<PackBuildStage> stages = <PackBuildStage>[];
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
+      ],
+      buildPack: (PackModel pack, void Function(PackBuildStage) onStage) async {
+        builtPack = pack;
+        for (final PackBuildStage stage in <PackBuildStage>[
+          PackBuildStage.downloading,
+          PackBuildStage.building,
+        ]) {
+          stages.add(stage);
+          onStage(stage);
+        }
+      },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(builtPack?.name, 'demo');
+    expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
+    expect(find.text('构建完成'), findsOneWidget);
+    expect(find.text('新增：1 个文件'), findsOneWidget);
+    expect(find.text('移除：2 个文件'), findsOneWidget);
+    expect(stages, <PackBuildStage>[
+      PackBuildStage.downloading,
+      PackBuildStage.building,
+    ]);
+    expect(store.saveCount, 1);
+    expect(store.packs.single.files, hasLength(1));
+    expect(store.packs.single.files.single.path, 'new/new.h');
   });
 
   testWidgets('无包时打包按钮禁用', (tester) async {
@@ -1739,6 +1798,7 @@ Future<void> _pumpMainLayout(
   exportPackage,
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportCmakePackage,
+  PackBuildRunner? buildPack,
   DateTime Function()? now,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -1756,6 +1816,7 @@ Future<void> _pumpMainLayout(
         exportPackage: exportPackage ?? exportNuGetPackage,
         exportCmakePackage:
             exportCmakePackage ?? cmake_exporter.exportCmakePackage,
+        buildPack: buildPack ?? runPackBuild,
         now: now ?? DateTime.now,
       ),
     ),
@@ -1852,11 +1913,8 @@ PackModel _pack(
 }
 
 /// 无节点脚本：图校验必然报错，用于导出前校验三态测试。
-ScriptProjectModel _brokenScript() => ScriptProjectModel(
-  id: 'script_1',
-  name: '坏脚本',
-  trigger: ScriptTrigger.pre,
-);
+ScriptProjectModel _brokenScript() =>
+    ScriptProjectModel(id: 'script_1', name: '坏脚本', trigger: ScriptTrigger.pre);
 
 Finder _pageSurface(WidgetTester tester) {
   final Color cardColor = FluentTheme.of(tester.element(find.byType(Setting)))

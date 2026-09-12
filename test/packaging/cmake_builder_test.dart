@@ -121,6 +121,30 @@ void main() {
       );
     });
 
+    test('根级 build.py 不入包且大小写不敏感，子目录保留', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'build.py', path: 'build.py', size: 10),
+          FileModel(name: 'Build.py', path: 'Build.py', size: 20),
+          FileModel(name: 'build.py', path: 'scripts/build.py', size: 30),
+          FileModel(name: 'main.cpp', path: 'main.cpp', size: 40),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final List<String> filePaths = plan.entries
+          .map((PackageEntry entry) => entry.source)
+          .whereType<PackageFileSource>()
+          .map((PackageFileSource source) => source.path)
+          .toList();
+
+      expect(filePaths, isNot(contains('build.py')));
+      expect(filePaths, isNot(contains('Build.py')));
+      expect(
+        _packagePathOf(plan, 'scripts/build.py'),
+        'files/scripts/build.py',
+      );
+    });
+
     test('二进制标记覆盖库文件与可执行文件', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[

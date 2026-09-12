@@ -15,6 +15,7 @@ class PackList {
     List<PackModel> packs, {
     required Future<bool> Function(PackModel pack) onSave,
     required Future<String?> Function() pickDirectory,
+    Future<void> Function(PackModel pack)? onBuildPack,
     PackageBuilder? packagingBuilder,
     ValueChanged<PackageBuilder>? onPackagingBuilderChanged,
   }) {
@@ -29,6 +30,7 @@ class PackList {
             allPacks: packs,
             onSave: onSave,
             pickDirectory: pickDirectory,
+            onBuildPack: onBuildPack,
             packagingBuilder: packagingBuilder,
             onPackagingBuilderChanged: onPackagingBuilderChanged,
           ),
