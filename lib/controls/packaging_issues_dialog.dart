@@ -26,7 +26,11 @@ Future<bool> showPackagingIssuesDialog(
         children: [
           const Text('以下脚本或包内容存在问题：'),
           const SizedBox(height: 12),
-          _buildIssuesTable(dialogContext, issues),
+          Flexible(
+            child: SingleChildScrollView(
+              child: _buildIssuesTable(dialogContext, issues),
+            ),
+          ),
           if (showSupplyChainNotice) ...[
             const SizedBox(height: 12),
             const Text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),

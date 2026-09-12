@@ -39,16 +39,24 @@ void _writeScript(String path, String script) {
   File(path).writeAsStringSync('\uFEFF$script', encoding: utf8);
 }
 
-ProcessResult _runScript(String scriptPath, {String? testFile}) {
-  return Process.runSync('powershell.exe', <String>[
-    '-NoProfile',
-    '-NonInteractive',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    scriptPath,
-    if (testFile != null) ...<String>['-TestFile', testFile],
-  ]);
+ProcessResult _runScript(
+  String scriptPath, {
+  String? testFile,
+  Map<String, String>? environment,
+}) {
+  return Process.runSync(
+    'powershell.exe',
+    <String>[
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      scriptPath,
+      if (testFile != null) ...<String>['-TestFile', testFile],
+    ],
+    environment: environment,
+  );
 }
 
 Directory _createTempDir(String name) {
@@ -163,6 +171,42 @@ ScriptProjectModel _fileHashProject(String filePath) {
     _edge('n1', 'out', 'n4', 'exec'),
     _edge('n2', 'result', 'n3', 'path'),
     _edge('n3', 'result', 'n4', 'message'),
+  ];
+  return project;
+}
+
+/// 运行包内脚本图（M4.4）：entry → `process.runScript` → log 收尾；
+/// `script` 为包内相对路径（解析经 `$env:CNP_PackageRoot`），`arguments`
+/// 由 value.text 按行供应（每行一参）。
+ScriptProjectModel _runScriptProject({
+  required String script,
+  required String arguments,
+}) {
+  final ScriptProjectModel project = ScriptProjectModel(
+    id: 'script_1',
+    name: '运行包内脚本',
+    trigger: ScriptTrigger.pre,
+  );
+  project.nodes = <ScriptNodeModel>[
+    _node('n1', 'flow.entry'),
+    _node(
+      'n2',
+      'process.runScript',
+      params: <String, Object?>{'script': script},
+    ),
+    _node('n3', 'value.text', params: <String, Object?>{'value': arguments}),
+    _node('n4', 'log.message'),
+    _node(
+      'n5',
+      'value.text',
+      params: <String, Object?>{'value': 'runScript done'},
+    ),
+  ];
+  project.edges = <ScriptEdgeModel>[
+    _edge('n1', 'out', 'n2', 'exec'),
+    _edge('n3', 'result', 'n2', 'arguments'),
+    _edge('n2', 'out', 'n4', 'exec'),
+    _edge('n5', 'result', 'n4', 'message'),
   ];
   return project;
 }
@@ -318,6 +362,109 @@ void main() {
       expect(
         result.stdout.toString().trim(),
         '15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225',
+      );
+    }, skip: _nonWindowsSkip);
+  });
+
+  group('process.runScript 生成脚本真实执行（仅 Windows，CNP_PackageRoot 注入）', () {
+    test('runScript ps1 分支：-File 启动 powershell、splat 传参（含空格）真实执行', () {
+      final ScriptCompileResult compiled = PowerShell5Generator().compile(
+        _runScriptProject(
+          script: 'files/scripts/echo_args.ps1',
+          arguments: 'first\nwith space',
+        ),
+        packName: 'demo',
+      );
+      expect(
+        compiled.hasErrors,
+        isFalse,
+        reason: compiled.diagnostics
+            .map((ScriptDiagnostic diagnostic) => diagnostic.message)
+            .join('；'),
+      );
+      final String code = compiled.code!;
+      expect(
+        code,
+        contains(
+          '& powershell.exe -NoProfile -NonInteractive '
+          '-ExecutionPolicy Bypass -File \$proc_1 @args_1',
+        ),
+      );
+
+      final Directory tempDir = _createTempDir('cnp_runscript_ps1_');
+      final Directory scriptsDir = Directory(
+        joinPath(joinPath(tempDir.path, 'files'), 'scripts'),
+      )..createSync(recursive: true);
+      _writeScript(
+        joinPath(scriptsDir.path, 'echo_args.ps1'),
+        <String>[r'param($a, $b)', r'Write-Output "[$a][$b]"'].join('\n'),
+      );
+
+      final String driverPath = joinPath(tempDir.path, 'driver.ps1');
+      // 生成代码自带 UTF-8 BOM，直接落盘（`_writeScript` 会再前置一次 BOM）。
+      File(driverPath).writeAsStringSync(code, encoding: utf8);
+
+      final ProcessResult result = _runScript(
+        driverPath,
+        environment: <String, String>{'CNP_PackageRoot': tempDir.path},
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      // 整串比较：splat 后带空格的参数保持为单一参数，且无额外输出。
+      expect(
+        result.stdout.toString().replaceAll('\r\n', '\n').trim(),
+        '[first][with space]\nrunScript done',
+      );
+    }, skip: _nonWindowsSkip);
+
+    test('runScript cmd 分支：直接调用 &、splat 传参（含空格）真实执行', () {
+      final ScriptCompileResult compiled = PowerShell5Generator().compile(
+        _runScriptProject(
+          script: 'files/scripts/echo_args.cmd',
+          arguments: 'first\nwith space',
+        ),
+        packName: 'demo',
+      );
+      expect(
+        compiled.hasErrors,
+        isFalse,
+        reason: compiled.diagnostics
+            .map((ScriptDiagnostic diagnostic) => diagnostic.message)
+            .join('；'),
+      );
+      final String code = compiled.code!;
+      expect(code, contains(r'& $proc_1 @args_1'));
+      expect(code, isNot(contains('powershell.exe -NoProfile')));
+
+      final Directory tempDir = _createTempDir('cnp_runscript_cmd_');
+      final Directory scriptsDir = Directory(
+        joinPath(joinPath(tempDir.path, 'files'), 'scripts'),
+      )..createSync(recursive: true);
+      File(joinPath(scriptsDir.path, 'echo_args.cmd')).writeAsStringSync(
+        <String>['@echo off', r'echo [%~1][%~2]'].join('\r\n'),
+        encoding: ascii,
+      );
+
+      final String driverPath = joinPath(tempDir.path, 'driver.ps1');
+      // 生成代码自带 UTF-8 BOM，直接落盘（`_writeScript` 会再前置一次 BOM）。
+      File(driverPath).writeAsStringSync(code, encoding: utf8);
+
+      final ProcessResult result = _runScript(
+        driverPath,
+        environment: <String, String>{'CNP_PackageRoot': tempDir.path},
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      // 整串比较：`&` 直调 + splat 后带空格的参数保持为单一参数。
+      expect(
+        result.stdout.toString().replaceAll('\r\n', '\n').trim(),
+        '[first][with space]\nrunScript done',
       );
     }, skip: _nonWindowsSkip);
   });

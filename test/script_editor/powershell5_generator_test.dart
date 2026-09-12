@@ -3001,7 +3001,8 @@ void main() {
   });
 
   group('prelude 机制（M4.2 T2）', () {
-    const String m41LinearGolden =
+    // T4 入口归一（PSModulePath 加固行）定稿后重定的零变化基线。
+    const String zeroChangeGolden =
         '\uFEFF'
         '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'
         r"$ErrorActionPreference = 'Stop'"
@@ -3016,11 +3017,11 @@ void main() {
         '    exit 1\n'
         '}\n';
 
-    test('零变化守护：无 prelude 时骨架与 M4.1 golden 逐字节一致', () {
+    test('零变化守护：无 prelude 时骨架与重定基线逐字节一致', () {
       final ScriptCompileResult result = _compile(
         _linearLogGraph(message: '开始构建'),
       );
-      expect(result.code, m41LinearGolden);
+      expect(result.code, zeroChangeGolden);
     });
 
     test('零变化守护：空收集器路径同样不注入任何片段', () {
@@ -3030,7 +3031,7 @@ void main() {
             packName: 'demo',
             preludeCollector: (PreludeRegistrar register) {},
           );
-      expect(result.code, m41LinearGolden);
+      expect(result.code, zeroChangeGolden);
     });
 
     test('注入位置：片段位于 Stop 之后、try { 之前，片段前后各空一行', () {

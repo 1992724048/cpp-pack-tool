@@ -107,6 +107,27 @@ void main() {
     expect(find.text('可继续导出，或取消返回修改。'), findsOneWidget);
   });
 
+  testWidgets('问题较多（30 条）时内容可滚动且无溢出', (tester) async {
+    final List<PackagingIssue> manyIssues = List<PackagingIssue>.generate(
+      30,
+      (int index) => PackagingIssue(
+        label: '问题$index',
+        message: '第 $index 条问题描述',
+      ),
+    );
+    await _pumpDialog(tester, issues: manyIssues);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('packagingIssuesTable')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('packagingIssuesDialog')),
+        matching: find.byType(Scrollable),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('问题列表为空时直接返回 true 且不弹对话框', (tester) async {
     bool? result;
     await _pumpDialog(
