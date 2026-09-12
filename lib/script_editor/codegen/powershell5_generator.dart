@@ -38,7 +38,7 @@ class PowerShell5Generator implements ScriptCodeGenerator {
   }
 
   /// 测试入口：编译前经 [preludeCollector] 调用真实注册 API 预注册片段
-  /// （生产路径由节点发射按需注册，M4.2 T5–T7 接入）。
+  /// （生产路径由节点发射按需注册（T5–T7 已接入））。
   @visibleForTesting
   ScriptCompileResult compileWithPrelude(
     ScriptProjectModel project, {
@@ -55,6 +55,9 @@ class PowerShell5Generator implements ScriptCodeGenerator {
   void _registerPrelude(String key, {String? content}) {
     if (_registeredPrelude.containsKey(key)) {
       return;
+    }
+    if (!preludeOrder.contains(key)) {
+      throw ArgumentError.value(key, 'key', '未知的 prelude 片段键');
     }
     final String? block = content ?? preludeLibrary[key];
     if (block == null) {

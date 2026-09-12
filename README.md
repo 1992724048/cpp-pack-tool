@@ -50,7 +50,7 @@
 - **生成脚本**：`build/native/files/scripts/<id>.ps1`（`<id>` 形如 `script_1`，ASCII 安全文件名），以 UTF-8 BOM 写入，保证 PowerShell 5.1 正确解析脚本中的中文
 - **执行目标**：每个触发时机一个目标——`CnpScripts_<包ID清洗>_<hash8>_Pre` 早于消费者 `PreBuildEvent` 与编译；`..._Post` 晚于运行时二进制部署（包内无 dll/pdb 时为构建之后）。`<包ID清洗>` 将包 ID 中非 `[A-Za-z0-9_]` 字符替换为 `_`；`hash8` 避免不同包的目标重名静默覆盖
 - **任务**：每个脚本一条 `Exec`，以 `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File` 调用；顺序与编辑器脚本列表一致，失败即中止且只按退出码判定（不把 stderr 文本当失败）；按脚本的 ALL/Release/Debug 标签生成构建条件
-- **节点语义**：`创建硬链接`仅支持同一卷上的文件——跨卷或目录目标会报错；`由十六进制写`的十六进制串须为偶数长度且仅含十六进制字符，奇数长度或非法字符时脚本报错中断（十六进制串与字节数组整体驻留内存，不适用于大文件）
+- **节点语义**：`创建硬链接`仅支持同一卷上的文件——跨卷或目录目标会报错；`由十六进制写`的十六进制串忽略空白与连字符后，须为偶数长度且仅含十六进制字符，奇数长度或非法字符时脚本报错中断（十六进制串与字节数组整体驻留内存，不适用于大文件）
 - **环境变量**：恒传 `CNP_PackageRoot`（包根 `build/native/`）；节点中用到的 MSBuild 宏按白名单转成 `CNP_<宏名>`（如 `CNP_OutDir`）；`$(SolutionDir)` 在单项目构建下为 `*Undefined*`
 - **CMake 格式不接入节点脚本**：CMake 预览与导出产物均不包含脚本条目
 

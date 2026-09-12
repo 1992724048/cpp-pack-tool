@@ -129,6 +129,7 @@ const String _invokeCnpAesTransform = r'''function Invoke-CnpAesTransform {
     if ($modeValue -ne 'encrypt' -and $modeValue -ne 'decrypt') {
         throw "未知的 AES 模式「$Mode」"
     }
+    if ([string]::IsNullOrEmpty($Password)) { throw '口令为空：请设置口令或口令环境变量' }
     $aes = [System.Security.Cryptography.Aes]::Create()
     $input = $null
     $output = $null

@@ -572,6 +572,26 @@ class NodeRegistry {
           ],
         ),
         ScriptNodeTypeDescriptor(
+          typeKey: 'string.upperCase',
+          displayName: '转大写',
+          category: ScriptNodeCategory.string,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'value',
+              label: '值',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
           typeKey: 'string.fileName',
           displayName: '取文件名',
           category: ScriptNodeCategory.string,
@@ -700,6 +720,41 @@ class NodeRegistry {
               label: '忽略大小写',
               type: ScriptParamType.boolean,
               defaultValue: false,
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'logic.compareNumber',
+          displayName: '数值比较',
+          category: ScriptNodeCategory.logic,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'a',
+              label: 'A',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'b',
+              label: 'B',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.boolean,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'operator',
+              label: '运算符',
+              type: ScriptParamType.numberOperator,
+              defaultValue: 'lt',
             ),
           ],
         ),
@@ -850,61 +905,6 @@ class NodeRegistry {
               label: '结果',
               isInput: false,
               dataType: ScriptDataType.number,
-            ),
-          ],
-        ),
-        ScriptNodeTypeDescriptor(
-          typeKey: 'string.upperCase',
-          displayName: '转大写',
-          category: ScriptNodeCategory.string,
-          pins: <ScriptPinDescriptor>[
-            ScriptPinDescriptor(
-              id: 'value',
-              label: '值',
-              isInput: true,
-              dataType: ScriptDataType.string,
-              required: true,
-            ),
-            ScriptPinDescriptor(
-              id: 'result',
-              label: '结果',
-              isInput: false,
-              dataType: ScriptDataType.string,
-            ),
-          ],
-        ),
-        ScriptNodeTypeDescriptor(
-          typeKey: 'logic.compareNumber',
-          displayName: '数值比较',
-          category: ScriptNodeCategory.logic,
-          pins: <ScriptPinDescriptor>[
-            ScriptPinDescriptor(
-              id: 'a',
-              label: 'A',
-              isInput: true,
-              dataType: ScriptDataType.number,
-              required: true,
-            ),
-            ScriptPinDescriptor(
-              id: 'b',
-              label: 'B',
-              isInput: true,
-              dataType: ScriptDataType.number,
-              required: true,
-            ),
-            ScriptPinDescriptor(
-              id: 'result',
-              label: '结果',
-              isInput: false,
-              dataType: ScriptDataType.boolean,
-            ),
-          ],
-          params: <ScriptParamDescriptor>[
-            ScriptParamDescriptor(
-              key: 'operator',
-              label: '运算符',
-              type: ScriptParamType.numberOperator,
-              defaultValue: 'lt',
             ),
           ],
         ),

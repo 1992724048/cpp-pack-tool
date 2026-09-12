@@ -89,6 +89,12 @@ void main() {
       expect(block, contains('PaddingMode]::PKCS7'));
       expect(block, contains('.Dispose()'));
       expect(block, contains(r'$output.Write($salt, 0, $salt.Length)'));
+      expect(
+        block,
+        contains(
+          r"if ([string]::IsNullOrEmpty($Password)) { throw '口令为空：请设置口令或口令环境变量' }",
+        ),
+      );
     });
 
     test('Invoke-CnpSignFile：signtool 探测与 Set-AuthenticodeSignature 回退', () {

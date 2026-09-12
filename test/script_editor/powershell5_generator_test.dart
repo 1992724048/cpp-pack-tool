@@ -2680,6 +2680,18 @@ void main() {
       );
     });
 
+    test('未知键且带 content → ArgumentError（不在 preludeOrder 的片段不静默接受）', () {
+      expect(
+        () => PowerShell5Generator().compileWithPrelude(
+          _linearLogGraph(message: '开始构建'),
+          packName: 'demo',
+          preludeCollector: (PreludeRegistrar register) =>
+              register('vars_typo', content: r'$var_typo = 0'),
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('content 含 CRLF 时归一化为 LF（片段行尾口径）', () {
       final ScriptCompileResult result = PowerShell5Generator()
           .compileWithPrelude(
