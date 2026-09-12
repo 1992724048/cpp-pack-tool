@@ -587,6 +587,69 @@ void main() {
       expect(targets, isNot(contains('<ItemGroup Condition')));
     });
 
+    test('根目录许可证生成硬链接部署目标且位于 </Project> 之前', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'LICENSE', path: 'LICENSE', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<Target Name="DeployPkgLicense_demo_89e495e7" AfterTargets="Build"',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r"""Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')">""",
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'''<Copy SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"''',
+        ),
+      );
+      expect(
+        targets,
+        contains(r'DestinationFiles="$(OutDir)licenses\demo_license.txt"'),
+      );
+      expect(
+        targets,
+        contains(r'SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />'),
+      );
+      expect(
+        targets,
+        contains(
+          r'<FileWrites Include="$(OutDir)licenses\demo_license.txt" />',
+        ),
+      );
+      expect(
+        targets.indexOf('</Project>'),
+        greaterThan(targets.indexOf('DeployPkgLicense_demo_89e495e7')),
+      );
+    });
+
+    test('无许可证时不生成许可证部署目标', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('DeployPkgLicense')));
+    });
+
+    test('仅子目录中的许可证不生成部署目标', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'LICENSE', path: 'docs/LICENSE', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, isNot(contains('DeployPkgLicense')));
+    });
+
     test('资源文件生成 ResourceCompile 项并附加所在目录', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
@@ -708,6 +771,7 @@ void main() {
       expect(targets, isNot(contains('<MASM')));
       expect(targets, isNot(contains('<ResourceCompile')));
       expect(targets, isNot(contains('PkgRuntimeBinary')));
+      expect(targets, isNot(contains('DeployPkgLicense')));
     });
   });
 

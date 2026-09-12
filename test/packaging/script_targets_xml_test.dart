@@ -89,7 +89,7 @@ String _targetsContent(PackagePlan plan, String packName) {
 }
 
 void main() {
-  test('两份含对抗性脚本名的 .targets 均通过 [xml] 整文档解析', () async {
+  test('三份 .targets 均通过 [xml] 整文档解析（含对抗性脚本名与包名）', () async {
     final Directory tempDir = Directory.systemTemp.createTempSync(
       'cnp_targets_xml_',
     );
@@ -115,6 +115,13 @@ void main() {
         key: 'no_runtime_binaries',
         pack: _pack('plain', <FileModel>[
           FileModel(name: 'plain.h', path: 'include/plain.h', size: 32),
+        ]),
+        hasRuntimeBinaries: false,
+      ),
+      (
+        key: 'with_license',
+        pack: _pack('&licensed', <FileModel>[
+          FileModel(name: 'LICENSE', path: 'LICENSE', size: 48),
         ]),
         hasRuntimeBinaries: false,
       ),
@@ -148,6 +155,23 @@ void main() {
       } else {
         expect(content, isNot(contains('DeployPkgRuntimeBinaries')));
         expect(content, contains('AfterTargets="Build"'));
+      }
+      if (fixture.key == 'with_license') {
+        expect(content, contains('<Target Name="DeployPkgLicense__licensed_'));
+        expect(
+          content,
+          contains(
+            r"""Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')">""",
+          ),
+        );
+        expect(
+          content,
+          contains(
+            r'DestinationFiles="$(OutDir)licenses\&amp;licensed_license.txt"',
+          ),
+        );
+      } else {
+        expect(content, isNot(contains('DeployPkgLicense')));
       }
 
       final String targetsPath = joinPath(tempDir.path, '${fixture.key}.targets');

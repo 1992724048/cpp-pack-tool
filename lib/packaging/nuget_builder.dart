@@ -6,11 +6,13 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/packaging/license_file.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/sha1.dart';
 
 class NuGetPackageBuilder implements PackageBuilder {
   const NuGetPackageBuilder();
@@ -24,6 +26,7 @@ class NuGetPackageBuilder implements PackageBuilder {
       r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.props') "
       r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.targets')";
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
+  static final RegExp _invalidTargetNameChar = RegExp(r'[^A-Za-z0-9_]');
 
   @override
   String get id => 'nuget';
@@ -287,6 +290,7 @@ class NuGetPackageBuilder implements PackageBuilder {
     _writeResourceItems(buffer, resourceFiles);
     _writeRuntimeBinaryItems(buffer, runtimeBinaries);
     _writeDeployTarget(buffer, runtimeBinaries);
+    _writeLicenseTarget(buffer, pack);
     if (scriptTargetsFragment.isNotEmpty) {
       buffer.write(scriptTargetsFragment);
     }
@@ -511,6 +515,53 @@ class NuGetPackageBuilder implements PackageBuilder {
       )
       ..writeln('    </ItemGroup>')
       ..writeln('  </Target>');
+  }
+
+  /// 许可证部署目标：识别源目录根部首选许可证，硬链接到消费者
+  /// `$(OutDir)licenses\`；无许可证时零输出。
+  static void _writeLicenseTarget(StringBuffer buffer, PackModel pack) {
+    final String? licensePath = findPrimaryLicensePath(pack.files);
+    if (licensePath == null) {
+      return;
+    }
+    final String? relative = _licenseRelativePath(pack, licensePath);
+    if (relative == null) {
+      return;
+    }
+    final String source = _msbuildPath(relative);
+    const String destinationPrefix = r'$(OutDir)licenses';
+    final String destination =
+        '$destinationPrefix\\${_escapeXml(pack.name)}_license.txt';
+    final String cleanId = pack.name.replaceAll(_invalidTargetNameChar, '_');
+    buffer
+      ..writeln(
+        '  <Target Name="DeployPkgLicense_${cleanId}_${hash8(pack.name)}" '
+        'AfterTargets="Build"',
+      )
+      ..writeln("          Condition=\"Exists('${_escapeXml(source)}')\">")
+      ..writeln('    <Copy SourceFiles="${_escapeXml(source)}"')
+      ..writeln('          DestinationFiles="$destination"')
+      ..writeln(
+        '          SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />',
+      )
+      ..writeln('    <ItemGroup>')
+      ..writeln('      <FileWrites Include="$destination" />')
+      ..writeln('    </ItemGroup>')
+      ..writeln('  </Target>');
+  }
+
+  /// 许可证的包内路径映射到 `build/native/` 相对路径；不可映射时返回 null。
+  static String? _licenseRelativePath(PackModel pack, String licensePath) {
+    for (final FileModel file in pack.files) {
+      if (file.path != licensePath) {
+        continue;
+      }
+      final String? packagePath = _packagePath(pack, file);
+      if (packagePath != null) {
+        return buildNativeRelativePath(packagePath);
+      }
+    }
+    return null;
   }
 
   static void _writeItemDefinitionGroup(
