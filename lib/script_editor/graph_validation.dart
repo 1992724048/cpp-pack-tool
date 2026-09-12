@@ -79,6 +79,7 @@ class GraphValidator {
         _validateParams(node, descriptor, diagnostics);
       }
     }
+    _validateNodeLevelParams(project.nodes, descriptorById, diagnostics);
 
     final _GraphFacts facts = _collectFacts(
       project.edges,
@@ -187,6 +188,117 @@ class GraphValidator {
         }
         return '参数「${param.label}」的值「$value」必须为数字';
     }
+  }
+
+  /// 节点级参数规则：注册表参数声明无法表达的跨参数约束
+  /// （AES 口令二选一、签名证书来源二选一、口令环境变量名格式）。
+  /// 在参数校验循环之后按节点声明序追加，不改变既有诊断顺序。
+  static void _validateNodeLevelParams(
+    List<ScriptNodeModel> nodes,
+    Map<String, ScriptNodeTypeDescriptor> descriptorById,
+    List<ScriptDiagnostic> diagnostics,
+  ) {
+    for (final ScriptNodeModel node in nodes) {
+      final ScriptNodeTypeDescriptor? descriptor = descriptorById[node.id];
+      if (descriptor == null) {
+        continue;
+      }
+      switch (descriptor.typeKey) {
+        case 'crypto.aesEncrypt':
+        case 'crypto.aesDecrypt':
+          _validateAesParams(node, descriptor, diagnostics);
+        case 'crypto.signFile':
+          _validateSignFileParams(node, descriptor, diagnostics);
+      }
+    }
+  }
+
+  static void _validateAesParams(
+    ScriptNodeModel node,
+    ScriptNodeTypeDescriptor descriptor,
+    List<ScriptDiagnostic> diagnostics,
+  ) {
+    final String password = _paramText(node, descriptor, 'password');
+    final String passwordEnv = _paramText(node, descriptor, 'passwordEnv');
+    if (password.isEmpty && passwordEnv.isEmpty) {
+      diagnostics.add(
+        ScriptDiagnostic(
+          message: '口令或口令环境变量名需二选一',
+          nodeId: node.id,
+          isError: true,
+        ),
+      );
+      return;
+    }
+    _validatePasswordEnvName(node, descriptor, passwordEnv, diagnostics);
+  }
+
+  static void _validateSignFileParams(
+    ScriptNodeModel node,
+    ScriptNodeTypeDescriptor descriptor,
+    List<ScriptDiagnostic> diagnostics,
+  ) {
+    final String pfxPath = _paramText(node, descriptor, 'pfxPath');
+    final String thumbprint = _paramText(node, descriptor, 'thumbprint');
+    if (pfxPath.isEmpty && thumbprint.isEmpty) {
+      diagnostics.add(
+        ScriptDiagnostic(
+          message: 'PFX 路径或证书指纹需二选一',
+          nodeId: node.id,
+          isError: true,
+        ),
+      );
+    }
+    _validatePasswordEnvName(
+      node,
+      descriptor,
+      _paramText(node, descriptor, 'passwordEnv'),
+      diagnostics,
+    );
+  }
+
+  static void _validatePasswordEnvName(
+    ScriptNodeModel node,
+    ScriptNodeTypeDescriptor descriptor,
+    String passwordEnv,
+    List<ScriptDiagnostic> diagnostics,
+  ) {
+    if (passwordEnv.isEmpty || _environmentNamePattern.hasMatch(passwordEnv)) {
+      return;
+    }
+    diagnostics.add(
+      ScriptDiagnostic(
+        message:
+            '参数「${_paramLabel(descriptor, 'passwordEnv')}」的值「$passwordEnv」不是合法环境变量名',
+        nodeId: node.id,
+        isError: true,
+      ),
+    );
+  }
+
+  /// 取字符串参数有效值：节点未写时回退注册表默认值，非字符串按空串处理。
+  static String _paramText(
+    ScriptNodeModel node,
+    ScriptNodeTypeDescriptor descriptor,
+    String key,
+  ) {
+    for (final ScriptParamDescriptor param in descriptor.params) {
+      if (param.key != key) {
+        continue;
+      }
+      final Object? value = node.params[key] ?? param.defaultValue;
+      return value is String ? value : '';
+    }
+    return '';
+  }
+
+  static String _paramLabel(ScriptNodeTypeDescriptor descriptor, String key) {
+    for (final ScriptParamDescriptor param in descriptor.params) {
+      if (param.key == key) {
+        return param.label;
+      }
+    }
+    return key;
   }
 
   static _GraphFacts _collectFacts(

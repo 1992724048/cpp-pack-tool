@@ -126,6 +126,9 @@ IconData nodeTypeIcon(String typeKey) {
     'crypto.base64Encode' => FluentIcons.export,
     'crypto.base64Decode' => FluentIcons.import,
     'crypto.fileHash' => FluentIcons.fingerprint,
+    'crypto.aesEncrypt' => FluentIcons.lock,
+    'crypto.aesDecrypt' => FluentIcons.unlock,
+    'crypto.signFile' => FluentIcons.certificate,
     _ => FluentIcons.cube_shape,
   };
 }

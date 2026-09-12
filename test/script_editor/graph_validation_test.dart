@@ -899,6 +899,202 @@ void main() {
     });
   });
 
+  group('节点级参数规则（M4.2 T7）', () {
+    test('AES 口令二选一：均空报错，任一非空（含并存）通过', () {
+      for (final String typeKey in <String>[
+        'crypto.aesEncrypt',
+        'crypto.aesDecrypt',
+      ]) {
+        final List<ScriptDiagnostic> missing = _errors(
+          _validate(<ScriptNodeModel>[_node('n1', typeKey)]),
+        );
+        final ScriptDiagnostic ruleError = _diagnosticWith(
+          missing,
+          '口令或口令环境变量名需二选一',
+        );
+        expect(ruleError.nodeId, 'n1');
+        expect(ruleError.isError, isTrue);
+
+        for (final Map<String, Object?> params in <Map<String, Object?>>[
+          <String, Object?>{'password': 'secret'},
+          <String, Object?>{'passwordEnv': 'CNP_AES_KEY'},
+          <String, Object?>{'password': 'secret', 'passwordEnv': 'CNP_AES_KEY'},
+        ]) {
+          final List<ScriptDiagnostic> diagnostics = _validate(
+            <ScriptNodeModel>[_node('n1', typeKey, params: params)],
+          );
+          expect(
+            diagnostics.where(
+              (ScriptDiagnostic diagnostic) =>
+                  diagnostic.message.contains('口令或口令环境变量名需二选一'),
+            ),
+            isEmpty,
+            reason: '$typeKey $params',
+          );
+        }
+      }
+    });
+
+    test('AES 口令二选一：显式空串按空处理', () {
+      final List<ScriptDiagnostic> diagnostics = _errors(
+        _validate(<ScriptNodeModel>[
+          _node(
+            'n1',
+            'crypto.aesEncrypt',
+            params: <String, Object?>{'password': '', 'passwordEnv': ''},
+          ),
+        ]),
+      );
+      expect(_diagnosticWith(diagnostics, '口令或口令环境变量名需二选一').nodeId, 'n1');
+    });
+
+    test('signFile 证书来源二选一：均空报错，pfxPath / thumbprint 任一通过', () {
+      final List<ScriptDiagnostic> missing = _errors(
+        _validate(<ScriptNodeModel>[_node('n1', 'crypto.signFile')]),
+      );
+      final ScriptDiagnostic ruleError = _diagnosticWith(
+        missing,
+        'PFX 路径或证书指纹需二选一',
+      );
+      expect(ruleError.nodeId, 'n1');
+      expect(ruleError.isError, isTrue);
+
+      for (final Map<String, Object?> params in <Map<String, Object?>>[
+        <String, Object?>{'pfxPath': 'cert.pfx'},
+        <String, Object?>{'thumbprint': 'ABCDEF0123'},
+        <String, Object?>{'pfxPath': 'cert.pfx', 'thumbprint': 'ABCDEF0123'},
+      ]) {
+        final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+          _node('n1', 'crypto.signFile', params: params),
+        ]);
+        expect(
+          diagnostics.where(
+            (ScriptDiagnostic diagnostic) =>
+                diagnostic.message.contains('PFX 路径或证书指纹需二选一'),
+          ),
+          isEmpty,
+          reason: '$params',
+        );
+      }
+    });
+
+    test('passwordEnv 非空时须为合法环境变量名', () {
+      for (final String invalid in <String>['1BAD', 'A-B', 'A B', '口令']) {
+        for (final String typeKey in <String>[
+          'crypto.aesEncrypt',
+          'crypto.signFile',
+        ]) {
+          final List<ScriptDiagnostic> diagnostics = _errors(
+            _validate(<ScriptNodeModel>[
+              _node(
+                'n1',
+                typeKey,
+                params: <String, Object?>{
+                  'password': '',
+                  'passwordEnv': invalid,
+                  if (typeKey == 'crypto.signFile') 'pfxPath': 'cert.pfx',
+                },
+              ),
+            ]),
+          );
+          final ScriptDiagnostic envError = _diagnosticWith(
+            diagnostics,
+            '不是合法环境变量名',
+          );
+          expect(envError.nodeId, 'n1', reason: '$typeKey「$invalid」');
+          expect(envError.message, contains(invalid), reason: typeKey);
+        }
+      }
+
+      for (final String valid in <String>[
+        'PATH',
+        'A_B1',
+        '_private',
+        'Path2',
+      ]) {
+        final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+          _node(
+            'n1',
+            'crypto.aesEncrypt',
+            params: <String, Object?>{'passwordEnv': valid},
+          ),
+        ]);
+        expect(
+          diagnostics.where(
+            (ScriptDiagnostic diagnostic) =>
+                diagnostic.message.contains('不是合法环境变量名'),
+          ),
+          isEmpty,
+          reason: valid,
+        );
+      }
+    });
+
+    test('passwordEnv 为空时不校验（默认参数只报二选一）', () {
+      final List<ScriptDiagnostic> diagnostics = _errors(
+        _validate(<ScriptNodeModel>[_node('n1', 'crypto.aesEncrypt')]),
+      );
+      expect(
+        diagnostics.where(
+          (ScriptDiagnostic diagnostic) =>
+              diagnostic.message.contains('不是合法环境变量名'),
+        ),
+        isEmpty,
+      );
+      expect(_diagnosticWith(diagnostics, '需二选一').nodeId, 'n1');
+    });
+
+    test('诊断顺序：参数错误 → 节点级规则 → 必填输入', () {
+      final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+        _node('n1', 'flow.entry'),
+        _node('n2', 'crypto.signFile'),
+        _node(
+          'n3',
+          'crypto.aesEncrypt',
+          params: <String, Object?>{'passwordEnv': 'BAD-NAME'},
+        ),
+        _node('n4', 'context.packageFile'),
+      ]);
+      final int paramIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('相对路径'),
+      );
+      final int signRuleIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) =>
+            diagnostic.message.contains('PFX 路径或证书指纹需二选一'),
+      );
+      final int envIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) =>
+            diagnostic.message.contains('不是合法环境变量名'),
+      );
+      final int requiredIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('必填输入'),
+      );
+      expect(paramIndex, greaterThanOrEqualTo(0));
+      expect(paramIndex, lessThan(signRuleIndex));
+      expect(signRuleIndex, lessThan(envIndex));
+      expect(envIndex, lessThan(requiredIndex));
+    });
+
+    test('节点级规则错误挂在对应节点', () {
+      final List<ScriptDiagnostic> diagnostics = _errors(
+        _validate(<ScriptNodeModel>[
+          _node('n1', 'crypto.aesEncrypt'),
+          _node('n2', 'crypto.signFile'),
+          _node('n3', 'value.text', params: <String, Object?>{'value': 'x'}),
+        ]),
+      );
+      expect(
+        diagnostics.where(
+          (ScriptDiagnostic diagnostic) =>
+              diagnostic.message.contains('口令或口令环境变量名需二选一'),
+        ),
+        hasLength(1),
+      );
+      expect(_diagnosticWith(diagnostics, '口令或口令环境变量名需二选一').nodeId, 'n1');
+      expect(_diagnosticWith(diagnostics, 'PFX 路径或证书指纹需二选一').nodeId, 'n2');
+    });
+  });
+
   group('警告规则', () {
     test('入口输出未连接警告', () {
       final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[

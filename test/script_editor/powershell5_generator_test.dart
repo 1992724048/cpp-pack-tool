@@ -253,6 +253,81 @@ ScriptProjectModel _fileHashGraph({
   );
 }
 
+/// AES 加/解密真实执行链：value.text(source/destination) → aes 节点 →
+/// log.message（口令参数在节点 params 上提供）。
+ScriptProjectModel _aesGraph({
+  required String typeKey,
+  String? password,
+  String? passwordEnv,
+  String source = r'C:\a.bin',
+  String destination = r'D:\b.bin',
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': source}),
+      _node(
+        'n3',
+        'value.text',
+        params: <String, Object?>{'value': destination},
+      ),
+      _node(
+        'n4',
+        typeKey,
+        params: <String, Object?>{
+          'password': ?password,
+          'passwordEnv': ?passwordEnv,
+        },
+      ),
+      _node('n5', 'value.text', params: <String, Object?>{'value': '已处理'}),
+      _node('n6', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n4', 'source'),
+      _edge('n3', 'result', 'n4', 'destination'),
+      _edge('n4', 'out', 'n6', 'exec'),
+      _edge('n5', 'result', 'n6', 'message'),
+    ],
+  );
+}
+
+/// 代码签名真实执行链：value.text(path) → signFile → value.text → log.message。
+ScriptProjectModel _signFileGraph({
+  String? pfxPath,
+  String? thumbprint,
+  String? password,
+  String? passwordEnv,
+  String? timestampServer,
+  String path = r'C:\app.exe',
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': path}),
+      _node(
+        'n3',
+        'crypto.signFile',
+        params: <String, Object?>{
+          'pfxPath': ?pfxPath,
+          'thumbprint': ?thumbprint,
+          'password': ?password,
+          'passwordEnv': ?passwordEnv,
+          'timestampServer': ?timestampServer,
+        },
+      ),
+      _node('n4', 'value.text', params: <String, Object?>{'value': '已签名'}),
+      _node('n5', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'path'),
+      _edge('n3', 'out', 'n5', 'exec'),
+      _edge('n4', 'result', 'n5', 'message'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -2138,6 +2213,209 @@ void main() {
           "-Algorithm 'crc32')\n",
         ),
       );
+    });
+  });
+
+  group('crypto AES 与代码签名发射（M4.2 T7）', () {
+    test('crypto.aesEncrypt：口令字面量、helper 注册与 out 链续接', () {
+      final ScriptCompileResult result = _compile(
+        _aesGraph(typeKey: 'crypto.aesEncrypt', password: 's3cret'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    Invoke-CnpAesTransform -Mode Encrypt -Source 'C:\\a.bin' "
+          "-Destination 'D:\\b.bin' -Password 's3cret'\n"
+          "    Write-Host '已处理'\n",
+        ),
+      );
+      expect(
+        RegExp(r'function Invoke-CnpAesTransform \{').allMatches(code).length,
+        1,
+      );
+      final int functionIndex = code.indexOf(
+        'function Invoke-CnpAesTransform {',
+      );
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(functionIndex, greaterThan(0));
+      expect(functionIndex, lessThan(tryIndex));
+    });
+
+    test('crypto.aesEncrypt：passwordEnv 走 \$env:<名> 读取', () {
+      final ScriptCompileResult result = _compile(
+        _aesGraph(typeKey: 'crypto.aesEncrypt', passwordEnv: 'CNP_AES_KEY'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Invoke-CnpAesTransform -Mode Encrypt -Source 'C:\\a.bin' "
+          "-Destination 'D:\\b.bin' -Password \$env:CNP_AES_KEY\n",
+        ),
+      );
+    });
+
+    test('crypto.aesEncrypt：password 与 passwordEnv 并存时字面量优先', () {
+      final ScriptCompileResult result = _compile(
+        _aesGraph(
+          typeKey: 'crypto.aesEncrypt',
+          password: 'fromParam',
+          passwordEnv: 'CNP_AES_KEY',
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains("-Password 'fromParam'\n"));
+      expect(result.code, isNot(contains(r'$env:CNP_AES_KEY')));
+    });
+
+    test('crypto.aesDecrypt：-Mode Decrypt 与 helper 注册', () {
+      final ScriptCompileResult result = _compile(
+        _aesGraph(typeKey: 'crypto.aesDecrypt', password: 's3cret'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    Invoke-CnpAesTransform -Mode Decrypt -Source 'C:\\a.bin' "
+          "-Destination 'D:\\b.bin' -Password 's3cret'\n",
+        ),
+      );
+      expect(
+        RegExp(r'function Invoke-CnpAesTransform \{').allMatches(code).length,
+        1,
+      );
+    });
+
+    test('crypto.signFile：PFX + 口令 + 时间戳全参数发射', () {
+      final ScriptCompileResult result = _compile(
+        _signFileGraph(
+          pfxPath: r'C:\cert.pfx',
+          password: 'pw',
+          timestampServer: 'http://ts.example.com',
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    Invoke-CnpSignFile -Path 'C:\\app.exe' -PfxPath 'C:\\cert.pfx' "
+          "-Password 'pw' -TimestampServer 'http://ts.example.com'\n"
+          "    Write-Host '已签名'\n",
+        ),
+      );
+      expect(
+        RegExp(r'function Invoke-CnpSignFile \{').allMatches(code).length,
+        1,
+      );
+      final int functionIndex = code.indexOf('function Invoke-CnpSignFile {');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(functionIndex, greaterThan(0));
+      expect(functionIndex, lessThan(tryIndex));
+    });
+
+    test('crypto.signFile：指纹来源省略 PfxPath/Password，时间戳省略', () {
+      final ScriptCompileResult result = _compile(
+        _signFileGraph(thumbprint: 'ABCDEF0123'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    Invoke-CnpSignFile -Path 'C:\\app.exe' "
+          "-Thumbprint 'ABCDEF0123'\n",
+        ),
+      );
+      expect(code, isNot(contains('-PfxPath')));
+      expect(code, isNot(contains('-Password')));
+      expect(code, isNot(contains('-TimestampServer')));
+    });
+
+    test('crypto.signFile：passwordEnv 走 \$env:<名> 读取', () {
+      final ScriptCompileResult result = _compile(
+        _signFileGraph(thumbprint: 'ABCDEF0123', passwordEnv: 'CNP_SIGN_PWD'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains("-Password \$env:CNP_SIGN_PWD\n"));
+    });
+
+    test('helper 门控：AES 图不注入签名 helper，签名图不注入 AES helper', () {
+      final ScriptCompileResult aes = _compile(
+        _aesGraph(typeKey: 'crypto.aesEncrypt', password: 'x'),
+      );
+      expect(aes.hasErrors, isFalse);
+      expect(aes.code, isNot(contains('function Invoke-CnpSignFile {')));
+
+      final ScriptCompileResult sign = _compile(
+        _signFileGraph(pfxPath: 'cert.pfx'),
+      );
+      expect(sign.hasErrors, isFalse);
+      expect(sign.code, isNot(contains('function Invoke-CnpAesTransform {')));
+    });
+
+    test('helper 顺序：同图 AES 与签名 helper 按 preludeOrder 各一次', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a.bin'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\b.bin'},
+          ),
+          _node(
+            'n4',
+            'crypto.aesEncrypt',
+            params: <String, Object?>{'password': 'x'},
+          ),
+          _node(
+            'n5',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\app.exe'},
+          ),
+          _node(
+            'n6',
+            'crypto.signFile',
+            params: <String, Object?>{'pfxPath': 'cert.pfx'},
+          ),
+          _node('n7', 'value.text', params: <String, Object?>{'value': '完成'}),
+          _node('n8', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'source'),
+          _edge('n3', 'result', 'n4', 'destination'),
+          _edge('n4', 'out', 'n6', 'exec'),
+          _edge('n5', 'result', 'n6', 'path'),
+          _edge('n6', 'out', 'n8', 'exec'),
+          _edge('n7', 'result', 'n8', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        RegExp(r'function Invoke-CnpAesTransform \{').allMatches(code).length,
+        1,
+      );
+      expect(
+        RegExp(r'function Invoke-CnpSignFile \{').allMatches(code).length,
+        1,
+      );
+      final int aesIndex = code.indexOf('function Invoke-CnpAesTransform {');
+      final int signIndex = code.indexOf('function Invoke-CnpSignFile {');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(aesIndex, greaterThan(0));
+      expect(signIndex, greaterThan(aesIndex));
+      expect(signIndex, lessThan(tryIndex));
     });
   });
 

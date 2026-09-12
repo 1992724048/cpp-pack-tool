@@ -42,6 +42,9 @@ const Set<String> _expectedTypeKeys = <String>{
   'crypto.base64Encode',
   'crypto.base64Decode',
   'crypto.fileHash',
+  'crypto.aesEncrypt',
+  'crypto.aesDecrypt',
+  'crypto.signFile',
 };
 
 ScriptParamDescriptor _param(String typeKey, String paramKey) {
@@ -56,13 +59,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 39 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(39));
+    test('总数 42 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(42));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(39),
+        hasLength(42),
       );
     });
 
@@ -156,7 +159,7 @@ void main() {
             ScriptNodeCategory.log: 1,
             ScriptNodeCategory.logic: 3,
             ScriptNodeCategory.math: 5,
-            ScriptNodeCategory.crypto: 3,
+            ScriptNodeCategory.crypto: 6,
           };
       final List<ScriptNodeTypeDescriptor> collected =
           <ScriptNodeTypeDescriptor>[];
@@ -181,7 +184,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(39),
+        hasLength(42),
       );
     });
 
@@ -1044,6 +1047,89 @@ void main() {
       );
       expect(_param('crypto.fileHash', 'algorithm').defaultValue, 'sha256');
     });
+
+    test('crypto.aesEncrypt / aesDecrypt 引脚与参数', () {
+      for (final String typeKey in <String>[
+        'crypto.aesEncrypt',
+        'crypto.aesDecrypt',
+      ]) {
+        final ScriptNodeTypeDescriptor aes = NodeRegistry.byType(typeKey)!;
+        expect(aes.category, ScriptNodeCategory.crypto);
+        expect(
+          aes.displayName,
+          typeKey == 'crypto.aesEncrypt' ? 'AES 加密' : 'AES 解密',
+        );
+        expect(
+          aes.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+          <String>{'exec', 'source', 'destination', 'out'},
+        );
+        expect(_pin(typeKey, 'exec').kind, ScriptPinKind.exec);
+        expect(_pin(typeKey, 'exec').isInput, isTrue);
+        expect(_pin(typeKey, 'exec').required, isTrue);
+        expect(_pin(typeKey, 'source').dataType, ScriptDataType.string);
+        expect(_pin(typeKey, 'source').isInput, isTrue);
+        expect(_pin(typeKey, 'source').required, isTrue);
+        expect(_pin(typeKey, 'destination').dataType, ScriptDataType.string);
+        expect(_pin(typeKey, 'destination').isInput, isTrue);
+        expect(_pin(typeKey, 'destination').required, isTrue);
+        expect(_pin(typeKey, 'out').kind, ScriptPinKind.exec);
+        expect(_pin(typeKey, 'out').isInput, isFalse);
+        expect(
+          aes.params.map((ScriptParamDescriptor param) => param.key).toList(),
+          <String>['password', 'passwordEnv'],
+        );
+        for (final String key in <String>['password', 'passwordEnv']) {
+          expect(_param(typeKey, key).type, ScriptParamType.text, reason: key);
+          expect(_param(typeKey, key).defaultValue, '', reason: key);
+        }
+      }
+    });
+
+    test('crypto.signFile 引脚与参数', () {
+      final ScriptNodeTypeDescriptor signFile = NodeRegistry.byType(
+        'crypto.signFile',
+      )!;
+      expect(signFile.category, ScriptNodeCategory.crypto);
+      expect(signFile.displayName, '代码签名');
+      expect(
+        signFile.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'path', 'out'},
+      );
+      expect(_pin('crypto.signFile', 'exec').kind, ScriptPinKind.exec);
+      expect(_pin('crypto.signFile', 'exec').isInput, isTrue);
+      expect(_pin('crypto.signFile', 'exec').required, isTrue);
+      expect(_pin('crypto.signFile', 'path').dataType, ScriptDataType.string);
+      expect(_pin('crypto.signFile', 'path').isInput, isTrue);
+      expect(_pin('crypto.signFile', 'path').required, isTrue);
+      expect(_pin('crypto.signFile', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('crypto.signFile', 'out').isInput, isFalse);
+      expect(
+        signFile.params
+            .map((ScriptParamDescriptor param) => param.key)
+            .toList(),
+        <String>[
+          'pfxPath',
+          'thumbprint',
+          'password',
+          'passwordEnv',
+          'timestampServer',
+        ],
+      );
+      for (final String key in <String>[
+        'pfxPath',
+        'thumbprint',
+        'password',
+        'passwordEnv',
+        'timestampServer',
+      ]) {
+        expect(
+          _param('crypto.signFile', key).type,
+          ScriptParamType.text,
+          reason: key,
+        );
+        expect(_param('crypto.signFile', key).defaultValue, '', reason: key);
+      }
+    });
   });
 
   group('参数清单 / 默认值 / 类型', () {
@@ -1064,6 +1150,15 @@ void main() {
         'context.environment': <String>['name'],
         'context.packageFile': <String>['path'],
         'crypto.fileHash': <String>['algorithm'],
+        'crypto.aesEncrypt': <String>['password', 'passwordEnv'],
+        'crypto.aesDecrypt': <String>['password', 'passwordEnv'],
+        'crypto.signFile': <String>[
+          'pfxPath',
+          'thumbprint',
+          'password',
+          'passwordEnv',
+          'timestampServer',
+        ],
       };
       for (final ScriptNodeTypeDescriptor type in NodeRegistry.all) {
         final List<String> expectedKeys = expected[type.typeKey] ?? <String>[];
@@ -1093,6 +1188,15 @@ void main() {
       expect(_param('context.environment', 'name').defaultValue, '');
       expect(_param('context.packageFile', 'path').defaultValue, '');
       expect(_param('crypto.fileHash', 'algorithm').defaultValue, 'sha256');
+      expect(_param('crypto.aesEncrypt', 'password').defaultValue, '');
+      expect(_param('crypto.aesEncrypt', 'passwordEnv').defaultValue, '');
+      expect(_param('crypto.aesDecrypt', 'password').defaultValue, '');
+      expect(_param('crypto.aesDecrypt', 'passwordEnv').defaultValue, '');
+      expect(_param('crypto.signFile', 'pfxPath').defaultValue, '');
+      expect(_param('crypto.signFile', 'thumbprint').defaultValue, '');
+      expect(_param('crypto.signFile', 'password').defaultValue, '');
+      expect(_param('crypto.signFile', 'passwordEnv').defaultValue, '');
+      expect(_param('crypto.signFile', 'timestampServer').defaultValue, '');
     });
 
     test('参数类型映射', () {
@@ -1140,6 +1244,19 @@ void main() {
         _param('crypto.fileHash', 'algorithm').type,
         ScriptParamType.hashAlgorithm,
       );
+      for (final String key in <String>['password', 'passwordEnv']) {
+        expect(_param('crypto.aesEncrypt', key).type, ScriptParamType.text);
+        expect(_param('crypto.aesDecrypt', key).type, ScriptParamType.text);
+      }
+      for (final String key in <String>[
+        'pfxPath',
+        'thumbprint',
+        'password',
+        'passwordEnv',
+        'timestampServer',
+      ]) {
+        expect(_param('crypto.signFile', key).type, ScriptParamType.text);
+      }
     });
   });
 }

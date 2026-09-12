@@ -295,6 +295,12 @@ void main() {
       expect(nodeTypeIcon('crypto.fileHash'), FluentIcons.fingerprint);
     });
 
+    test('crypto AES 与代码签名图标（视觉规范 §9）', () {
+      expect(nodeTypeIcon('crypto.aesEncrypt'), FluentIcons.lock);
+      expect(nodeTypeIcon('crypto.aesDecrypt'), FluentIcons.unlock);
+      expect(nodeTypeIcon('crypto.signFile'), FluentIcons.certificate);
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

@@ -188,6 +188,12 @@ class _PowerShellEmitter {
         _emitFileWriteHex(node);
       case 'crypto.base64Decode':
         _emitBase64Decode(node);
+      case 'crypto.aesEncrypt':
+        _emitAesTransform(node, mode: 'Encrypt');
+      case 'crypto.aesDecrypt':
+        _emitAesTransform(node, mode: 'Decrypt');
+      case 'crypto.signFile':
+        _emitSignFile(node);
       case 'process.run':
         _emitProcessRun(node);
       case 'flow.branch':
@@ -271,6 +277,64 @@ class _PowerShellEmitter {
     writer.writeln(
       '[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($text))',
     );
+  }
+
+  /// AES 加/解密：经 [Invoke-CnpAesTransform]（PBKDF2 + AES-CBC 自包含格式）；
+  /// 口令优先取 `password` 字面量，否则读取 `$env:<passwordEnv>`。
+  void _emitAesTransform(ScriptNodeModel node, {required String mode}) {
+    registerPrelude('Invoke-CnpAesTransform');
+    final String source = _expression(node, 'source');
+    final String destination = _expression(node, 'destination');
+    final String? password = _optionalPasswordExpression(node);
+    if (password == null) {
+      throw StateError('节点「${node.id}」缺少口令参数，校验应已阻断生成');
+    }
+    writer.writeln(
+      'Invoke-CnpAesTransform -Mode $mode -Source $source '
+      '-Destination $destination -Password $password',
+    );
+  }
+
+  /// 代码签名：经 [Invoke-CnpSignFile]（signtool 探测优先、回退
+  /// Set-AuthenticodeSignature）；空参数省略对应开关。
+  void _emitSignFile(ScriptNodeModel node) {
+    registerPrelude('Invoke-CnpSignFile');
+    final StringBuffer command = StringBuffer(
+      'Invoke-CnpSignFile -Path ${_expression(node, 'path')}',
+    );
+    final String pfxPath = _textParam(node, 'pfxPath');
+    if (pfxPath.isNotEmpty) {
+      command.write(' -PfxPath ${_textLiteral(pfxPath)}');
+    }
+    final String thumbprint = _textParam(node, 'thumbprint');
+    if (thumbprint.isNotEmpty) {
+      command.write(' -Thumbprint ${_textLiteral(thumbprint)}');
+    }
+    final String? password = _optionalPasswordExpression(node);
+    if (password != null) {
+      command.write(' -Password $password');
+    }
+    final String timestampServer = _textParam(node, 'timestampServer');
+    if (timestampServer.isNotEmpty) {
+      command.write(' -TimestampServer ${_textLiteral(timestampServer)}');
+    }
+    writer.writeln(command.toString());
+  }
+
+  /// 口令值表达式：`password` 非空 → 文本字面量，否则 `$env:<passwordEnv>`；
+  /// 两者均空返回 null（AES 由校验阻断，签名省略 `-Password` 开关）。
+  String? _optionalPasswordExpression(ScriptNodeModel node) {
+    final String password = _textParam(node, 'password');
+    if (password.isNotEmpty) {
+      return _textLiteral(password);
+    }
+    final String passwordEnv = _textParam(node, 'passwordEnv');
+    return passwordEnv.isEmpty ? null : '\$env:$passwordEnv';
+  }
+
+  String _textParam(ScriptNodeModel node, String key) {
+    final Object? value = _param(node, key);
+    return value == null ? '' : '$value';
   }
 
   void _emitProcessRun(ScriptNodeModel node) {

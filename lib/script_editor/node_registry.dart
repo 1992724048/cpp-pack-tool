@@ -982,6 +982,133 @@ class NodeRegistry {
             ),
           ],
         ),
+        // 经 Invoke-CnpAesTransform：PBKDF2(SHA1, 10000, 32) + AES-CBC（PKCS7）；
+        // 输出文件 = salt(16) + iv(16) + 密文；口令与口令环境变量名二选一（校验器）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'crypto.aesEncrypt',
+          displayName: 'AES 加密',
+          category: ScriptNodeCategory.crypto,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'source',
+              label: '源路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'destination',
+              label: '目标路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'password',
+              label: '口令',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'passwordEnv',
+              label: '口令环境变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
+        // 逆向解密：口令错误由解密异常中断（EAP=Stop）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'crypto.aesDecrypt',
+          displayName: 'AES 解密',
+          category: ScriptNodeCategory.crypto,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'source',
+              label: '源路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'destination',
+              label: '目标路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'password',
+              label: '口令',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'passwordEnv',
+              label: '口令环境变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
+        // 经 Invoke-CnpSignFile：signtool 探测优先、Set-AuthenticodeSignature 回退；
+        // 签名改写文件，应在内容修改之后执行；PFX 路径与证书指纹二选一（校验器）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'crypto.signFile',
+          displayName: '代码签名',
+          category: ScriptNodeCategory.crypto,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'pfxPath',
+              label: 'PFX 路径',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'thumbprint',
+              label: '证书指纹',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'password',
+              label: '口令',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'passwordEnv',
+              label: '口令环境变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'timestampServer',
+              label: '时间戳服务器',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
       ];
 
   static final Map<String, ScriptNodeTypeDescriptor> _byType =

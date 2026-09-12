@@ -27,11 +27,15 @@ const Map<ScriptDataType, String> _consumerTypeKeys = <ScriptDataType, String>{
 };
 
 /// 注册表默认参数不满足校验的类型需给出最小合法夹具值
-/// （context.environment 名称须匹配正则、context.packageFile 路径须非空）。
+/// （context.environment 名称须匹配正则、context.packageFile 路径须非空、
+/// crypto 加密/签名节点的口令与证书来源二选一）。
 const Map<String, Map<String, Object?>> _fixtureParams =
     <String, Map<String, Object?>>{
       'context.environment': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'context.packageFile': <String, Object?>{'path': 'lib/sample.lib'},
+      'crypto.aesEncrypt': <String, Object?>{'password': 'secret'},
+      'crypto.aesDecrypt': <String, Object?>{'password': 'secret'},
+      'crypto.signFile': <String, Object?>{'pfxPath': 'cert.pfx'},
     };
 
 ScriptEdgeModel _edge(
@@ -280,8 +284,8 @@ void main() {
       );
       expect(
         NodeRegistry.all.length,
-        greaterThanOrEqualTo(39),
-        reason: '注册表类型数量异常缩减（当前 39 类），护栏失效',
+        greaterThanOrEqualTo(42),
+        reason: '注册表类型数量异常缩减（当前 42 类），护栏失效',
       );
     });
   });
