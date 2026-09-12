@@ -1029,6 +1029,66 @@ void main() {
     expect(exportCalls, 0);
   });
 
+  testWidgets('选择 CMake 格式时坏脚本不弹校验且调用 CMake 导出器', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          scripts: <ScriptProjectModel>[_brokenScript()],
+        ),
+      ],
+    );
+    int nugetCalls = 0;
+    int cmakeCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        nugetCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      exportCmakePackage: (PackModel pack, String outputDirectory) async {
+        cmakeCalls++;
+        return (
+          outputPath: r'D:\out\demo-1.0.0-cmake.zip',
+          fileCount: 2,
+          packageSize: 128,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('打包设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('packagingBuilderField')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('CMake').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(cmakeCalls, 1);
+    expect(nugetCalls, 0);
+  });
+
   testWidgets('选择 CMake 格式后打包调用 CMake 导出器', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],

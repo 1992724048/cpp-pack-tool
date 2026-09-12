@@ -13,7 +13,7 @@
 ```text
 flutter pub get
 flutter analyze                    # 静态检查（CI 门禁，须零问题）；analysis_options.yaml 排除 build/**、windows/**、android/**
-flutter test                       # 运行测试（test/：冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具（含 file_opener 路径规范化）+ 悬浮提示 + 图标映射 + 构建标签 + 依赖管理/版本范围 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + CMake 打包 + 缺失依赖警告 + 历史记录 + 关于页/应用信息 + 脚本编辑器（节点注册表/宏白名单/图校验/PS 生成器/语法解析 + M2 编辑器：状态控制器/保存队列/画布/节点库/检查器/输出面板/项目对话框/编辑器页）+ M3 打包接线：SHA-1/脚本条目与 Target 片段/nupkg 含 .ps1/导出校验与路径查重）
+flutter test                       # 运行测试（test/：冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具（含 file_opener 路径规范化）+ 悬浮提示 + 图标映射 + 构建标签 + 依赖管理/版本范围 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + CMake 打包 + 缺失依赖警告 + 历史记录 + 关于页/应用信息 + 脚本编辑器（节点注册表/宏白名单/图校验/PS 生成器/语法解析 + M2 编辑器：状态控制器/保存队列/画布/节点库/检查器/输出面板/项目对话框/编辑器页）+ M3 打包接线：SHA-1/脚本条目与 Target 片段/nupkg 含 .ps1/导出校验与路径查重/.targets XML 良构性与 CMake 坏脚本护栏）
 flutter build windows --release    # 产物：build/windows/x64/runner/Release/
 flutter run -d windows             # 本地运行
 ```
@@ -61,7 +61,7 @@ flutter run -d windows             # 本地运行
 - **所有用户可见文案为中文**（硬编码，无 i18n 框架）；新增 UI 文案保持中文。
 - UI 使用 `fluent_ui`（Win11 风格）而非 Material；主题色统一走 `lib/util/colors.dart`（`UCColors` / `buildTheme`；深色 flavor 与强调色可配置）。
 - 图标：应用自绘 SVG 放 `assets/icons/` 并在 `lib/util/svgs.dart` 注册；目录树图标为第三方子集 `assets/icons/catppuccin/{latte,mocha}/`（catppuccin/vscode-icons v1.26.0，MIT，声明见 `THIRD_PARTY_NOTICES.md`），经 `lib/util/catppuccin_icons.dart` 解析（新增第三方资产须同步声明文件）。
-- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具（含 file_opener 路径规范化）+ 悬浮提示 + 图标映射 + 依赖管理 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + CMake 打包 + 缺失依赖警告 + 历史记录 + 关于页/应用信息 + 脚本编辑器（节点注册表/宏白名单/图校验/PS 生成器/语法解析 + M2 编辑器：状态控制器/保存队列/画布/节点库/检查器/输出面板/项目对话框/编辑器页 + M3 打包接线：SHA-1/脚本条目与 Target 片段/nupkg 含 .ps1/导出校验与路径查重）；widget 测试均用有界 `pump`，禁 `pumpAndSettle`）；新增测试放 `test/`。
+- 测试：`test/` 下为标准 `flutter_test` 测试（冒烟 + 模型 + 扫描 + 配置存储 + 对话框/接线 + 页面 + 列表/工具（含 file_opener 路径规范化）+ 悬浮提示 + 图标映射 + 依赖管理 + 设置页/主题 + 编译设置 + 打包计划/预览/导出/包图标 + CMake 打包 + 缺失依赖警告 + 历史记录 + 关于页/应用信息 + 脚本编辑器（节点注册表/宏白名单/图校验/PS 生成器/语法解析 + M2 编辑器：状态控制器/保存队列/画布/节点库/检查器/输出面板/项目对话框/编辑器页 + M3 打包接线：SHA-1/脚本条目与 Target 片段/nupkg 含 .ps1/导出校验与路径查重/.targets XML 良构性与 CMake 坏脚本护栏）；widget 测试均用有界 `pump`，禁 `pumpAndSettle`）；新增测试放 `test/`。
 - `file_selector` 用于「添加文件夹」的系统原生目录选择（`getDirectoryPath()`，取消返回 null）。
 - YAML 配置读写用 Dart 官方 `yaml`/`yaml_edit` 包（封装在 `lib/config/pack_store.dart`）；打包 zip 生成用 `archive` 包（封装在 `lib/packaging/nupkg_exporter.dart` 与 `cmake_exporter.dart`）。
 - `README.md` 为正式项目文档（简介/功能特性/打包产物/构建运行/配置文件/版本发布/技术栈/第三方声明）；关键事实以本文件、`ci.yml`、CMake 与代码为准。
