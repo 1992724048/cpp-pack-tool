@@ -965,10 +965,17 @@ void main() {
 
     final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
     expect(dialog, findsOneWidget);
-    expect(find.text('脚本校验'), findsOneWidget);
+    expect(find.text('导出校验'), findsOneWidget);
     expect(
       find.descendant(of: dialog, matching: find.text('坏脚本')),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+      ),
+      findsNothing,
     );
     expect(find.byKey(const Key('packExportDialog')), findsNothing);
     expect(exportCalls, 0);
@@ -1029,7 +1036,76 @@ void main() {
     expect(exportCalls, 0);
   });
 
-  testWidgets('选择 CMake 格式时坏脚本不弹校验且调用 CMake 导出器', (tester) async {
+  testWidgets('NuGet 格式包内 exe 弹导出校验并显示供应链提示', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'tool.exe', path: 'bin/tool.exe', size: 64),
+          ],
+        ),
+      ],
+    );
+    int exportCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
+    expect(dialog, findsOneWidget);
+    expect(find.text('导出校验'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('build/native/files/bin/tool.exe'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.text('可执行二进制随包分发')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+    expect(exportCalls, 0);
+
+    await tester.tap(find.byKey(const Key('packagingIssuesContinueButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(dialog, findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportCalls, 1);
+  });
+
+  testWidgets('选择 CMake 格式时坏脚本不入校验且无 exe 不弹窗', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -1084,6 +1160,89 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(cmakeCalls, 1);
+    expect(nugetCalls, 0);
+  });
+
+  testWidgets('选择 CMake 格式时包内 exe 弹导出校验并调用 CMake 导出器', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'tool.exe', path: 'bin/tool.exe', size: 64),
+          ],
+        ),
+      ],
+    );
+    int nugetCalls = 0;
+    int cmakeCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        nugetCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      exportCmakePackage: (PackModel pack, String outputDirectory) async {
+        cmakeCalls++;
+        return (
+          outputPath: r'D:\out\demo-1.0.0-cmake.zip',
+          fileCount: 2,
+          packageSize: 128,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.text('打包设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('packagingBuilderField')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('CMake').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
+    expect(dialog, findsOneWidget);
+    expect(find.text('导出校验'), findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('files/bin/tool.exe')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+    expect(cmakeCalls, 0);
+
+    await tester.tap(find.byKey(const Key('packagingIssuesContinueButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(dialog, findsNothing);
     expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
     expect(cmakeCalls, 1);
     expect(nugetCalls, 0);

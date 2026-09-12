@@ -9,12 +9,12 @@ const List<PackagingIssue> _issues = <PackagingIssue>[
 ];
 
 void main() {
-  testWidgets('显示脚本校验表格与操作提示', (tester) async {
+  testWidgets('显示导出校验表格与操作提示，默认不显示供应链提示', (tester) async {
     await _pumpDialog(tester);
 
     expect(find.byKey(const Key('packagingIssuesDialog')), findsOneWidget);
-    expect(find.text('脚本校验'), findsOneWidget);
-    expect(find.text('以下脚本或包内路径存在问题：'), findsOneWidget);
+    expect(find.text('导出校验'), findsOneWidget);
+    expect(find.text('以下脚本或包内容存在问题：'), findsOneWidget);
     expect(find.byKey(const Key('packagingIssuesTable')), findsOneWidget);
     expect(find.text('名称'), findsOneWidget);
     expect(find.text('问题'), findsOneWidget);
@@ -23,6 +23,7 @@ void main() {
     expect(find.text('包内路径'), findsOneWidget);
     expect(find.text('包内路径重复：build/native/files/foo.h'), findsOneWidget);
     expect(find.text('可继续导出，或取消返回修改。'), findsOneWidget);
+    expect(find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'), findsNothing);
     expect(find.byType(Divider), findsNWidgets(2));
   });
 
@@ -90,6 +91,22 @@ void main() {
     expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
   });
 
+  testWidgets('showSupplyChainNotice 为真时在列表下方显示供应链提示', (tester) async {
+    await _pumpDialog(tester, showSupplyChainNotice: true);
+
+    final Rect table = tester.getRect(
+      find.byKey(const Key('packagingIssuesTable')),
+    );
+    final Rect notice = tester.getRect(
+      find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+    );
+
+    expect(find.byKey(const Key('packagingIssuesDialog')), findsOneWidget);
+    expect(find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'), findsOneWidget);
+    expect(notice.top, greaterThan(table.bottom));
+    expect(find.text('可继续导出，或取消返回修改。'), findsOneWidget);
+  });
+
   testWidgets('问题列表为空时直接返回 true 且不弹对话框', (tester) async {
     bool? result;
     await _pumpDialog(
@@ -107,6 +124,7 @@ Future<void> _pumpDialog(
   WidgetTester tester, {
   ValueChanged<bool>? onResult,
   List<PackagingIssue> issues = _issues,
+  bool showSupplyChainNotice = false,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -121,6 +139,7 @@ Future<void> _pumpDialog(
               final bool result = await showPackagingIssuesDialog(
                 context,
                 issues: issues,
+                showSupplyChainNotice: showSupplyChainNotice,
               );
               onResult?.call(result);
             },

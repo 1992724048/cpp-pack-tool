@@ -451,19 +451,26 @@ class _MainLayoutState extends State<MainLayout> {
         return;
       }
     }
-    if (_packagingBuilder.id == _nugetBuilderId) {
-      final List<PackagingIssue> issues = await _collectPackagingIssues(pack);
-      if (!mounted) {
+    final PackagePlan? plan = await _buildPackagingPlan(pack);
+    if (!mounted) {
+      return;
+    }
+    final List<PackagingIssue> executableWarnings = plan == null
+        ? const <PackagingIssue>[]
+        : collectExecutableWarnings(plan);
+    final List<PackagingIssue> issues = <PackagingIssue>[
+      if (plan != null && _packagingBuilder.id == _nugetBuilderId)
+        ...collectPackagingIssues(pack, plan),
+      ...executableWarnings,
+    ];
+    if (issues.isNotEmpty) {
+      final bool proceed = await showPackagingIssuesDialog(
+        context,
+        issues: issues,
+        showSupplyChainNotice: executableWarnings.isNotEmpty,
+      );
+      if (!proceed || !mounted) {
         return;
-      }
-      if (issues.isNotEmpty) {
-        final bool proceed = await showPackagingIssuesDialog(
-          context,
-          issues: issues,
-        );
-        if (!proceed || !mounted) {
-          return;
-        }
       }
     }
     final Future<PackageExportResult> Function(
@@ -484,13 +491,12 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  Future<List<PackagingIssue>> _collectPackagingIssues(PackModel pack) async {
+  Future<PackagePlan?> _buildPackagingPlan(PackModel pack) async {
     try {
-      final PackagePlan plan = await _packagingBuilder.buildPlan(pack);
-      return collectPackagingIssues(pack, plan);
+      return await _packagingBuilder.buildPlan(pack);
     } catch (_) {
       // 校验期构建计划失败不阻断导出：导出对话框会以实际错误提示用户
-      return const <PackagingIssue>[];
+      return null;
     }
   }
 

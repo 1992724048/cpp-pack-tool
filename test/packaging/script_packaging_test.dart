@@ -493,6 +493,69 @@ void main() {
       expect(collectPackagingIssues(pack, plan), isEmpty);
     });
   });
+
+  group('exe 警告', () {
+    test('.exe 条目（大小写不敏感）逐条生成警告，label 为包内路径', () {
+      final PackagePlan plan = PackagePlan(
+        entries: <PackageEntry>[
+          PackageEntry(
+            packagePath: 'build/native/files/bin/tool.exe',
+            source: const PackageFileSource(
+              path: 'bin/tool.exe',
+              isBinary: true,
+              size: 10,
+            ),
+          ),
+          PackageEntry(
+            packagePath: 'FILES/Setup.EXE',
+            source: const PackageFileSource(
+              path: 'Setup.EXE',
+              isBinary: true,
+              size: 20,
+            ),
+          ),
+          PackageEntry(
+            packagePath: 'build/native/lib/demo.dll',
+            source: const PackageFileSource(
+              path: 'demo.dll',
+              isBinary: true,
+              size: 30,
+            ),
+          ),
+        ],
+      );
+
+      final List<PackagingIssue> warnings = collectExecutableWarnings(plan);
+
+      expect(warnings, hasLength(2));
+      // PackagePlan 按路径大小写不敏感排序，build/... 在 FILES/... 之前
+      expect(warnings[0].label, 'build/native/files/bin/tool.exe');
+      expect(warnings[0].message, '可执行二进制随包分发');
+      expect(warnings[1].label, 'FILES/Setup.EXE');
+      expect(warnings[1].message, '可执行二进制随包分发');
+    });
+
+    test('无 .exe 条目时返回空列表', () {
+      final PackagePlan plan = PackagePlan(
+        entries: <PackageEntry>[
+          PackageEntry(
+            packagePath: 'build/native/include/demo/foo.h',
+            source: const PackageFileSource(
+              path: 'foo.h',
+              isBinary: false,
+              size: 1,
+            ),
+          ),
+          PackageEntry(
+            packagePath: 'build/native/files/scripts/script_1.ps1',
+            source: const PackageGeneratedSource(content: 'code'),
+          ),
+        ],
+      );
+
+      expect(collectExecutableWarnings(plan), isEmpty);
+    });
+  });
 }
 
 ScriptProjectModel _validGraph() {

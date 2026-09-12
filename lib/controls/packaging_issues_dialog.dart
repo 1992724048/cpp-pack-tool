@@ -3,10 +3,13 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 const double _labelColumnWidth = 120;
 
-/// 导出前脚本校验警告。返回 true 表示继续导出，false 表示取消。
+/// 导出前校验警告。返回 true 表示继续导出，false 表示取消。
+///
+/// [showSupplyChainNotice] 为真时在问题列表下方追加可执行二进制供应链提示。
 Future<bool> showPackagingIssuesDialog(
   BuildContext context, {
   required List<PackagingIssue> issues,
+  bool showSupplyChainNotice = false,
 }) async {
   if (issues.isEmpty) {
     return true;
@@ -15,15 +18,19 @@ Future<bool> showPackagingIssuesDialog(
     context: context,
     builder: (BuildContext dialogContext) => ContentDialog(
       key: const Key('packagingIssuesDialog'),
-      title: const Text('脚本校验'),
+      title: const Text('导出校验'),
       constraints: const BoxConstraints(maxWidth: 440),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('以下脚本或包内路径存在问题：'),
+          const Text('以下脚本或包内容存在问题：'),
           const SizedBox(height: 12),
           _buildIssuesTable(dialogContext, issues),
+          if (showSupplyChainNotice) ...[
+            const SizedBox(height: 12),
+            const Text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+          ],
           const SizedBox(height: 8),
           const Text('可继续导出，或取消返回修改。'),
         ],
