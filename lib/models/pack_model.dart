@@ -25,6 +25,7 @@ class PackModel {
   List<LibraryModel> libraries = [];
   List<HistoryModel> history = [];
   List<ScriptProjectModel> scripts = [];
+  Map<String, String> buildOptions = <String, String>{};
 
   static List<PackModel> packs = [];
 
@@ -73,6 +74,8 @@ class PackModel {
       'scripts': <Map<String, Object?>>[
         for (final ScriptProjectModel script in scripts) script.toMap(),
       ],
+      if (buildOptions.isNotEmpty)
+        'buildOptions': <String, String>{...buildOptions},
     };
   }
 
@@ -135,6 +138,7 @@ class PackModel {
         warnings?.add(_describeScriptError(item, error));
       }
     }
+    pack.buildOptions = _stringStringMap(map, 'buildOptions');
     return pack;
   }
 }
@@ -161,6 +165,18 @@ Map<String, Object?> _stringKeyMap(Map<Object?, Object?> map) {
   return <String, Object?>{
     for (final MapEntry<Object?, Object?> entry in map.entries)
       if (entry.key is String) entry.key as String: entry.value,
+  };
+}
+
+Map<String, String> _stringStringMap(Map<String, Object?> map, String key) {
+  final Object? value = map[key];
+  if (value is! Map) {
+    return <String, String>{};
+  }
+  return <String, String>{
+    for (final MapEntry<Object?, Object?> entry in value.entries)
+      if (entry.key is String && entry.value is String)
+        entry.key as String: entry.value as String,
   };
 }
 

@@ -1,0 +1,693 @@
+// ignore_for_file: avoid_print
+
+// 真实执行 cnp_build_support.py 的冒烟测试（仅 Windows 且本机 Python 可用）。
+//
+// 模块内容经 rootBundle（回退直接读源文件）载入后写入临时目录，由真实 Python
+// 进程驱动各分类函数；断言以进程输出与输出树文件为准，不 import 业务代码。
+
+import 'dart:io';
+
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// 本机可用的 Python 启动命令（`['python']` 或 `['py', '-3']`）；null 表示不可用。
+List<String>? _pythonCommand;
+
+/// skip 原因（非 Windows 或本机无 Python）；null 表示可执行。
+Object? _skipReason;
+
+/// 模块源码缓存与载入方式（true = rootBundle，false = 源文件回退）。
+String? _cachedModuleSource;
+bool _loadedFromBundle = false;
+
+List<String>? _probePython() {
+  for (final List<String> candidate in <List<String>>[
+    <String>['python'],
+    <String>['py', '-3'],
+  ]) {
+    try {
+      final ProcessResult result = Process.runSync(candidate.first, <String>[
+        ...candidate.sublist(1),
+        '--version',
+      ]);
+      if (result.exitCode == 0) {
+        return candidate;
+      }
+    } on ProcessException {
+      // 当前候选不可用，继续探测下一个。
+    }
+  }
+  return null;
+}
+
+Future<String> _loadModuleSource() async {
+  final String? cached = _cachedModuleSource;
+  if (cached != null) {
+    return cached;
+  }
+  try {
+    final String source = await rootBundle.loadString(
+      'assets/build/cnp_build_support.py',
+    );
+    _loadedFromBundle = true;
+    _cachedModuleSource = source;
+    return source;
+  } catch (_) {
+    final String source = File(
+      'assets/build/cnp_build_support.py',
+    ).readAsStringSync();
+    _loadedFromBundle = false;
+    _cachedModuleSource = source;
+    return source;
+  }
+}
+
+ProcessResult _runPython(List<String> arguments, {String? workingDirectory}) {
+  final List<String> command = _pythonCommand!;
+  return Process.runSync(
+    command.first,
+    <String>[...command.sublist(1), ...arguments],
+    workingDirectory: workingDirectory,
+  );
+}
+
+Directory _createTempDir(String prefix) {
+  final Directory directory = Directory.systemTemp.createTempSync(prefix);
+  addTearDown(() {
+    if (directory.existsSync()) {
+      directory.deleteSync(recursive: true);
+    }
+  });
+  return directory;
+}
+
+String _join(String base, String child) =>
+    '$base${Platform.pathSeparator}$child';
+
+String _installModule(Directory directory, String source) {
+  final File module = File(_join(directory.path, 'cnp_build_support.py'));
+  module.writeAsStringSync(source, flush: true);
+  return module.path;
+}
+
+File _writeDriver(Directory directory, String source) {
+  final File driver = File(_join(directory.path, 'driver.py'));
+  driver.writeAsStringSync(source, flush: true);
+  return driver;
+}
+
+ProcessResult _runDriver(File driver, String label) {
+  final ProcessResult result = _runPython(<String>[
+    driver.uri.pathSegments.last,
+  ], workingDirectory: driver.parent.path);
+  print('[evidence] $label exitCode=${result.exitCode}');
+  print('[evidence] $label stdout=${result.stdout.toString().trim()}');
+  return result;
+}
+
+String _readText(String path) => File(path).readAsStringSync();
+
+/// 输出树中的相对文件路径列表（`/` 分隔、排序）；目录不存在时为空。
+List<String> _relativeFiles(String root) {
+  final Directory directory = Directory(root);
+  if (!directory.existsSync()) {
+    return <String>[];
+  }
+  final List<String> files = directory
+      .listSync(recursive: true)
+      .whereType<File>()
+      .map(
+        (File file) => file.path
+            .substring(root.length + 1)
+            .replaceAll(Platform.pathSeparator, '/'),
+      )
+      .toList();
+  files.sort();
+  return files;
+}
+
+/// cmake_configure 命令装配与缺 CNP_CMAKE 报错：monkeypatch subprocess.run
+/// 捕获命令，不真实执行 cmake。
+const String _cmakeDriver = r'''
+import os
+
+import cnp_build_support
+
+os.environ.pop('CNP_CMAKE', None)
+try:
+    cnp_build_support.cmake_configure('src', 'build')
+except RuntimeError:
+    print('missing=RuntimeError')
+except Exception as error:
+    print('missing=unexpected:' + type(error).__name__)
+
+os.environ['CNP_CMAKE'] = ''
+try:
+    cnp_build_support.cmake_configure('src', 'build')
+except RuntimeError:
+    print('empty=RuntimeError')
+except Exception as error:
+    print('empty=unexpected:' + type(error).__name__)
+
+captured = []
+
+
+class FakeCompleted(object):
+    returncode = 0
+    stdout = ''
+
+
+def fake_run(command, **kwargs):
+    captured.append(list(command))
+    return FakeCompleted()
+
+
+original_run = cnp_build_support.subprocess.run
+cnp_build_support.subprocess.run = fake_run
+try:
+    os.environ['CNP_CMAKE'] = 'C:/tools/cmake/bin/cmake.exe'
+    os.environ['CNP_NINJA'] = 'C:/tools/ninja/ninja.exe'
+    os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release', ['-DEXTRA=1'])
+    os.environ.pop('CNP_NINJA', None)
+    os.environ.pop('CNP_C_COMPILER', None)
+    os.environ.pop('CNP_CXX_COMPILER', None)
+    cnp_build_support.cmake_configure('C:/src', 'C:/build')
+finally:
+    cnp_build_support.subprocess.run = original_run
+
+
+class FailingCompleted(object):
+    returncode = 3
+    stdout = 'boom-line-1\nboom-line-2\nboom-tail'
+
+
+cnp_build_support.subprocess.run = lambda command, **kwargs: FailingCompleted()
+try:
+    cnp_build_support.cmake_configure('C:/src', 'C:/build')
+except RuntimeError as error:
+    print('nonzero=RuntimeError')
+    print('nonzero_has_tail=%s' % ('boom-tail' in str(error)))
+    print('nonzero_has_code=%s' % ('退出码 3' in str(error)))
+except Exception as error:
+    print('nonzero=unexpected:' + type(error).__name__)
+finally:
+    cnp_build_support.subprocess.run = original_run
+
+
+def failing_start(command, **kwargs):
+    raise OSError('simulated spawn failure')
+
+
+cnp_build_support.subprocess.run = failing_start
+try:
+    cnp_build_support.cmake_configure('C:/src', 'C:/build')
+except RuntimeError as error:
+    print('spawn=RuntimeError')
+except Exception as error:
+    print('spawn=unexpected:' + type(error).__name__)
+finally:
+    cnp_build_support.subprocess.run = original_run
+
+command = captured[0]
+print('generator=%s' % command[command.index('-G') + 1])
+print('build_type=%s' % [item for item in command if item.startswith('-DCMAKE_BUILD_TYPE=')][0])
+print('runtime=%s' % [item for item in command if item.startswith('-DCMAKE_MSVC_RUNTIME_LIBRARY=')][0])
+print('make_program=%s' % [item for item in command if item.startswith('-DCMAKE_MAKE_PROGRAM=')][0])
+print('c_compiler=%s' % [item for item in command if item.startswith('-DCMAKE_C_COMPILER=')][0])
+print('extra=%s' % command[-1])
+minimal = captured[1]
+print('minimal_make_program=%s' % any(
+    item.startswith('-DCMAKE_MAKE_PROGRAM=') for item in minimal))
+''';
+
+/// stage_headers：目录内容镜像（不含目录名层、滤除非头文件）+ 显式文件复制。
+const String _headersDriver = r'''
+import os
+
+from cnp_build_support import stage_headers
+
+work = os.getcwd()
+source = os.path.join(work, 'src')
+os.makedirs(os.path.join(source, 'nested'), exist_ok=True)
+
+
+def write(path, text):
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+write(os.path.join(source, 'alpha.h'), 'alpha')
+write(os.path.join(source, 'beta.hpp'), 'beta')
+write(os.path.join(source, 'nested', 'gamma.h'), 'gamma')
+write(os.path.join(source, 'skip.c'), 'skip')
+out_a = os.path.join(work, 'out_a')
+count_a = stage_headers([source], out_a)
+out_b = os.path.join(work, 'out_b')
+count_b = stage_headers([os.path.join(source, 'alpha.h')], out_b)
+print('dir_count=%d' % count_a)
+print('file_count=%d' % count_b)
+''';
+
+/// stage_binaries：Release/Debug 双目录布局、中间目录跳过与同名去重。
+const String _binariesDriver = r'''
+import os
+
+from cnp_build_support import stage_binaries
+
+work = os.getcwd()
+build = os.path.join(work, 'build')
+fixtures = {
+    'libA/foo.lib': 'foo-a',
+    'libA/foo.pdb': 'pdb-a',
+    'libA/bar.dll': 'bar-a',
+    'libB/foo.lib': 'foo-b',
+    'CMakeFiles/generated.lib': 'generated',
+    'obj/thing.dir/skipme.lib': 'skipme',
+    'obj/odd-c/skipme2.lib': 'skipme2',
+}
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+for relative, text in fixtures.items():
+    write(os.path.join(build, *relative.split('/')), text)
+
+release = stage_binaries(build, os.path.join(work, 'out_release'), 'Release')
+debug = stage_binaries(build, os.path.join(work, 'out_debug'), 'Debug')
+print('release_copied=%d release_lib=%d release_bin=%d release_skipped=%d' % (
+    release['copied'], release['lib'], release['bin'], release['skipped']))
+print('debug_copied=%d debug_lib=%d debug_bin=%d debug_skipped=%d' % (
+    debug['copied'], debug['lib'], debug['bin'], debug['skipped']))
+''';
+
+/// stage_license：核心名优先级、同级字典序与「仅根目录」。
+const String _licenseDriver = r'''
+import os
+
+from cnp_build_support import stage_license
+
+work = os.getcwd()
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+def make_source(name, files):
+    root = os.path.join(work, name)
+    for relative, text in files.items():
+        write(os.path.join(root, *relative.split('/')), text)
+    return root
+
+
+def staged_basename(source, out):
+    staged = stage_license(source, out)
+    return 'None' if staged is None else os.path.basename(staged)
+
+
+source_a = make_source('src_a', {
+    'COPYING': 'copying',
+    'LICENSE-MIT': 'license-mit',
+    'NOTICE.md': 'notice-md',
+    'sub/NOTICE': 'sub-notice',
+})
+source_b = make_source('src_b', {
+    'sub/LICENSE': 'sub-only',
+})
+source_c = make_source('src_c', {
+    'LICENSE.txt': 'license-txt',
+    'LICENSE': 'license-plain',
+})
+print('a=%s' % staged_basename(source_a, os.path.join(work, 'out_a')))
+print('b=%s' % staged_basename(source_b, os.path.join(work, 'out_b')))
+print('c=%s' % staged_basename(source_c, os.path.join(work, 'out_c')))
+''';
+
+/// classify_tree：混合假树（含 debug/ 段、exclude、.git 与 out 自身）。
+const String _classifyDriver = r'''
+import os
+
+from cnp_build_support import classify_tree
+
+work = os.getcwd()
+root = os.path.join(work, 'root')
+
+
+def write(relative, text):
+    path = os.path.join(root, *relative.split('/'))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+write('.git/HEAD', 'ref')
+write('headers/alpha.h', 'h-alpha')
+write('src/beta.hpp', 'h-beta')
+write('src/impl/igamma.inl', 'h-gamma')
+write('libs/release/foo.lib', 'l-foo')
+write('libs/release/bar.a', 'l-bar')
+write('libs/release/foo.dll', 'd-foo')
+write('libs/release/tool.exe', 'e-tool')
+write('libs/debug/foo.lib', 'l-foo-debug')
+write('libs/debug/foo.pdb', 'p-foo-debug')
+write('bin/helper.exe', 'e-helper')
+write('excluded/extra.h', 'h-extra')
+write('extra/skip.txt', 'skip')
+write('LICENSE', 'license-root')
+write('sub/NOTICE', 'notice-sub')
+
+out = os.path.join(root, 'out')
+counts = classify_tree(root, out, exclude=['excluded'])
+print('include=%d lib=%d bin=%d debug_lib=%d debug_bin=%d license=%d' % (
+    counts['include'], counts['lib'], counts['bin'],
+    counts['debug_lib'], counts['debug_bin'], counts['license']))
+''';
+
+/// summary：分类统计输出（证据行）与返回 dict 口径。
+const String _summaryDriver = r'''
+import os
+
+from cnp_build_support import summary
+
+work = os.getcwd()
+out = os.path.join(work, 'out')
+
+
+def write(relative, text):
+    path = os.path.join(out, *relative.split('/'))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+write('include/a.h', 'aa')
+write('lib/x.lib', 'xxx')
+write('bin/y.dll', 'yyyy')
+write('debug/lib/d.lib', 'dddd')
+write('debug/bin/d.pdb', 'ddddd')
+write('LICENSE', 'license')
+write('misc/unknown.txt', 'u')
+
+result = summary(out)
+print('summary_include=%d' % result['include'])
+print('summary_lib=%d' % result['lib'])
+print('summary_bin=%d' % result['bin'])
+print('summary_debug_lib=%d' % result['debug_lib'])
+print('summary_debug_bin=%d' % result['debug_bin'])
+print('summary_license=%d' % result['license'])
+print('summary_other=%d' % result['other'])
+print('summary_files=%d' % result['files'])
+print('summary_bytes=%d' % result['bytes'])
+''';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isWindows) {
+    _pythonCommand = _probePython();
+    if (_pythonCommand == null) {
+      _skipReason = '未检测到可用的 Python（python / py -3 均不可用）';
+    }
+  } else {
+    _skipReason = '仅 Windows 平台执行（依赖真实 Python 进程）';
+  }
+
+  group('cnp_build_support.py 真机冒烟（仅 Windows + Python）', () {
+    test('模块资产载入与语法：py_compile 退出码 0', () async {
+      final String source = await _loadModuleSource();
+      print(
+        '[evidence] 模块载入方式='
+        '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
+      );
+      expect(source, contains('VERSION = "2"'));
+
+      final Directory tempDir = _createTempDir('cnp_support_syntax_');
+      final String modulePath = _installModule(tempDir, source);
+      final ProcessResult result = _runPython(<String>[
+        '-m',
+        'py_compile',
+        modulePath,
+      ]);
+      print('[evidence] py_compile exitCode=${result.exitCode}');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+    }, skip: _skipReason);
+
+    test('cmake_configure：命令装配与缺 CNP_CMAKE 明确报错', () async {
+      final Directory tempDir = _createTempDir('cnp_support_cmake_');
+      final File driver = _writeDriver(
+        tempDir,
+        _cmakeDriver,
+      );
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'cmake');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(stdout, contains('missing=RuntimeError'));
+      expect(stdout, contains('empty=RuntimeError'));
+      expect(stdout, contains('generator=Ninja'));
+      expect(stdout, contains('build_type=-DCMAKE_BUILD_TYPE=Release'));
+      expect(
+        stdout,
+        contains(
+          'runtime=-DCMAKE_MSVC_RUNTIME_LIBRARY='
+          'MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL',
+        ),
+      );
+      expect(
+        stdout,
+        contains('make_program=-DCMAKE_MAKE_PROGRAM=C:/tools/ninja/ninja.exe'),
+      );
+      expect(
+        stdout,
+        contains('c_compiler=-DCMAKE_C_COMPILER=C:/compiler/icx-cl.exe'),
+      );
+      expect(stdout, contains('extra=-DEXTRA=1'));
+      expect(stdout, contains('minimal_make_program=False'));
+      expect(stdout, contains('nonzero=RuntimeError'));
+      expect(stdout, contains('nonzero_has_tail=True'));
+      expect(stdout, contains('nonzero_has_code=True'));
+      expect(stdout, contains('spawn=RuntimeError'));
+    }, skip: _skipReason);
+
+    test('stage_headers：文件与目录内容镜像（不含目录名层）', () async {
+      final Directory tempDir = _createTempDir('cnp_support_headers_');
+      final File driver = _writeDriver(tempDir, _headersDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'headers');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      expect(result.stdout.toString(), contains('dir_count=3'));
+      expect(result.stdout.toString(), contains('file_count=1'));
+
+      final String includeA = _join(_join(tempDir.path, 'out_a'), 'include');
+      expect(_readText(_join(includeA, 'alpha.h')), 'alpha');
+      expect(_readText(_join(includeA, 'beta.hpp')), 'beta');
+      expect(
+        _readText(_join(_join(includeA, 'nested'), 'gamma.h')),
+        'gamma',
+      );
+      expect(File(_join(includeA, 'skip.c')).existsSync(), isFalse);
+      expect(
+        _readText(
+          _join(
+            _join(_join(tempDir.path, 'out_b'), 'include'),
+            'alpha.h',
+          ),
+        ),
+        'alpha',
+      );
+    }, skip: _skipReason);
+
+    test('stage_binaries：Release/Debug 双目录与同名去重、中间目录跳过', () async {
+      final Directory tempDir = _createTempDir('cnp_support_binaries_');
+      final File driver = _writeDriver(tempDir, _binariesDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'binaries');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(
+        stdout,
+        contains('release_copied=4 release_lib=2 release_bin=2 release_skipped=0'),
+      );
+      expect(
+        stdout,
+        contains('debug_copied=4 debug_lib=2 debug_bin=2 debug_skipped=0'),
+      );
+
+      final String outRelease = _join(tempDir.path, 'out_release');
+      expect(_relativeFiles(outRelease), <String>[
+        'bin/bar.dll',
+        'bin/foo.pdb',
+        'lib/foo.lib',
+        'lib/foo_libB.lib',
+      ]);
+      expect(_readText(_join(_join(outRelease, 'lib'), 'foo.lib')), 'foo-a');
+      expect(
+        _readText(_join(_join(outRelease, 'lib'), 'foo_libB.lib')),
+        'foo-b',
+      );
+      expect(
+        _readText(_join(_join(outRelease, 'bin'), 'foo.pdb')),
+        'pdb-a',
+      );
+
+      final String outDebug = _join(tempDir.path, 'out_debug');
+      expect(_relativeFiles(outDebug), <String>[
+        'debug/bin/bar.dll',
+        'debug/bin/foo.pdb',
+        'debug/lib/foo.lib',
+        'debug/lib/foo_libB.lib',
+      ]);
+      expect(
+        _readText(_join(_join(_join(outDebug, 'debug'), 'lib'), 'foo.lib')),
+        'foo-a',
+      );
+    }, skip: _skipReason);
+
+    test('stage_license：核心名优先级与仅根目录', () async {
+      final Directory tempDir = _createTempDir('cnp_support_license_');
+      final File driver = _writeDriver(tempDir, _licenseDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'license');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(stdout, contains('a=LICENSE-MIT'));
+      expect(stdout, contains('b=None'));
+      expect(stdout, contains('c=LICENSE'));
+
+      final String outA = _join(tempDir.path, 'out_a');
+      expect(_readText(_join(outA, 'LICENSE-MIT')), 'license-mit');
+      expect(File(_join(outA, 'COPYING')).existsSync(), isFalse);
+      expect(File(_join(outA, 'NOTICE.md')).existsSync(), isFalse);
+      expect(
+        Directory(_join(outA, 'sub')).existsSync(),
+        isFalse,
+        reason: '子目录许可证不参与筛选',
+      );
+
+      final String outB = _join(tempDir.path, 'out_b');
+      expect(
+        Directory(outB).existsSync(),
+        isFalse,
+        reason: '仅子目录命中时不应创建输出目录',
+      );
+
+      final String outC = _join(tempDir.path, 'out_c');
+      expect(_readText(_join(outC, 'LICENSE')), 'license-plain');
+      expect(
+        File(_join(outC, 'LICENSE.txt')).existsSync(),
+        isFalse,
+        reason: '同级命中多个许可证时只复制首选',
+      );
+    }, skip: _skipReason);
+
+    test('classify_tree：混合假树分类、debug 段与跳过项', () async {
+      final Directory tempDir = _createTempDir('cnp_support_classify_');
+      final File driver = _writeDriver(tempDir, _classifyDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'classify');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      expect(
+        result.stdout.toString(),
+        contains(
+          'include=3 lib=2 bin=3 debug_lib=1 debug_bin=1 license=1',
+        ),
+      );
+
+      final String out = _join(_join(tempDir.path, 'root'), 'out');
+      expect(_relativeFiles(out), <String>[
+        'LICENSE',
+        'bin/foo.dll',
+        'bin/helper.exe',
+        'bin/tool.exe',
+        'debug/bin/foo.pdb',
+        'debug/lib/foo.lib',
+        'include/headers/alpha.h',
+        'include/src/beta.hpp',
+        'include/src/impl/igamma.inl',
+        'lib/bar.a',
+        'lib/foo.lib',
+      ]);
+      expect(_readText(_join(out, 'LICENSE')), 'license-root');
+      expect(
+        _readText(
+          _join(_join(_join(out, 'include'), 'src'), 'beta.hpp'),
+        ),
+        'h-beta',
+      );
+      expect(
+        _readText(_join(_join(out, 'debug/lib'), 'foo.lib')),
+        'l-foo-debug',
+      );
+      // 跳过项：.git、exclude 命中目录、非根许可证、普通文件与非目标扩展。
+      expect(File(_join(out, '.git')).existsSync(), isFalse);
+      expect(
+        Directory(_join(_join(out, 'include'), 'excluded')).existsSync(),
+        isFalse,
+      );
+      expect(
+        File(_join(_join(_join(out, 'include'), 'sub'), 'NOTICE')).existsSync(),
+        isFalse,
+      );
+    }, skip: _skipReason);
+
+    test('summary：统计输出（证据行）与返回口径', () async {
+      final Directory tempDir = _createTempDir('cnp_support_summary_');
+      final File driver = _writeDriver(tempDir, _summaryDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'summary');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(stdout, contains('[cnp_build_support] summary:'));
+      expect(stdout, contains('summary_include=1'));
+      expect(stdout, contains('summary_lib=1'));
+      expect(stdout, contains('summary_bin=1'));
+      expect(stdout, contains('summary_debug_lib=1'));
+      expect(stdout, contains('summary_debug_bin=1'));
+      expect(stdout, contains('summary_license=1'));
+      expect(stdout, contains('summary_other=1'));
+      expect(stdout, contains('summary_files=7'));
+      expect(stdout, contains('summary_bytes=26'));
+    }, skip: _skipReason);
+  });
+}

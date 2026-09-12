@@ -20,6 +20,7 @@ import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'app_info.dart';
@@ -429,8 +430,12 @@ class _MainLayoutState extends State<MainLayout> {
   Future<void> _buildPack(PackModel pack) async {
     final Future<BuildEnvironment> Function(PackModel pack) prepare =
         widget.prepareBuildEnv ??
-        (PackModel pack) =>
-            prepareBuildEnvironment(priority: widget.settings.compilerPriority);
+        (PackModel pack) => preparePackBuildEnvironment(
+          pack,
+          priority: widget.settings.compilerPriority,
+          loadSupportModule: () =>
+              rootBundle.loadString('assets/build/cnp_build_support.py'),
+        );
     await showDialog<void>(
       context: context,
       builder: (_) => BuildPackDialog(

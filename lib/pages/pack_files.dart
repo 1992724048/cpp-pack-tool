@@ -17,11 +17,19 @@ class PackFiles extends StatefulWidget {
     required this.pack,
     this.openFile = openWithDefaultApp,
     this.onBuildPack,
+    this.onSave,
+    this.loadHeader = loadBuildScriptHeader,
   });
 
   final PackModel pack;
   final Future<bool> Function(String path) openFile;
   final Future<void> Function(PackModel pack)? onBuildPack;
+
+  /// 保存选项变更；为 null 时不渲染选项控件（v1 行为）。
+  final Future<bool> Function(PackModel pack)? onSave;
+
+  /// 读取包内 build.py 头部；测试可注入。
+  final Future<BuildScriptHeader?> Function(PackModel pack) loadHeader;
 
   @override
   State<PackFiles> createState() => _PackFilesState();
@@ -31,6 +39,7 @@ class _PackFilesState extends State<PackFiles> {
   static const double _treeIconSize = 18;
   // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
   static const double _treeRowContentMinHeight = 26;
+  static const double _optionFieldWidth = 120;
   static const Set<FileType> _buildLabelTypes = <FileType>{
     FileType.lib,
     FileType.dll,
@@ -41,12 +50,48 @@ class _PackFilesState extends State<PackFiles> {
 
   final Set<String> _expandedDirs = <String>{};
 
+  BuildScriptHeader? _header;
+  bool _savingOption = false;
+  int _headerLoadId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshHeader();
+  }
+
   @override
   void didUpdateWidget(covariant PackFiles oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pack.name != widget.pack.name) {
       _expandedDirs.clear();
     }
+    if (_shouldReloadHeader(oldWidget.pack, widget.pack)) {
+      _refreshHeader();
+    }
+  }
+
+  static bool _shouldReloadHeader(PackModel before, PackModel after) {
+    if (before.name != after.name || before.sourcePath != after.sourcePath) {
+      return true;
+    }
+    return findBuildScript(before.files)?.path !=
+        findBuildScript(after.files)?.path;
+  }
+
+  Future<void> _refreshHeader() async {
+    final int loadId = ++_headerLoadId;
+    BuildScriptHeader? header;
+    try {
+      header = await widget.loadHeader(widget.pack);
+    } catch (_) {
+      // 头部读取失败按未声明处理：不渲染选项控件，也不影响构建入口
+      header = null;
+    }
+    if (!mounted || loadId != _headerLoadId) {
+      return;
+    }
+    setState(() => _header = header);
   }
 
   static List<String> _pathSegments(String path) => path
@@ -252,6 +297,87 @@ class _PackFilesState extends State<PackFiles> {
     }
   }
 
+  Widget _buildToolbar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: <Widget>[
+          FilledButton(
+            key: const Key('buildPackButton'),
+            onPressed: () => widget.onBuildPack!(widget.pack),
+            child: const Text('构建'),
+          ),
+          if (widget.onSave != null)
+            for (final BuildScriptOption option
+                in _header?.options ?? const <BuildScriptOption>[])
+              _buildOptionField(option),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOptionField(BuildScriptOption option) {
+    final String value =
+        widget.pack.buildOptions[option.name] ?? option.defaultValue;
+    return Padding(
+      padding: const EdgeInsets.only(left: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(option.name),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: _optionFieldWidth,
+            child: ComboBox<String>(
+              key: Key('buildOption_${option.name}'),
+              value: value,
+              onChanged: _savingOption
+                  ? null
+                  : (String? selected) {
+                      if (selected != null && selected != value) {
+                        _selectOption(option.name, selected);
+                      }
+                    },
+              items: <ComboBoxItem<String>>[
+                for (final String item in option.values)
+                  ComboBoxItem<String>(value: item, child: Text(item)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _selectOption(String name, String value) async {
+    final Future<bool> Function(PackModel pack)? onSave = widget.onSave;
+    if (onSave == null || _savingOption) {
+      return;
+    }
+    _savingOption = true;
+    bool saved = false;
+    try {
+      saved = await onSave(_withBuildOption(widget.pack, name, value));
+    } catch (_) {
+      saved = false;
+    } finally {
+      _savingOption = false;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (saved) {
+      showFloatingToast(context, '已保存');
+    } else {
+      showFloatingToast(
+        context,
+        '保存失败',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool canBuild =
@@ -263,19 +389,7 @@ class _PackFilesState extends State<PackFiles> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (canBuild)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Row(
-              children: [
-                FilledButton(
-                  key: const Key('buildPackButton'),
-                  onPressed: () => widget.onBuildPack!(widget.pack),
-                  child: const Text('构建'),
-                ),
-              ],
-            ),
-          ),
+        if (canBuild) _buildToolbar(),
         Expanded(
           child: widget.pack.files.isEmpty
               ? const Center(child: Text('该包暂无文件'))
@@ -303,4 +417,25 @@ class _DirNode {
   final Map<String, _DirNode> children = <String, _DirNode>{};
   final List<FileModel> files = <FileModel>[];
   int size = 0;
+}
+
+PackModel _withBuildOption(PackModel pack, String name, String value) {
+  return PackModel(
+      name: pack.name,
+      version: pack.version,
+      author: pack.author,
+      description: pack.description,
+      license: pack.license,
+      iconPath: pack.iconPath,
+      sourcePath: pack.sourcePath,
+    )
+    ..files = pack.files
+    ..commands = pack.commands
+    ..dependencies = pack.dependencies
+    ..macros = pack.macros
+    ..libDirectories = pack.libDirectories
+    ..libraries = pack.libraries
+    ..history = pack.history
+    ..scripts = pack.scripts
+    ..buildOptions = <String, String>{...pack.buildOptions, name: value};
 }

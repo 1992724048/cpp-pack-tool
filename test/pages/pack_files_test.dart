@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_files.dart';
@@ -491,6 +492,273 @@ void main() {
     expect(find.text('该包暂无文件'), findsOneWidget);
     expect(find.byKey(const Key('buildPackButton')), findsNothing);
   });
+
+  testWidgets('声明选项时渲染控件且显示默认值', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+    expect(find.text('tbb'), findsOneWidget);
+    final ComboBox<String> combo = _optionCombo(tester, 'tbb');
+    expect(combo.value, 'off');
+    expect(
+      <String>[
+        for (final ComboBoxItem<String> item in combo.items ?? const [])
+          item.value!,
+      ],
+      <String>['off', 'on'],
+    );
+  });
+
+  testWidgets('已保存的选项值优先于默认值', (tester) async {
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'tbb': 'on'};
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(_optionCombo(tester, 'tbb').value, 'on');
+  });
+
+  testWidgets('选择选项后保存全字段拷贝并提示已保存', (tester) async {
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'other': 'keep'};
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async {
+          saved = value;
+          return true;
+        },
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(saved, isNotNull);
+    expect(saved, isNot(same(pack)));
+    expect(saved!.buildOptions, <String, String>{'other': 'keep', 'tbb': 'on'});
+    expect(saved!.name, 'demo');
+    expect(saved!.version, '1.0.0');
+    expect(saved!.author, 'tester');
+    expect(saved!.files, same(pack.files));
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('保存失败时提示保存失败', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => false,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(find.text('保存失败'), findsOneWidget);
+    expect(find.text('已保存'), findsNothing);
+  });
+
+  testWidgets('保存抛异常时提示保存失败且不崩溃', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => throw StateError('磁盘写入失败'),
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(find.text('保存失败'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('未声明选项时不渲染选项控件', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(find.byType(ComboBox<String>), findsNothing);
+  });
+
+  testWidgets('未提供保存回调时不渲染选项控件', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(find.byType(ComboBox<String>), findsNothing);
+  });
+
+  testWidgets('头部加载失败时不渲染选项控件且不崩溃', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            throw const FormatException('头部损坏'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(find.byType(ComboBox<String>), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('构建脚本路径变化时重新加载选项', (tester) async {
+    int calls = 0;
+    Future<BuildScriptHeader?> loadHeader(PackModel pack) async {
+      calls++;
+      return _header(options: const <BuildScriptOption>[_tbbOption]);
+    }
+
+    Future<bool> onSave(PackModel pack) async => true;
+    Future<void> onBuild(PackModel pack) async {}
+
+    final PackModel before = _pack('demo', <FileModel>[
+      FileModel(name: 'main.cpp', path: 'main.cpp', size: 20),
+    ]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: before,
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+
+    expect(calls, 1);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+
+    expect(calls, 2);
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+  });
+
+  testWidgets('切换包时按新脚本重新加载选项', (tester) async {
+    int calls = 0;
+    Future<BuildScriptHeader?> loadHeader(PackModel pack) async {
+      calls++;
+      return pack.name == 'demo'
+          ? _header(options: const <BuildScriptOption>[_tbbOption])
+          : _header(
+              options: const <BuildScriptOption>[
+                BuildScriptOption(
+                  name: 'target',
+                  values: <String>['x64', 'x86'],
+                ),
+              ],
+            );
+    }
+
+    Future<bool> onSave(PackModel pack) async => true;
+    Future<void> onBuild(PackModel pack) async {}
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('other'),
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+
+    expect(calls, 2);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+    expect(find.byKey(const Key('buildOption_target')), findsOneWidget);
+  });
 }
 
 PackModel _pack(String name, List<FileModel> files, {String? sourcePath}) {
@@ -500,6 +768,41 @@ PackModel _pack(String name, List<FileModel> files, {String? sourcePath}) {
     author: 'tester',
     sourcePath: sourcePath,
   )..files = files;
+}
+
+PackModel _buildPack(String name) => _pack(name, <FileModel>[
+  FileModel(name: 'build.py', path: 'build.py', size: 10),
+  FileModel(name: 'main.cpp', path: 'main.cpp', size: 20),
+]);
+
+const BuildScriptOption _tbbOption = BuildScriptOption(
+  name: 'tbb',
+  values: <String>['off', 'on'],
+);
+
+BuildScriptHeader _header({
+  List<BuildScriptOption> options = const <BuildScriptOption>[],
+}) {
+  return BuildScriptHeader(
+    repo: 'https://example.com/demo.git',
+    options: options,
+  );
+}
+
+ComboBox<String> _optionCombo(WidgetTester tester, String name) =>
+    tester.widget<ComboBox<String>>(find.byKey(Key('buildOption_$name')));
+
+Future<void> _selectBuildOption(
+  WidgetTester tester,
+  String name,
+  String value,
+) async {
+  await tester.tap(find.byKey(Key('buildOption_$name')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(value).last);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 Finder _contentRow(String name) =>

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
@@ -6,6 +8,7 @@ import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 
 class Setting extends StatefulWidget {
   const Setting({
@@ -14,12 +17,16 @@ class Setting extends StatefulWidget {
     required this.onSave,
     this.pickDirectory = getDirectoryPath,
     this.detectCompilers = toolchain.detectCompilers,
+    this.pickSaveFile = _pickSkillSaveLocation,
+    this.loadSkillTemplate = _loadSkillTemplateAsset,
   });
 
   final SettingsModel settings;
   final Future<void> Function(SettingsModel settings) onSave;
   final Future<String?> Function() pickDirectory;
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
+  final Future<String?> Function(String suggestedName) pickSaveFile;
+  final Future<String> Function() loadSkillTemplate;
 
   @override
   State<Setting> createState() => _SettingState();
@@ -151,6 +158,32 @@ class _SettingState extends State<Setting> {
 
   Future<void> _clearDirectory() => _apply(_directorySettings(null));
 
+  Future<void> _generateSkill() async {
+    final String? path = await widget.pickSaveFile(_skillFileName);
+    if (path == null || !mounted) {
+      return;
+    }
+    try {
+      final String template = await widget.loadSkillTemplate();
+      await File(path).writeAsString(template, flush: true);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '生成失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    showFloatingToast(context, '已生成 SKILL.md');
+  }
+
   @override
   Widget build(BuildContext context) {
     return SizedBox.expand(
@@ -177,6 +210,10 @@ class _SettingState extends State<Setting> {
                 _buildSectionTitle(context, '编译器'),
                 const SizedBox(height: 12),
                 _buildCompilerSection(context),
+                const SizedBox(height: 24),
+                _buildSectionTitle(context, 'SKILL.md'),
+                const SizedBox(height: 12),
+                _buildSkillSection(context),
               ],
             ),
           ),
@@ -419,6 +456,27 @@ class _SettingState extends State<Setting> {
     );
   }
 
+  Widget _buildSkillSection(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '生成 build.py 编写技能文档（SKILL.md），可放入 AI 插件的技能目录使用。',
+            style: TextStyle(
+              color: FluentTheme.of(context).resources.textFillColorSecondary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Button(
+          key: const Key('settingGenerateSkillButton'),
+          onPressed: _generateSkill,
+          child: const Text('生成 SKILL.md…'),
+        ),
+      ],
+    );
+  }
+
   Widget _comboBoxFrame(Widget child) {
     return SizedBox(
       width: 240,
@@ -429,6 +487,19 @@ class _SettingState extends State<Setting> {
     );
   }
 }
+
+const String _skillFileName = 'SKILL.md';
+const String _skillAssetPath = 'assets/build/SKILL.md';
+
+Future<String?> _pickSkillSaveLocation(String suggestedName) async {
+  final FileSaveLocation? location = await getSaveLocation(
+    suggestedName: suggestedName,
+  );
+  return location?.path;
+}
+
+Future<String> _loadSkillTemplateAsset() =>
+    rootBundle.loadString(_skillAssetPath);
 
 String _capitalize(String value) {
   if (value.isEmpty) {

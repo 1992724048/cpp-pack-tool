@@ -533,6 +533,74 @@ void main() {
       expect(warnings, hasLength(1));
       expect(warnings.single, contains('script_1'));
     });
+
+    test('buildOptions 默认为空', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.buildOptions, isEmpty);
+    });
+
+    test('toMap 空 buildOptions 省略键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.toMap().containsKey('buildOptions'), isFalse);
+    });
+
+    test('toMap/fromMap 往返保留构建选项', () {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'};
+
+      final Map<String, Object?> map = pack.toMap();
+
+      expect(map['buildOptions'], <String, String>{'tbb': 'on', 'mp': 'off'});
+      final PackModel loaded = PackModel.fromMap(map);
+      expect(loaded.buildOptions, hasLength(2));
+      expect(loaded.buildOptions['tbb'], 'on');
+      expect(loaded.buildOptions['mp'], 'off');
+    });
+
+    test('fromMap 缺少 buildOptions 时默认为空', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+
+      expect(pack.buildOptions, isEmpty);
+    });
+
+    test('fromMap buildOptions 类型错误时容错为空', () {
+      for (final Object? value in <Object?>['oops', <Object?>[], 42]) {
+        final PackModel pack = PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'buildOptions': value,
+        });
+
+        expect(pack.buildOptions, isEmpty);
+      }
+    });
+
+    test('fromMap buildOptions 丢弃非法键值项', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'buildOptions': <Object?, Object?>{1: 'a', 'k': 7, 'tbb': 'on'},
+      });
+
+      expect(pack.buildOptions, <String, String>{'tbb': 'on'});
+    });
   });
 
   group('FileModel 序列化', () {

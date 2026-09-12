@@ -12,13 +12,13 @@
 | ---- | ---- |
 | 包管理 | 添加文件夹（自动扫描后填写包信息）、编辑版本/作者/许可证/描述（包 ID 不可改）、删除包、重新映射源目录 |
 | 文件管理 | 目录树展示包内文件（目录大小按后代聚合）；双击用系统默认程序打开；lib/dll/pdb/exe 按路径显示 Release/Debug 构建标签 |
-| 构建 | 源目录根部含 `build.py` 时「文件管理」页显示「构建」按钮：自动拉取 git 源码到 `cache/` 并执行构建脚本（`SRC_PATH`/`BUILD_OUT` 环境变量），成功后自动重新映射；构建前自动准备环境——检测本机编译器（默认优先 ICX > clang-cl > MSVC，可在设置调整）、捕获编译器环境（vcvars/setvars）、按需下载 CMake/Ninja 到 `tools/`；`build.py` 不进入打包产物 |
+| 构建 | 源目录根部含 `build.py` 时「文件管理」页显示「构建」按钮：自动拉取 git 源码到 `cache/` 并执行构建脚本（`SRC_PATH`/`BUILD_OUT` 环境变量），成功后自动重新映射；构建前自动准备环境——检测本机编译器（默认优先 ICX > clang-cl > MSVC，可在设置调整）、捕获编译器环境（vcvars/setvars）、按需下载 CMake/Ninja 到 `tools/`；`build.py` 头部可声明 `# tool`（需自动下载的环境工具，如 NASM/Perl）与 `# option`（构建选项，工具栏内随选随存、构建时经 `CNP_OPTION_*` 下发）；分类辅助模块 `cnp_build_support.py` 随构建释放，脚本可经 `PYTHONPATH` import 完成 CMake 装配与产物分类；`build.py` 不进入打包产物 |
 | 依赖管理 | 从现有包选择依赖，自定义 NuGet 版本范围并实时校验；指向不存在包的依赖显示「缺失」 |
 | 编译设置 | 宏定义、编译前/后命令（可从包内选择脚本、插入 MSBuild 常用宏）、附加库目录、附加库；条目可按 ALL/Release/Debug 分组；「节点脚本」分区提供可视化节点编辑器（节点图随包分发并自动执行，见「节点脚本」） |
 | 打包设置 | 选择打包格式（NuGet / CMake）；预览包内文件树与文本内容；按所选格式导出（缺失依赖时弹窗提醒，可继续；导出前校验节点脚本与包内可执行二进制，提示后仍可继续/取消） |
 | 历史记录 | 时间线记录创建、版本变更、重新映射、打包导出四类事件（上限 100 条，可删除） |
 | 依赖关系图 | 全部包的依赖关系可视化：可拖拽平移、滚轮缩放；缺失依赖红色标注，当前包高亮 |
-| 设置 | 打包输出目录；编译器优先级（ICX/clang-cl/MSVC，检测本机版本、可排序与重新检测）；主题模式（系统/深色/浅色）、深色配色（Frappe/Macchiato/Mocha）与强调色，即时生效并持久化 |
+| 设置 | 打包输出目录；编译器优先级（ICX/clang-cl/MSVC，检测本机版本、可排序与重新检测）；SKILL.md 生成（内置模板写出，供分发给 AI 插件）；主题模式（系统/深色/浅色）、深色配色（Frappe/Macchiato/Mocha）与强调色，即时生效并持久化 |
 
 ## 打包产物
 
@@ -119,12 +119,13 @@ config/
 | `macros` | 宏定义（`value`/`buildModel`） |
 | `libDirectories` | 附加库目录（`path`/`buildModel`） |
 | `libraries` | 附加库（`name`/`buildModel`） |
+| `buildOptions` | 构建选项（`{<名称>: <值>}`，由 `build.py` 头部 `# option` 声明；空省略） |
 | `history` | 历史记录（`time`/`type`/`message`，上限 100 条） |
 | `scripts` | 节点脚本（`id`/`name`/`trigger`/`buildModel` + 节点图 `nodes`/`edges`/视口；单条损坏仅丢弃该脚本） |
 
 其中 `buildModel` 取值为 ALL / Release / Debug。配置文件损坏或缺必填字段不会导致启动失败，启动后会以悬浮提示列出问题文件。
 
-执行「构建」时下载的源码缓存在工作目录的 `cache/`（可随时删除；再次构建会按需重新下载）；构建环境准备按需下载的工具缓存在 `tools/`（同为本地缓存；本机已有可用的 CMake（≥ 3.25）/Ninja 时优先直接使用、不下载）。
+执行「构建」时下载的源码缓存在工作目录的 `cache/`（可随时删除；再次构建会按需重新下载）；构建环境准备按需下载的工具缓存在 `tools/`（同为本地缓存；本机已有可用的 CMake（≥ 3.25）/Ninja 时优先直接使用、不下载）；`build.py` 头部 `# tool` 声明的环境工具同样下载到 `tools/<名称>/`，构建前释放的 `cnp_build_support.py` 也在 `tools/`（均可随时删除）。
 
 ## 版本与发布
 
@@ -144,7 +145,7 @@ config/
 | [catppuccin_flutter](https://pub.dev/packages/catppuccin_flutter) | Catppuccin 配色方案 |
 | [yaml](https://pub.dev/packages/yaml) / [yaml_edit](https://pub.dev/packages/yaml_edit) | YAML 配置解析与生成 |
 | [archive](https://pub.dev/packages/archive) | `.nupkg` / CMake 配置包（ZIP）组装 |
-| [file_selector](https://pub.dev/packages/file_selector) | 系统原生目录选择 |
+| [file_selector](https://pub.dev/packages/file_selector) | 系统原生目录选择 / 保存位置对话框 |
 
 ## 第三方声明
 

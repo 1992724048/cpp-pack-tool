@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
+import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
 /// 构建环境准备失败异常：[message] 面向用户展示。
@@ -16,6 +18,9 @@ class BuildPreparationException implements Exception {
 }
 
 final RegExp _lineSeparator = RegExp(r'\r?\n');
+
+/// 构建设备释放到 `tools/` 的分类辅助模块文件名。
+const String _supportModuleFileName = 'cnp_build_support.py';
 
 /// 捕获编译器环境（vcvars/setvars）并与 [baseEnvironment] 合并。
 ///
@@ -83,16 +88,20 @@ class BuildEnvironment {
   final String toolsDir;
 }
 
-/// 装配子进程环境：复制 [environment]，写入 `CNP_*` 并前置工具与编译器目录。
+/// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
 ///
 /// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
-/// 未能归属的工具目录 → [DetectedCompiler.extraPathEntries]（如 LLVM bin），
-/// 条目大小写不敏感去重；[environment] 不被修改。
+/// 未能归属的工具目录 → [toolPathEntries]（`# tool` 声明的工具） →
+/// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
+/// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
+/// `PYTHONPATH` 前置 [toolsRoot] 绝对路径（保留原值）；[environment] 不被修改。
 BuildEnvironment assembleBuildEnvironment({
   required DetectedCompiler compiler,
   required Map<String, String> environment,
   required CmakeNinja cmakeNinja,
   required String toolsRoot,
+  List<String> toolPathEntries = const <String>[],
+  Map<String, String> options = const <String, String>{},
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);
@@ -106,10 +115,18 @@ BuildEnvironment assembleBuildEnvironment({
     'CNP_COMPILER_KIND',
     compilerKindId(compiler.kind),
   );
+  for (final MapEntry<String, String> option in options.entries) {
+    _setEnvironmentValue(child, optionEnvName(option.key), option.value);
+  }
   _prependPathEntries(
     child,
-    _orderedToolPathEntries(cmakeNinja, compiler.extraPathEntries),
+    _orderedToolPathEntries(
+      cmakeNinja,
+      toolPathEntries,
+      compiler.extraPathEntries,
+    ),
   );
+  _prependEnvironmentValue(child, 'PYTHONPATH', toolsDir);
   return BuildEnvironment(
     compiler: compiler,
     environment: child,
@@ -120,7 +137,8 @@ BuildEnvironment assembleBuildEnvironment({
 }
 
 /// 准备构建环境：检测编译器 → 按 [priority] 选择 → 捕获编译器环境 →
-/// 供给 CMake/Ninja → 装配 `PATH` 与 `CNP_*`。
+/// 供给 CMake/Ninja 与 [tools] 声明的工具 → 释放 [supportModule] → 装配
+/// `PATH`、`CNP_*` 与选项变量。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统）；[detect]/[capture] 为测试注入点。无可用编译器或
@@ -131,6 +149,9 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   ToolProvisioner? provisioner,
   String toolsRoot = 'tools',
   Map<String, String>? baseEnvironment,
+  List<BuildScriptTool> tools = const <BuildScriptTool>[],
+  Map<String, String> options = const <String, String>{},
+  String? supportModule,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
@@ -159,12 +180,109 @@ Future<BuildEnvironment> prepareBuildEnvironment({
       );
   final CmakeNinja cmakeNinja = await toolProvisioner.ensureCmakeNinja();
 
+  final List<String> toolPathEntries = <String>[];
+  for (final BuildScriptTool tool in tools) {
+    final ProvisionedTool provisioned = await _ensureDeclaredTool(
+      toolProvisioner,
+      tool,
+    );
+    toolPathEntries.addAll(provisioned.pathEntries);
+  }
+  if (supportModule != null) {
+    await _releaseSupportModule(toolsRoot, supportModule);
+  }
+
   return assembleBuildEnvironment(
     compiler: compiler,
     environment: captured,
     cmakeNinja: cmakeNinja,
     toolsRoot: toolsRoot,
+    toolPathEntries: toolPathEntries,
+    options: options,
   );
+}
+
+Future<ProvisionedTool> _ensureDeclaredTool(
+  ToolProvisioner provisioner,
+  BuildScriptTool tool,
+) async {
+  try {
+    return await provisioner.ensureTool(
+      name: tool.name,
+      url: tool.url,
+      binSubdir: tool.binSubdir,
+    );
+  } on BuildPreparationException {
+    rethrow;
+  } catch (error) {
+    throw BuildPreparationException('工具 ${tool.name} 准备失败：$error');
+  }
+}
+
+Future<void> _releaseSupportModule(String toolsRoot, String content) async {
+  try {
+    await Directory(toolsRoot).create(recursive: true);
+    await File(
+      joinPath(toolsRoot, _supportModuleFileName),
+    ).writeAsString(content);
+  } on FileSystemException catch (error) {
+    throw BuildPreparationException('释放构建辅助模块失败：$error');
+  }
+}
+
+/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 供给声明工具与
+/// CMake/Ninja → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
+///
+/// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
+/// [BuildPreparationException]。其余参数透传 [prepareBuildEnvironment]。
+Future<BuildEnvironment> preparePackBuildEnvironment(
+  PackModel pack, {
+  required List<String> priority,
+  PackProcessRunner runner = Process.run,
+  ToolProvisioner? provisioner,
+  String toolsRoot = 'tools',
+  Map<String, String>? baseEnvironment,
+  Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader,
+  Future<String> Function()? loadSupportModule,
+  CompilerDetector? detect,
+  ToolchainEnvironmentCapture? capture,
+}) async {
+  final Future<BuildScriptHeader?> Function(PackModel pack) headerLoader =
+      loadHeader ?? loadBuildScriptHeader;
+  final BuildScriptHeader? header;
+  try {
+    header = await headerLoader(pack);
+  } catch (error) {
+    throw BuildPreparationException('读取 build.py 失败：$error');
+  }
+  final String? supportModule = await _loadSupportModule(loadSupportModule);
+  return prepareBuildEnvironment(
+    priority: priority,
+    runner: runner,
+    provisioner: provisioner,
+    toolsRoot: toolsRoot,
+    baseEnvironment: baseEnvironment,
+    tools: header?.tools ?? const <BuildScriptTool>[],
+    options: resolveBuildOptions(
+      header?.options ?? const <BuildScriptOption>[],
+      pack.buildOptions,
+    ),
+    supportModule: supportModule,
+    detect: detect,
+    capture: capture,
+  );
+}
+
+Future<String?> _loadSupportModule(Future<String> Function()? loader) async {
+  if (loader == null) {
+    return null;
+  }
+  try {
+    return await loader();
+  } catch (_) {
+    // 辅助模块缺失/加载失败不阻断构建：脚本可自行回退。
+    return null;
+  }
 }
 
 /// 脚本路径可能含空格；直接内嵌进 `cmd /c` 参数字符串会被 Dart 的 Windows
@@ -245,12 +363,14 @@ String _noCompilerMessage(List<String> priority) {
   return '未检测到可用编译器（优先级：${priority.join(' > ')}）';
 }
 
-/// 工具目录前置排序：Ninja → CMake → 未能归属的目录 → 编译器附加目录。
+/// 工具目录前置排序：Ninja → CMake → 未能归属的目录 → 声明工具目录 →
+/// 编译器附加目录。
 ///
 /// [CmakeNinja.pathEntries] 不区分工具归属（供给顺序为先 CMake 后 Ninja），
 /// 这里按可执行文件路径归属分组，使 PATH 结构稳定。
 List<String> _orderedToolPathEntries(
   CmakeNinja cmakeNinja,
+  List<String> toolPathEntries,
   List<String> extraPathEntries,
 ) {
   final List<String> ninjaEntries = <String>[];
@@ -269,6 +389,7 @@ List<String> _orderedToolPathEntries(
     ...ninjaEntries,
     ...cmakeEntries,
     ...unknownEntries,
+    ...toolPathEntries,
     ...extraPathEntries,
   ];
 }
@@ -305,6 +426,20 @@ void _prependPathEntries(
   environment[pathKey ?? 'Path'] = existing.isEmpty
       ? prefix
       : '$prefix;$existing';
+}
+
+/// 将 [value] 前置到 [key]（大小写不敏感匹配、保留原键名），原值以 `;` 连接；
+/// 无原值时仅写入 [value]。
+void _prependEnvironmentValue(
+  Map<String, String> environment,
+  String key,
+  String value,
+) {
+  final String? existingKey = _findKeyIgnoreCase(environment, key);
+  final String existing = existingKey == null ? '' : environment[existingKey]!;
+  environment[existingKey ?? key] = existing.isEmpty
+      ? value
+      : '$value;$existing';
 }
 
 String? _findKeyIgnoreCase(Map<String, String> environment, String key) {

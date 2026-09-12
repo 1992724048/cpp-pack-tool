@@ -103,7 +103,11 @@ class _PackManageState extends State<PackManage> {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackFiles(pack: pack, onBuildPack: widget.onBuildPack),
+          PackFiles(
+            pack: pack,
+            onBuildPack: widget.onBuildPack,
+            onSave: widget.onSave,
+          ),
     );
   }
 
