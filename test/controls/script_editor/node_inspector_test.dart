@@ -58,6 +58,98 @@ void main() {
       expect(controller.project.nodes.single.params['value'], isTrue);
     });
 
+    testWidgets('number 参数渲染数值输入框，整数/小数/负数写回 num', (
+      WidgetTester tester,
+    ) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'value.number');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_value'));
+      expect(field, findsOneWidget);
+      expect(tester.widget<TextBox>(field).controller!.text, '0');
+
+      await tester.enterText(field, '5');
+      await tester.pump();
+      expect(controller.project.nodes.single.params['value'], isA<int>());
+      expect(controller.project.nodes.single.params['value'], 5);
+
+      await tester.enterText(field, '5.5');
+      await tester.pump();
+      expect(controller.project.nodes.single.params['value'], isA<double>());
+      expect(controller.project.nodes.single.params['value'], 5.5);
+
+      await tester.enterText(field, '-3');
+      await tester.pump();
+      expect(controller.project.nodes.single.params['value'], isA<int>());
+      expect(controller.project.nodes.single.params['value'], -3);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('number 非数字或非有限值不写回，原值保留', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'value.number');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_value'));
+      await tester.enterText(field, '5');
+      await tester.pump();
+      expect(controller.project.nodes.single.params['value'], 5);
+
+      for (final String invalid in <String>[
+        '',
+        'abc',
+        'NaN',
+        'Infinity',
+        '-Infinity',
+      ]) {
+        await tester.enterText(field, invalid);
+        await tester.pump();
+        expect(
+          controller.project.nodes.single.params['value'],
+          5,
+          reason: '「$invalid」不应写入',
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('number 初始文本显示已存储值，缺省用注册表默认 0', (WidgetTester tester) async {
+      final ScriptProjectModel project = _project();
+      final ScriptNodeModel node = ScriptNodeModel(
+        id: 'n1',
+        type: 'value.number',
+      );
+      node.params['value'] = 2.5;
+      project.nodes = <ScriptNodeModel>[node];
+      final _Harness harness = await _pumpInspector(tester, project: project);
+      final GraphEditorController controller = harness.controller!;
+
+      controller.selectNode('n1');
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('inspectorField_value')))
+            .controller!
+            .text,
+        '2.5',
+      );
+
+      controller.clearSelection();
+      final String nodeId = controller.addNode('value.number', Offset.zero);
+      controller.selectNode(nodeId);
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('inspectorField_value')))
+            .controller!
+            .text,
+        '0',
+      );
+    });
+
     testWidgets('macroKey 下拉列出全部 11 项 MSBuild 宏，选择后写回宏键', (WidgetTester tester) async {
       final _Harness harness = await _pumpInspector(tester);
       final GraphEditorController controller = harness.controller!;

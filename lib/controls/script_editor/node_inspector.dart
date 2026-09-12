@@ -466,8 +466,11 @@ class _NodeInspectorState extends State<NodeInspector> {
         // 开关由 _buildParamField 的行布局处理，此处不可达。
         return const SizedBox.shrink();
       case ScriptParamType.number:
-        // TODO: 数值输入控件（可负、可小数、非数字不写入）待实现。
-        return const SizedBox.shrink();
+        return TextBox(
+          key: Key('inspectorField_${param.key}'),
+          controller: _paramEditor(node.id, param.key, value?.toString() ?? ''),
+          onChanged: (String next) => _writeNumberParam(node, param.key, next),
+        );
     }
   }
 
@@ -523,6 +526,14 @@ class _NodeInspectorState extends State<NodeInspector> {
 
   void _writeParam(ScriptNodeModel node, String paramKey, Object? value) {
     widget.controller?.updateNodeParam(node.id, paramKey, value);
+  }
+
+  void _writeNumberParam(ScriptNodeModel node, String paramKey, String text) {
+    final num? parsed = _parseNumberInput(text);
+    if (parsed == null) {
+      return;
+    }
+    _writeParam(node, paramKey, parsed);
   }
 
   void _commitProjectName(ScriptProjectModel project) {
@@ -792,6 +803,20 @@ Widget _labeledField(
       ],
     ],
   );
+}
+
+/// 解析数值输入：整数优先，否则取有限小数；非数字或非有限值（NaN/±Infinity）
+/// 返回 null（不写入）。
+num? _parseNumberInput(String text) {
+  final int? integer = int.tryParse(text);
+  if (integer != null) {
+    return integer;
+  }
+  final double? parsed = double.tryParse(text);
+  if (parsed == null || !parsed.isFinite) {
+    return null;
+  }
+  return parsed;
 }
 
 Widget _buildFieldError(Key key, String message) {

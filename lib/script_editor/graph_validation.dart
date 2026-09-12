@@ -124,9 +124,10 @@ class GraphValidator {
       case ScriptParamType.boolean:
         return null;
       case ScriptParamType.number:
-        // TODO: number 参数须为数字（num）的校验规则待实现（手改 YAML 非数字
-        // 时生成器暂防御性回退为 0）。
-        return null;
+        if (value is num && value.isFinite) {
+          return null;
+        }
+        return '参数「${param.label}」的值「$value」必须为数字';
     }
   }
 

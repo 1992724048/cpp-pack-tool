@@ -574,6 +574,47 @@ void main() {
       }
     });
 
+    test('number 参数必须为有限数字', () {
+      for (final Object? invalid in <Object?>[
+        'abc',
+        double.nan,
+        double.infinity,
+        double.negativeInfinity,
+      ]) {
+        final List<ScriptDiagnostic> paramErrors = _paramErrors(
+          _validate(<ScriptNodeModel>[
+            _node(
+              'n1',
+              'value.number',
+              params: <String, Object?>{'value': invalid},
+            ),
+          ]),
+        );
+        expect(paramErrors, hasLength(1), reason: '「$invalid」应判非法');
+        expect(paramErrors.single.message, contains('必须为数字'));
+        expect(paramErrors.single.isError, isTrue);
+        expect(paramErrors.single.nodeId, 'n1');
+      }
+
+      for (final num valid in <num>[0, 5, -3, 5.5]) {
+        final List<ScriptDiagnostic> paramErrors = _paramErrors(
+          _validate(<ScriptNodeModel>[
+            _node(
+              'n1',
+              'value.number',
+              params: <String, Object?>{'value': valid},
+            ),
+          ]),
+        );
+        expect(paramErrors, isEmpty, reason: '「$valid」应合法');
+      }
+
+      final List<ScriptDiagnostic> byDefault = _paramErrors(
+        _validate(<ScriptNodeModel>[_node('n1', 'value.number')]),
+      );
+      expect(byDefault, isEmpty);
+    });
+
     test('packageFilePath 不能为空', () {
       final List<ScriptDiagnostic> paramErrors = _paramErrors(
         _validate(<ScriptNodeModel>[_node('n1', 'context.packageFile')]),
