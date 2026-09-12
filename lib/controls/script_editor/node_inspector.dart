@@ -18,6 +18,10 @@ import 'package:flutter/gestures.dart'
 
 final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
+// 发射侧 `CNP_PackageRoot`（`Join-Path` 基目录）指向包内 `build/native/`，
+// 建议值须为该目录相对路径，否则组合后出现双前缀。
+const String _packageRootPrefix = 'build/native/';
+
 const String _environmentNameError = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
 const String _noMatchingPathHint = '无匹配路径，将按手填内容使用';
 const String _emptyProjectHint = '请先新建脚本项目';
@@ -59,7 +63,8 @@ class NodeInspector extends StatefulWidget {
 
   final PackModel pack;
 
-  /// 包内路径建议；null 时由 `NuGetPackageBuilder().buildPlan(pack)` 计算。
+  /// 包内路径建议（`build/native/` 相对）；null 时由
+  /// `NuGetPackageBuilder().buildPlan(pack)` 计算并剥离该前缀。
   final List<String>? packagePaths;
 
   final ValueChanged<ScriptProjectModel>? onSelectProject;
@@ -178,7 +183,9 @@ class _NodeInspectorState extends State<NodeInspector> {
     }
     setState(() {
       _packagePaths = <String>[
-        for (final PackageEntry entry in plan.entries) entry.packagePath,
+        for (final PackageEntry entry in plan.entries)
+          if (entry.packagePath.startsWith(_packageRootPrefix))
+            entry.packagePath.substring(_packageRootPrefix.length),
       ];
     });
   }

@@ -156,7 +156,7 @@ void main() {
     testWidgets('packageFilePath 手填自由文本合法（非空即可）', (WidgetTester tester) async {
       final _Harness harness = await _pumpInspector(
         tester,
-        packagePaths: const <String>['build/native/lib/x.lib'],
+        packagePaths: const <String>['lib/x.lib'],
       );
       final GraphEditorController controller = harness.controller!;
       _addAndSelect(controller, 'context.packageFile');
@@ -174,7 +174,7 @@ void main() {
     testWidgets('packageFilePath 无匹配时显示手填提示文案', (WidgetTester tester) async {
       final _Harness harness = await _pumpInspector(
         tester,
-        packagePaths: const <String>['build/native/lib/x.lib'],
+        packagePaths: const <String>['lib/x.lib'],
       );
       final GraphEditorController controller = harness.controller!;
       _addAndSelect(controller, 'context.packageFile');
@@ -209,7 +209,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      final Finder suggestion = find.text('build/native/lib/x.lib');
+      final Finder suggestion = find.text('lib/x.lib');
       expect(suggestion, findsOneWidget);
 
       await tester.tap(suggestion);
@@ -218,13 +218,37 @@ void main() {
 
       expect(
         controller.project.nodes.single.params['path'],
-        'build/native/lib/x.lib',
+        'lib/x.lib',
       );
+    });
+
+    testWidgets('未注入 packagePaths 时根级 nuspec 条目不进入建议列表', (
+      WidgetTester tester,
+    ) async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'x.lib', path: 'lib/x.lib', size: 4),
+        ];
+      final _Harness harness = await _pumpInspector(tester, pack: pack);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'context.packageFile');
+      await tester.pump();
+
+      await tester.enterText(
+        find.byKey(const Key('inspectorField_path')),
+        'nuspec',
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('demo.nuspec'), findsNothing);
+      expect(find.text('无匹配路径，将按手填内容使用'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('超长路径建议项单行省略显示且不触发布局溢出', (WidgetTester tester) async {
       const String longPath =
-          'build/native/files/some/deeply/nested/directory/with/many/'
+          'files/some/deeply/nested/directory/with/many/'
           'segments/and_a_very_long_header_file_name.hpp';
       final _Harness harness = await _pumpInspector(
         tester,
