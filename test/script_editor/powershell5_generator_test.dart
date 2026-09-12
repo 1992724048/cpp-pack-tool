@@ -1089,7 +1089,9 @@ void main() {
       expect(
         result.diagnostics.any(
           (ScriptDiagnostic diagnostic) =>
-              diagnostic.isError && diagnostic.message.contains('数值'),
+              diagnostic.isError &&
+              diagnostic.nodeId == 'n2' &&
+              diagnostic.message.contains('必须为数字'),
         ),
         isTrue,
       );
