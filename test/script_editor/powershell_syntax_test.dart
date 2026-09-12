@@ -388,6 +388,103 @@ ScriptProjectModel _variablesFixture() {
   );
 }
 
+/// M4.4 系统与网络夹具：上传（显式 POST）→ 下载 → 查找工具（含带引号候选）
+/// → 分支消费 found、日志消费 path。
+ScriptProjectModel _systemFixture() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'value.text',
+        params: <String, Object?>{'value': 'https://example.com/api/upload'},
+      ),
+      _node(
+        'n3',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\out\upload.bin'},
+      ),
+      _node('n4', 'system.upload', params: <String, Object?>{'method': 'POST'}),
+      _node(
+        'n5',
+        'value.text',
+        params: <String, Object?>{'value': 'https://example.com/api/download'},
+      ),
+      _node(
+        'n6',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\out\download.bin'},
+      ),
+      _node('n7', 'system.download'),
+      _node(
+        'n8',
+        'system.findTool',
+        params: <String, Object?>{
+          'name': 'clang',
+          'candidates': <String>[
+            r'C:\Program Files\LLVM\bin\clang.exe',
+            r"C:\O'Brien\bin\clang.exe",
+          ],
+        },
+      ),
+      _node('n9', 'flow.branch'),
+      _node('n10', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n4', 'url'),
+      _edge('n3', 'result', 'n4', 'source'),
+      _edge('n4', 'out', 'n7', 'exec'),
+      _edge('n5', 'result', 'n7', 'url'),
+      _edge('n6', 'result', 'n7', 'destination'),
+      _edge('n7', 'out', 'n9', 'exec'),
+      _edge('n8', 'found', 'n9', 'condition'),
+      _edge('n9', 'then', 'n10', 'exec'),
+      _edge('n8', 'path', 'n10', 'message'),
+    ],
+    name: '系统与网络夹具',
+  );
+}
+
+/// M4.4 包内脚本夹具：`context.scriptFile` → 目录名（工作目录）与日志消息；
+/// `process.runScript`（ps1、abortOnFailure false、多行参数）执行后接日志。
+ScriptProjectModel _runScriptFixture() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'value.text',
+        params: <String, Object?>{'value': '--verbose\n--out=bin'},
+      ),
+      _node(
+        'n3',
+        'context.scriptFile',
+        params: <String, Object?>{'file': 'files/scripts/build.ps1'},
+      ),
+      _node(
+        'n4',
+        'process.runScript',
+        params: <String, Object?>{
+          'script': 'files/scripts/build.ps1',
+          'abortOnFailure': false,
+        },
+      ),
+      _node('n5', 'log.message'),
+      _node('n6', 'string.directoryName'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n4', 'arguments'),
+      _edge('n3', 'result', 'n6', 'path'),
+      _edge('n6', 'result', 'n4', 'workingDirectory'),
+      _edge('n4', 'out', 'n5', 'exec'),
+      _edge('n3', 'result', 'n5', 'message'),
+    ],
+    name: '包内脚本夹具',
+  );
+}
+
 String _diagnosticMessages(ScriptCompileResult result) {
   return result.diagnostics
       .map((ScriptDiagnostic diagnostic) => diagnostic.message)
@@ -411,7 +508,7 @@ void main() {
   });
 
   group('PowerShell 5.1 语法解析（仅 Windows）', () {
-    test('五张代表图生成的脚本均通过 Parser::ParseFile', () {
+    test('七张代表图生成的脚本均通过 Parser::ParseFile', () {
       final Directory tempDir = Directory.systemTemp.createTempSync(
         'cnp_ps_syntax_',
       );
@@ -431,6 +528,8 @@ void main() {
             'string_and_process': _stringAndProcessFixture(),
             'node_families': _nodeFamiliesFixture(),
             'variables': _variablesFixture(),
+            'system_network': _systemFixture(),
+            'run_script': _runScriptFixture(),
           };
 
       for (final MapEntry<String, ScriptProjectModel> fixture

@@ -5,8 +5,6 @@ import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
 import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
-import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
-import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -454,20 +452,9 @@ void main() {
     testWidgets('scriptFilePath 建议列表仅含脚本扩展名，非脚本路径被滤除', (
       WidgetTester tester,
     ) async {
-      final ScriptNodeTypeDescriptor scriptType = _syntheticType(
-        typeKey: 'synthetic.script',
-        params: <ScriptParamDescriptor>[
-          const ScriptParamDescriptor(
-            key: 'file',
-            label: '脚本文件',
-            type: ScriptParamType.scriptFilePath,
-            defaultValue: '',
-          ),
-        ],
-      );
       final ScriptProjectModel project = _project();
       project.nodes = <ScriptNodeModel>[
-        ScriptNodeModel(id: 'n1', type: 'synthetic.script'),
+        ScriptNodeModel(id: 'n1', type: 'context.scriptFile'),
       ];
       final _Harness harness = await _pumpInspector(
         tester,
@@ -478,9 +465,6 @@ void main() {
           'files/scripts/script_1.ps1',
           'files/data.txt',
         ],
-        nodeTypeResolver: (String typeKey) => typeKey == scriptType.typeKey
-            ? scriptType
-            : NodeRegistry.byType(typeKey),
       );
       final GraphEditorController controller = harness.controller!;
       controller.selectNode('n1');
@@ -517,30 +501,17 @@ void main() {
     testWidgets('textLines 渲染多行 TextBox，写回按行清洗后的 List<String>', (
       WidgetTester tester,
     ) async {
-      final ScriptNodeTypeDescriptor linesType = _syntheticType(
-        typeKey: 'synthetic.lines',
-        params: <ScriptParamDescriptor>[
-          const ScriptParamDescriptor(
-            key: 'candidates',
-            label: '候选路径',
-            type: ScriptParamType.textLines,
-            defaultValue: <String>[],
-          ),
-        ],
-      );
       final ScriptProjectModel project = _project();
       final ScriptNodeModel node = ScriptNodeModel(
         id: 'n1',
-        type: 'synthetic.lines',
+        type: 'system.findTool',
       );
+      node.params['name'] = 'clang';
       node.params['candidates'] = <String>[r'C:\Tools', r'C:\bin'];
       project.nodes = <ScriptNodeModel>[node];
       final _Harness harness = await _pumpInspector(
         tester,
         project: project,
-        nodeTypeResolver: (String typeKey) => typeKey == linesType.typeKey
-            ? linesType
-            : NodeRegistry.byType(typeKey),
       );
       final GraphEditorController controller = harness.controller!;
       controller.selectNode('n1');
@@ -979,21 +950,6 @@ ScriptProjectModel _project({
   ScriptTrigger trigger = ScriptTrigger.pre,
 }) => ScriptProjectModel(id: id, name: name, trigger: trigger);
 
-/// 合成节点类型描述符：`scriptFilePath` / `textLines` 的载体节点注册在
-/// 后续任务，本任务以合成类型验证检查器控件渲染与写回。
-ScriptNodeTypeDescriptor _syntheticType({
-  required String typeKey,
-  required List<ScriptParamDescriptor> params,
-}) {
-  return ScriptNodeTypeDescriptor(
-    typeKey: typeKey,
-    displayName: '测试节点',
-    category: ScriptNodeCategory.context,
-    pins: const <ScriptPinDescriptor>[],
-    params: params,
-  );
-}
-
 PackModel _packWithProjects() {
   final PackModel pack = _pack();
   pack.scripts = <ScriptProjectModel>[
@@ -1014,7 +970,6 @@ Future<_Harness> _pumpInspector(
   PackModel? pack,
   ScriptProjectModel? project,
   List<String>? packagePaths,
-  ScriptNodeTypeDescriptor? Function(String typeKey)? nodeTypeResolver,
   bool noProject = false,
   ValueChanged<ScriptProjectModel>? onSelectProject,
   void Function(ScriptProjectModel project, String name)? onRenameProject,
@@ -1048,7 +1003,6 @@ Future<_Harness> _pumpInspector(
             controller: controller,
             pack: resolvedPack,
             packagePaths: packagePaths,
-            nodeTypeResolver: nodeTypeResolver,
             onSelectProject: onSelectProject,
             onRenameProject: onRenameProject,
             onTriggerChanged: onTriggerChanged,

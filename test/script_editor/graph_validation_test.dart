@@ -1,7 +1,9 @@
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
+import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
+import 'package:cpp_nuget_pack/script_editor/variable_rules.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 ScriptNodeModel _node(String id, String type, {Map<String, Object?>? params}) {
@@ -822,52 +824,51 @@ void main() {
       expect(good, isEmpty);
     });
 
-    test('scriptFilePath 不能为空', () {
-      const ScriptNodeTypeDescriptor descriptor = ScriptNodeTypeDescriptor(
-        typeKey: 'context.scriptFile',
-        displayName: '包内脚本文件',
-        category: ScriptNodeCategory.context,
-        pins: <ScriptPinDescriptor>[],
-      );
-      const ScriptParamDescriptor param = ScriptParamDescriptor(
-        key: 'file',
-        label: '文件',
-        type: ScriptParamType.scriptFilePath,
-        defaultValue: '',
-      );
+    test('scriptFilePath 不能为空（载体节点 context.scriptFile / process.runScript）', () {
       for (final String valid in <String>[
         'files/run.bat',
         r'files\scripts\build.ps1',
         'a',
       ]) {
-        expect(
-          GraphValidator.paramErrorMessage(descriptor, param, valid),
-          isNull,
-          reason: '「$valid」应合法',
+        final List<ScriptDiagnostic> paramErrors = _paramErrors(
+          _validate(<ScriptNodeModel>[
+            _node(
+              'n1',
+              'context.scriptFile',
+              params: <String, Object?>{'file': valid},
+            ),
+          ]),
         );
+        expect(paramErrors, isEmpty, reason: '「$valid」应合法');
       }
       for (final Object? empty in <Object?>[null, '', '   ', 5]) {
-        expect(
-          GraphValidator.paramErrorMessage(descriptor, param, empty),
-          '参数「文件」不能为空',
-          reason: '「$empty」应判空',
+        final List<ScriptDiagnostic> paramErrors = _paramErrors(
+          _validate(<ScriptNodeModel>[
+            _node(
+              'n1',
+              'context.scriptFile',
+              params: <String, Object?>{'file': empty},
+            ),
+          ]),
         );
+        expect(paramErrors, hasLength(1), reason: '「$empty」应判空');
+        expect(paramErrors.single.message, '参数「脚本文件」不能为空');
+        expect(paramErrors.single.nodeId, 'n1');
       }
+
+      // process.runScript 的 script 参数同规则（标签同为「脚本文件」）。
+      final List<ScriptDiagnostic> runScriptErrors = _paramErrors(
+        _validate(<ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'process.runScript'),
+        ]),
+      );
+      expect(runScriptErrors, hasLength(1));
+      expect(runScriptErrors.single.message, '参数「脚本文件」不能为空');
+      expect(runScriptErrors.single.nodeId, 'n2');
     });
 
     test('textLines 无参数级错误规则（清洗在写入侧）', () {
-      const ScriptNodeTypeDescriptor descriptor = ScriptNodeTypeDescriptor(
-        typeKey: 'system.findTool',
-        displayName: '查找工具',
-        category: ScriptNodeCategory.system,
-        pins: <ScriptPinDescriptor>[],
-      );
-      const ScriptParamDescriptor param = ScriptParamDescriptor(
-        key: 'candidates',
-        label: '候选路径',
-        type: ScriptParamType.textLines,
-        defaultValue: <String>[],
-      );
       for (final Object? value in <Object?>[
         null,
         '',
@@ -875,11 +876,16 @@ void main() {
         <String>['a', 'b'],
         5,
       ]) {
-        expect(
-          GraphValidator.paramErrorMessage(descriptor, param, value),
-          isNull,
-          reason: '「$value」不应报参数错误',
+        final List<ScriptDiagnostic> paramErrors = _paramErrors(
+          _validate(<ScriptNodeModel>[
+            _node(
+              'n1',
+              'system.findTool',
+              params: <String, Object?>{'name': 'tool', 'candidates': value},
+            ),
+          ]),
         );
+        expect(paramErrors, isEmpty, reason: '「$value」不应报参数错误');
       }
     });
 
@@ -1381,6 +1387,32 @@ void main() {
       expect(lowerFirst.single.message, '变量 Count 类型不一致');
     });
 
+    test('首见变体不回写：num→str→num 仅中间节点报 1 条', () {
+      final List<ScriptDiagnostic> mismatches = _typeMismatchErrors(
+        _validate(<ScriptNodeModel>[
+          _node(
+            'n1',
+            'variable.setNumber',
+            params: <String, Object?>{'name': 'count'},
+          ),
+          _node(
+            'n2',
+            'variable.setString',
+            params: <String, Object?>{'name': 'count'},
+          ),
+          _node(
+            'n3',
+            'variable.setNumber',
+            params: <String, Object?>{'name': 'count'},
+          ),
+        ]),
+      );
+      expect(mismatches, hasLength(1), reason: '首个出现的变体为准，不被后续节点改写');
+      expect(mismatches.single.nodeId, 'n2');
+      expect(mismatches.single.message, '变量 count 类型不一致');
+      expect(mismatches.single.isError, isTrue);
+    });
+
     test('名称非法的节点只报名称错误，不参与类型一致性判定', () {
       final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
         _node(
@@ -1431,6 +1463,18 @@ void main() {
       expect(requiredIndex, greaterThanOrEqualTo(0));
       expect(nameIndex, lessThan(mismatchIndex));
       expect(mismatchIndex, lessThan(requiredIndex));
+    });
+
+    test('变量类型集合与注册表同步（防漂移）', () {
+      final Set<String> registryVariableTypes = <String>{
+        for (final ScriptNodeTypeDescriptor descriptor in NodeRegistry.all)
+          if (descriptor.typeKey.startsWith('variable.')) descriptor.typeKey,
+      };
+      expect(variableTypeVariants.keys.toSet(), registryVariableTypes);
+      expect(variableNameNodeTypes, <String>{
+        'context.environment',
+        ...registryVariableTypes,
+      });
     });
   });
 

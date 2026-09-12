@@ -501,7 +501,7 @@ ScriptProjectModel _validProject() {
   );
 }
 
-/// 20 行脚本：入口 + 14 个输出信息（每个消息来自一个文本节点）。
+/// 22 行脚本：入口 + 14 个输出信息（每个消息来自一个文本节点）。
 ScriptProjectModel _longProject() {
   final ScriptProjectModel project = _project();
   project.nodes.add(_node('n0', 'flow.entry', x: 40, y: 60));

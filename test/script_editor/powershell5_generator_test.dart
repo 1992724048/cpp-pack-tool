@@ -3384,6 +3384,22 @@ void main() {
       );
     });
 
+    test('findTool：candidates 含单引号元素按双单引号转义', () {
+      final ScriptCompileResult result = _compile(
+        _findToolPathGraph(
+          candidates: <String>[r"C:\O'Brien\bin\dumpbin.exe"],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host ([string](Find-CnpTool -Name 'dumpbin' -Candidates "
+          "@('C:\\O''Brien\\bin\\dumpbin.exe')))\n",
+        ),
+      );
+    });
+
     test('system.download：DownloadFile 行并沿 out 续链，无 helper 注入', () {
       final ScriptCompileResult result = _compile(_downloadGraph());
       expect(result.hasErrors, isFalse);

@@ -9,6 +9,7 @@ import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/node_value_display.dart';
+import 'package:cpp_nuget_pack/script_editor/variable_rules.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
@@ -17,16 +18,6 @@ import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart'
     show PointerEnterEvent, PointerExitEvent;
-
-/// 变量名参数所属节点：环境变量与脚本变量共用同一名称正则与错误文案
-/// （与 `GraphValidator` 的同名规则保持同集合）。
-const Set<String> _variableNameTypes = <String>{
-  'context.environment',
-  'variable.setNumber',
-  'variable.getNumber',
-  'variable.setString',
-  'variable.getString',
-};
 
 final RegExp _namePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
@@ -46,7 +37,6 @@ class NodeInspector extends StatefulWidget {
     this.controller,
     required this.pack,
     this.packagePaths,
-    this.nodeTypeResolver,
     this.onSelectProject,
     this.onRenameProject,
     this.onTriggerChanged,
@@ -63,11 +53,6 @@ class NodeInspector extends StatefulWidget {
   /// 包内路径建议（`build/native/` 相对）；null 时由
   /// `NuGetPackageBuilder().buildPlan(pack)` 计算并剥离该前缀。
   final List<String>? packagePaths;
-
-  /// 节点类型描述符解析器；null 时按 [NodeRegistry.byType] 解析。
-  /// 测试可注入合成描述符（`scriptFilePath` / `textLines` 暂无注册载体，
-  /// 以合成类型验证控件渲染与写回）。
-  final ScriptNodeTypeDescriptor? Function(String typeKey)? nodeTypeResolver;
 
   final ValueChanged<ScriptProjectModel>? onSelectProject;
 
@@ -188,12 +173,6 @@ class _NodeInspectorState extends State<NodeInspector> {
     _loadPackagePaths();
   }
 
-  ScriptNodeTypeDescriptor? _descriptorOf(String typeKey) {
-    final ScriptNodeTypeDescriptor? Function(String)? resolver =
-        widget.nodeTypeResolver;
-    return resolver != null ? resolver(typeKey) : NodeRegistry.byType(typeKey);
-  }
-
   /// `scriptFilePath` 建议项：仅保留脚本扩展名（与「从包中选择脚本」
   /// 共享 [scriptFileExtensions]）；生成脚本 `files/scripts/*.ps1` 同为
   /// `.ps1`，按统一规则保留。
@@ -297,7 +276,7 @@ class _NodeInspectorState extends State<NodeInspector> {
   }
 
   List<Widget> _buildNodeMode(ScriptNodeModel node) {
-    final ScriptNodeTypeDescriptor? descriptor = _descriptorOf(node.type);
+    final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(node.type);
     final List<ScriptParamDescriptor> params =
         descriptor?.params ?? const <ScriptParamDescriptor>[];
     return <Widget>[
@@ -607,7 +586,7 @@ class _NodeInspectorState extends State<NodeInspector> {
     ScriptParamDescriptor param,
     Object? value,
   ) {
-    if (param.key != 'name' || !_variableNameTypes.contains(node.type)) {
+    if (param.key != 'name' || !variableNameNodeTypes.contains(node.type)) {
       return null;
     }
     if (value is String && _namePattern.hasMatch(value)) {

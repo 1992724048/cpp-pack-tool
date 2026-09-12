@@ -898,7 +898,7 @@ void main() {
     expect(exportCalls, 0);
   });
 
-  testWidgets('脚本校验无问题时直接打开导出对话框', (tester) async {
+  testWidgets('导出校验无问题时直接打开导出对话框', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
     );
@@ -930,7 +930,7 @@ void main() {
     expect(exportCalls, 1);
   });
 
-  testWidgets('脚本校验发现问题时弹窗，继续后打开导出对话框', (tester) async {
+  testWidgets('导出校验发现问题时弹窗，继续后打开导出对话框', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -990,7 +990,7 @@ void main() {
     expect(exportCalls, 1);
   });
 
-  testWidgets('脚本校验发现问题时取消则不打开导出对话框', (tester) async {
+  testWidgets('导出校验发现问题时取消则不打开导出对话框', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -1102,6 +1102,74 @@ void main() {
 
     expect(dialog, findsNothing);
     expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportCalls, 1);
+  });
+
+  testWidgets('NuGet 格式脚本问题与 exe 警告合并展示且可继续', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          scripts: <ScriptProjectModel>[_brokenScript()],
+          files: <FileModel>[
+            FileModel(name: 'tool.exe', path: 'bin/tool.exe', size: 64),
+          ],
+        ),
+      ],
+    );
+    int exportCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
+    expect(dialog, findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('坏脚本')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('build/native/files/bin/tool.exe'),
+      ),
+      findsOneWidget,
+    );
+    // 两类问题并存时仍展示供应链提示
+    expect(
+      find.descendant(
+        of: dialog,
+        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+      ),
+      findsOneWidget,
+    );
+    expect(exportCalls, 0);
+
+    await tester.tap(find.byKey(const Key('packagingIssuesContinueButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(dialog, findsNothing);
     expect(exportCalls, 1);
   });
 

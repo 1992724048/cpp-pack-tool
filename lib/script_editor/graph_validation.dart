@@ -3,7 +3,7 @@ import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
-import 'package:flutter/foundation.dart';
+import 'package:cpp_nuget_pack/script_editor/variable_rules.dart';
 
 const String _branchTypeKey = 'flow.branch';
 const Set<String> _logLevels = <String>{'info', 'warn', 'error'};
@@ -38,14 +38,6 @@ const Set<String> _hashAlgorithms = <String>{
   'crc32',
 };
 
-/// 变量节点 typeKey → 类型变体（number|string）；参数级名称正则与节点级
-/// 「同名同类型」规则共用，首个出现节点的变体为准（与生成器首见初始化一致）。
-const Map<String, String> _variableVariants = <String, String>{
-  'variable.setNumber': 'number',
-  'variable.getNumber': 'number',
-  'variable.setString': 'string',
-  'variable.getString': 'string',
-};
 const String _variableNameFormatError = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
 final RegExp _namePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
@@ -186,7 +178,7 @@ class GraphValidator {
           return null;
         }
         final bool isEnvironment = descriptor.typeKey == 'context.environment';
-        final bool isVariable = _variableVariants.containsKey(
+        final bool isVariable = variableTypeVariants.containsKey(
           descriptor.typeKey,
         );
         if (!isEnvironment && !isVariable) {
@@ -207,19 +199,6 @@ class GraphValidator {
         }
         return '参数「${param.label}」的值「$value」必须为数字';
     }
-  }
-
-  /// 参数级校验的测试入口（`validate` 内部经 [_paramErrorMessage] 分派）。
-  ///
-  /// `scriptFilePath` / `textLines` 的载体节点注册在后续任务（M4.4 T2/T3），
-  /// 测试经此以合成描述符直接验证单参数规则。
-  @visibleForTesting
-  static String? paramErrorMessage(
-    ScriptNodeTypeDescriptor descriptor,
-    ScriptParamDescriptor param,
-    Object? value,
-  ) {
-    return _paramErrorMessage(descriptor, param, value);
   }
 
   /// 节点级参数规则：注册表参数声明无法表达的规则（AES 口令二选一、
@@ -265,7 +244,7 @@ class GraphValidator {
       if (descriptor == null) {
         continue;
       }
-      final String? variant = _variableVariants[descriptor.typeKey];
+      final String? variant = variableTypeVariants[descriptor.typeKey];
       if (variant == null) {
         continue;
       }
