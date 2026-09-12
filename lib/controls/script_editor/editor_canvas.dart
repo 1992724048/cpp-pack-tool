@@ -319,8 +319,9 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   /// 模型视口被外部直接写入时（页面防抖写回等），同步到变换矩阵。
   ///
-  /// T9 诊断居中只改写注入的 [TransformationController]（不回写模型），
-  /// 不经此路径。以「模型值 vs 上次同步缓存」判断，而非与当前矩阵比较：
+  /// T9 诊断居中只直接改写注入的 [TransformationController]；模型写回由页面
+  /// 防抖完成，届时仍经此比对（矩阵与模型一致，故无视觉变化）。以「模型值 vs
+  /// 上次同步缓存」判断，而非与当前矩阵比较：
   /// fling 的 `onInteractionEnd` 在惯性动画开始前触发，惯性会令矩阵领先于
   /// 模型，与矩阵比较会把惯性终点误判为外部改写并把视口回跳。
   void _syncViewportFromProject(ScriptProjectModel project) {

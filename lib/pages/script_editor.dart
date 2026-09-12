@@ -606,6 +606,8 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   }
 
   /// 激活项目：无控制器时创建（含可选入口节点），否则免脏加载后追加入口节点。
+  ///
+  /// 激活前先收口视口防抖，避免矩阵尾段变更（fling 惯性终点等）随切换丢失。
   Future<void> _activateScriptProject(
     ScriptProjectModel project, {
     bool addEntryNode = false,
@@ -614,6 +616,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     if (!mounted) {
       return;
     }
+    _flushViewportWriteBack();
     final GraphEditorController? controller = _controller;
     if (controller == null) {
       final GraphEditorController created = GraphEditorController(project);
@@ -633,11 +636,14 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   }
 
   /// 移除列表项并调整选择：保持索引位、越界回退末项、空列表回空态。
+  ///
+  /// 移除前先收口视口防抖，删除/新建与切换统一收口（矩阵尾段变更不随操作丢失）。
   Future<void> _removeScriptAt(int index) async {
     await _settleFocusBeforeProjectChange();
     if (!mounted) {
       return;
     }
+    _flushViewportWriteBack();
     final List<ScriptProjectModel> scripts = _scripts;
     final GraphEditorController? controller = _controller;
     scripts.removeAt(index);
@@ -661,13 +667,26 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   }
 
   /// 免脏加载：`loadProject` 的选中清空/诊断重算通知不视为编辑。
+  ///
+  /// [preserveSelection] 为 true 时加载后恢复原选中（节点/连线仍在时）：
+  /// 元数据变更（重命名/触发/构建标签）不改变图，不应打断编辑焦点。
   void _loadScriptProject(
     GraphEditorController controller,
-    ScriptProjectModel project,
-  ) {
+    ScriptProjectModel project, {
+    bool preserveSelection = false,
+  }) {
+    final String? selectedNodeId = controller.selectedNodeId;
+    final ScriptEdgeModel? selectedEdge = controller.selectedEdge;
     _suppressSaveMark = true;
     try {
       controller.loadProject(project);
+      if (preserveSelection) {
+        if (selectedNodeId != null) {
+          controller.selectNode(selectedNodeId);
+        } else if (selectedEdge != null) {
+          controller.selectEdge(selectedEdge);
+        }
+      }
     } finally {
       _suppressSaveMark = false;
     }
@@ -675,12 +694,17 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
 
   /// 替换列表中项目实例（名称/触发/构建配置不可变，需全字段拷贝）；
   /// 无实际变化或找不到时返回 null。当前项目同步免脏加载。
+  ///
+  /// 替换前先收口视口防抖（同切换路径），避免矩阵领先模型时（fling 惯性期/
+  /// T9 居中防抖窗）免脏加载把矩阵重置回陈旧模型造成回跳与尾段变更丢失；
+  /// 免脏加载恢复原选中，元数据变更不打断编辑焦点。
   ScriptProjectModel? _replaceScriptProject(
     ScriptProjectModel project, {
     String? name,
     ScriptTrigger? trigger,
     BuildModel? buildModel,
   }) {
+    _flushViewportWriteBack();
     if ((name == null || name == project.name) &&
         (trigger == null || trigger == project.trigger) &&
         (buildModel == null || buildModel == project.buildModel)) {
@@ -699,7 +723,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     setState(() => _scripts[index] = updated);
     final GraphEditorController? controller = _controller;
     if (controller != null && identical(controller.project, project)) {
-      _loadScriptProject(controller, updated);
+      _loadScriptProject(controller, updated, preserveSelection: true);
     }
     return updated;
   }

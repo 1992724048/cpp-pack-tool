@@ -898,6 +898,84 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('矩阵领先模型时元数据变更先收口视口且不回跳', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _packWithScript(),
+      debounce: const Duration(seconds: 5),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    // 视口防抖窗内矩阵领先模型（等价于 fling 惯性期 / T9 居中尾段）。
+    final TransformationController transformation = _editorTransformation(
+      tester,
+    );
+    transformation.value = Matrix4.identity()
+      ..translateByDouble(120, 80, 0, 1)
+      ..scaleByDouble(1, 1, 1, 1);
+    await tester.pump();
+
+    // 防抖未到点即触发元数据变更（切换触发时机）。
+    await _selectCombo(
+      tester,
+      find.byKey(const Key('inspectorProjectTrigger')),
+      '编译后',
+    );
+
+    // 矩阵未被免脏加载回跳到陈旧模型值。
+    expect(transformation.value.storage[12], closeTo(120, 1e-9));
+    expect(transformation.value.storage[13], closeTo(80, 1e-9));
+    expect(transformation.value.getMaxScaleOnAxis(), closeTo(1, 1e-9));
+
+    // 尾段视口随保存写盘，未被静默丢弃。
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    await tester.pump();
+    expect(saved, isNotEmpty);
+    expect(saved.last.scripts.single.trigger, ScriptTrigger.post);
+    expect(saved.last.scripts.single.viewX, closeTo(120, 1e-9));
+    expect(saved.last.scripts.single.viewY, closeTo(80, 1e-9));
+    expect(saved.last.scripts.single.viewScale, closeTo(1, 1e-9));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('元数据变更（重命名）保留节点选中', (tester) async {
+    final List<PackModel> saved = <PackModel>[];
+    await _pumpEditor(
+      tester,
+      _fullPackWithTextNode(),
+      debounce: const Duration(milliseconds: 20),
+      onSave: (PackModel updated) async {
+        saved.add(updated);
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('nodeCard_n1')));
+    await tester.pump();
+    expect(find.byKey(const Key('inspectorField_value')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('renameScriptButton')));
+    await _pumpDialogTransition(tester);
+    await tester.enterText(
+      find.byKey(const Key('renameScriptProjectNameField')),
+      '生成版本头',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('renameScriptProjectConfirmButton')));
+    await _pumpDialogTransition(tester);
+    await tester.pump(const Duration(milliseconds: 25));
+    await tester.pump();
+
+    expect(saved.last.scripts.single.name, '生成版本头');
+    expect(find.byKey(const Key('inspectorField_value')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('返回前收口视口防抖：矩阵尾段变更写回后再 pop', (tester) async {
     final List<PackModel> saved = <PackModel>[];
     await _pumpEditorInRoute(
