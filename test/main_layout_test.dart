@@ -8,6 +8,7 @@ import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/packaging/cmake_exporter.dart' as cmake_exporter;
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
@@ -897,6 +898,137 @@ void main() {
     expect(exportCalls, 0);
   });
 
+  testWidgets('脚本校验无问题时直接打开导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
+    );
+    int exportCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportCalls, 1);
+  });
+
+  testWidgets('脚本校验发现问题时弹窗，继续后打开导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          scripts: <ScriptProjectModel>[_brokenScript()],
+        ),
+      ],
+    );
+    int exportCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
+    expect(dialog, findsOneWidget);
+    expect(find.text('脚本校验'), findsOneWidget);
+    expect(
+      find.descendant(of: dialog, matching: find.text('坏脚本')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+    expect(exportCalls, 0);
+
+    await tester.tap(find.byKey(const Key('packagingIssuesContinueButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(dialog, findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportCalls, 1);
+  });
+
+  testWidgets('脚本校验发现问题时取消则不打开导出对话框', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          scripts: <ScriptProjectModel>[_brokenScript()],
+        ),
+      ],
+    );
+    int exportCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportCalls++;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 1,
+          packageSize: 64,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
+    expect(dialog, findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('packagingIssuesCancelButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(dialog, findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+    expect(exportCalls, 0);
+  });
+
   testWidgets('选择 CMake 格式后打包调用 CMake 导出器', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
@@ -1409,6 +1541,7 @@ PackModel _pack(
   List<FileModel>? files,
   List<DependencyModel>? dependencies,
   List<HistoryModel>? history,
+  List<ScriptProjectModel>? scripts,
 }) {
   final PackModel pack = PackModel(
     name: name,
@@ -1425,8 +1558,18 @@ PackModel _pack(
   if (history != null) {
     pack.history.addAll(history);
   }
+  if (scripts != null) {
+    pack.scripts.addAll(scripts);
+  }
   return pack;
 }
+
+/// 无节点脚本：图校验必然报错，用于导出前校验三态测试。
+ScriptProjectModel _brokenScript() => ScriptProjectModel(
+  id: 'script_1',
+  name: '坏脚本',
+  trigger: ScriptTrigger.pre,
+);
 
 Finder _pageSurface(WidgetTester tester) {
   final Color cardColor = FluentTheme.of(tester.element(find.byType(Setting)))

@@ -260,3 +260,17 @@ class ScriptPackaging {
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&apos;');
 }
+
+/// 导出前校验：逐脚本编译问题（与 [ScriptPackaging.build] 同口径）与包内路径重复。
+///
+/// 编译问题不抛出（生成器异常已由 [ScriptPackaging.build] 转为问题）；
+/// 重复项 label 为「包内路径」，message 含具体路径。
+List<PackagingIssue> collectPackagingIssues(PackModel pack, PackagePlan plan) {
+  final List<PackagingIssue> issues = <PackagingIssue>[
+    ...const ScriptPackaging().build(pack, hasRuntimeBinaries: false).issues,
+  ];
+  for (final String path in duplicatePackagePaths(plan)) {
+    issues.add(PackagingIssue(label: '包内路径', message: '包内路径重复：$path'));
+  }
+  return List<PackagingIssue>.unmodifiable(issues);
+}

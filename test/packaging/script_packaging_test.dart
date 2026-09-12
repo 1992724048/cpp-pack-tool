@@ -431,6 +431,68 @@ void main() {
       );
     });
   });
+
+  group('导出前校验', () {
+    test('合并脚本编译问题与包内路径重复问题', () {
+      final PackModel pack = _pack()
+        ..scripts = <ScriptProjectModel>[_script('script_1', '坏脚本')];
+      final PackagePlan plan = PackagePlan(
+        entries: <PackageEntry>[
+          PackageEntry(
+            packagePath: 'build/native/files/a.h',
+            source: const PackageFileSource(
+              path: 'a.h',
+              isBinary: false,
+              size: 1,
+            ),
+          ),
+          PackageEntry(
+            packagePath: 'build/native/files/scripts/script_1.ps1',
+            source: const PackageGeneratedSource(content: 'code'),
+          ),
+          PackageEntry(
+            packagePath: 'BUILD/NATIVE/FILES/A.H',
+            source: const PackageFileSource(
+              path: 'A.H',
+              isBinary: false,
+              size: 1,
+            ),
+          ),
+        ],
+      );
+
+      final List<PackagingIssue> issues = collectPackagingIssues(pack, plan);
+
+      expect(issues, hasLength(2));
+      expect(issues[0].label, '坏脚本');
+      expect(
+        issues[0].message,
+        '脚本编译失败（共 1 个错误）：脚本必须恰好有一个「开始」节点，当前没有入口节点',
+      );
+      expect(issues[1].label, '包内路径');
+      // 计划按大小写不敏感排序，BUILD... 在 build... 之前，报首次出现的原样路径
+      expect(issues[1].message, '包内路径重复：BUILD/NATIVE/FILES/A.H');
+    });
+
+    test('无编译问题且无重复路径时返回空列表', () {
+      final PackModel pack = _pack()
+        ..scripts = <ScriptProjectModel>[_validGraph()];
+      final PackagePlan plan = PackagePlan(
+        entries: <PackageEntry>[
+          PackageEntry(
+            packagePath: 'build/native/files/scripts/script_1.ps1',
+            source: const PackageGeneratedSource(content: 'code'),
+          ),
+          PackageEntry(
+            packagePath: 'demo.nuspec',
+            source: const PackageGeneratedSource(content: 'nuspec'),
+          ),
+        ],
+      );
+
+      expect(collectPackagingIssues(pack, plan), isEmpty);
+    });
+  });
 }
 
 ScriptProjectModel _validGraph() {

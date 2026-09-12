@@ -8,6 +8,8 @@ import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/packaging/cmake_exporter.dart' as cmake_exporter;
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
+import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -25,6 +27,7 @@ import 'controls/missing_dependencies_dialog.dart';
 import 'controls/pack_export_dialog.dart';
 import 'controls/pack_history_dialog.dart';
 import 'controls/pack_list.dart';
+import 'controls/packaging_issues_dialog.dart';
 import 'controls/remap_pack_dialog.dart';
 import 'pages/about.dart';
 import 'pages/setting.dart';
@@ -130,6 +133,7 @@ class MainLayout extends StatefulWidget {
 }
 
 class _MainLayoutState extends State<MainLayout> {
+  static const String _nugetBuilderId = 'nuget';
   static const String _cmakeBuilderId = 'cmake';
 
   List<PackModel> _packs = [];
@@ -447,6 +451,21 @@ class _MainLayoutState extends State<MainLayout> {
         return;
       }
     }
+    if (_packagingBuilder.id == _nugetBuilderId) {
+      final List<PackagingIssue> issues = await _collectPackagingIssues(pack);
+      if (!mounted) {
+        return;
+      }
+      if (issues.isNotEmpty) {
+        final bool proceed = await showPackagingIssuesDialog(
+          context,
+          issues: issues,
+        );
+        if (!proceed || !mounted) {
+          return;
+        }
+      }
+    }
     final Future<PackageExportResult> Function(
       PackModel pack,
       String outputDirectory,
@@ -463,6 +482,16 @@ class _MainLayoutState extends State<MainLayout> {
         onExported: (PackageExportResult result) => _recordExport(pack, result),
       ),
     );
+  }
+
+  Future<List<PackagingIssue>> _collectPackagingIssues(PackModel pack) async {
+    try {
+      final PackagePlan plan = await _packagingBuilder.buildPlan(pack);
+      return collectPackagingIssues(pack, plan);
+    } catch (_) {
+      // 校验期构建计划失败不阻断导出：导出对话框会以实际错误提示用户
+      return const <PackagingIssue>[];
+    }
   }
 
   List<PackDependent> _missingDependencies(PackModel pack) {

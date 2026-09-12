@@ -57,6 +57,24 @@ class PackagePlan {
   }
 }
 
+/// 包内路径重复项（大小写不敏感）：按 [PackagePlan.entries] 顺序返回每组首次出现的
+/// 原样路径，同组只报一次；无重复时为空列表。
+List<String> duplicatePackagePaths(PackagePlan plan) {
+  final Map<String, String> firstPathByKey = <String, String>{};
+  final Set<String> reportedKeys = <String>{};
+  final List<String> duplicates = <String>[];
+  for (final PackageEntry entry in plan.entries) {
+    final String key = entry.packagePath.toLowerCase();
+    final String? firstPath = firstPathByKey[key];
+    if (firstPath == null) {
+      firstPathByKey[key] = entry.packagePath;
+    } else if (reportedKeys.add(key)) {
+      duplicates.add(firstPath);
+    }
+  }
+  return List<String>.unmodifiable(duplicates);
+}
+
 int comparePackagePathsByEntry(PackageEntry first, PackageEntry second) =>
     comparePackagePaths(first.packagePath, second.packagePath);
 
