@@ -8,6 +8,7 @@ import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
@@ -50,9 +51,15 @@ class NuGetPackageBuilder implements PackageBuilder {
       );
     }
 
+    final ScriptPackagingResult scriptResult = const ScriptPackaging().build(
+      pack,
+      hasRuntimeBinaries: _hasRuntimeBinaries(fileEntries),
+    );
+
     return PackagePlan(
       entries: <PackageEntry>[
         ...fileEntries,
+        ...scriptResult.entries,
         PackageEntry(
           packagePath: '${pack.name}.nuspec',
           source: PackageGeneratedSource(content: _nuspecContent(pack)),
@@ -60,7 +67,11 @@ class NuGetPackageBuilder implements PackageBuilder {
         PackageEntry(
           packagePath: '$_buildNative/${pack.name}.targets',
           source: PackageGeneratedSource(
-            content: _targetsContent(pack, fileEntries),
+            content: _targetsContent(
+              pack,
+              fileEntries,
+              scriptResult.targetsFragment,
+            ),
           ),
         ),
       ],
@@ -92,6 +103,22 @@ class NuGetPackageBuilder implements PackageBuilder {
     FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
     _ => false,
   };
+
+  /// 与 `_targetsContent` 运行时二进制分组同一判定口径：`lib/` 下 dll/pdb。
+  static bool _hasRuntimeBinaries(List<PackageEntry> fileEntries) {
+    for (final PackageEntry entry in fileEntries) {
+      final String? relative = buildNativeRelativePath(entry.packagePath);
+      if (relative != null && _isRuntimeBinary(relative.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _isRuntimeBinary(String relativeLowerPath) =>
+      relativeLowerPath.startsWith('lib/') &&
+      (relativeLowerPath.endsWith('.dll') ||
+          relativeLowerPath.endsWith('.pdb'));
 
   static String _normalizePath(String path) => path
       .split(_pathSeparator)
@@ -181,6 +208,7 @@ class NuGetPackageBuilder implements PackageBuilder {
   static String _targetsContent(
     PackModel pack,
     List<PackageEntry> fileEntries,
+    String scriptTargetsFragment,
   ) {
     final _BuildValueGroup macros = _BuildValueGroup();
     for (final MacroModel macro in pack.macros) {
@@ -215,8 +243,7 @@ class NuGetPackageBuilder implements PackageBuilder {
         asmFiles.add(relative);
       } else if (lower.startsWith('files/') && lower.endsWith('.rc')) {
         resourceFiles.add(relative);
-      } else if (lower.startsWith('lib/') &&
-          (lower.endsWith('.dll') || lower.endsWith('.pdb'))) {
+      } else if (_isRuntimeBinary(lower)) {
         runtimeBinaries.add(
           _msbuildPath(relative),
           _buildModelOf(relative),
@@ -260,6 +287,9 @@ class NuGetPackageBuilder implements PackageBuilder {
     _writeResourceItems(buffer, resourceFiles);
     _writeRuntimeBinaryItems(buffer, runtimeBinaries);
     _writeDeployTarget(buffer, runtimeBinaries);
+    if (scriptTargetsFragment.isNotEmpty) {
+      buffer.write(scriptTargetsFragment);
+    }
     buffer.writeln('</Project>');
     return buffer.toString();
   }
@@ -273,7 +303,7 @@ class NuGetPackageBuilder implements PackageBuilder {
     if (!lower.endsWith('.lib') || !lower.startsWith('$_libPrefix/')) {
       return;
     }
-    final String relative = packagePath.substring(_buildNative.length + 1);
+    final String relative = buildNativeRelativePath(packagePath)!;
     final String relativeDirectory = relative.substring(
       0,
       relative.lastIndexOf('/'),

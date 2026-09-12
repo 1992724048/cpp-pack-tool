@@ -8,6 +8,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -710,6 +711,109 @@ void main() {
     });
   });
 
+  group('节点脚本', () {
+    test('有效脚本生成 .ps1 条目且包内路径无重复', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ]
+        ..scripts = <ScriptProjectModel>[
+          _validScript('script_1'),
+          _validScript('script_2', trigger: ScriptTrigger.post),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final List<String> paths = plan.entries
+          .map((PackageEntry entry) => entry.packagePath)
+          .toList();
+
+      expect(
+        paths.where((String path) => path.endsWith('.ps1')).toList(),
+        <String>[
+          'build/native/files/scripts/script_1.ps1',
+          'build/native/files/scripts/script_2.ps1',
+        ],
+      );
+      expect(paths.toSet().length, paths.length);
+    });
+
+    test('targets 末尾追加 pre/post Target、Exec 与环境变量', () async {
+      final PackModel pack = _pack()
+        ..scripts = <ScriptProjectModel>[
+          _validScript('script_1'),
+          _validScript('script_2', trigger: ScriptTrigger.post),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpScripts_demo_89e495e7_Pre" BeforeTargets="PreBuildEvent">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpScripts_demo_89e495e7_Post" AfterTargets="Build">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass '
+          '-File &quot;\$(MSBuildThisFileDirectory)files\\scripts\\'
+          'script_1.ps1&quot;',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          'EnvironmentVariables="CNP_PackageRoot=\$(MSBuildThisFileDirectory)"',
+        ),
+      );
+      expect(targets, contains('IgnoreStandardErrorWarningFormat="true"'));
+      expect(
+        targets.indexOf('</Project>'),
+        greaterThan(targets.indexOf('CnpScripts_demo_89e495e7_Post')),
+      );
+    });
+
+    test('含运行库时 post Target 挂载到运行时部署目标之后', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 10),
+        ]
+        ..scripts = <ScriptProjectModel>[
+          _validScript('script_1', trigger: ScriptTrigger.post),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpScripts_demo_89e495e7_Post" '
+          'AfterTargets="DeployPkgRuntimeBinaries">',
+        ),
+      );
+    });
+
+    test('无脚本时不生成脚本条目与 Target 片段', () async {
+      final PackagePlan plan = await _builder.buildPlan(_pack());
+      final String targets = _targetsOf(plan);
+
+      expect(
+        plan.entries.where(
+          (PackageEntry entry) => entry.packagePath.endsWith('.ps1'),
+        ),
+        isEmpty,
+      );
+      expect(targets, isNot(contains('CnpScripts_')));
+      expect(targets, isNot(contains('<Exec')));
+    });
+  });
+
   group('计划', () {
     test('包内条目按大小写不敏感路径确定性排序', () async {
       final PackModel pack = _pack()
@@ -774,6 +878,35 @@ PackModel _pack({
     license: license,
     sourcePath: sourcePath,
   );
+}
+
+ScriptProjectModel _validScript(
+  String id, {
+  ScriptTrigger trigger = ScriptTrigger.pre,
+  BuildModel buildModel = BuildModel.all,
+}) {
+  final ScriptProjectModel project = ScriptProjectModel(
+    id: id,
+    name: '脚本 $id',
+    trigger: trigger,
+    buildModel: buildModel,
+  );
+  project.nodes = <ScriptNodeModel>[
+    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
+    ScriptNodeModel(id: 'n2', type: 'value.text')..params['value'] = '你好',
+    ScriptNodeModel(id: 'n3', type: 'log.message'),
+  ];
+  project.edges = <ScriptEdgeModel>[
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
+      to: ScriptEdgeEndpoint(node: 'n3', pin: 'exec'),
+    ),
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n2', pin: 'result'),
+      to: ScriptEdgeEndpoint(node: 'n3', pin: 'message'),
+    ),
+  ];
+  return project;
 }
 
 String _packagePathOf(PackagePlan plan, String sourcePath) {

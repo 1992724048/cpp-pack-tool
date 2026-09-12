@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -111,6 +112,28 @@ void main() {
     expect(
       _textOf(archive, 'build/native/demo.targets'),
       contains('MSBuildThisFileDirectory'),
+    );
+  });
+
+  test('含脚本包导出 .ps1（单次 BOM）且 Content_Types 覆盖 ps1', () async {
+    final String source = joinPath(root.path, 'source');
+    final PackModel pack = _pack(sourcePath: source)
+      ..scripts = <ScriptProjectModel>[_validScript()];
+
+    final Archive archive = await _exportAndDecode(root, pack);
+    const String scriptPath = 'build/native/files/scripts/script_1.ps1';
+
+    expect(
+      archive.files.any((ArchiveFile file) => file.name == scriptPath),
+      isTrue,
+    );
+    final List<int> bytes = _bytesOf(archive, scriptPath);
+    expect(bytes.length, greaterThan(3));
+    expect(bytes.sublist(0, 3), <int>[0xEF, 0xBB, 0xBF]);
+    expect(_countBomOccurrences(bytes), 1);
+    expect(
+      _textOf(archive, _contentTypesPath),
+      contains('<Default Extension="ps1" ContentType="application/octet" />'),
     );
   });
 
@@ -373,3 +396,39 @@ String _textOf(Archive archive, String name) =>
 
 List<int> _bytesOf(Archive archive, String name) =>
     archive.files.firstWhere((ArchiveFile file) => file.name == name).content;
+
+ScriptProjectModel _validScript() {
+  final ScriptProjectModel project = ScriptProjectModel(
+    id: 'script_1',
+    name: '脚本 1',
+    trigger: ScriptTrigger.pre,
+  );
+  project.nodes = <ScriptNodeModel>[
+    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
+    ScriptNodeModel(id: 'n2', type: 'value.text')..params['value'] = '你好',
+    ScriptNodeModel(id: 'n3', type: 'log.message'),
+  ];
+  project.edges = <ScriptEdgeModel>[
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
+      to: ScriptEdgeEndpoint(node: 'n3', pin: 'exec'),
+    ),
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n2', pin: 'result'),
+      to: ScriptEdgeEndpoint(node: 'n3', pin: 'message'),
+    ),
+  ];
+  return project;
+}
+
+int _countBomOccurrences(List<int> bytes) {
+  int count = 0;
+  for (int index = 0; index + 2 < bytes.length; index++) {
+    if (bytes[index] == 0xEF &&
+        bytes[index + 1] == 0xBB &&
+        bytes[index + 2] == 0xBF) {
+      count++;
+    }
+  }
+  return count;
+}
