@@ -25,6 +25,10 @@ enum ScriptParamType {
   stringOperator,
   packageFilePath,
   number,
+  mathOperator,
+  bitwiseOperator,
+  numberOperator,
+  hashAlgorithm,
 }
 
 class ScriptPinDescriptor {

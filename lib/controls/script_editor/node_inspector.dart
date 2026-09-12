@@ -8,6 +8,7 @@ import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
 import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
+import 'package:cpp_nuget_pack/script_editor/node_value_display.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
@@ -23,18 +24,6 @@ const String _noMatchingPathHint = '无匹配路径，将按手填内容使用';
 const String _emptyProjectHint = '请先新建脚本项目';
 const String _noParamHint = '该节点没有可编辑参数';
 
-const Map<String, String> _logLevelOptions = <String, String>{
-  'info': '信息',
-  'warn': '警告',
-  'error': '错误',
-};
-
-const Map<String, String> _stringOperatorOptions = <String, String>{
-  'eq': '等于',
-  'ne': '不等于',
-  'contains': '包含',
-};
-
 /// 右侧检查器面板（视觉规范 §6）：有选中节点 → 节点属性；无选中 → 项目属性。
 ///
 /// 节点参数按注册表声明序渲染并按 [ScriptParamType] 选择控件，编辑即时经
@@ -46,6 +35,7 @@ class NodeInspector extends StatefulWidget {
     this.controller,
     required this.pack,
     this.packagePaths,
+    this.extraTypes = const <ScriptNodeTypeDescriptor>[],
     this.onSelectProject,
     this.onRenameProject,
     this.onTriggerChanged,
@@ -62,6 +52,9 @@ class NodeInspector extends StatefulWidget {
   /// 包内路径建议（`build/native/` 相对）；null 时由
   /// `NuGetPackageBuilder().buildPlan(pack)` 计算并剥离该前缀。
   final List<String>? packagePaths;
+
+  /// 额外节点类型（同键优先于注册表；测试注入用，默认空）。
+  final List<ScriptNodeTypeDescriptor> extraTypes;
 
   final ValueChanged<ScriptProjectModel>? onSelectProject;
 
@@ -264,7 +257,7 @@ class _NodeInspectorState extends State<NodeInspector> {
   }
 
   List<Widget> _buildNodeMode(ScriptNodeModel node) {
-    final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(node.type);
+    final ScriptNodeTypeDescriptor? descriptor = _resolveDescriptor(node.type);
     final List<ScriptParamDescriptor> params =
         descriptor?.params ?? const <ScriptParamDescriptor>[];
     return <Widget>[
@@ -282,6 +275,15 @@ class _NodeInspectorState extends State<NodeInspector> {
             child: _buildParamField(node, param),
           ),
     ];
+  }
+
+  ScriptNodeTypeDescriptor? _resolveDescriptor(String typeKey) {
+    for (final ScriptNodeTypeDescriptor type in widget.extraTypes) {
+      if (type.typeKey == typeKey) {
+        return type;
+      }
+    }
+    return NodeRegistry.byType(typeKey);
   }
 
   Widget _buildNodeHeader(
@@ -415,7 +417,7 @@ class _NodeInspectorState extends State<NodeInspector> {
           _buildOptionComboBox(
             param: param,
             value: value,
-            options: _logLevelOptions,
+            options: logLevelLabels,
             onSelected: (String next) => _writeParam(node, param.key, next),
           ),
         );
@@ -425,7 +427,47 @@ class _NodeInspectorState extends State<NodeInspector> {
           _buildOptionComboBox(
             param: param,
             value: value,
-            options: _stringOperatorOptions,
+            options: stringOperatorLabels,
+            onSelected: (String next) => _writeParam(node, param.key, next),
+          ),
+        );
+      case ScriptParamType.mathOperator:
+        return _denseComboBox(
+          context,
+          _buildOptionComboBox(
+            param: param,
+            value: value,
+            options: mathOperatorLabels,
+            onSelected: (String next) => _writeParam(node, param.key, next),
+          ),
+        );
+      case ScriptParamType.bitwiseOperator:
+        return _denseComboBox(
+          context,
+          _buildOptionComboBox(
+            param: param,
+            value: value,
+            options: bitwiseOperatorLabels,
+            onSelected: (String next) => _writeParam(node, param.key, next),
+          ),
+        );
+      case ScriptParamType.numberOperator:
+        return _denseComboBox(
+          context,
+          _buildOptionComboBox(
+            param: param,
+            value: value,
+            options: numberOperatorLabels,
+            onSelected: (String next) => _writeParam(node, param.key, next),
+          ),
+        );
+      case ScriptParamType.hashAlgorithm:
+        return _denseComboBox(
+          context,
+          _buildOptionComboBox(
+            param: param,
+            value: value,
+            options: hashAlgorithmLabels,
             onSelected: (String next) => _writeParam(node, param.key, next),
           ),
         );

@@ -7,10 +7,49 @@ import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 const String _branchTypeKey = 'flow.branch';
 const Set<String> _logLevels = <String>{'info', 'warn', 'error'};
 const Set<String> _stringOperators = <String>{'eq', 'ne', 'contains'};
+const Set<String> _mathOperators = <String>{
+  'add',
+  'subtract',
+  'multiply',
+  'divide',
+  'modulo',
+};
+const Set<String> _bitwiseOperators = <String>{
+  'and',
+  'or',
+  'xor',
+  'shiftLeft',
+  'shiftRight',
+};
+const Set<String> _numberOperators = <String>{
+  'lt',
+  'le',
+  'gt',
+  'ge',
+  'eq',
+  'ne',
+};
+const Set<String> _hashAlgorithms = <String>{
+  'sha256',
+  'sha1',
+  'sha512',
+  'md5',
+  'crc32',
+};
 final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
 class GraphValidator {
-  static List<ScriptDiagnostic> validate(ScriptProjectModel project) {
+  /// [extraTypes] 为额外节点类型（同键优先于 [NodeRegistry]，测试注入用）。
+  static List<ScriptDiagnostic> validate(
+    ScriptProjectModel project, {
+    List<ScriptNodeTypeDescriptor> extraTypes =
+        const <ScriptNodeTypeDescriptor>[],
+  }) {
+    final Map<String, ScriptNodeTypeDescriptor> extraByType =
+        <String, ScriptNodeTypeDescriptor>{
+          for (final ScriptNodeTypeDescriptor type in extraTypes)
+            type.typeKey: type,
+        };
     final List<ScriptDiagnostic> diagnostics = <ScriptDiagnostic>[];
     final Set<String> nodeIds = <String>{
       for (final ScriptNodeModel node in project.nodes) node.id,
@@ -18,9 +57,8 @@ class GraphValidator {
     final Map<String, ScriptNodeTypeDescriptor> descriptorById =
         <String, ScriptNodeTypeDescriptor>{};
     for (final ScriptNodeModel node in project.nodes) {
-      final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(
-        node.type,
-      );
+      final ScriptNodeTypeDescriptor? descriptor =
+          extraByType[node.type] ?? NodeRegistry.byType(node.type);
       if (descriptor == null) {
         diagnostics.add(
           ScriptDiagnostic(
@@ -107,6 +145,26 @@ class GraphValidator {
           return null;
         }
         return '参数「${param.label}」的值「$value」非法，应为 eq / ne / contains';
+      case ScriptParamType.mathOperator:
+        if (value is String && _mathOperators.contains(value)) {
+          return null;
+        }
+        return '参数「${param.label}」的值「$value」非法，应为 add / subtract / multiply / divide / modulo';
+      case ScriptParamType.bitwiseOperator:
+        if (value is String && _bitwiseOperators.contains(value)) {
+          return null;
+        }
+        return '参数「${param.label}」的值「$value」非法，应为 and / or / xor / shiftLeft / shiftRight';
+      case ScriptParamType.numberOperator:
+        if (value is String && _numberOperators.contains(value)) {
+          return null;
+        }
+        return '参数「${param.label}」的值「$value」非法，应为 lt / le / gt / ge / eq / ne';
+      case ScriptParamType.hashAlgorithm:
+        if (value is String && _hashAlgorithms.contains(value)) {
+          return null;
+        }
+        return '参数「${param.label}」的值「$value」非法，应为 sha256 / sha1 / sha512 / md5 / crc32';
       case ScriptParamType.packageFilePath:
         if (value is String && value.trim().isNotEmpty) {
           return null;
