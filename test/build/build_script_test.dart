@@ -97,15 +97,70 @@ void main() {
   });
 
   group('parseBuildScriptHeader', () {
-    test('仅仓库首行时 tools/options 为空', () {
+    test('仅仓库首行时 tools/options 为空且 sourceNone 为 false', () {
       final BuildScriptHeader? header = parseBuildScriptHeader(
         '# https://github.com/foo/bar.git\nprint(1)\n',
       );
 
       expect(header, isNotNull);
       expect(header!.repo, 'https://github.com/foo/bar.git');
+      expect(header.sourceNone, isFalse);
       expect(header.tools, isEmpty);
       expect(header.options, isEmpty);
+    });
+
+    test('# source: none 解析（与 tool/option 混排、兼容 CRLF 与无空格形式）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\r\n'
+        '# source: none\r\n'
+        '# tool: nasm https://example.com/nasm.zip\r\n'
+        '# option: tbb = off | on\r\n'
+        'print(1)\r\n',
+      );
+
+      expect(header!.sourceNone, isTrue);
+      expect(header.repo, 'https://example.com/repo.git');
+      expect(header.tools, hasLength(1));
+      expect(header.options.single.name, 'tbb');
+
+      final BuildScriptHeader? noSpace = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# source:none\n',
+      );
+      expect(noSpace!.sourceNone, isTrue);
+    });
+
+    test('# source 非法值忽略（仅 none 合法）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# source: yes\n'
+        '# source: none extra\n'
+        '# source: NONE\n'
+        '# source:\n'
+        '# source: \n'
+        '# source: git\n'
+        'print(1)\n',
+      );
+
+      expect(header!.sourceNone, isFalse);
+    });
+
+    test('# source: none 位于头部连续段之外时不生效', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '\n'
+        '# source: none\n',
+      );
+
+      expect(header!.sourceNone, isFalse);
+
+      final BuildScriptHeader? afterCode = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        'print(1)\n'
+        '# source: none\n',
+      );
+
+      expect(afterCode!.sourceNone, isFalse);
     });
 
     test('首行不合法返回 null', () {

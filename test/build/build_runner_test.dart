@@ -287,6 +287,110 @@ void main() {
     });
   });
 
+  group('预构建（# source: none）', () {
+    test('跳过 git：仅创建缓存目录并注入 SRC_PATH 执行构建', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# source: none\n'
+        'print(1)\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<PackBuildStage> stages = <PackBuildStage>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        stages.add,
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+      );
+
+      expect(stages, <PackBuildStage>[
+        PackBuildStage.downloading,
+        PackBuildStage.building,
+      ]);
+      expect(
+        calls.where((_ProcessCall call) => call.executable == 'git'),
+        isEmpty,
+        reason: 'source: none 不应调用 git',
+      );
+      expect(calls, hasLength(1));
+
+      final _ProcessCall python = calls.single;
+      expect(python.executable, 'python');
+      expect(python.arguments, <String>['build.py']);
+      expect(python.workingDirectory, sourcePath);
+      expect(python.environment, <String, String>{
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+      expect(
+        Directory(targetPath).existsSync(),
+        isTrue,
+        reason: 'SRC_PATH 工作区目录应被创建',
+      );
+    });
+
+    test('缓存目录已存在（二次构建）时保留内容且不调用 git', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# source: none\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      Directory(targetPath).createSync(recursive: true);
+      File(joinPath(targetPath, 'downloads.zip')).writeAsStringSync('cached');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+      );
+
+      expect(calls, hasLength(1));
+      expect(calls.single.executable, 'python');
+      expect(File(joinPath(targetPath, 'downloads.zip')).existsSync(), isTrue);
+    });
+
+    test('source: none 时注入环境仍透传到构建进程', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# source: none\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final Map<String, String> injected = <String, String>{
+        'CNP_OPTION_TBB': 'on',
+        'CNP_TOOLS_DIR': r'D:\tools',
+      };
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+        environment: injected,
+      );
+
+      expect(calls, hasLength(1));
+      expect(calls.single.environment, <String, String>{
+        ...injected,
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+    });
+  });
+
   group('执行构建', () {
     test('python 不可用时回退 py -3', () async {
       final Directory root = _tempDirectory();

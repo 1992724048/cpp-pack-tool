@@ -41,9 +41,10 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 
 /// 拉取源码并执行包内 `build.py`。
 ///
-/// 流程：解析 `build.py` 首行仓库地址 → 目标目录（`<cacheRoot>/build/<清洗包ID>`）
-/// 克隆或拉取 → 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`（包源目录）环境变量
-/// 运行 `python build.py`。
+/// 流程：解析 `build.py` 头部（仓库地址 + 可选 `# source: none`）→ 目标目录
+/// （`<cacheRoot>/build/<清洗包ID>`）克隆或拉取（声明 `# source: none` 时跳过
+/// git，仅创建目录作为 `SRC_PATH` 工作区）→ 以 `SRC_PATH`（目标目录）与
+/// `BUILD_OUT`（包源目录）环境变量运行 `python build.py`。
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
 /// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
@@ -67,10 +68,10 @@ Future<void> runPackBuild(
   if (!await scriptOnDisk.exists()) {
     throw const PackBuildException('源目录中找不到 build.py（可能已被移动）');
   }
-  final String? repository = parseBuildScriptRepo(
+  final BuildScriptHeader? header = parseBuildScriptHeader(
     await scriptOnDisk.readAsString(),
   );
-  if (repository == null) {
+  if (header == null) {
     throw const PackBuildException('build.py 首行缺少 git 仓库地址（格式：# <仓库地址>）');
   }
 
@@ -78,11 +79,17 @@ Future<void> runPackBuild(
   final Directory target = Directory(
     joinPath(cacheRoot, 'build/${PackStore.sanitizeFileName(pack.name)}'),
   );
-  await target.parent.create(recursive: true);
-  if (await _hasGitDirectory(target)) {
-    await _pullRepository(processRunner, target, environment);
+  if (header.sourceNone) {
+    // 预构建配方（`# source: none`）：跳过 git 源码拉取；缓存目录仍会创建并
+    // 作为 `SRC_PATH` 注入，供脚本自行下载/解压（二次构建复用其中缓存）。
+    await target.create(recursive: true);
   } else {
-    await _cloneRepository(processRunner, target, repository, environment);
+    await target.parent.create(recursive: true);
+    if (await _hasGitDirectory(target)) {
+      await _pullRepository(processRunner, target, environment);
+    } else {
+      await _cloneRepository(processRunner, target, header.repo, environment);
+    }
   }
 
   onStage(PackBuildStage.building);

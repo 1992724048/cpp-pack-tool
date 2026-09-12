@@ -7,6 +7,7 @@ import 'package:cpp_nuget_pack/util/format.dart';
 const String _buildScriptName = 'build.py';
 const String _toolDirectivePrefix = '# tool:';
 const String _optionDirectivePrefix = '# option:';
+const String _sourceDirectivePrefix = '# source:';
 
 final RegExp _toolNamePattern = RegExp(r'^[A-Za-z0-9._-]+$');
 final RegExp _optionNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
@@ -65,16 +66,23 @@ class BuildScriptOption {
 class BuildScriptHeader {
   const BuildScriptHeader({
     required this.repo,
+    this.sourceNone = false,
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
   });
 
   final String repo;
+
+  /// 声明 `# source: none`：预构建配方跳过 git 源码拉取，`SRC_PATH` 仅作为
+  /// 脚本自行下载/解压的工作区。
+  final bool sourceNone;
+
   final List<BuildScriptTool> tools;
   final List<BuildScriptOption> options;
 }
 
-/// 解析 build.py 头部：首行仓库地址 + 其后连续 `#` 行中的 `# tool:` / `# option:` 指令。
+/// 解析 build.py 头部：首行仓库地址 + 其后连续 `#` 行中的
+/// `# tool:` / `# option:` / `# source: none` 指令。
 ///
 /// 首行不合法返回 null；非法或未知指令行按注释忽略，同名声明以首次为准；
 /// 遇到首个非 `#` 行（含空行）即终止头部连续段。
@@ -88,10 +96,15 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   final List<BuildScriptOption> options = <BuildScriptOption>[];
   final Set<String> toolNames = <String>{};
   final Set<String> optionNames = <String>{};
+  bool sourceNone = false;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
       break;
+    }
+    if (_isSourceNoneLine(line)) {
+      sourceNone = true;
+      continue;
     }
     final BuildScriptTool? tool = _parseToolLine(line);
     if (tool != null) {
@@ -105,7 +118,19 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
       options.add(option);
     }
   }
-  return BuildScriptHeader(repo: repository, tools: tools, options: options);
+  return BuildScriptHeader(
+    repo: repository,
+    sourceNone: sourceNone,
+    tools: tools,
+    options: options,
+  );
+}
+
+bool _isSourceNoneLine(String line) {
+  if (!line.startsWith(_sourceDirectivePrefix)) {
+    return false;
+  }
+  return line.substring(_sourceDirectivePrefix.length).trim() == 'none';
 }
 
 String? _parseRepoLine(String rawLine) {

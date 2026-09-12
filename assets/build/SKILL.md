@@ -10,14 +10,15 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 ## 何时使用
 
 - 需要把一个 C++ 库（git 仓库）纳入 cpp_nuget_pack 打包管线：在库源码根目录新建 `build.py`；
-- 已有 `build.py` 需要升级到 v2 契约（`# tool` / `# option` 头部指令）；
+- 已有 `build.py` 需要升级到 v2 契约（`# tool` / `# option` / `# source` 头部指令）；
+- 上游只提供预构建归档、不做源码构建：用 `# source: none` + 下载 / 解压 / 分类（见「预构建配方」）；
 - 构建失败，需要排查环境变量、分类结果或退出码问题。
 
 ## 运行方式（工具侧）
 
 1. 解析库源码根目录的 `build.py`（文件名大小写不敏感；根级 `build.py` 不随包分发）；
 2. 检测编译器（ICX > clang-cl > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
-3. `git clone` / `git pull --ff-only` 源码到 `cache/build/<清洗包ID>/`；
+3. `git clone` / `git pull --ff-only` 源码到 `cache/build/<清洗包ID>/`（声明 `# source: none` 时跳过，仅创建该目录）；
 4. 以**包源目录为工作目录**运行 `python build.py`（无 `python` 时回退 `py -3`），并注入「环境变量」一节的变量；
 5. 退出码 0 = 成功，非 0 = 失败（工具会显示输出尾部）；成功后自动扫描并重新映射产物。
 
@@ -30,6 +31,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | 第 1 行 | `# <git仓库地址>` | 源码仓库 URL（如 `# https://github.com/madler/zlib`）。 |
 | 其后连续行 | `# tool: <name> <url> [bin=<子目录>]` | 声明自动下载的环境工具：zip 解压到 `tools/<name>/` 并加入子进程 PATH。`name` 限 `[A-Za-z0-9._-]+`；`url` 为 http(s) zip；`bin` 为相对子目录（如 `perl/bin`），不得含盘符或 `..`。 |
 | 其后连续行 | `# option: <name> = <默认值> \| <备选值> …` | 声明构建选项：**首值为默认值**，工具 UI 在「构建」按钮旁渲染下拉框，选中值经 `CNP_OPTION_<NAME>` 传入。`name` 限 `[A-Za-z_][A-Za-z0-9_]*`；候选值用 `\|` 分隔，不得为空或重复。 |
+| 其后连续行 | `# source: none` | 预构建配方：跳过 git 源码拉取；`SRC_PATH` 目录仍会创建并注入，作为脚本自行下载 / 解压的工作区。仅字面值 `none` 合法，其余值按注释忽略。 |
 | 其余 `#` 行 | 普通注释 | 忽略；非法指令行同样按注释忽略（不报错）。 |
 
 > 同名 tool / option 以首次声明为准；未声明的选项不会下发环境变量。
@@ -38,7 +40,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 
 | 变量 | 说明 |
 | --- | --- |
-| `SRC_PATH` | 拉取的源码目录（`cache/build/<清洗包ID>/`）。 |
+| `SRC_PATH` | 拉取的源码目录（`cache/build/<清洗包ID>/`）；声明 `# source: none` 时为空的工作缓存目录（仍会创建），由脚本自行下载 / 解压填充。 |
 | `BUILD_OUT` | 包源目录：分类后的最终产物写入这里（会随包入包）。 |
 | `CNP_CMAKE` | cmake 可执行文件路径（`cmake_configure` / `cmake_build` 必需）。 |
 | `CNP_NINJA` | ninja 可执行文件路径（自动作为 `CMAKE_MAKE_PROGRAM`）。 |
@@ -143,9 +145,43 @@ from cnp_build_support import classify_tree
 classify_tree(unpacked_dir, BUILD_OUT, exclude=("docs", "tests"))
 ```
 
+## 预构建配方（`# source: none`）
+
+上游只提供预构建归档、没有可用的源码构建流程时使用：头部声明 `# source: none` 跳过 git 源码拉取，脚本把官方归档下载 / 解压到 `SRC_PATH`，再经 `classify_tree` / `stage_*` 分类到 `BUILD_OUT`。
+
+```python
+# https://github.com/vendor/library.git
+# source: none
+# option: tbb = off | on
+#
+# 预构建：下载官方归档 → 解压到 SRC_PATH（存在即复用）→ 分类入库。
+
+import os
+import urllib.request
+import zipfile
+
+from cnp_build_support import classify_tree, stage_license, summary
+
+SRC_PATH = os.environ["SRC_PATH"]
+BUILD_OUT = os.environ["BUILD_OUT"]
+
+# 1) 解析最新版本并下载归档到 <SRC_PATH>/downloads/，存在即复用（二次构建无大下载）
+# 2) 解压到 <SRC_PATH> 下（可写完成标记，二次运行复用解压树）
+# 3) 对解压树中头文件 / 库 / 动态库所在子树分别 classify_tree(..., BUILD_OUT)
+# 4) stage_license 把许可证落 BUILD_OUT 根；summary(BUILD_OUT) 收尾
+```
+
+预构建配方约定：
+
+- **缓存必须放 `SRC_PATH` 下**：归档与解压树都落 `SRC_PATH`（存在即复用），保证二次构建不重复大下载；`BUILD_OUT` 只放最终产物。
+- **无关目录不进包**：只分类头文件 / 库 / 动态库所在子树，或用 `classify_tree` 的 `exclude` 排除 `docs`/`samples` 等；文档与示例可执行文件不入包。
+- **选项门控**：如「是否随包分发第三方运行时」（`# option: tbb = off | on`），经 `os.environ.get("CNP_OPTION_TBB")` 读取；默认值与两条路径都要可复现。
+- **许可证**：归档把许可证放在非根目录时（如 `docs/licensing/LICENSE`），用 `stage_license(<许可证目录>, BUILD_OUT)` 显式落 `BUILD_OUT` 根。
+- **版本解析**：优先解析官方发布索引取最新版本；解析失败回退脚本内置常量，并在注释中记录核实日期。
+
 ## 校验清单
 
-- [ ] 首行是 `# <git仓库地址>`；`# tool` / `# option` 指令紧随其后且连续（无空行打断）。
+- [ ] 首行是 `# <git仓库地址>`；`# tool` / `# option` / `# source` 指令紧随其后且连续（无空行打断）。
 - [ ] `python build.py` 以退出码表达结果：0 = 成功，非 0 = 失败。
 - [ ] Release 与 Debug 双配置产物均已分类到 `BUILD_OUT` 的 `include/`、`lib/`、`bin/`、`debug/lib/`、`debug/bin/`。
 - [ ] 头文件走 `stage_headers`；库与动态库走 `stage_binaries`；许可证（若有）走 `stage_license` 落 `BUILD_OUT` 根。
@@ -153,4 +189,5 @@ classify_tree(unpacked_dir, BUILD_OUT, exclude=("docs", "tests"))
 - [ ] 未修改系统环境，未依赖本机预装软件；缺失工具在头部用 `# tool` 声明。
 - [ ] 中间构建目录位于 `SRC_PATH` 下，`BUILD_OUT` 无临时 / 中间文件残留。
 - [ ] 选项经 `os.environ.get("CNP_OPTION_<NAME>")` 读取；未声明选项不下发。
+- [ ] 预构建配方：头部声明 `# source: none`；下载 / 解压缓存位于 `SRC_PATH` 下且可复用；无关目录未进入 `BUILD_OUT`。
 - [ ] 根级 `build.py` 不随包分发（打包器自动排除，无需手动处理）。
