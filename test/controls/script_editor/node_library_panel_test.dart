@@ -13,13 +13,14 @@ void main() {
   group('点击添加落点公式', () {
     test('落点 = 视口中心 − (104, 卡片高/2) 叠加级联偏移', () {
       final ScriptNodeTypeDescriptor text = NodeRegistry.byType('value.text')!;
+      // 文本卡高 88（M4.1 值条 +22）：y = 300 − 44。
       expect(
         nodeLibraryAddPosition(
           viewportCenterScene: const Offset(400, 300),
           descriptor: text,
           existingNodeCount: 0,
         ),
-        const Offset(296, 267),
+        const Offset(296, 256),
       );
 
       // 级联：24 × (10 % 8) = 48
@@ -29,7 +30,7 @@ void main() {
           descriptor: text,
           existingNodeCount: 10,
         ),
-        const Offset(344, 315),
+        const Offset(344, 304),
       );
     });
 
@@ -281,9 +282,9 @@ void main() {
       expect(project.nodes, hasLength(1));
       final ScriptNodeModel node = project.nodes.single;
       expect(node.type, 'value.text');
-      // 画布视口 768×718，中心 (384, 359)；文本卡高 66
+      // 画布视口 768×718，中心 (384, 359)；文本卡高 88（M4.1 值条 +22）
       expect(node.x, 280);
-      expect(node.y, 326);
+      expect(node.y, 315);
       expect(node.params, <String, Object?>{'value': ''});
     });
 
@@ -303,9 +304,10 @@ void main() {
       expect(project.nodes, hasLength(2));
       final ScriptNodeModel node = project.nodes.last;
       expect(node.id, 'n2');
-      // 中心场景 = (384 + 100, 359 + 50) = (484, 409)；级联 = 24 × (1 % 8)
+      // 中心场景 = (384 + 100, 359 + 50) = (484, 409)；级联 = 24 × (1 % 8)；
+      // 文本卡高 88（M4.1 值条 +22）：y = 409 − 44 + 24。
       expect(node.x, 404);
-      expect(node.y, 400);
+      expect(node.y, 389);
     });
 
     testWidgets('重复添加「开始」不特殊禁用', (WidgetTester tester) async {

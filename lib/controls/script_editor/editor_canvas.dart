@@ -230,6 +230,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                             nodeId: node.id,
                             typeKey: node.type,
                             descriptor: NodeRegistry.byType(node.type),
+                            paramValues: node.params,
                             selected: node.id == selectedNodeId,
                             dragging: node.id == _dragNodeId,
                             hasError: errorNodeIds.contains(node.id),
@@ -245,6 +246,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                             dimmedPins:
                                 highlights.dimmed[node.id] ?? const <String>{},
                             showPinLabels: _showPinLabels,
+                            showValues: _showPinLabels,
                             onTap: () => widget.controller.selectNode(node.id),
                             onDragStart: (DragStartDetails details) =>
                                 _beginNodeDrag(node.id, details),

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:cpp_nuget_pack/controls/script_editor/edge_painter.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
+import 'package:cpp_nuget_pack/script_editor/node_value_display.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart'
@@ -18,6 +19,9 @@ const double nodeCardWidth = 208;
 const double nodeCardHeaderHeight = 34;
 const double nodePinRowHeight = 22;
 
+/// 值条高度（含顶边 1px 分隔线；§5.2 M4.1 增补）。
+const double nodeValueStripHeight = 22;
+
 /// 卡片四周为引脚与错误红点预留的溢出区（场景 px）。
 const double nodeCardOverflow = 10;
 
@@ -30,7 +34,8 @@ const double _execPinHeight = 8;
 const double _pinStrokeWidth = 1.5;
 const double _errorDotDiameter = 8;
 
-/// 节点卡高度 = 头部 34 + 引脚区上下内边距 10 + 行高 22 × 行数（§5.2）。
+/// 节点卡高度 = 头部 34 + 引脚区上下内边距 10 + 行高 22 × 行数
+/// + 值条 22（仅参数声明非空时，§5.2 M4.1）。
 double nodeCardHeight(ScriptNodeTypeDescriptor? descriptor) {
   if (descriptor == null) {
     return nodeCardHeaderHeight + _pinAreaTopPadding + _pinAreaBottomPadding;
@@ -45,10 +50,14 @@ double nodeCardHeight(ScriptNodeTypeDescriptor? descriptor) {
     }
   }
   final int rows = math.max(inputCount, outputCount);
+  final double valueStripHeight = descriptor.params.isNotEmpty
+      ? nodeValueStripHeight
+      : 0;
   return nodeCardHeaderHeight +
       _pinAreaTopPadding +
       _pinAreaBottomPadding +
-      nodePinRowHeight * rows;
+      nodePinRowHeight * rows +
+      valueStripHeight;
 }
 
 /// 第 [rowIndex] 行（0 起）引脚的竖直中心（卡片本地坐标）。
@@ -123,11 +132,13 @@ class NodeCard extends StatefulWidget {
     required this.dragging,
     required this.hasError,
     required this.connectedPins,
+    this.paramValues = const <String, Object?>{},
     this.errorPins = const <String>{},
     this.candidatePins = const <String>{},
     this.rejectedPins = const <String>{},
     this.dimmedPins = const <String>{},
     this.showPinLabels = true,
+    this.showValues = true,
     this.onTap,
     this.onDragStart,
     this.onDragUpdate,
@@ -148,6 +159,9 @@ class NodeCard extends StatefulWidget {
   final bool dragging;
   final bool hasError;
   final Set<String> connectedPins;
+
+  /// 节点参数值（YAML `params`）；值条汇总的输入，默认空防破坏直接构造。
+  final Map<String, Object?> paramValues;
   final Set<String> errorPins;
 
   /// 拖拽建连时兼容目标引脚的候选环（2px 类型色 α0.75）。
@@ -159,6 +173,9 @@ class NodeCard extends StatefulWidget {
   /// 拖拽建连期间不可达引脚（整体 α0.35）。
   final Set<String> dimmedPins;
   final bool showPinLabels;
+
+  /// 值条可见性（LOD `scale < 0.75` 隐藏；仅视觉隐藏，几何不变，§5.2/§5.7）。
+  final bool showValues;
 
   final VoidCallback? onTap;
   final void Function(DragStartDetails details)? onDragStart;
@@ -262,6 +279,10 @@ class _NodeCardState extends State<NodeCard> {
                   child: Column(children: _buildPinRows(descriptor)),
                 ),
               ),
+              if (descriptor != null &&
+                  descriptor.params.isNotEmpty &&
+                  widget.showValues)
+                _buildValueStrip(descriptor),
             ],
           ),
         ),
@@ -325,6 +346,27 @@ class _NodeCardState extends State<NodeCard> {
           ),
           const SizedBox(width: 12),
         ],
+      ),
+    );
+  }
+
+  /// 值条（§5.2 M4.1）：引脚区下方整条高 22，顶边 1px `surface2`、
+  /// 背景 `mantle`；内容为参数汇总，11 `subtext1` 单行 ellipsis。
+  Widget _buildValueStrip(ScriptNodeTypeDescriptor descriptor) {
+    return Container(
+      key: Key('nodeValueStrip_${widget.nodeId}'),
+      height: nodeValueStripHeight,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: UCColors.flavor.mantle,
+        border: Border(top: BorderSide(color: UCColors.flavor.surface2)),
+      ),
+      child: Text(
+        nodeValueSummary(descriptor.params, widget.paramValues),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 11, color: UCColors.flavor.subtext1),
       ),
     );
   }

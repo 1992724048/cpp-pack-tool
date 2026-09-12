@@ -43,7 +43,7 @@ void main() {
       );
     });
 
-    testWidgets('典型节点卡高度为 66/88/110/132', (WidgetTester tester) async {
+    testWidgets('典型节点卡高度为 66/88/110/154（有参数 +22）', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,
         _project(
@@ -59,7 +59,69 @@ void main() {
       expect(tester.getSize(find.byKey(const Key('nodeCard_n1'))).height, 66);
       expect(tester.getSize(find.byKey(const Key('nodeCard_n2'))).height, 88);
       expect(tester.getSize(find.byKey(const Key('nodeCard_n3'))).height, 110);
-      expect(tester.getSize(find.byKey(const Key('nodeCard_n4'))).height, 132);
+      expect(tester.getSize(find.byKey(const Key('nodeCard_n4'))).height, 154);
+    });
+
+    test('高度公式：有参数节点 = 同结构无参数 + 值条 22、未知类型无值条', () {
+      expect(nodeValueStripHeight, 22);
+      expect(nodeCardHeight(NodeRegistry.byType('flow.entry')), 66);
+      expect(nodeCardHeight(NodeRegistry.byType('flow.branch')), 88);
+      expect(nodeCardHeight(NodeRegistry.byType('file.copy')), 110);
+      expect(nodeCardHeight(NodeRegistry.byType('process.run')), 154);
+      expect(nodeCardHeight(NodeRegistry.byType('context.macro')), 88);
+      expect(nodeCardHeight(NodeRegistry.byType('value.number')), 88);
+      expect(nodeCardHeight(null), 44);
+    });
+
+    testWidgets('有参数节点渲染值条且文本为参数汇总', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'process.run', x: 40, y: 60),
+            _node('n2', 'context.macro', x: 400, y: 60),
+            _node('n3', 'log.message', x: 760, y: 60),
+          ],
+        ),
+      );
+
+      final Finder runStrip = find.byKey(const Key('nodeValueStrip_n1'));
+      expect(runStrip, findsOneWidget);
+      expect(
+        find.descendant(of: runStrip, matching: find.text('是')),
+        findsOneWidget,
+      );
+
+      final Finder macroStrip = find.byKey(const Key('nodeValueStrip_n2'));
+      expect(macroStrip, findsOneWidget);
+      expect(
+        find.descendant(of: macroStrip, matching: find.text(r'$(OutDir)')),
+        findsOneWidget,
+      );
+
+      final Finder logStrip = find.byKey(const Key('nodeValueStrip_n3'));
+      expect(logStrip, findsOneWidget);
+      expect(
+        find.descendant(of: logStrip, matching: find.text('信息')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('无参数节点不渲染值条且几何与 M2 基准一致', (WidgetTester tester) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'flow.entry', y: 0),
+            _node('n2', 'file.copy', y: 200),
+          ],
+        ),
+      );
+
+      expect(find.byKey(const Key('nodeValueStrip_n1')), findsNothing);
+      expect(find.byKey(const Key('nodeValueStrip_n2')), findsNothing);
+      expect(tester.getSize(find.byKey(const Key('nodeCard_n1'))).height, 66);
+      expect(tester.getSize(find.byKey(const Key('nodeCard_n2'))).height, 110);
     });
 
     testWidgets('引脚按注册表渲染静态形态且 Key 为 pin_<nodeId>_<pinId>', (
@@ -580,6 +642,33 @@ void main() {
       expect(find.text('源路径'), findsOneWidget);
       expect(find.text('目标路径'), findsOneWidget);
     });
+
+    testWidgets('缩放低于 0.75 隐藏值条且几何不变，达到 0.75 恢复', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[_node('n1', 'process.run', x: 40, y: 60)],
+        ),
+      );
+      expect(find.byKey(const Key('nodeValueStrip_n1')), findsOneWidget);
+      expect(find.text('是'), findsOneWidget);
+
+      await _setScale(tester, controller, 0.5);
+      expect(find.byKey(const Key('nodeValueStrip_n1')), findsNothing);
+      expect(
+        tester.getSize(find.byKey(const Key('nodeCard_n1'))).height,
+        154,
+        reason: 'LOD 隐藏值条仅视觉隐藏，卡片几何不变',
+      );
+
+      await _setScale(tester, controller, 0.74);
+      expect(find.byKey(const Key('nodeValueStrip_n1')), findsNothing);
+      expect(find.text('是'), findsNothing);
+
+      await _setScale(tester, controller, 0.75);
+      expect(find.byKey(const Key('nodeValueStrip_n1')), findsOneWidget);
+      expect(find.text('是'), findsOneWidget);
+    });
   });
 
   group('场景与网格', () {
@@ -596,15 +685,16 @@ void main() {
         ),
       );
       final Finder scene = find.byKey(const Key('editorScene'));
-      expect(tester.getSize(scene), const Size(2968, 2506));
+      // value.text 卡高 88（M4.1 值条 +22）：高 = maxY − minY + 1200。
+      expect(tester.getSize(scene), const Size(2968, 2528));
 
       controller.moveNode('n2', const Offset(40, 60));
       await tester.pump();
-      expect(tester.getSize(scene), const Size(1600, 1266));
+      expect(tester.getSize(scene), const Size(1600, 1288));
 
       controller.addNode('value.text', const Offset(3000, 2500));
       await tester.pump();
-      expect(tester.getSize(scene), const Size(4368, 3706));
+      expect(tester.getSize(scene), const Size(4368, 3728));
     });
 
     testWidgets('网格背景为 CustomPainter 且数值符合规范', (WidgetTester tester) async {
