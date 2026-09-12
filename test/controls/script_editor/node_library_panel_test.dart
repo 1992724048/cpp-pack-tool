@@ -80,6 +80,8 @@ void main() {
       expect(tester.getSize(searchBoxFinder).height, 32);
 
       // 顶部可见的分组头自上而下 = 声明序；分组头高 28
+      // （初始构建组数随懒构建窗口而定：file 分类扩至 9 条后首屏构建前 5 组；
+      // 声明序完整性由下方逐组滚动循环继续保证）
       final List<double> visibleTops = <double>[
         for (final ScriptNodeCategory category in ScriptNodeCategory.values)
           if (find
@@ -92,7 +94,7 @@ void main() {
                 )
                 .dy,
       ];
-      expect(visibleTops.length, greaterThanOrEqualTo(6));
+      expect(visibleTops.length, greaterThanOrEqualTo(5));
       expect(visibleTops, List<double>.of(visibleTops)..sort());
       expect(
         tester.getSize(find.byKey(const Key('nodeLibraryGroup_flow'))).height,

@@ -78,6 +78,7 @@ class PowerShell5Generator implements ScriptCodeGenerator {
     final _PowerShellEmitter emitter = _PowerShellEmitter(
       project: project,
       writer: body,
+      registerPrelude: _registerPrelude,
     );
     body.indent(emitter.emitEntryChain);
 
@@ -126,10 +127,12 @@ class _PowerShellEmitter {
   _PowerShellEmitter({
     required ScriptProjectModel project,
     required this.writer,
+    required this.registerPrelude,
   }) : _index = _GraphIndex(project);
 
   final CodeWriter writer;
   final _GraphIndex _index;
+  final PreludeRegistrar registerPrelude;
   final Map<String, String> _itemVariableByNodeId = <String, String>{};
   int _itemCounter = 0;
   int _processCounter = 0;
@@ -179,6 +182,10 @@ class _PowerShellEmitter {
         _emitFileDelete(node);
       case 'file.makeDirectory':
         _emitFileMakeDirectory(node);
+      case 'file.hardLink':
+        _emitFileHardLink(node);
+      case 'file.writeHex':
+        _emitFileWriteHex(node);
       case 'process.run':
         _emitProcessRun(node);
       case 'flow.branch':
@@ -236,6 +243,24 @@ class _PowerShellEmitter {
   void _emitFileMakeDirectory(ScriptNodeModel node) {
     final String path = _expression(node, 'path');
     writer.writeln('New-Item -ItemType Directory -Force -Path $path');
+  }
+
+  void _emitFileHardLink(ScriptNodeModel node) {
+    final String source = _expression(node, 'source');
+    final String destination = _expression(node, 'destination');
+    writer.writeln(
+      'New-Item -ItemType HardLink -Path $destination -Target $source '
+      '-Force -ErrorAction Stop',
+    );
+  }
+
+  void _emitFileWriteHex(ScriptNodeModel node) {
+    registerPrelude('ConvertFrom-CnpHex');
+    final String path = _expression(node, 'path');
+    final String hex = _expression(node, 'hex');
+    writer.writeln(
+      '[IO.File]::WriteAllBytes($path, (ConvertFrom-CnpHex ($hex)))',
+    );
   }
 
   void _emitProcessRun(ScriptNodeModel node) {
@@ -338,6 +363,10 @@ class _PowerShellEmitter {
       case 'file.exists':
         return '(Test-Path -LiteralPath ${_expression(node, 'path')} '
             '-PathType Any)';
+      case 'file.readHex':
+        return '([BitConverter]::ToString('
+            '[IO.File]::ReadAllBytes(${_expression(node, 'path')}))'
+            ".Replace('-','').ToLowerInvariant())";
       case 'flow.foreach':
         if (pinId != 'item') {
           throw UnsupportedError('节点类型「${node.type}」的引脚「$pinId」不支持数据表达式');

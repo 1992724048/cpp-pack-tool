@@ -1697,6 +1697,204 @@ void main() {
     });
   });
 
+  group('file 硬链接与十六进制发射（M4.2 T5）', () {
+    test('file.hardLink：创建硬链接命令并续接 out 链', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\src\a.dll'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\dst\a.dll'},
+          ),
+          _node('n4', 'file.hardLink'),
+          _node('n5', 'value.text', params: <String, Object?>{'value': '已创建'}),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'source'),
+          _edge('n3', 'result', 'n4', 'destination'),
+          _edge('n4', 'out', 'n6', 'exec'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    New-Item -ItemType HardLink -Path 'D:\\dst\\a.dll' "
+          "-Target 'C:\\src\\a.dll' -Force -ErrorAction Stop\n"
+          "    Write-Host '已创建'\n",
+        ),
+      );
+    });
+
+    test('file.readHex：十六进制字符串表达式内联进消费链', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n2', 'file.readHex'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n3',
+              'value.text',
+              params: <String, Object?>{'value': r'C:\x.bin'},
+            ),
+          ],
+          inputEdges: <ScriptEdgeModel>[_edge('n3', 'result', 'n2', 'path')],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host ([BitConverter]::ToString("
+          "[IO.File]::ReadAllBytes('C:\\x.bin'))"
+          ".Replace('-','').ToLowerInvariant())\n",
+        ),
+      );
+    });
+
+    test('file.writeHex：WriteAllBytes + ConvertFrom-CnpHex 并自动注入 helper', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\x.bin'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': '48656C6C6F'},
+          ),
+          _node('n4', 'file.writeHex'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'path'),
+          _edge('n3', 'result', 'n4', 'hex'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    [IO.File]::WriteAllBytes('C:\\x.bin', "
+          "(ConvertFrom-CnpHex ('48656C6C6F')))\n",
+        ),
+      );
+      expect(
+        RegExp(r'function ConvertFrom-CnpHex \{').allMatches(code).length,
+        1,
+      );
+      final int stopIndex = code.indexOf(r"$ErrorActionPreference = 'Stop'");
+      final int functionIndex = code.indexOf('function ConvertFrom-CnpHex {');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(stopIndex, lessThan(functionIndex));
+      expect(functionIndex, lessThan(tryIndex));
+      expect(code, contains("throw '十六进制字符串长度必须为偶数'"));
+      expect(code, contains("throw '十六进制字符串包含非法字符'"));
+      expect(code, isNot(contains('function Get-CnpFileHash {')));
+    });
+
+    test('file.writeHex：readHex 输出作为 hex 输入递归内联（往返链）', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a.bin'},
+          ),
+          _node('n3', 'file.readHex'),
+          _node(
+            'n4',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\b.bin'},
+          ),
+          _node('n5', 'file.writeHex'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n5', 'exec'),
+          _edge('n2', 'result', 'n3', 'path'),
+          _edge('n3', 'result', 'n5', 'hex'),
+          _edge('n4', 'result', 'n5', 'path'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    [IO.File]::WriteAllBytes('D:\\b.bin', (ConvertFrom-CnpHex "
+          "(([BitConverter]::ToString([IO.File]::ReadAllBytes('C:\\a.bin'))"
+          ".Replace('-','').ToLowerInvariant()))))\n",
+        ),
+      );
+    });
+
+    test('file.writeHex 幂等：两个节点仅注入一次 helper', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a.bin'},
+          ),
+          _node('n3', 'value.text', params: <String, Object?>{'value': 'AA'}),
+          _node('n4', 'file.writeHex'),
+          _node(
+            'n5',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\b.bin'},
+          ),
+          _node('n6', 'value.text', params: <String, Object?>{'value': 'BB'}),
+          _node('n7', 'file.writeHex'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'path'),
+          _edge('n3', 'result', 'n4', 'hex'),
+          _edge('n4', 'out', 'n7', 'exec'),
+          _edge('n5', 'result', 'n7', 'path'),
+          _edge('n6', 'result', 'n7', 'hex'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        RegExp(r'function ConvertFrom-CnpHex \{').allMatches(code).length,
+        1,
+      );
+      expect(
+        code,
+        contains(
+          "    [IO.File]::WriteAllBytes('C:\\a.bin', "
+          "(ConvertFrom-CnpHex ('AA')))\n",
+        ),
+      );
+      expect(
+        code,
+        contains(
+          "    [IO.File]::WriteAllBytes('C:\\b.bin', "
+          "(ConvertFrom-CnpHex ('BB')))\n",
+        ),
+      );
+    });
+  });
+
   group('编译错误', () {
     test('无入口图 → code 为 null 且含诊断', () {
       final ScriptCompileResult result = _compile(

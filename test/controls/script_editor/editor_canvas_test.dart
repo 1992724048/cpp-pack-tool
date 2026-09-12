@@ -283,6 +283,12 @@ void main() {
       );
     });
 
+    test('file 硬链接与十六进制图标（视觉规范 §9）', () {
+      expect(nodeTypeIcon('file.hardLink'), FluentIcons.add_link);
+      expect(nodeTypeIcon('file.readHex'), FluentIcons.code);
+      expect(nodeTypeIcon('file.writeHex'), FluentIcons.code_edit);
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

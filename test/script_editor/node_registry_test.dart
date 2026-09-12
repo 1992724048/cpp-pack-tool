@@ -13,6 +13,9 @@ const Set<String> _expectedTypeKeys = <String>{
   'file.makeDirectory',
   'file.list',
   'file.exists',
+  'file.hardLink',
+  'file.readHex',
+  'file.writeHex',
   'process.run',
   'context.macro',
   'context.environment',
@@ -50,13 +53,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 33 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(33));
+    test('总数 36 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(36));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(33),
+        hasLength(36),
       );
     });
 
@@ -142,7 +145,7 @@ void main() {
       const Map<ScriptNodeCategory, int> expectedCounts =
           <ScriptNodeCategory, int>{
             ScriptNodeCategory.flow: 4,
-            ScriptNodeCategory.file: 6,
+            ScriptNodeCategory.file: 9,
             ScriptNodeCategory.process: 1,
             ScriptNodeCategory.context: 3,
             ScriptNodeCategory.value: 3,
@@ -174,7 +177,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(33),
+        hasLength(36),
       );
     });
 
@@ -497,6 +500,71 @@ void main() {
         ScriptDataType.boolean,
       );
       expect(exists.params, isEmpty);
+    });
+
+    test('file.hardLink / file.readHex / file.writeHex 引脚与参数', () {
+      final ScriptNodeTypeDescriptor hardLink = NodeRegistry.byType(
+        'file.hardLink',
+      )!;
+      expect(hardLink.category, ScriptNodeCategory.file);
+      expect(hardLink.displayName, '创建硬链接');
+      expect(
+        hardLink.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'source', 'destination', 'out'},
+      );
+      expect(_pin('file.hardLink', 'source').dataType, ScriptDataType.string);
+      expect(_pin('file.hardLink', 'source').isInput, isTrue);
+      expect(_pin('file.hardLink', 'source').required, isTrue);
+      expect(
+        _pin('file.hardLink', 'destination').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('file.hardLink', 'destination').isInput, isTrue);
+      expect(_pin('file.hardLink', 'destination').required, isTrue);
+      expect(_pin('file.hardLink', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('file.hardLink', 'out').isInput, isFalse);
+      expect(hardLink.params, isEmpty);
+
+      final ScriptNodeTypeDescriptor readHex = NodeRegistry.byType(
+        'file.readHex',
+      )!;
+      expect(readHex.category, ScriptNodeCategory.file);
+      expect(readHex.displayName, '读为十六进制');
+      expect(
+        readHex.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'path', 'result'},
+      );
+      expect(_pin('file.readHex', 'path').dataType, ScriptDataType.string);
+      expect(_pin('file.readHex', 'path').isInput, isTrue);
+      expect(_pin('file.readHex', 'path').required, isTrue);
+      expect(_pin('file.readHex', 'result').dataType, ScriptDataType.string);
+      expect(_pin('file.readHex', 'result').isInput, isFalse);
+      expect(
+        readHex.pins.every(
+          (ScriptPinDescriptor pin) => pin.kind == ScriptPinKind.data,
+        ),
+        isTrue,
+      );
+      expect(readHex.params, isEmpty);
+
+      final ScriptNodeTypeDescriptor writeHex = NodeRegistry.byType(
+        'file.writeHex',
+      )!;
+      expect(writeHex.category, ScriptNodeCategory.file);
+      expect(writeHex.displayName, '由十六进制写');
+      expect(
+        writeHex.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'path', 'hex', 'out'},
+      );
+      expect(_pin('file.writeHex', 'path').dataType, ScriptDataType.string);
+      expect(_pin('file.writeHex', 'path').isInput, isTrue);
+      expect(_pin('file.writeHex', 'path').required, isTrue);
+      expect(_pin('file.writeHex', 'hex').dataType, ScriptDataType.string);
+      expect(_pin('file.writeHex', 'hex').isInput, isTrue);
+      expect(_pin('file.writeHex', 'hex').required, isTrue);
+      expect(_pin('file.writeHex', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('file.writeHex', 'out').isInput, isFalse);
+      expect(writeHex.params, isEmpty);
     });
 
     test('process.run：程序必填、参数与工作目录可选', () {

@@ -260,6 +260,74 @@ class NodeRegistry {
             ),
           ],
         ),
+        // 硬链接仅支持同一卷上的文件（跨卷或目录目标由 New-Item 报错）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'file.hardLink',
+          displayName: '创建硬链接',
+          category: ScriptNodeCategory.file,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'source',
+              label: '源路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'destination',
+              label: '目标路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'file.readHex',
+          displayName: '读为十六进制',
+          category: ScriptNodeCategory.file,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '十六进制',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+        ),
+        // 十六进制串与字节数组均整体驻留内存，不适用于大文件。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'file.writeHex',
+          displayName: '由十六进制写',
+          category: ScriptNodeCategory.file,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'hex',
+              label: '十六进制',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+        ),
         ScriptNodeTypeDescriptor(
           typeKey: 'process.run',
           displayName: '运行程序',
