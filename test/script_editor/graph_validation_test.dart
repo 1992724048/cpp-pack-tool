@@ -1239,6 +1239,73 @@ void main() {
       }
     });
 
+    test('大小写归并：Count/count 同名同类型（含 set/get 组合）合法', () {
+      final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+        _node(
+          'n1',
+          'variable.setNumber',
+          params: <String, Object?>{'name': 'Count'},
+        ),
+        _node(
+          'n2',
+          'variable.getNumber',
+          params: <String, Object?>{'name': 'count'},
+        ),
+        _node(
+          'n3',
+          'variable.setNumber',
+          params: <String, Object?>{'name': 'COUNT'},
+        ),
+        _node(
+          'n4',
+          'variable.getNumber',
+          params: <String, Object?>{'name': 'Count'},
+        ),
+      ]);
+      expect(_variableNameErrors(diagnostics), isEmpty);
+      expect(_typeMismatchErrors(diagnostics), isEmpty);
+    });
+
+    test('大小写归并：同名混型恰一条错误，消息用当前节点书写名', () {
+      final List<ScriptDiagnostic> upperFirst = _typeMismatchErrors(
+        _validate(<ScriptNodeModel>[
+          _node(
+            'n1',
+            'variable.setNumber',
+            params: <String, Object?>{'name': 'Count'},
+          ),
+          _node(
+            'n2',
+            'variable.setString',
+            params: <String, Object?>{'name': 'count'},
+          ),
+        ]),
+      );
+      expect(upperFirst, hasLength(1));
+      expect(upperFirst.single.isError, isTrue);
+      expect(upperFirst.single.nodeId, 'n2');
+      expect(upperFirst.single.message, '变量 count 类型不一致');
+
+      final List<ScriptDiagnostic> lowerFirst = _typeMismatchErrors(
+        _validate(<ScriptNodeModel>[
+          _node(
+            'n1',
+            'variable.getString',
+            params: <String, Object?>{'name': 'count'},
+          ),
+          _node(
+            'n2',
+            'variable.setNumber',
+            params: <String, Object?>{'name': 'Count'},
+          ),
+        ]),
+      );
+      expect(lowerFirst, hasLength(1));
+      expect(lowerFirst.single.isError, isTrue);
+      expect(lowerFirst.single.nodeId, 'n2');
+      expect(lowerFirst.single.message, '变量 Count 类型不一致');
+    });
+
     test('名称非法的节点只报名称错误，不参与类型一致性判定', () {
       final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
         _node(

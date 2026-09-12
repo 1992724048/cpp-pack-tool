@@ -81,11 +81,11 @@ void main() {
           GlobalKey<OutputPanelState>();
       await _pumpPanel(tester, controller: controller, panelKey: panelKey);
 
-      // 前置：该图生成 8 行脚本（入口 + 输出信息 + 文本）。
+      // 前置：该图生成 9 行脚本（入口 + 输出信息 + 文本）。
       final String expectedCode = PowerShell5Generator()
           .compile(project, packName: 'demo')
           .code!;
-      expect(expectedCode.split('\n').length - 1, 8);
+      expect(expectedCode.split('\n').length - 1, 9);
 
       panelKey.currentState!.generatePreview();
       await tester.pump();
@@ -97,7 +97,7 @@ void main() {
         find.textContaining(r"$ErrorActionPreference = 'Stop'"),
         findsOneWidget,
       );
-      expect(find.text('已生成 · 8 行'), findsOneWidget);
+      expect(find.text('已生成 · 9 行'), findsOneWidget);
       expect(find.text('未生成'), findsNothing);
       // 生成不发提示（面板态即反馈）。
       expect(find.byKey(const Key('floatingToast')), findsNothing);

@@ -386,6 +386,72 @@ ScriptProjectModel _variableStringGraph({String value = '你好'}) {
   );
 }
 
+/// 大小写变体读写链（set 在发射路径上先于 get）：entry → setNumber(setName) →
+/// log.message（消息 = numberToString(getNumber(getName))）。
+ScriptProjectModel _variableCaseVariantGraph({
+  required String setName,
+  required String getName,
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': 5}),
+      _node(
+        'n3',
+        'variable.setNumber',
+        params: <String, Object?>{'name': setName},
+      ),
+      _node(
+        'n4',
+        'variable.getNumber',
+        params: <String, Object?>{'name': getName},
+      ),
+      _node('n5', 'math.numberToString'),
+      _node('n6', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'out', 'n6', 'exec'),
+      _edge('n4', 'result', 'n5', 'value'),
+      _edge('n5', 'result', 'n6', 'message'),
+    ],
+  );
+}
+
+/// 大小写变体读写链（get 在发射路径上先于 set）：entry → log.message（消息 =
+/// numberToString(getNumber(getName))）→ setNumber(setName) 续接其后。
+ScriptProjectModel _variableGetBeforeSetGraph({
+  required String getName,
+  required String setName,
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'variable.getNumber',
+        params: <String, Object?>{'name': getName},
+      ),
+      _node('n3', 'math.numberToString'),
+      _node('n4', 'log.message'),
+      _node('n5', 'value.number', params: <String, Object?>{'value': 7}),
+      _node(
+        'n6',
+        'variable.setNumber',
+        params: <String, Object?>{'name': setName},
+      ),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'result', 'n4', 'message'),
+      _edge('n4', 'out', 'n6', 'exec'),
+      _edge('n5', 'result', 'n6', 'value'),
+    ],
+  );
+}
+
 /// 三变量读写链（发射序 zeta → mid → alpha，用于锁定初始化块的字典序）。
 ScriptProjectModel _variableDictionaryOrderGraph() {
   return _project(
@@ -558,6 +624,8 @@ void main() {
         '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'
         r"$ErrorActionPreference = 'Stop'"
         '\n'
+        r'$env:PSModulePath = "$PSHOME\Modules"'
+        '\n'
         'try {\n'
         "    Write-Host '开始构建'\n"
         '} catch {\n'
@@ -587,6 +655,32 @@ void main() {
       expect(code, isNot(contains('\r')));
     });
 
+    test('骨架加固：PSModulePath 归一位于 Stop 之后、try { 之前', () {
+      final ScriptCompileResult result = _compile(
+        _linearLogGraph(message: '开始构建'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          r"$ErrorActionPreference = 'Stop'"
+          '\n'
+          r'$env:PSModulePath = "$PSHOME\Modules"'
+          '\n'
+          'try {\n',
+        ),
+      );
+      final int stopIndex = code.indexOf(r"$ErrorActionPreference = 'Stop'");
+      final int modulePathIndex = code.indexOf(
+        r'$env:PSModulePath = "$PSHOME\Modules"',
+      );
+      final int tryIndex = code.indexOf('try {');
+      expect(stopIndex, greaterThanOrEqualTo(0));
+      expect(stopIndex, lessThan(modulePathIndex));
+      expect(modulePathIndex, lessThan(tryIndex));
+    });
+
     test('入口无下游 → 空脚本体且保留警告诊断', () {
       final ScriptCompileResult result = _compile(
         _project(<ScriptNodeModel>[_node('n1', 'flow.entry')], name: '空脚本'),
@@ -597,6 +691,8 @@ void main() {
         '\uFEFF'
         '# 由 cpp_nuget_pack 生成 — demo / 空脚本。请使用节点编辑器修改，勿手工编辑本文件。\n'
         r"$ErrorActionPreference = 'Stop'"
+        '\n'
+        r'$env:PSModulePath = "$PSHOME\Modules"'
         '\n'
         'try {\n'
         '} catch {\n'
@@ -1762,7 +1858,7 @@ void main() {
       expect(
         leftLiteral.code,
         contains(
-          '    Write-Host (Convert.ToString((3 + 5), '
+          '    Write-Host ([Convert]::ToString((3 + 5), '
           '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
       );
@@ -1809,7 +1905,7 @@ void main() {
       expect(
         andResult.code,
         contains(
-          '    Write-Host (Convert.ToString(([long](12) -band [long](10)), '
+          '    Write-Host ([Convert]::ToString(([long](12) -band [long](10)), '
           '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
       );
@@ -1865,7 +1961,7 @@ void main() {
       expect(
         result.code,
         contains(
-          '    Write-Host (Convert.ToString((-bnot [long](7)), '
+          '    Write-Host ([Convert]::ToString((-bnot [long](7)), '
           '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
       );
@@ -1885,7 +1981,7 @@ void main() {
       expect(
         result.code,
         contains(
-          '    Write-Host (Convert.ToString(5, '
+          '    Write-Host ([Convert]::ToString(5, '
           '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
       );
@@ -1899,7 +1995,7 @@ void main() {
       expect(
         result.code,
         contains(
-          "    Write-Host (Convert.ToString(([double]::Parse('3.5', "
+          "    Write-Host ([Convert]::ToString(([double]::Parse('3.5', "
           '[Globalization.CultureInfo]::InvariantCulture)), '
           '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
@@ -2734,6 +2830,8 @@ void main() {
         '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'
         r"$ErrorActionPreference = 'Stop'"
         '\n'
+        r'$env:PSModulePath = "$PSHOME\Modules"'
+        '\n'
         'try {\n'
         "    Write-Host '开始构建'\n"
         '} catch {\n'
@@ -2774,15 +2872,21 @@ void main() {
         code,
         contains(
           r"$ErrorActionPreference = 'Stop'"
+          '\n'
+          r'$env:PSModulePath = "$PSHOME\Modules"'
           '\n\n'
           'function ConvertFrom-CnpHex {\n',
         ),
       );
       expect(code, contains('}\n\ntry {\n'));
       final int stopIndex = code.indexOf(r"$ErrorActionPreference = 'Stop'");
+      final int modulePathIndex = code.indexOf(
+        r'$env:PSModulePath = "$PSHOME\Modules"',
+      );
       final int functionIndex = code.indexOf('function ConvertFrom-CnpHex {');
       final int tryIndex = code.indexOf('\n\ntry {\n');
-      expect(stopIndex, lessThan(functionIndex));
+      expect(stopIndex, lessThan(modulePathIndex));
+      expect(modulePathIndex, lessThan(functionIndex));
       expect(functionIndex, lessThan(tryIndex));
       expect(code, contains("    Write-Host '开始构建'\n"));
     });
@@ -2893,6 +2997,8 @@ void main() {
         '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'
         r"$ErrorActionPreference = 'Stop'"
         '\n'
+        r'$env:PSModulePath = "$PSHOME\Modules"'
+        '\n'
         '\n'
         r'$var_count = 0'
         '\n'
@@ -2905,7 +3011,7 @@ void main() {
         r'        $var_count = ($var_count + 1)'
         '\n'
         '    }\n'
-        r'    Write-Host (Convert.ToString($var_count, [Globalization.CultureInfo]::InvariantCulture))'
+        r'    Write-Host ([Convert]::ToString($var_count, [Globalization.CultureInfo]::InvariantCulture))'
         '\n'
         '} catch {\n'
         r'    Write-Host "脚本执行失败: $($_.Exception.Message)" -ForegroundColor Red'
@@ -2921,6 +3027,8 @@ void main() {
         code,
         contains(
           r"$ErrorActionPreference = 'Stop'"
+          '\n'
+          r'$env:PSModulePath = "$PSHOME\Modules"'
           '\n\n'
           r'$var_count = 0'
           '\n\ntry {\n',
@@ -2930,7 +3038,7 @@ void main() {
       expect(
         code,
         contains(
-          '    Write-Host (Convert.ToString('
+          '    Write-Host ([Convert]::ToString('
           r'$var_count'
           ', [Globalization.CultureInfo]::InvariantCulture))\n',
         ),
@@ -2949,6 +3057,8 @@ void main() {
         code,
         contains(
           r"$ErrorActionPreference = 'Stop'"
+          '\n'
+          r'$env:PSModulePath = "$PSHOME\Modules"'
           '\n\n'
           r"$var_label = ''"
           '\n\ntry {\n',
@@ -2971,6 +3081,8 @@ void main() {
         result.code,
         contains(
           r"$ErrorActionPreference = 'Stop'"
+          '\n'
+          r'$env:PSModulePath = "$PSHOME\Modules"'
           '\n\n'
           r'$var_alpha = 0'
           '\n'
@@ -2994,11 +3106,45 @@ void main() {
       expect(
         code,
         contains(
-          '(Convert.ToString('
+          '([Convert]::ToString('
           r'$var_total'
           ', [Globalization.CultureInfo]::InvariantCulture))',
         ),
       );
+    });
+
+    test('大小写归并：Count/count 同名同型，初始化一行且统一首见书写', () {
+      final ScriptCompileResult result = _compile(
+        _variableCaseVariantGraph(setName: 'Count', getName: 'count'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(code, contains(r'$var_Count = 0' '\n\ntry {\n'));
+      expect(
+        RegExp(r'^\$var_Count = 0$', multiLine: true).allMatches(code).length,
+        1,
+      );
+      expect(code, isNot(contains(r'$var_count')));
+      expect(code, contains(r'    $var_Count = 5' '\n'));
+      expect(
+        code,
+        contains(r'$var_Count, [Globalization.CultureInfo]::InvariantCulture))'),
+      );
+    });
+
+    test('大小写归并：首见书写决定全图引用（get 先于 set 发射）', () {
+      final ScriptCompileResult result = _compile(
+        _variableGetBeforeSetGraph(getName: 'count', setName: 'Count'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(code, contains(r'$var_count = 0' '\n\ntry {\n'));
+      expect(
+        RegExp(r'^\$var_count = 0$', multiLine: true).allMatches(code).length,
+        1,
+      );
+      expect(code, isNot(contains(r'$var_Count')));
+      expect(code, contains(r'    $var_count = 7' '\n'));
     });
 
     test(r'零变量图不含 $var_（零变化守护）', () {

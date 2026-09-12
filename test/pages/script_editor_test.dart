@@ -101,7 +101,7 @@ void main() {
 
     expect(tester.getSize(find.byKey(const Key('outputPanel'))).height, 220);
     expect(find.textContaining('由 cpp_nuget_pack 生成'), findsOneWidget);
-    expect(find.textContaining('已生成 · 7 行'), findsOneWidget);
+    expect(find.textContaining('已生成 · 8 行'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1083,7 +1083,7 @@ PackModel _packWithScript() {
     ];
 }
 
-/// 仅含一个未连线入口节点的脚本（生成 7 行 PowerShell、含一条警告）。
+/// 仅含一个未连线入口节点的脚本（生成 8 行 PowerShell、含一条警告）。
 PackModel _packWithEntryScript() {
   final PackModel pack = _packWithScript();
   pack.scripts.single.nodes.add(

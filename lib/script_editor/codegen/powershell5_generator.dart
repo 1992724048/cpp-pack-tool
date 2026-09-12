@@ -21,6 +21,9 @@ String numberLiteral(num value) {
 /// prelude 片段注册回调（键 → 片段文本；`content` 缺省时取 [preludeLibrary]）。
 typedef PreludeRegistrar = void Function(String key, {String? content});
 
+/// 发射期变量登记项：显示名（首见书写形式）与数据类型（lower-key 归并）。
+typedef _VariableEntry = ({String displayName, ScriptDataType dataType});
+
 class PowerShell5Generator implements ScriptCodeGenerator {
   final Map<String, String> _registeredPrelude = <String, String>{};
 
@@ -91,6 +94,10 @@ class PowerShell5Generator implements ScriptCodeGenerator {
       '# 由 cpp_nuget_pack 生成 — $packName / ${project.name}。请使用节点编辑器修改，勿手工编辑本文件。',
     );
     prefix.writeln(r"$ErrorActionPreference = 'Stop'");
+    // PS7 中间进程链（Dart/MSBuild/cmd）继承的模块路径会让 5.1 的 cmdlet
+    // 自动加载命中 Core-only shim（如 Get-FileHash 缺失）；入口归一为 WPS
+    // 自带模块目录，消除对进程链环境的依赖。
+    prefix.writeln(r'$env:PSModulePath = "$PSHOME\Modules"');
     _writePrelude(prefix);
     prefix.writeln('try {');
 
@@ -138,7 +145,7 @@ class _PowerShellEmitter {
   final _GraphIndex _index;
   final PreludeRegistrar registerPrelude;
   final Map<String, String> _itemVariableByNodeId = <String, String>{};
-  final Map<String, ScriptDataType> _variableKinds = <String, ScriptDataType>{};
+  final Map<String, _VariableEntry> _variables = <String, _VariableEntry>{};
   int _itemCounter = 0;
   int _processCounter = 0;
 
@@ -150,19 +157,21 @@ class _PowerShellEmitter {
     _emitChain(_index.execTarget(entry.id, defaultExecPinId));
   }
 
-  /// 组装 prelude 前调用：把发射期登记的变量（名称去重）按名称字典序
-  /// 生成初始化块（number → `0`、string → `''`）；无变量不注册（零变化守护）。
+  /// 组装 prelude 前调用：把发射期登记的变量（名称按 lower-key 归并、显示名
+  /// 取首见）按显示名字典序生成初始化块（number → `0`、string → `''`）；
+  /// 无变量不注册（零变化守护）。
   void registerVariablesPrelude() {
-    if (_variableKinds.isEmpty) {
+    if (_variables.isEmpty) {
       return;
     }
-    final List<String> names = _variableKinds.keys.toList()..sort();
-    final String content = names
-        .map((String name) {
-          final String initial = _variableKinds[name] == ScriptDataType.number
+    final List<_VariableEntry> variables = _variables.values.toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    final String content = variables
+        .map((variable) {
+          final String initial = variable.dataType == ScriptDataType.number
               ? '0'
               : "''";
-          return '\$var_$name = $initial';
+          return '\$var_${variable.displayName} = $initial';
         })
         .join('\n');
     registerPrelude('vars', content: content);
@@ -365,10 +374,8 @@ class _PowerShellEmitter {
     ScriptNodeModel node, {
     required ScriptDataType dataType,
   }) {
-    _registerVariable(node, dataType);
-    writer.writeln(
-      '\$var_${_textParam(node, 'name')} = ${_expression(node, 'value')}',
-    );
+    final String name = _registerVariable(node, dataType);
+    writer.writeln('\$var_$name = ${_expression(node, 'value')}');
   }
 
   /// 变量读取表达式：`$var_<name>`；仅 get 无 set 时由初始化块保证非 $null。
@@ -376,13 +383,20 @@ class _PowerShellEmitter {
     ScriptNodeModel node,
     ScriptDataType dataType,
   ) {
-    _registerVariable(node, dataType);
-    return '\$var_${_textParam(node, 'name')}';
+    return '\$var_${_registerVariable(node, dataType)}';
   }
 
-  /// 登记变量（名称去重；首见变体决定初始化值，同名同类型由校验器保证）。
-  void _registerVariable(ScriptNodeModel node, ScriptDataType dataType) {
-    _variableKinds.putIfAbsent(_textParam(node, 'name'), () => dataType);
+  /// 登记变量并返回其显示名：名称按 PowerShell 语义大小写不敏感
+  /// （lower-key 归并），首见书写形式决定全图引用与初始化行（发射序）；
+  /// 同名同类型由校验器保证。
+  String _registerVariable(ScriptNodeModel node, ScriptDataType dataType) {
+    final String name = _textParam(node, 'name');
+    return _variables
+        .putIfAbsent(
+          name.toLowerCase(),
+          () => (displayName: name, dataType: dataType),
+        )
+        .displayName;
   }
 
   String _textParam(ScriptNodeModel node, String key) {
@@ -534,7 +548,7 @@ class _PowerShellEmitter {
       case 'math.bitNot':
         return '(-bnot [long](${_expression(node, 'value')}))';
       case 'math.numberToString':
-        return '(Convert.ToString(${_expression(node, 'value')}, '
+        return '([Convert]::ToString(${_expression(node, 'value')}, '
             '[Globalization.CultureInfo]::InvariantCulture))';
       case 'math.stringToNumber':
         return '([double]::Parse(${_expression(node, 'value')}, '

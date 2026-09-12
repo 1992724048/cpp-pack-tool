@@ -1,7 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
+import 'package:cpp_nuget_pack/script_editor/codegen/powershell5_generator.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/prelude.dart';
+import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
+import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -55,6 +59,88 @@ Directory _createTempDir(String name) {
     }
   });
   return tempDir;
+}
+
+ScriptNodeModel _node(String id, String type, {Map<String, Object?>? params}) {
+  final ScriptNodeModel node = ScriptNodeModel(id: id, type: type);
+  if (params != null) {
+    node.params = params;
+  }
+  return node;
+}
+
+ScriptEdgeModel _edge(
+  String fromNode,
+  String fromPin,
+  String toNode,
+  String toPin,
+) {
+  return ScriptEdgeModel(
+    from: ScriptEdgeEndpoint(node: fromNode, pin: fromPin),
+    to: ScriptEdgeEndpoint(node: toNode, pin: toPin),
+  );
+}
+
+/// while 累加器图（M4.3 同款）：count = 0 → while (count < 5) { count += 1 } →
+/// 输出 count；真实执行后 stdout 恰为 `5`。
+ScriptProjectModel _whileAccumulatorProject() {
+  final ScriptProjectModel project = ScriptProjectModel(
+    id: 'script_1',
+    name: 'while 累加器',
+    trigger: ScriptTrigger.pre,
+  );
+  project.nodes = <ScriptNodeModel>[
+    _node('n1', 'flow.entry'),
+    _node('n2', 'value.number', params: <String, Object?>{'value': 0}),
+    _node(
+      'n3',
+      'variable.setNumber',
+      params: <String, Object?>{'name': 'count'},
+    ),
+    _node(
+      'n4',
+      'variable.getNumber',
+      params: <String, Object?>{'name': 'count'},
+    ),
+    _node('n5', 'value.number', params: <String, Object?>{'value': 5}),
+    _node('n6', 'logic.compareNumber'),
+    _node('n7', 'flow.while'),
+    _node(
+      'n8',
+      'variable.getNumber',
+      params: <String, Object?>{'name': 'count'},
+    ),
+    _node('n9', 'value.number', params: <String, Object?>{'value': 1}),
+    _node('n10', 'math.arithmetic'),
+    _node(
+      'n11',
+      'variable.setNumber',
+      params: <String, Object?>{'name': 'count'},
+    ),
+    _node(
+      'n12',
+      'variable.getNumber',
+      params: <String, Object?>{'name': 'count'},
+    ),
+    _node('n13', 'math.numberToString'),
+    _node('n14', 'log.message'),
+  ];
+  project.edges = <ScriptEdgeModel>[
+    _edge('n1', 'out', 'n3', 'exec'),
+    _edge('n2', 'result', 'n3', 'value'),
+    _edge('n3', 'out', 'n7', 'exec'),
+    _edge('n4', 'result', 'n6', 'a'),
+    _edge('n5', 'result', 'n6', 'b'),
+    _edge('n6', 'result', 'n7', 'condition'),
+    _edge('n7', 'body', 'n11', 'exec'),
+    _edge('n8', 'result', 'n10', 'a'),
+    _edge('n9', 'result', 'n10', 'b'),
+    _edge('n10', 'result', 'n11', 'value'),
+    _edge('n7', 'completed', 'n14', 'exec'),
+    _edge('n12', 'result', 'n13', 'value'),
+    _edge('n13', 'result', 'n14', 'message'),
+  ];
+  return project;
 }
 
 /// hex 往返（空白与连字符混合）+ 奇数长度/非法字符的异常路径（正反例成对）。
@@ -138,6 +224,38 @@ void main() {
           'sha256=15e2b0d3c33891ebb0f1ef609ec419420c20e320ce94c65fbc8c3312448eb225',
         ),
       );
+    }, skip: _nonWindowsSkip);
+  });
+
+  group('生成脚本真实执行（仅 Windows，脏 PSModulePath 链）', () {
+    test('PSModulePath 加固行生效：while 累加脚本输出 5 且退出码 0', () {
+      final ScriptCompileResult compiled = PowerShell5Generator().compile(
+        _whileAccumulatorProject(),
+        packName: 'demo',
+      );
+      expect(
+        compiled.hasErrors,
+        isFalse,
+        reason: compiled.diagnostics
+            .map((ScriptDiagnostic diagnostic) => diagnostic.message)
+            .join('；'),
+      );
+      final String code = compiled.code!;
+      // 入口加固：模块路径在脚本内归一，不依赖中间进程链的环境。
+      expect(code, contains(r'$env:PSModulePath = "$PSHOME\Modules"'));
+
+      final Directory tempDir = _createTempDir('cnp_generated_script_');
+      final String scriptPath = joinPath(tempDir.path, 'accumulator.ps1');
+      // 生成代码自带 UTF-8 BOM，直接落盘（`_writeScript` 会再前置一次 BOM）。
+      File(scriptPath).writeAsStringSync(code, encoding: utf8);
+
+      final ProcessResult result = _runScript(scriptPath);
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      expect(result.stdout.toString(), contains('5'));
     }, skip: _nonWindowsSkip);
   });
 }

@@ -246,16 +246,18 @@ class GraphValidator {
     _validateVariableNameTypes(nodes, descriptorById, diagnostics);
   }
 
-  /// 同一变量名只允许一种类型变体：按节点声明序收集 `name → 变体`，首个
-  /// 出现的变体为准（与生成器首见初始化一致），后续同名不同变体节点报错；
-  /// 同名同类型重复出现合法。名称本身非法的节点已由参数级报错，不再参与
-  /// 收集以免级联噪声。
+  /// 同一变量名只允许一种类型变体：按节点声明序收集 `小写名 → {变体, 书写名}`，
+  /// 首个出现节点的变体与书写形式为准（与生成器首见一致）；名称按 PowerShell
+  /// 语义大小写不敏感（lower-key 归并），后续同名不同变体节点报错（消息用该
+  /// 节点自身的书写名）；同名同类型（含大小写变体）重复出现合法。名称本身
+  /// 非法的节点已由参数级报错，不再参与收集以免级联噪声。
   static void _validateVariableNameTypes(
     List<ScriptNodeModel> nodes,
     Map<String, ScriptNodeTypeDescriptor> descriptorById,
     List<ScriptDiagnostic> diagnostics,
   ) {
-    final Map<String, String> variantByName = <String, String>{};
+    final Map<String, ({String type, String displayName})> variantByName =
+        <String, ({String type, String displayName})>{};
     for (final ScriptNodeModel node in nodes) {
       final ScriptNodeTypeDescriptor? descriptor = descriptorById[node.id];
       if (descriptor == null) {
@@ -269,12 +271,13 @@ class GraphValidator {
       if (name.isEmpty || !_namePattern.hasMatch(name)) {
         continue;
       }
-      final String? variantOfName = variantByName[name];
-      if (variantOfName == null) {
-        variantByName[name] = variant;
+      final ({String type, String displayName})? known =
+          variantByName[name.toLowerCase()];
+      if (known == null) {
+        variantByName[name.toLowerCase()] = (type: variant, displayName: name);
         continue;
       }
-      if (variantOfName != variant) {
+      if (known.type != variant) {
         diagnostics.add(
           ScriptDiagnostic(
             message: '变量 $name 类型不一致',
