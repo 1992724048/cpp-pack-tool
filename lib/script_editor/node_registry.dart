@@ -908,6 +908,80 @@ class NodeRegistry {
             ),
           ],
         ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'crypto.base64Encode',
+          displayName: 'Base64 编码',
+          category: ScriptNodeCategory.crypto,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: 'Base64 文本',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+        ),
+        // 非法 Base64 由 [Convert]::FromBase64String 运行时抛错（EAP=Stop）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'crypto.base64Decode',
+          displayName: 'Base64 解码',
+          category: ScriptNodeCategory.crypto,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'text',
+              label: 'Base64 文本',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+        ),
+        // 统一经 Get-CnpFileHash：非 crc32 走 Get-FileHash，crc32 走
+        // CnpCrc32 注入类型（仅算法为 crc32 时注入 Add-Type 块）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'crypto.fileHash',
+          displayName: '文件哈希',
+          category: ScriptNodeCategory.crypto,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '哈希值',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'algorithm',
+              label: '算法',
+              type: ScriptParamType.hashAlgorithm,
+              defaultValue: 'sha256',
+            ),
+          ],
+        ),
       ];
 
   static final Map<String, ScriptNodeTypeDescriptor> _byType =

@@ -221,6 +221,38 @@ ScriptProjectModel _compareNumberGraph({
   );
 }
 
+/// Base64 编码真实消费链：value.text(path) → base64Encode → log.message。
+ScriptProjectModel _base64EncodeGraph({String path = r'C:\x.bin'}) {
+  return _dataLogGraph(
+    _node('n4', 'crypto.base64Encode'),
+    inputs: <ScriptNodeModel>[
+      _node('n2', 'value.text', params: <String, Object?>{'value': path}),
+    ],
+    inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'path')],
+  );
+}
+
+/// 文件哈希真实消费链：value.text(path) → fileHash（缺省走注册表默认 sha256）→
+/// log.message。
+ScriptProjectModel _fileHashGraph({
+  String? algorithm,
+  String path = r'C:\x.bin',
+}) {
+  return _dataLogGraph(
+    _node(
+      'n4',
+      'crypto.fileHash',
+      params: algorithm == null
+          ? null
+          : <String, Object?>{'algorithm': algorithm},
+    ),
+    inputs: <ScriptNodeModel>[
+      _node('n2', 'value.text', params: <String, Object?>{'value': path}),
+    ],
+    inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'path')],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -1890,6 +1922,220 @@ void main() {
         contains(
           "    [IO.File]::WriteAllBytes('C:\\b.bin', "
           "(ConvertFrom-CnpHex ('BB')))\n",
+        ),
+      );
+    });
+  });
+
+  group('crypto 节点发射（M4.2 T6）', () {
+    test('crypto.base64Encode：ToBase64String(ReadAllBytes) 表达式内联进消费链', () {
+      final ScriptCompileResult result = _compile(_base64EncodeGraph());
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host ([Convert]::ToBase64String("
+          "[IO.File]::ReadAllBytes('C:\\x.bin')))\n",
+        ),
+      );
+      // 二进制语义：经 ReadAllBytes 读取，不得用 Get-Content 类文本读取
+      expect(result.code, isNot(contains('Get-Content')));
+    });
+
+    test('crypto.base64Decode：FromBase64String + WriteAllBytes 并续接 out 链', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': 'SGVsbG8='},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\out.bin'},
+          ),
+          _node('n4', 'crypto.base64Decode'),
+          _node('n5', 'value.text', params: <String, Object?>{'value': '已写入'}),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'text'),
+          _edge('n3', 'result', 'n4', 'path'),
+          _edge('n4', 'out', 'n6', 'exec'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    [IO.File]::WriteAllBytes('D:\\out.bin', "
+          "[Convert]::FromBase64String('SGVsbG8='))\n"
+          "    Write-Host '已写入'\n",
+        ),
+      );
+      // 非法 Base64 由 [Convert]::FromBase64String 运行时抛错（EAP=Stop）；
+      // 发射不预置额外校验、不注入任何 helper
+      expect(result.code, isNot(contains('function Get-CnpFileHash {')));
+      expect(result.code, isNot(contains('ConvertFrom-CnpHex')));
+    });
+
+    test('crypto.base64Encode → base64Decode：编码解码往返链递归内联', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a.bin'},
+          ),
+          _node('n3', 'crypto.base64Encode'),
+          _node(
+            'n4',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\b.bin'},
+          ),
+          _node('n5', 'crypto.base64Decode'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n5', 'exec'),
+          _edge('n2', 'result', 'n3', 'path'),
+          _edge('n3', 'result', 'n5', 'text'),
+          _edge('n4', 'result', 'n5', 'path'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    [IO.File]::WriteAllBytes('D:\\b.bin', "
+          "[Convert]::FromBase64String(([Convert]::ToBase64String("
+          "[IO.File]::ReadAllBytes('C:\\a.bin')))))\n",
+        ),
+      );
+    });
+
+    test('crypto.fileHash：sha256（缺省）注入 helper 且无 crc32 注入块', () {
+      final ScriptCompileResult result = _compile(_fileHashGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    Write-Host (Get-CnpFileHash -Path 'C:\\x.bin' "
+          "-Algorithm 'sha256')\n",
+        ),
+      );
+      expect(RegExp(r'function Get-CnpFileHash \{').allMatches(code).length, 1);
+      final int stopIndex = code.indexOf(r"$ErrorActionPreference = 'Stop'");
+      final int functionIndex = code.indexOf('function Get-CnpFileHash {');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(stopIndex, lessThan(functionIndex));
+      expect(functionIndex, lessThan(tryIndex));
+      // 非 crc32 算法不得注入 Add-Type 块（helper 体内的 crc32 分支不执行）
+      expect(code, isNot(contains('PSTypeName')));
+      expect(code, isNot(contains('Add-Type')));
+      expect(code, isNot(contains('public static class CnpCrc32')));
+    });
+
+    test('crypto.fileHash：crc32 注入 CnpCrc32 块（PSTypeName 守卫）', () {
+      final ScriptCompileResult result = _compile(
+        _fileHashGraph(algorithm: 'crc32'),
+      );
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    Write-Host (Get-CnpFileHash -Path 'C:\\x.bin' "
+          "-Algorithm 'crc32')\n",
+        ),
+      );
+      expect(RegExp(r'function Get-CnpFileHash \{').allMatches(code).length, 1);
+      expect(code, contains('[CnpCrc32]::Hash'));
+      expect(
+        code,
+        contains("[System.Management.Automation.PSTypeName]'CnpCrc32'"),
+      );
+      expect(code, contains('Add-Type -TypeDefinition'));
+      expect(code, contains('public static class CnpCrc32'));
+      final int functionIndex = code.indexOf('function Get-CnpFileHash {');
+      final int crc32Index = code.indexOf('PSTypeName');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(functionIndex, lessThan(crc32Index));
+      expect(crc32Index, lessThan(tryIndex));
+    });
+
+    test('crypto.fileHash：sha1 / sha512 / md5 参数映射透传', () {
+      for (final String algorithm in <String>['sha1', 'sha512', 'md5']) {
+        final ScriptCompileResult result = _compile(
+          _fileHashGraph(algorithm: algorithm),
+        );
+        expect(result.hasErrors, isFalse, reason: algorithm);
+        expect(
+          result.code,
+          contains("-Algorithm '$algorithm')"),
+          reason: algorithm,
+        );
+        expect(result.code, isNot(contains('PSTypeName')), reason: algorithm);
+      }
+    });
+
+    test('crypto.fileHash 幂等：两节点（一个 crc32）各片段仅注册一次', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a.bin'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\b.bin'},
+          ),
+          _node('n4', 'crypto.fileHash'),
+          _node(
+            'n5',
+            'crypto.fileHash',
+            params: <String, Object?>{'algorithm': 'crc32'},
+          ),
+          _node('n6', 'log.message'),
+          _node('n7', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n6', 'exec'),
+          _edge('n6', 'out', 'n7', 'exec'),
+          _edge('n2', 'result', 'n4', 'path'),
+          _edge('n3', 'result', 'n5', 'path'),
+          _edge('n4', 'result', 'n6', 'message'),
+          _edge('n5', 'result', 'n7', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(RegExp(r'function Get-CnpFileHash \{').allMatches(code).length, 1);
+      expect(RegExp('PSTypeName').allMatches(code).length, 1);
+      expect(RegExp('public static class CnpCrc32').allMatches(code).length, 1);
+      expect(
+        code,
+        contains(
+          "    Write-Host (Get-CnpFileHash -Path 'C:\\a.bin' "
+          "-Algorithm 'sha256')\n",
+        ),
+      );
+      expect(
+        code,
+        contains(
+          "    Write-Host (Get-CnpFileHash -Path 'C:\\b.bin' "
+          "-Algorithm 'crc32')\n",
         ),
       );
     });

@@ -289,6 +289,12 @@ void main() {
       expect(nodeTypeIcon('file.writeHex'), FluentIcons.code_edit);
     });
 
+    test('crypto 三节点图标（视觉规范 §9）', () {
+      expect(nodeTypeIcon('crypto.base64Encode'), FluentIcons.export);
+      expect(nodeTypeIcon('crypto.base64Decode'), FluentIcons.import);
+      expect(nodeTypeIcon('crypto.fileHash'), FluentIcons.fingerprint);
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

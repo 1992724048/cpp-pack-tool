@@ -39,6 +39,9 @@ const Set<String> _expectedTypeKeys = <String>{
   'math.stringToNumber',
   'string.upperCase',
   'logic.compareNumber',
+  'crypto.base64Encode',
+  'crypto.base64Decode',
+  'crypto.fileHash',
 };
 
 ScriptParamDescriptor _param(String typeKey, String paramKey) {
@@ -53,13 +56,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 36 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(36));
+    test('总数 39 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(39));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(36),
+        hasLength(39),
       );
     });
 
@@ -153,6 +156,7 @@ void main() {
             ScriptNodeCategory.log: 1,
             ScriptNodeCategory.logic: 3,
             ScriptNodeCategory.math: 5,
+            ScriptNodeCategory.crypto: 3,
           };
       final List<ScriptNodeTypeDescriptor> collected =
           <ScriptNodeTypeDescriptor>[];
@@ -177,7 +181,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(36),
+        hasLength(39),
       );
     });
 
@@ -191,6 +195,7 @@ void main() {
       expect(ScriptNodeCategory.log.label, '日志');
       expect(ScriptNodeCategory.logic.label, '逻辑');
       expect(ScriptNodeCategory.math.label, '数值');
+      expect(ScriptNodeCategory.crypto.label, '编码与安全');
     });
   });
 
@@ -955,6 +960,90 @@ void main() {
       );
       expect(stringToNumber.params, isEmpty);
     });
+
+    test('crypto.base64Encode / base64Decode / fileHash 引脚与参数', () {
+      final ScriptNodeTypeDescriptor base64Encode = NodeRegistry.byType(
+        'crypto.base64Encode',
+      )!;
+      expect(base64Encode.category, ScriptNodeCategory.crypto);
+      expect(base64Encode.displayName, 'Base64 编码');
+      expect(
+        base64Encode.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'path', 'result'},
+      );
+      expect(
+        _pin('crypto.base64Encode', 'path').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('crypto.base64Encode', 'path').isInput, isTrue);
+      expect(_pin('crypto.base64Encode', 'path').required, isTrue);
+      expect(
+        _pin('crypto.base64Encode', 'result').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('crypto.base64Encode', 'result').isInput, isFalse);
+      expect(
+        base64Encode.pins.every(
+          (ScriptPinDescriptor pin) => pin.kind == ScriptPinKind.data,
+        ),
+        isTrue,
+      );
+      expect(base64Encode.params, isEmpty);
+
+      final ScriptNodeTypeDescriptor base64Decode = NodeRegistry.byType(
+        'crypto.base64Decode',
+      )!;
+      expect(base64Decode.category, ScriptNodeCategory.crypto);
+      expect(base64Decode.displayName, 'Base64 解码');
+      expect(
+        base64Decode.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'text', 'path', 'out'},
+      );
+      expect(_pin('crypto.base64Decode', 'exec').kind, ScriptPinKind.exec);
+      expect(_pin('crypto.base64Decode', 'exec').isInput, isTrue);
+      expect(_pin('crypto.base64Decode', 'exec').required, isTrue);
+      expect(
+        _pin('crypto.base64Decode', 'text').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('crypto.base64Decode', 'text').isInput, isTrue);
+      expect(_pin('crypto.base64Decode', 'text').required, isTrue);
+      expect(
+        _pin('crypto.base64Decode', 'path').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('crypto.base64Decode', 'path').isInput, isTrue);
+      expect(_pin('crypto.base64Decode', 'path').required, isTrue);
+      expect(_pin('crypto.base64Decode', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('crypto.base64Decode', 'out').isInput, isFalse);
+      expect(base64Decode.params, isEmpty);
+
+      final ScriptNodeTypeDescriptor fileHash = NodeRegistry.byType(
+        'crypto.fileHash',
+      )!;
+      expect(fileHash.category, ScriptNodeCategory.crypto);
+      expect(fileHash.displayName, '文件哈希');
+      expect(
+        fileHash.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'path', 'result'},
+      );
+      expect(_pin('crypto.fileHash', 'path').dataType, ScriptDataType.string);
+      expect(_pin('crypto.fileHash', 'path').isInput, isTrue);
+      expect(_pin('crypto.fileHash', 'path').required, isTrue);
+      expect(_pin('crypto.fileHash', 'result').dataType, ScriptDataType.string);
+      expect(_pin('crypto.fileHash', 'result').isInput, isFalse);
+      expect(
+        fileHash.params
+            .map((ScriptParamDescriptor param) => param.key)
+            .toList(),
+        <String>['algorithm'],
+      );
+      expect(
+        _param('crypto.fileHash', 'algorithm').type,
+        ScriptParamType.hashAlgorithm,
+      );
+      expect(_param('crypto.fileHash', 'algorithm').defaultValue, 'sha256');
+    });
   });
 
   group('参数清单 / 默认值 / 类型', () {
@@ -974,6 +1063,7 @@ void main() {
         'context.macro': <String>['macro'],
         'context.environment': <String>['name'],
         'context.packageFile': <String>['path'],
+        'crypto.fileHash': <String>['algorithm'],
       };
       for (final ScriptNodeTypeDescriptor type in NodeRegistry.all) {
         final List<String> expectedKeys = expected[type.typeKey] ?? <String>[];
@@ -1002,6 +1092,7 @@ void main() {
       expect(_param('context.macro', 'macro').defaultValue, 'OutDir');
       expect(_param('context.environment', 'name').defaultValue, '');
       expect(_param('context.packageFile', 'path').defaultValue, '');
+      expect(_param('crypto.fileHash', 'algorithm').defaultValue, 'sha256');
     });
 
     test('参数类型映射', () {
@@ -1045,6 +1136,10 @@ void main() {
         ScriptParamType.numberOperator,
       );
       expect(_param('context.environment', 'name').type, ScriptParamType.text);
+      expect(
+        _param('crypto.fileHash', 'algorithm').type,
+        ScriptParamType.hashAlgorithm,
+      );
     });
   });
 }

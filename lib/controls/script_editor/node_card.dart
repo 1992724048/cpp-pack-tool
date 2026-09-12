@@ -80,6 +80,7 @@ Color nodeCategoryColor(ScriptNodeCategory category) {
     ScriptNodeCategory.log => UCColors.flavor.sky,
     ScriptNodeCategory.logic => UCColors.flavor.maroon,
     ScriptNodeCategory.math => UCColors.flavor.sapphire,
+    ScriptNodeCategory.crypto => UCColors.flavor.pink,
   };
 }
 
@@ -122,6 +123,9 @@ IconData nodeTypeIcon(String typeKey) {
     'math.bitNot' => FluentIcons.undo,
     'math.numberToString' => FluentIcons.text_field,
     'math.stringToNumber' => FluentIcons.number_field,
+    'crypto.base64Encode' => FluentIcons.export,
+    'crypto.base64Decode' => FluentIcons.import,
+    'crypto.fileHash' => FluentIcons.fingerprint,
     _ => FluentIcons.cube_shape,
   };
 }

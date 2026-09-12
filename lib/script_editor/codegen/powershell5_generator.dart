@@ -186,6 +186,8 @@ class _PowerShellEmitter {
         _emitFileHardLink(node);
       case 'file.writeHex':
         _emitFileWriteHex(node);
+      case 'crypto.base64Decode':
+        _emitBase64Decode(node);
       case 'process.run':
         _emitProcessRun(node);
       case 'flow.branch':
@@ -260,6 +262,14 @@ class _PowerShellEmitter {
     final String hex = _expression(node, 'hex');
     writer.writeln(
       '[IO.File]::WriteAllBytes($path, (ConvertFrom-CnpHex ($hex)))',
+    );
+  }
+
+  void _emitBase64Decode(ScriptNodeModel node) {
+    final String path = _expression(node, 'path');
+    final String text = _expression(node, 'text');
+    writer.writeln(
+      '[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($text))',
     );
   }
 
@@ -412,6 +422,11 @@ class _PowerShellEmitter {
       case 'math.stringToNumber':
         return '([double]::Parse(${_expression(node, 'value')}, '
             '[Globalization.CultureInfo]::InvariantCulture))';
+      case 'crypto.base64Encode':
+        return '([Convert]::ToBase64String('
+            '[IO.File]::ReadAllBytes(${_expression(node, 'path')})))';
+      case 'crypto.fileHash':
+        return _fileHashExpression(node);
       default:
         // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的表达式生成尚未实现');
@@ -499,6 +514,18 @@ class _PowerShellEmitter {
     };
     return '([long](${_expression(node, 'a')}) $psOperator '
         '[long](${_expression(node, 'b')}))';
+  }
+
+  /// 文件哈希：统一经 [Get-CnpFileHash] 辅助函数分发；crc32 额外注入
+  /// CnpCrc32 `Add-Type` 块（非 crc32 不注入，helper 的 crc32 分支不执行）。
+  String _fileHashExpression(ScriptNodeModel node) {
+    registerPrelude('Get-CnpFileHash');
+    final String algorithm = '${_param(node, 'algorithm')}';
+    if (algorithm == 'crc32') {
+      registerPrelude('crc32', content: crc32Prelude);
+    }
+    return '(Get-CnpFileHash -Path ${_expression(node, 'path')} '
+        '-Algorithm ${_textLiteral(algorithm)})';
   }
 
   Object? _param(ScriptNodeModel node, String key) {
