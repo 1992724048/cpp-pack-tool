@@ -28,12 +28,17 @@ const Map<ScriptDataType, String> _consumerTypeKeys = <ScriptDataType, String>{
 
 /// 注册表默认参数不满足校验的类型需给出最小合法夹具值
 /// （context.environment 与 variable 四类的名称须匹配正则、context.packageFile
-/// 路径须非空、crypto 加密/签名节点的口令与证书来源二选一、
-/// system.findTool 的名称按 spec §3.6 必填给出非空值）。
+/// 与 context.scriptFile / process.runScript 路径须非空、crypto 加密/签名
+/// 节点的口令与证书来源二选一、system.findTool 的名称按 spec §3.6 必填给出
+/// 非空值）。
 const Map<String, Map<String, Object?>> _fixtureParams =
     <String, Map<String, Object?>>{
       'context.environment': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'context.packageFile': <String, Object?>{'path': 'lib/sample.lib'},
+      'context.scriptFile': <String, Object?>{'file': 'files/scripts/task.bat'},
+      'process.runScript': <String, Object?>{
+        'script': 'files/scripts/task.ps1',
+      },
       'system.findTool': <String, Object?>{'name': 'clang'},
       'variable.setNumber': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'variable.getNumber': <String, Object?>{'name': 'CNP_COMPLETENESS'},
@@ -295,8 +300,8 @@ void main() {
       );
       expect(
         NodeRegistry.all.length,
-        greaterThanOrEqualTo(49),
-        reason: '注册表类型数量异常缩减（当前 49 类），护栏失效',
+        greaterThanOrEqualTo(51),
+        reason: '注册表类型数量异常缩减（当前 51 类），护栏失效',
       );
     });
   });

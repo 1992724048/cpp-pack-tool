@@ -272,6 +272,7 @@ void main() {
       final ScriptProjectModel project = _script();
       await _pumpPage(tester, _packWithScripts(<ScriptProjectModel>[project]));
 
+      await _revealLibraryItem(tester, 'value.text');
       await tester.tap(find.byKey(const Key('nodeLibraryItem_value.text')));
       await tester.pump();
 
@@ -294,6 +295,7 @@ void main() {
       );
       await _pumpPage(tester, _packWithScripts(<ScriptProjectModel>[project]));
 
+      await _revealLibraryItem(tester, 'value.text');
       await tester.tap(find.byKey(const Key('nodeLibraryItem_value.text')));
       await tester.pump();
 
@@ -398,6 +400,33 @@ Future<void> _scrollLibraryUntilVisible(
     position.jumpTo(next);
     await tester.pump();
   }
+}
+
+/// 页面布局下节点库列表的 Scrollable（页面含多面板滚动区，按面板键与
+/// Scrollbar 归属定位，避免命中搜索框内建滚动区）。
+ScrollableState _pageLibraryScrollable(WidgetTester tester) {
+  return tester.state<ScrollableState>(
+    find.descendant(
+      of: find.descendant(
+        of: find.byKey(const Key('nodeLibraryPanel')),
+        matching: find.byType(Scrollbar),
+      ),
+      matching: find.byType(Scrollable),
+    ),
+  );
+}
+
+/// 页面用例：51 类节点下目标条目可能位于懒构建窗口之外；滚动至可见再点击
+/// （逐段滚动后 ensureVisible 保证条目完整进入视口，命中测试不落空）。
+Future<void> _revealLibraryItem(WidgetTester tester, String typeKey) async {
+  final Finder item = find.byKey(Key('nodeLibraryItem_$typeKey'));
+  await _scrollLibraryUntilVisible(
+    tester,
+    _pageLibraryScrollable(tester),
+    item,
+  );
+  await tester.ensureVisible(item);
+  await tester.pump();
 }
 
 Future<void> _pumpPage(WidgetTester tester, PackModel pack) async {

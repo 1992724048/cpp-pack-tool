@@ -7,6 +7,7 @@ import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter/foundation.dart';
 
 const String _packageRootEnvExpression = r'$env:CNP_PackageRoot';
@@ -236,6 +237,8 @@ class _PowerShellEmitter {
         _emitVariableSet(node, dataType: ScriptDataType.string);
       case 'process.run':
         _emitProcessRun(node);
+      case 'process.runScript':
+        _emitRunScript(node);
       case 'flow.branch':
         _emitBranch(node);
       case 'flow.foreach':
@@ -443,6 +446,72 @@ class _PowerShellEmitter {
     }
   }
 
+  /// 运行包内脚本：结构与 [process.run] 同款（arguments 按行拆分、工作目录
+  /// Push/Pop、`$LASTEXITCODE` 检查 + abort 语义），解释器按 `script` 参数值
+  /// 扩展名分派（见 [_scriptInvocationPrefix]）；`$proc_N`/`$args_N` 与
+  /// process.run 共用全局计数器，保证同一脚本内变量唯一。
+  void _emitRunScript(ScriptNodeModel node) {
+    final int index = ++_processCounter;
+    final String process = '\$proc_$index';
+    final String argumentsName = 'args_$index';
+    final String arguments = '\$$argumentsName';
+    final String? argumentsExpression = _optionalExpression(node, 'arguments');
+    final String? workingDirectory = _optionalExpression(
+      node,
+      'workingDirectory',
+    );
+    writer.writeln('$process = ${_packageFileExpression(node, key: 'script')}');
+    writer.writeln(
+      argumentsExpression == null
+          ? '$arguments = @()'
+          : '$arguments = @($argumentsExpression -split "\\r?\\n" | '
+                'Where-Object { \$_ -ne \'\' })',
+    );
+    if (workingDirectory != null) {
+      writer.writeln('Push-Location -LiteralPath $workingDirectory');
+    }
+    writer.writeln('${_scriptInvocationPrefix(node)}$process @$argumentsName');
+    if (workingDirectory != null) {
+      writer.writeln('Pop-Location');
+    }
+    if (_param(node, 'abortOnFailure') == true) {
+      writer.writeln(
+        r'if ($LASTEXITCODE -ne 0) { throw "外部程序退出码 $LASTEXITCODE" }',
+      );
+    } else {
+      writer.writeln(
+        r"Write-Host ('[警告] 外部程序退出码 ' + $LASTEXITCODE) -ForegroundColor Yellow",
+      );
+    }
+  }
+
+  /// runScript 调用前缀：按 `script` 参数值扩展名分派（大小写不敏感）；
+  /// bat/cmd/exe 与未知扩展名直接 `& <路径>`（与「编译设置」脚本引用同口径）。
+  /// ps1 用 Windows PowerShell 5.1 固定参数，`-File` 为最后一个开关——
+  /// 其后仅脚本路径与脚本参数（`@$args_N` 按参数传递，不再出现开关）。
+  String _scriptInvocationPrefix(ScriptNodeModel node) {
+    switch (_scriptExtension('${_param(node, 'script')}')) {
+      case 'ps1':
+        return '& powershell.exe -NoProfile -NonInteractive '
+            '-ExecutionPolicy Bypass -File ';
+      case 'py':
+        return '& python ';
+      default:
+        return '& ';
+    }
+  }
+
+  /// 取 basename 最后一个 `.` 之后的扩展名（小写）；无扩展名或点位于
+  /// 首/末位返回空串（与 `lib/util/script_files.dart` 的集合判定同口径）。
+  String _scriptExtension(String path) {
+    final String name = baseName(path);
+    final int dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) {
+      return '';
+    }
+    return name.substring(dot + 1).toLowerCase();
+  }
+
   void _emitBranch(ScriptNodeModel node) {
     final String condition = _expression(node, 'condition');
     writer.writeln('if ($condition) {');
@@ -523,6 +592,8 @@ class _PowerShellEmitter {
         return _environmentExpression(node);
       case 'context.packageFile':
         return _packageFileExpression(node);
+      case 'context.scriptFile':
+        return _packageFileExpression(node, key: 'file');
       case 'string.concat':
         return '(${_expression(node, 'a')} + ${_expression(node, 'b')})';
       case 'string.replace':
@@ -597,8 +668,11 @@ class _PowerShellEmitter {
     return '\$env:${_param(node, 'name')}';
   }
 
-  String _packageFileExpression(ScriptNodeModel node) {
-    final String relativePath = '${_param(node, 'path')}'.replaceAll('/', r'\');
+  /// 包内相对路径 → `(Join-Path $env:CNP_PackageRoot '<路径>')`；`/` 归一为
+  /// `\`（值口径 = build/native 相对路径）。`key` 为参数键（packageFile 用
+  /// `path`、scriptFile/runScript 用 `file`/`script`）。
+  String _packageFileExpression(ScriptNodeModel node, {String key = 'path'}) {
+    final String relativePath = '${_param(node, key)}'.replaceAll('/', r'\');
     return '(Join-Path $_packageRootEnvExpression '
         '${_textLiteral(relativePath)})';
   }

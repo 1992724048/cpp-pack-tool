@@ -681,6 +681,75 @@ ScriptProjectModel _uploadGraph({
   );
 }
 
+/// 包内脚本文件消费链：scriptFile.result → log.message（`file` 为包内相对路径）。
+ScriptProjectModel _scriptFileGraph({String file = 'files/scripts/task.ps1'}) {
+  return _dataLogGraph(
+    _node('n2', 'context.scriptFile', params: <String, Object?>{'file': file}),
+  );
+}
+
+/// 运行包内脚本链：入口 → runScript；`arguments`/`workingDirectory` 连接
+/// value.text 供应（null 时不建节点/边），`abortOnFailure` null 走注册表默认。
+ScriptProjectModel _runScriptGraph({
+  String script = 'files/scripts/task.ps1',
+  String? arguments,
+  String? workingDirectory,
+  bool? abortOnFailure,
+}) {
+  final List<ScriptNodeModel> nodes = <ScriptNodeModel>[
+    _node('n1', 'flow.entry'),
+    _node(
+      'n2',
+      'process.runScript',
+      params: <String, Object?>{
+        'script': script,
+        'abortOnFailure': ?abortOnFailure,
+      },
+    ),
+  ];
+  final List<ScriptEdgeModel> edges = <ScriptEdgeModel>[
+    _edge('n1', 'out', 'n2', 'exec'),
+  ];
+  if (arguments != null) {
+    nodes.add(
+      _node('n3', 'value.text', params: <String, Object?>{'value': arguments}),
+    );
+    edges.add(_edge('n3', 'result', 'n2', 'arguments'));
+  }
+  if (workingDirectory != null) {
+    nodes.add(
+      _node(
+        'n4',
+        'value.text',
+        params: <String, Object?>{'value': workingDirectory},
+      ),
+    );
+    edges.add(_edge('n4', 'result', 'n2', 'workingDirectory'));
+  }
+  return _project(nodes, edges: edges);
+}
+
+/// process.run 后接 runScript：两节点共用 `$proc_N`/`$args_N` 计数器。
+ScriptProjectModel _runThenRunScriptGraph() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': 'cmd'}),
+      _node('n3', 'process.run'),
+      _node(
+        'n4',
+        'process.runScript',
+        params: <String, Object?>{'script': 'files/scripts/task.ps1'},
+      ),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'program'),
+      _edge('n3', 'out', 'n4', 'exec'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -3355,6 +3424,185 @@ void main() {
           "'https://example.com/upload', 'POST', 'D:\\up\\pkg.zip')\n",
         ),
       );
+    });
+  });
+
+  group('包内脚本节点发射（M4.4 T3）', () {
+    test('context.scriptFile：`/` 归一为 `\\` 并组合 Join-Path', () {
+      final ScriptCompileResult result = _compile(
+        _scriptFileGraph(file: 'files/scripts/task.ps1'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot "
+          "'files\\scripts\\task.ps1')\n",
+        ),
+      );
+    });
+
+    test('context.scriptFile：`\\` 分隔路径原样保留（归一幂等）', () {
+      final ScriptCompileResult result = _compile(
+        _scriptFileGraph(file: r'lib\tools\run.bat'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host (Join-Path \$env:CNP_PackageRoot "
+          "'lib\\tools\\run.bat')\n",
+        ),
+      );
+    });
+
+    test('runScript ps1：powershell 固定参数内联且 `-File` 之后无开关', () {
+      final ScriptCompileResult result = _compile(_runScriptGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    \$proc_1 = (Join-Path \$env:CNP_PackageRoot "
+          "'files\\scripts\\task.ps1')\n"
+          '    \$args_1 = @()\n'
+          '    & powershell.exe -NoProfile -NonInteractive '
+          '-ExecutionPolicy Bypass -File \$proc_1 @args_1\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n',
+        ),
+      );
+      final String invocation = code
+          .split('\n')
+          .singleWhere((String line) => line.contains('-File '));
+      final String afterFile = invocation.substring(
+        invocation.indexOf('-File ') + '-File '.length,
+      );
+      expect(
+        afterFile,
+        '\$proc_1 @args_1',
+        reason: '-File 之后不得再出现开关（其后参数按脚本参数传递）',
+      );
+    });
+
+    test('runScript py：python 前缀（扩展名大小写不敏感）', () {
+      final ScriptCompileResult result = _compile(
+        _runScriptGraph(script: 'files/scripts/TASK.PY'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    \$proc_1 = (Join-Path \$env:CNP_PackageRoot "
+          "'files\\scripts\\TASK.PY')\n"
+          '    \$args_1 = @()\n'
+          '    & python \$proc_1 @args_1\n',
+        ),
+      );
+    });
+
+    test('runScript bat/cmd/exe：直接调用（无解释器前缀）', () {
+      for (final String name in <String>['task.bat', 'task.cmd', 'task.exe']) {
+        final ScriptCompileResult result = _compile(
+          _runScriptGraph(script: 'files/scripts/$name'),
+        );
+        expect(result.hasErrors, isFalse, reason: name);
+        expect(result.code, contains('    & \$proc_1 @args_1\n'), reason: name);
+        expect(result.code, isNot(contains('powershell.exe')), reason: name);
+        expect(result.code, isNot(contains('python')), reason: name);
+      }
+    });
+
+    test('runScript 未知扩展名/无扩展名：回退直接调用', () {
+      for (final String path in <String>[
+        'files/scripts/setup.txt',
+        'files/scripts/run',
+        'files/scripts/.ps1',
+      ]) {
+        final ScriptCompileResult result = _compile(
+          _runScriptGraph(script: path),
+        );
+        expect(result.hasErrors, isFalse, reason: path);
+        expect(result.code, contains('    & \$proc_1 @args_1\n'), reason: path);
+        expect(result.code, isNot(contains('powershell.exe')), reason: path);
+      }
+    });
+
+    test('runScript arguments：多行文本按行拆分（空行滤除）', () {
+      final ScriptCompileResult result = _compile(
+        _runScriptGraph(arguments: 'a\n\nb'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    \$args_1 = @(\'a\n\nb\' -split "\\r?\\n" | '
+          'Where-Object { \$_ -ne \'\' })\n',
+        ),
+      );
+    });
+
+    test('runScript workingDirectory：Push-Location / Pop-Location 包裹调用', () {
+      final ScriptCompileResult result = _compile(
+        _runScriptGraph(workingDirectory: r'C:\work'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Push-Location -LiteralPath 'C:\\work'\n"
+          '    & powershell.exe -NoProfile -NonInteractive '
+          '-ExecutionPolicy Bypass -File \$proc_1 @args_1\n'
+          '    Pop-Location\n',
+        ),
+      );
+    });
+
+    test('runScript abortOnFailure=false：警告替代 throw', () {
+      final ScriptCompileResult result = _compile(
+        _runScriptGraph(abortOnFailure: false),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host ('[警告] 外部程序退出码 ' + \$LASTEXITCODE) "
+          '-ForegroundColor Yellow\n',
+        ),
+      );
+      expect(result.code, isNot(contains('throw "外部程序退出码')));
+    });
+
+    test('runScript 与 process.run 共用 \$proc_N/\$args_N 计数器（全局唯一）', () {
+      final ScriptCompileResult result = _compile(_runThenRunScriptGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    \$proc_1 = 'cmd'\n"
+          '    \$args_1 = @()\n'
+          '    & \$proc_1 @args_1\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n'
+          "    \$proc_2 = (Join-Path \$env:CNP_PackageRoot "
+          "'files\\scripts\\task.ps1')\n"
+          '    \$args_2 = @()\n'
+          '    & powershell.exe -NoProfile -NonInteractive '
+          '-ExecutionPolicy Bypass -File \$proc_2 @args_2\n'
+          '    if (\$LASTEXITCODE -ne 0) { throw "外部程序退出码 \$LASTEXITCODE" }\n',
+        ),
+      );
+      expect(RegExp(r'\$proc_\d+ = ').allMatches(code).length, 2);
+      expect(RegExp(r'\$args_\d+ = ').allMatches(code).length, 2);
+    });
+
+    test('scriptFile/runScript 发射不触发 prelude 片段（无新 helper）', () {
+      for (final ScriptCompileResult result in <ScriptCompileResult>[
+        _compile(_scriptFileGraph()),
+        _compile(_runScriptGraph()),
+      ]) {
+        expect(result.hasErrors, isFalse);
+        expect(result.code, isNot(contains('function ')));
+      }
     });
   });
 }

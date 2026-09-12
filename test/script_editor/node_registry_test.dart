@@ -17,9 +17,11 @@ const Set<String> _expectedTypeKeys = <String>{
   'file.readHex',
   'file.writeHex',
   'process.run',
+  'process.runScript',
   'context.macro',
   'context.environment',
   'context.packageFile',
+  'context.scriptFile',
   'value.text',
   'value.boolean',
   'value.number',
@@ -66,13 +68,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 49 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(49));
+    test('总数 51 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(51));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(49),
+        hasLength(51),
       );
     });
 
@@ -134,7 +136,7 @@ void main() {
       }
     });
 
-    test('输入引脚除 process.run 两个可选参数外全部必填', () {
+    test('输入引脚可选集仅限 process.run 与 process.runScript 的参数/工作目录', () {
       final Set<String> optionalInputs = <String>{};
       for (final ScriptNodeTypeDescriptor type in NodeRegistry.all) {
         for (final ScriptPinDescriptor pin in type.pins) {
@@ -146,6 +148,8 @@ void main() {
       expect(optionalInputs, <String>{
         'process.run.arguments',
         'process.run.workingDirectory',
+        'process.runScript.arguments',
+        'process.runScript.workingDirectory',
       });
     });
 
@@ -159,8 +163,8 @@ void main() {
           <ScriptNodeCategory, int>{
             ScriptNodeCategory.flow: 4,
             ScriptNodeCategory.file: 9,
-            ScriptNodeCategory.process: 1,
-            ScriptNodeCategory.context: 3,
+            ScriptNodeCategory.process: 2,
+            ScriptNodeCategory.context: 4,
             ScriptNodeCategory.value: 3,
             ScriptNodeCategory.string: 7,
             ScriptNodeCategory.log: 1,
@@ -193,7 +197,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(49),
+        hasLength(51),
       );
     });
 
@@ -1328,6 +1332,83 @@ void main() {
       expect(_param('system.upload', 'method').type, ScriptParamType.text);
       expect(_param('system.upload', 'method').defaultValue, 'PUT');
     });
+
+    test('context.scriptFile 与 process.runScript（M4.4 T3）', () {
+      final ScriptNodeTypeDescriptor scriptFile = NodeRegistry.byType(
+        'context.scriptFile',
+      )!;
+      expect(scriptFile.category, ScriptNodeCategory.context);
+      expect(scriptFile.displayName, '包内脚本文件');
+      expect(
+        scriptFile.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'result'},
+      );
+      expect(
+        _pin('context.scriptFile', 'result').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('context.scriptFile', 'result').isInput, isFalse);
+      expect(_pin('context.scriptFile', 'result').label, isNotEmpty);
+      expect(
+        scriptFile.params
+            .map((ScriptParamDescriptor param) => param.key)
+            .toList(),
+        <String>['file'],
+      );
+      expect(_param('context.scriptFile', 'file').label, isNotEmpty);
+      expect(
+        _param('context.scriptFile', 'file').type,
+        ScriptParamType.scriptFilePath,
+      );
+      expect(_param('context.scriptFile', 'file').defaultValue, '');
+
+      final ScriptNodeTypeDescriptor runScript = NodeRegistry.byType(
+        'process.runScript',
+      )!;
+      expect(runScript.category, ScriptNodeCategory.process);
+      expect(runScript.displayName, '运行包内脚本');
+      expect(
+        runScript.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'arguments', 'workingDirectory', 'out'},
+      );
+      expect(_pin('process.runScript', 'exec').kind, ScriptPinKind.exec);
+      expect(_pin('process.runScript', 'exec').isInput, isTrue);
+      expect(_pin('process.runScript', 'exec').required, isTrue);
+      expect(
+        _pin('process.runScript', 'arguments').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('process.runScript', 'arguments').isInput, isTrue);
+      expect(_pin('process.runScript', 'arguments').required, isFalse);
+      expect(
+        _pin('process.runScript', 'workingDirectory').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('process.runScript', 'workingDirectory').isInput, isTrue);
+      expect(_pin('process.runScript', 'workingDirectory').required, isFalse);
+      expect(_pin('process.runScript', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('process.runScript', 'out').isInput, isFalse);
+      expect(
+        runScript.params
+            .map((ScriptParamDescriptor param) => param.key)
+            .toList(),
+        <String>['script', 'abortOnFailure'],
+      );
+      expect(_param('process.runScript', 'script').label, isNotEmpty);
+      expect(
+        _param('process.runScript', 'script').type,
+        ScriptParamType.scriptFilePath,
+      );
+      expect(_param('process.runScript', 'script').defaultValue, '');
+      expect(
+        _param('process.runScript', 'abortOnFailure').type,
+        ScriptParamType.boolean,
+      );
+      expect(
+        _param('process.runScript', 'abortOnFailure').defaultValue,
+        isTrue,
+      );
+    });
   });
 
   group('参数清单 / 默认值 / 类型', () {
@@ -1336,6 +1417,7 @@ void main() {
         'file.delete': <String>['missingIgnored'],
         'file.list': <String>['filter', 'recursive'],
         'process.run': <String>['abortOnFailure'],
+        'process.runScript': <String>['script', 'abortOnFailure'],
         'log.message': <String>['level'],
         'logic.compareString': <String>['operator', 'ignoreCase'],
         'value.text': <String>['value'],
@@ -1347,6 +1429,7 @@ void main() {
         'context.macro': <String>['macro'],
         'context.environment': <String>['name'],
         'context.packageFile': <String>['path'],
+        'context.scriptFile': <String>['file'],
         'crypto.fileHash': <String>['algorithm'],
         'crypto.aesEncrypt': <String>['password', 'passwordEnv'],
         'crypto.aesDecrypt': <String>['password', 'passwordEnv'],
@@ -1379,6 +1462,11 @@ void main() {
       expect(_param('file.list', 'filter').defaultValue, '');
       expect(_param('file.list', 'recursive').defaultValue, isFalse);
       expect(_param('process.run', 'abortOnFailure').defaultValue, isTrue);
+      expect(_param('process.runScript', 'script').defaultValue, '');
+      expect(
+        _param('process.runScript', 'abortOnFailure').defaultValue,
+        isTrue,
+      );
       expect(_param('log.message', 'level').defaultValue, 'info');
       expect(_param('logic.compareString', 'operator').defaultValue, 'eq');
       expect(_param('logic.compareString', 'ignoreCase').defaultValue, isFalse);
@@ -1391,6 +1479,7 @@ void main() {
       expect(_param('context.macro', 'macro').defaultValue, 'OutDir');
       expect(_param('context.environment', 'name').defaultValue, '');
       expect(_param('context.packageFile', 'path').defaultValue, '');
+      expect(_param('context.scriptFile', 'file').defaultValue, '');
       expect(_param('crypto.fileHash', 'algorithm').defaultValue, 'sha256');
       expect(_param('crypto.aesEncrypt', 'password').defaultValue, '');
       expect(_param('crypto.aesEncrypt', 'passwordEnv').defaultValue, '');
@@ -1425,6 +1514,10 @@ void main() {
         _param('context.packageFile', 'path').type,
         ScriptParamType.packageFilePath,
       );
+      expect(
+        _param('context.scriptFile', 'file').type,
+        ScriptParamType.scriptFilePath,
+      );
       expect(_param('file.list', 'filter').type, ScriptParamType.text);
       expect(_param('file.list', 'recursive').type, ScriptParamType.boolean);
       expect(
@@ -1433,6 +1526,14 @@ void main() {
       );
       expect(
         _param('process.run', 'abortOnFailure').type,
+        ScriptParamType.boolean,
+      );
+      expect(
+        _param('process.runScript', 'script').type,
+        ScriptParamType.scriptFilePath,
+      );
+      expect(
+        _param('process.runScript', 'abortOnFailure').type,
         ScriptParamType.boolean,
       );
       expect(

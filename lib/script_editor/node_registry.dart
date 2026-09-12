@@ -364,6 +364,43 @@ class NodeRegistry {
             ),
           ],
         ),
+        // 脚本值 = build/native 相对路径（与 context.packageFile 同机制）；
+        // 解释器按扩展名分派（ps1 → powershell、py → python、其余直调），见生成器。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'process.runScript',
+          displayName: '运行包内脚本',
+          category: ScriptNodeCategory.process,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'arguments',
+              label: '参数',
+              isInput: true,
+              dataType: ScriptDataType.string,
+            ),
+            ScriptPinDescriptor(
+              id: 'workingDirectory',
+              label: '工作目录',
+              isInput: true,
+              dataType: ScriptDataType.string,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'script',
+              label: '脚本文件',
+              type: ScriptParamType.scriptFilePath,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'abortOnFailure',
+              label: '失败中断',
+              type: ScriptParamType.boolean,
+              defaultValue: true,
+            ),
+          ],
+        ),
         ScriptNodeTypeDescriptor(
           typeKey: 'context.macro',
           displayName: 'MSBuild 宏',
@@ -423,6 +460,27 @@ class NodeRegistry {
               key: 'path',
               label: '相对路径',
               type: ScriptParamType.packageFilePath,
+              defaultValue: '',
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'context.scriptFile',
+          displayName: '包内脚本文件',
+          category: ScriptNodeCategory.context,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '路径',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'file',
+              label: '脚本文件',
+              type: ScriptParamType.scriptFilePath,
               defaultValue: '',
             ),
           ],
