@@ -275,6 +275,14 @@ void main() {
       expect(nodeTypeIcon('math.stringToNumber'), FluentIcons.number_field);
     });
 
+    test('string.upperCase 与 logic.compareNumber 图标（视觉规范 §9）', () {
+      expect(nodeTypeIcon('string.upperCase'), FluentIcons.font_increase);
+      expect(
+        nodeTypeIcon('logic.compareNumber'),
+        FluentIcons.calculator_equal_to,
+      );
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

@@ -34,6 +34,8 @@ const Set<String> _expectedTypeKeys = <String>{
   'math.bitNot',
   'math.numberToString',
   'math.stringToNumber',
+  'string.upperCase',
+  'logic.compareNumber',
 };
 
 ScriptParamDescriptor _param(String typeKey, String paramKey) {
@@ -48,13 +50,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 31 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(31));
+    test('总数 33 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(33));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(31),
+        hasLength(33),
       );
     });
 
@@ -144,9 +146,9 @@ void main() {
             ScriptNodeCategory.process: 1,
             ScriptNodeCategory.context: 3,
             ScriptNodeCategory.value: 3,
-            ScriptNodeCategory.string: 6,
+            ScriptNodeCategory.string: 7,
             ScriptNodeCategory.log: 1,
-            ScriptNodeCategory.logic: 2,
+            ScriptNodeCategory.logic: 3,
             ScriptNodeCategory.math: 5,
           };
       final List<ScriptNodeTypeDescriptor> collected =
@@ -172,7 +174,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(31),
+        hasLength(33),
       );
     });
 
@@ -586,7 +588,7 @@ void main() {
       expect(number.pins.single.dataType, ScriptDataType.number);
     });
 
-    test('string / path 六节点引脚', () {
+    test('string / path 七节点引脚', () {
       expect(
         NodeRegistry.byType('string.concat')!.pins
             .map((ScriptPinDescriptor pin) => pin.id)
@@ -605,6 +607,24 @@ void main() {
             .toSet(),
         <String>{'input', 'result'},
       );
+      final ScriptNodeTypeDescriptor upperCase = NodeRegistry.byType(
+        'string.upperCase',
+      )!;
+      expect(upperCase.category, ScriptNodeCategory.string);
+      expect(upperCase.displayName, '转大写');
+      expect(
+        upperCase.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'value', 'result'},
+      );
+      expect(_pin('string.upperCase', 'value').dataType, ScriptDataType.string);
+      expect(_pin('string.upperCase', 'value').isInput, isTrue);
+      expect(_pin('string.upperCase', 'value').required, isTrue);
+      expect(
+        _pin('string.upperCase', 'result').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('string.upperCase', 'result').isInput, isFalse);
+      expect(upperCase.params, isEmpty);
       expect(
         NodeRegistry.byType('string.fileName')!.pins
             .map((ScriptPinDescriptor pin) => pin.id)
@@ -627,6 +647,7 @@ void main() {
         'string.concat',
         'string.replace',
         'string.lowerCase',
+        'string.upperCase',
         'string.fileName',
         'string.directoryName',
         'path.join',
@@ -673,7 +694,7 @@ void main() {
       expect(_pin('log.message', 'message').isInput, isTrue);
     });
 
-    test('logic 两节点', () {
+    test('logic 三节点', () {
       final ScriptNodeTypeDescriptor compare = NodeRegistry.byType(
         'logic.compareString',
       )!;
@@ -693,6 +714,39 @@ void main() {
           (ScriptPinDescriptor pin) => pin.kind == ScriptPinKind.data,
         ),
         isTrue,
+      );
+
+      final ScriptNodeTypeDescriptor compareNumber = NodeRegistry.byType(
+        'logic.compareNumber',
+      )!;
+      expect(compareNumber.category, ScriptNodeCategory.logic);
+      expect(compareNumber.displayName, '数值比较');
+      expect(
+        compareNumber.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'a', 'b', 'result'},
+      );
+      expect(_pin('logic.compareNumber', 'a').dataType, ScriptDataType.number);
+      expect(_pin('logic.compareNumber', 'a').isInput, isTrue);
+      expect(_pin('logic.compareNumber', 'a').required, isTrue);
+      expect(_pin('logic.compareNumber', 'b').dataType, ScriptDataType.number);
+      expect(_pin('logic.compareNumber', 'b').isInput, isTrue);
+      expect(_pin('logic.compareNumber', 'b').required, isTrue);
+      expect(
+        _pin('logic.compareNumber', 'result').dataType,
+        ScriptDataType.boolean,
+      );
+      expect(_pin('logic.compareNumber', 'result').isInput, isFalse);
+      expect(
+        compareNumber.pins.every(
+          (ScriptPinDescriptor pin) => pin.kind == ScriptPinKind.data,
+        ),
+        isTrue,
+      );
+      expect(
+        compareNumber.params
+            .map((ScriptParamDescriptor param) => param.key)
+            .toList(),
+        <String>['operator'],
       );
 
       final ScriptNodeTypeDescriptor not = NodeRegistry.byType('logic.not')!;
@@ -848,6 +902,7 @@ void main() {
         'value.number': <String>['value'],
         'math.arithmetic': <String>['operator'],
         'math.bitwise': <String>['operator'],
+        'logic.compareNumber': <String>['operator'],
         'context.macro': <String>['macro'],
         'context.environment': <String>['name'],
         'context.packageFile': <String>['path'],
@@ -875,6 +930,7 @@ void main() {
       expect(_param('value.number', 'value').defaultValue, 0);
       expect(_param('math.arithmetic', 'operator').defaultValue, 'add');
       expect(_param('math.bitwise', 'operator').defaultValue, 'and');
+      expect(_param('logic.compareNumber', 'operator').defaultValue, 'lt');
       expect(_param('context.macro', 'macro').defaultValue, 'OutDir');
       expect(_param('context.environment', 'name').defaultValue, '');
       expect(_param('context.packageFile', 'path').defaultValue, '');
@@ -915,6 +971,10 @@ void main() {
       expect(
         _param('math.bitwise', 'operator').type,
         ScriptParamType.bitwiseOperator,
+      );
+      expect(
+        _param('logic.compareNumber', 'operator').type,
+        ScriptParamType.numberOperator,
       );
       expect(_param('context.environment', 'name').type, ScriptParamType.text);
     });

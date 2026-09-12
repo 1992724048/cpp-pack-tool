@@ -356,6 +356,8 @@ class _PowerShellEmitter {
             '${_expression(node, 'find')}, ${_expression(node, 'replace')}))';
       case 'string.lowerCase':
         return '(${_expression(node, 'input')}.ToLowerInvariant())';
+      case 'string.upperCase':
+        return '(${_expression(node, 'value')}.ToUpperInvariant())';
       case 'string.fileName':
         return '(Split-Path -Leaf ${_expression(node, 'path')})';
       case 'string.directoryName':
@@ -365,6 +367,8 @@ class _PowerShellEmitter {
             '${_expression(node, 'right')})';
       case 'logic.compareString':
         return _compareStringExpression(node);
+      case 'logic.compareNumber':
+        return _compareNumberExpression(node);
       case 'logic.not':
         return '(-not (${_expression(node, 'input')}))';
       case 'math.arithmetic':
@@ -430,6 +434,19 @@ class _PowerShellEmitter {
       default:
         return '($left ${ignoreCase ? '-ieq' : '-ceq'} $right)';
     }
+  }
+
+  String _compareNumberExpression(ScriptNodeModel node) {
+    final String psOperator = switch (_param(node, 'operator')) {
+      'le' => '-le',
+      'gt' => '-gt',
+      'ge' => '-ge',
+      'eq' => '-eq',
+      'ne' => '-ne',
+      _ => '-lt',
+    };
+    return '(${_expression(node, 'a')} $psOperator '
+        '${_expression(node, 'b')})';
   }
 
   String _arithmeticExpression(ScriptNodeModel node) {

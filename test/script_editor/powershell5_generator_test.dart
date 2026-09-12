@@ -189,6 +189,38 @@ ScriptProjectModel _stringToNumberGraph({required String text}) {
   );
 }
 
+/// 数值比较真实消费链：value.number(a/b) → logic.compareNumber →
+/// flow.branch 条件（operator 缺省时走注册表默认 `lt`）。
+ScriptProjectModel _compareNumberGraph({
+  String? operator,
+  num a = 3,
+  num b = 5,
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': a}),
+      _node('n3', 'value.number', params: <String, Object?>{'value': b}),
+      _node(
+        'n4',
+        'logic.compareNumber',
+        params: <String, Object?>{'operator': ?operator},
+      ),
+      _node('n5', 'flow.branch'),
+      _node('n6', 'value.text', params: <String, Object?>{'value': '小于'}),
+      _node('n7', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n5', 'exec'),
+      _edge('n2', 'result', 'n4', 'a'),
+      _edge('n3', 'result', 'n4', 'b'),
+      _edge('n4', 'result', 'n5', 'condition'),
+      _edge('n5', 'then', 'n7', 'exec'),
+      _edge('n6', 'result', 'n7', 'message'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -1585,6 +1617,83 @@ void main() {
           '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
       );
+    });
+  });
+
+  group('string.upperCase 与 logic.compareNumber 发射（M4.2 T4）', () {
+    test('string.upperCase：ToUpperInvariant（value.text 真实消费链）', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'string.upperCase'),
+          inputs: <ScriptNodeModel>[
+            _node(
+              'n2',
+              'value.text',
+              params: <String, Object?>{'value': 'abc'},
+            ),
+          ],
+          inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'value')],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host ('abc'.ToUpperInvariant())\n"),
+      );
+    });
+
+    test('string.upperCase：upperCase(concat) 组合链递归内联', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'value.text', params: <String, Object?>{'value': 'a'}),
+          _node('n3', 'value.text', params: <String, Object?>{'value': 'B'}),
+          _node('n4', 'string.concat'),
+          _node('n5', 'string.upperCase'),
+          _node('n6', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n6', 'exec'),
+          _edge('n2', 'result', 'n4', 'a'),
+          _edge('n3', 'result', 'n4', 'b'),
+          _edge('n4', 'result', 'n5', 'value'),
+          _edge('n5', 'result', 'n6', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains("    Write-Host (('a' + 'B').ToUpperInvariant())\n"),
+      );
+    });
+
+    test('logic.compareNumber：六种运算符映射（number 字面量真实消费链）', () {
+      const Map<String, String> operators = <String, String>{
+        'lt': '-lt',
+        'le': '-le',
+        'gt': '-gt',
+        'ge': '-ge',
+        'eq': '-eq',
+        'ne': '-ne',
+      };
+      for (final MapEntry<String, String> entry in operators.entries) {
+        final ScriptCompileResult result = _compile(
+          _compareNumberGraph(operator: entry.key, a: 6, b: 4),
+        );
+        expect(result.hasErrors, isFalse, reason: entry.key);
+        expect(
+          result.code,
+          contains('    if ((6 ${entry.value} 4)) {\n'),
+          reason: entry.key,
+        );
+      }
+    });
+
+    test('logic.compareNumber：缺省参数走注册表默认 lt', () {
+      final ScriptCompileResult result = _compile(_compareNumberGraph());
+      expect(result.hasErrors, isFalse);
+      expect(result.code, contains('    if ((3 -lt 5)) {\n'));
     });
   });
 
