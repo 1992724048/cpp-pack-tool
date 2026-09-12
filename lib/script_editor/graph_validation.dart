@@ -522,6 +522,7 @@ class GraphValidator {
       ScriptDataType.string => 'string',
       ScriptDataType.boolean => 'bool',
       ScriptDataType.listString => 'list<string>',
+      ScriptDataType.number => '数值',
       null => '未知类型',
     };
   }

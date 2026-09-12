@@ -337,6 +337,7 @@ class GraphEditorController extends ChangeNotifier {
       ScriptDataType.string => 'string',
       ScriptDataType.boolean => 'bool',
       ScriptDataType.listString => 'list<string>',
+      ScriptDataType.number => '数值',
       null => '数据',
     };
   }

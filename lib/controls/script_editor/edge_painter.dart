@@ -79,7 +79,7 @@ double _distanceToSegment(Offset start, Offset end, Offset point) {
 double edgeHitTolerance(double scale) => (8 / scale).clamp(4.0, 16.0);
 
 /// 引脚/连线的数据类型色（§2.2）：exec `text`、string `blue`、bool `peach`、
-/// `list<string>` `mauve`，未知 data 类型回退 `overlay1`。
+/// `list<string>` `mauve`、number `green`，未知 data 类型回退 `overlay1`。
 Color pinStrokeColor(ScriptPinKind kind, ScriptDataType? dataType) {
   if (kind == ScriptPinKind.exec) {
     return UCColors.flavor.text;
@@ -88,6 +88,7 @@ Color pinStrokeColor(ScriptPinKind kind, ScriptDataType? dataType) {
     ScriptDataType.string => UCColors.flavor.blue,
     ScriptDataType.boolean => UCColors.flavor.peach,
     ScriptDataType.listString => UCColors.flavor.mauve,
+    ScriptDataType.number => UCColors.flavor.green,
     null => UCColors.flavor.overlay1,
   };
 }

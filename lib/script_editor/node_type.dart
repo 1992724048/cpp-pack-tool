@@ -1,6 +1,6 @@
 enum ScriptPinKind { exec, data }
 
-enum ScriptDataType { string, boolean, listString }
+enum ScriptDataType { string, boolean, listString, number }
 
 enum ScriptNodeCategory {
   flow('流控'),
