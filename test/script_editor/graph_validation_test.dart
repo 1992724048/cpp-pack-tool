@@ -62,6 +62,23 @@ List<ScriptDiagnostic> _paramErrors(List<ScriptDiagnostic> diagnostics) {
       .toList();
 }
 
+List<ScriptDiagnostic> _variableNameErrors(List<ScriptDiagnostic> diagnostics) {
+  return diagnostics
+      .where(
+        (ScriptDiagnostic diagnostic) =>
+            diagnostic.message.contains('变量名须以字母或下划线开头，且仅含字母、数字、下划线'),
+      )
+      .toList();
+}
+
+List<ScriptDiagnostic> _typeMismatchErrors(List<ScriptDiagnostic> diagnostics) {
+  return diagnostics
+      .where(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('类型不一致'),
+      )
+      .toList();
+}
+
 ScriptDiagnostic _diagnosticWith(
   List<ScriptDiagnostic> diagnostics,
   String fragment,
@@ -1054,6 +1071,162 @@ void main() {
       );
       expect(_diagnosticWith(diagnostics, '口令或口令环境变量名需二选一').nodeId, 'n1');
       expect(_diagnosticWith(diagnostics, 'PFX 路径或证书指纹需二选一').nodeId, 'n2');
+    });
+  });
+
+  group('变量名校验（M4.3 T2）', () {
+    const List<String> variableTypes = <String>[
+      'variable.setNumber',
+      'variable.getNumber',
+      'variable.setString',
+      'variable.getString',
+    ];
+
+    test('四类节点：name 非空且匹配正则，非法报错、合法通过', () {
+      for (final String typeKey in variableTypes) {
+        for (final String invalid in <String>['', '1BAD', 'A-B', 'A B', '口令']) {
+          final List<ScriptDiagnostic> errors = _variableNameErrors(
+            _validate(<ScriptNodeModel>[
+              _node('n1', typeKey, params: <String, Object?>{'name': invalid}),
+            ]),
+          );
+          expect(errors, hasLength(1), reason: '$typeKey「$invalid」应判非法');
+          expect(errors.single.isError, isTrue);
+          expect(errors.single.nodeId, 'n1');
+        }
+
+        for (final String valid in <String>[
+          'PATH',
+          'A_B1',
+          '_private',
+          'Path2',
+        ]) {
+          final List<ScriptDiagnostic> errors = _variableNameErrors(
+            _validate(<ScriptNodeModel>[
+              _node('n1', typeKey, params: <String, Object?>{'name': valid}),
+            ]),
+          );
+          expect(errors, isEmpty, reason: '$typeKey「$valid」应合法');
+        }
+      }
+    });
+
+    test('未填写 name（默认空串）报错', () {
+      for (final String typeKey in variableTypes) {
+        final List<ScriptDiagnostic> errors = _variableNameErrors(
+          _validate(<ScriptNodeModel>[_node('n1', typeKey)]),
+        );
+        expect(errors, hasLength(1), reason: typeKey);
+        expect(errors.single.nodeId, 'n1');
+      }
+    });
+
+    test('同名同类型重复出现（含 set/get 组合）合法', () {
+      final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+        _node(
+          'n1',
+          'variable.setNumber',
+          params: <String, Object?>{'name': 'count'},
+        ),
+        _node(
+          'n2',
+          'variable.getNumber',
+          params: <String, Object?>{'name': 'count'},
+        ),
+        _node(
+          'n3',
+          'variable.setString',
+          params: <String, Object?>{'name': 'label'},
+        ),
+        _node(
+          'n4',
+          'variable.getString',
+          params: <String, Object?>{'name': 'label'},
+        ),
+        _node(
+          'n5',
+          'variable.setNumber',
+          params: <String, Object?>{'name': 'other'},
+        ),
+        _node(
+          'n6',
+          'variable.setString',
+          params: <String, Object?>{'name': 'other2'},
+        ),
+      ]);
+      expect(_typeMismatchErrors(diagnostics), isEmpty);
+    });
+
+    test('同名 number/string 混用：恰一条错误指向后出现节点', () {
+      for (final (String first, String second) in <(String, String)>[
+        ('variable.setNumber', 'variable.getString'),
+        ('variable.getString', 'variable.setNumber'),
+        ('variable.getNumber', 'variable.setString'),
+        ('variable.setString', 'variable.getNumber'),
+      ]) {
+        final List<ScriptDiagnostic> mismatches = _typeMismatchErrors(
+          _validate(<ScriptNodeModel>[
+            _node('n1', first, params: <String, Object?>{'name': 'count'}),
+            _node('n2', second, params: <String, Object?>{'name': 'count'}),
+          ]),
+        );
+        expect(mismatches, hasLength(1), reason: '$first → $second');
+        expect(mismatches.single.isError, isTrue);
+        expect(mismatches.single.nodeId, 'n2');
+        expect(mismatches.single.message, '变量 count 类型不一致');
+      }
+    });
+
+    test('名称非法的节点只报名称错误，不参与类型一致性判定', () {
+      final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+        _node(
+          'n1',
+          'variable.setNumber',
+          params: <String, Object?>{'name': '1bad'},
+        ),
+        _node(
+          'n2',
+          'variable.getString',
+          params: <String, Object?>{'name': '1bad'},
+        ),
+      ]);
+      expect(_variableNameErrors(diagnostics), hasLength(2));
+      expect(_typeMismatchErrors(diagnostics), isEmpty);
+    });
+
+    test('诊断顺序：变量名参数错误 → 类型不一致 → 必填输入', () {
+      final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+        _node(
+          'n1',
+          'variable.setString',
+          params: <String, Object?>{'name': '1bad'},
+        ),
+        _node(
+          'n2',
+          'variable.getNumber',
+          params: <String, Object?>{'name': 'x'},
+        ),
+        _node(
+          'n3',
+          'variable.setString',
+          params: <String, Object?>{'name': 'x'},
+        ),
+      ]);
+      final int nameIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) =>
+            diagnostic.message.contains('变量名须以字母或下划线开头'),
+      );
+      final int mismatchIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('类型不一致'),
+      );
+      final int requiredIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('必填输入'),
+      );
+      expect(nameIndex, greaterThanOrEqualTo(0));
+      expect(mismatchIndex, greaterThanOrEqualTo(0));
+      expect(requiredIndex, greaterThanOrEqualTo(0));
+      expect(nameIndex, lessThan(mismatchIndex));
+      expect(mismatchIndex, lessThan(requiredIndex));
     });
   });
 

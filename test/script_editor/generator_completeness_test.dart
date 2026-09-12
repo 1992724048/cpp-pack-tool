@@ -27,12 +27,16 @@ const Map<ScriptDataType, String> _consumerTypeKeys = <ScriptDataType, String>{
 };
 
 /// 注册表默认参数不满足校验的类型需给出最小合法夹具值
-/// （context.environment 名称须匹配正则、context.packageFile 路径须非空、
-/// crypto 加密/签名节点的口令与证书来源二选一）。
+/// （context.environment 与 variable 四类的名称须匹配正则、context.packageFile
+/// 路径须非空、crypto 加密/签名节点的口令与证书来源二选一）。
 const Map<String, Map<String, Object?>> _fixtureParams =
     <String, Map<String, Object?>>{
       'context.environment': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'context.packageFile': <String, Object?>{'path': 'lib/sample.lib'},
+      'variable.setNumber': <String, Object?>{'name': 'CNP_COMPLETENESS'},
+      'variable.getNumber': <String, Object?>{'name': 'CNP_COMPLETENESS'},
+      'variable.setString': <String, Object?>{'name': 'CNP_COMPLETENESS'},
+      'variable.getString': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'crypto.aesEncrypt': <String, Object?>{'password': 'secret'},
       'crypto.aesDecrypt': <String, Object?>{'password': 'secret'},
       'crypto.signFile': <String, Object?>{'pfxPath': 'cert.pfx'},

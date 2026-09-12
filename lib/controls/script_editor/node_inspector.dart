@@ -17,9 +17,19 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart'
     show PointerEnterEvent, PointerExitEvent;
 
-final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+/// 变量名参数所属节点：环境变量与脚本变量共用同一名称正则与错误文案
+/// （与 `GraphValidator` 的同名规则保持同集合）。
+const Set<String> _variableNameTypes = <String>{
+  'context.environment',
+  'variable.setNumber',
+  'variable.getNumber',
+  'variable.setString',
+  'variable.getString',
+};
 
-const String _environmentNameError = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
+final RegExp _namePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+const String _nameFormatError = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
 const String _noMatchingPathHint = '无匹配路径，将按手填内容使用';
 const String _emptyProjectHint = '请先新建脚本项目';
 const String _noParamHint = '该节点没有可编辑参数';
@@ -544,13 +554,13 @@ class _NodeInspectorState extends State<NodeInspector> {
     ScriptParamDescriptor param,
     Object? value,
   ) {
-    if (node.type != 'context.environment' || param.key != 'name') {
+    if (param.key != 'name' || !_variableNameTypes.contains(node.type)) {
       return null;
     }
-    if (value is String && _environmentNamePattern.hasMatch(value)) {
+    if (value is String && _namePattern.hasMatch(value)) {
       return null;
     }
-    return _environmentNameError;
+    return _nameFormatError;
   }
 
   void _writeParam(ScriptNodeModel node, String paramKey, Object? value) {

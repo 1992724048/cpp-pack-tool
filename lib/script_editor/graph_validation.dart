@@ -36,7 +36,17 @@ const Set<String> _hashAlgorithms = <String>{
   'md5',
   'crc32',
 };
-final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+/// 变量节点 typeKey → 类型变体（number|string）；参数级名称正则与节点级
+/// 「同名同类型」规则共用，首个出现节点的变体为准（与生成器首见初始化一致）。
+const Map<String, String> _variableVariants = <String, String>{
+  'variable.setNumber': 'number',
+  'variable.getNumber': 'number',
+  'variable.setString': 'string',
+  'variable.getString': 'string',
+};
+const String _variableNameFormatError = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
+final RegExp _namePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
 class GraphValidator {
   static List<ScriptDiagnostic> validate(ScriptProjectModel project) {
@@ -163,14 +173,23 @@ class GraphValidator {
         }
         return '参数「${param.label}」的值「$value」非法，应为非空路径';
       case ScriptParamType.text:
-        if (descriptor.typeKey != 'context.environment' ||
-            param.key != 'name') {
+        if (param.key != 'name') {
           return null;
         }
-        if (value is String && _environmentNamePattern.hasMatch(value)) {
+        final bool isEnvironment = descriptor.typeKey == 'context.environment';
+        final bool isVariable = _variableVariants.containsKey(
+          descriptor.typeKey,
+        );
+        if (!isEnvironment && !isVariable) {
           return null;
         }
-        return '参数「${param.label}」的值「$value」不是合法环境变量名';
+        if (value is String && _namePattern.hasMatch(value)) {
+          return null;
+        }
+        if (isEnvironment) {
+          return '参数「${param.label}」的值「$value」不是合法环境变量名';
+        }
+        return _variableNameFormatError;
       case ScriptParamType.boolean:
         return null;
       case ScriptParamType.number:
@@ -182,7 +201,7 @@ class GraphValidator {
   }
 
   /// 节点级参数规则：注册表参数声明无法表达的跨参数约束
-  /// （AES 口令二选一、签名证书来源二选一、口令环境变量名格式）。
+  /// （AES 口令二选一、签名证书来源二选一、口令环境变量名格式、变量同名同类型）。
   /// 在参数校验循环之后按节点声明序追加，不改变既有诊断顺序。
   static void _validateNodeLevelParams(
     List<ScriptNodeModel> nodes,
@@ -200,6 +219,47 @@ class GraphValidator {
           _validateAesParams(node, descriptor, diagnostics);
         case 'crypto.signFile':
           _validateSignFileParams(node, descriptor, diagnostics);
+      }
+    }
+    _validateVariableNameTypes(nodes, descriptorById, diagnostics);
+  }
+
+  /// 同一变量名只允许一种类型变体：按节点声明序收集 `name → 变体`，首个
+  /// 出现的变体为准（与生成器首见初始化一致），后续同名不同变体节点报错；
+  /// 同名同类型重复出现合法。名称本身非法的节点已由参数级报错，不再参与
+  /// 收集以免级联噪声。
+  static void _validateVariableNameTypes(
+    List<ScriptNodeModel> nodes,
+    Map<String, ScriptNodeTypeDescriptor> descriptorById,
+    List<ScriptDiagnostic> diagnostics,
+  ) {
+    final Map<String, String> variantByName = <String, String>{};
+    for (final ScriptNodeModel node in nodes) {
+      final ScriptNodeTypeDescriptor? descriptor = descriptorById[node.id];
+      if (descriptor == null) {
+        continue;
+      }
+      final String? variant = _variableVariants[descriptor.typeKey];
+      if (variant == null) {
+        continue;
+      }
+      final String name = _paramText(node, descriptor, 'name');
+      if (name.isEmpty || !_namePattern.hasMatch(name)) {
+        continue;
+      }
+      final String? variantOfName = variantByName[name];
+      if (variantOfName == null) {
+        variantByName[name] = variant;
+        continue;
+      }
+      if (variantOfName != variant) {
+        diagnostics.add(
+          ScriptDiagnostic(
+            message: '变量 $name 类型不一致',
+            nodeId: node.id,
+            isError: true,
+          ),
+        );
       }
     }
   }
@@ -254,7 +314,7 @@ class GraphValidator {
     String passwordEnv,
     List<ScriptDiagnostic> diagnostics,
   ) {
-    if (passwordEnv.isEmpty || _environmentNamePattern.hasMatch(passwordEnv)) {
+    if (passwordEnv.isEmpty || _namePattern.hasMatch(passwordEnv)) {
       return;
     }
     diagnostics.add(

@@ -469,6 +469,50 @@ void main() {
       expect(find.text(message), findsNothing);
     });
 
+    testWidgets('变量节点名非法时显示红字，合法后消失（四类共用 name 参数）', (
+      WidgetTester tester,
+    ) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      const String message = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
+
+      for (final String typeKey in <String>[
+        'variable.setNumber',
+        'variable.getNumber',
+        'variable.setString',
+        'variable.getString',
+      ]) {
+        _addAndSelect(controller, typeKey);
+        await tester.pump();
+        expect(find.text(message), findsOneWidget, reason: typeKey);
+
+        final Finder field = find.byKey(const Key('inspectorField_name'));
+        await tester.enterText(field, '1abc');
+        await tester.pump();
+        expect(find.text(message), findsOneWidget, reason: typeKey);
+        expect(
+          controller.project.nodes.last.params['name'],
+          '1abc',
+          reason: typeKey,
+        );
+
+        await tester.enterText(field, 'abc_1');
+        await tester.pump();
+        expect(find.text(message), findsNothing, reason: typeKey);
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('非变量节点不显示变量名红字', (WidgetTester tester) async {
+      final _Harness harness = await _pumpInspector(tester);
+      final GraphEditorController controller = harness.controller!;
+      _addAndSelect(controller, 'value.text');
+      await tester.pump();
+
+      expect(find.text('变量名须以字母或下划线开头，且仅含字母、数字、下划线'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('输入过程中控件不重建，焦点保持', (WidgetTester tester) async {
       final _Harness harness = await _pumpInspector(tester);
       final GraphEditorController controller = harness.controller!;
