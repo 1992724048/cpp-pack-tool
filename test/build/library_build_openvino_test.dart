@@ -251,11 +251,11 @@ void main() {
           })
           .toList();
       final List<String> offLibs = _relativeFilesWithExtension(
-        joinPath(packOff.path, 'lib'),
+        joinPath(packOff.path, 'release/lib'),
         '.lib',
       );
       final List<String> offBins = _relativeFilesWithExtension(
-        joinPath(packOff.path, 'bin'),
+        joinPath(packOff.path, 'release/bin'),
         '.dll',
       );
       final List<String> offDebugLibs = _relativeFilesWithExtension(
@@ -295,8 +295,16 @@ void main() {
         greaterThanOrEqualTo(100),
         reason: 'OpenVINO 头文件应大量入库',
       );
-      expect(offLibs, isNotEmpty, reason: 'Release lib/ 应至少 1 个 .lib');
-      expect(offBins, isNotEmpty, reason: 'Release bin/ 应至少 1 个 .dll');
+      expect(
+        offLibs,
+        isNotEmpty,
+        reason: 'Release release/lib 应至少 1 个 .lib',
+      );
+      expect(
+        offBins,
+        isNotEmpty,
+        reason: 'Release release/bin 应至少 1 个 .dll',
+      );
       expect(
         offDebugLibs,
         isNotEmpty,
@@ -308,6 +316,16 @@ void main() {
         reason: '预构建包含 Debug 产物 → debug/bin 应非空',
       );
       expect(offTbb, isEmpty, reason: 'tbb=off 时路径含 tbb 的文件应为 0');
+      expect(
+        Directory(joinPath(packOff.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
+      expect(
+        Directory(joinPath(packOff.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
       expect(
         File(offLicense).existsSync(),
         isTrue,
@@ -333,7 +351,7 @@ void main() {
               .toList()
             ..sort();
       final List<String> onTbbDlls = _relativeFilesWithExtension(
-        joinPath(packOn.path, 'bin'),
+        joinPath(packOn.path, 'release/bin'),
         '.dll',
       ).where((String path) => baseName(path).toLowerCase().startsWith('tbb')).toList();
 
@@ -346,7 +364,7 @@ void main() {
         '[evidence] on.tbbHeader='
         '${File(joinPath(packOn.path, 'include/tbb/tbb.h')).existsSync()} '
         'tbbLib='
-        '${File(joinPath(packOn.path, 'lib/tbb12.lib')).existsSync()} '
+        '${File(joinPath(packOn.path, 'release/lib/tbb12.lib')).existsSync()} '
         'tbbLicense='
         '${File(joinPath(packOn.path, 'TBB-LICENSE')).existsSync()}',
       );
@@ -367,9 +385,9 @@ void main() {
       );
       expect(onTbb, isNotEmpty, reason: 'tbb=on 时应保留自带 TBB 文件');
       expect(
-        File(joinPath(packOn.path, 'bin/tbb12.dll')).existsSync(),
+        File(joinPath(packOn.path, 'release/bin/tbb12.dll')).existsSync(),
         isTrue,
-        reason: 'TBB 运行库应入 bin/',
+        reason: 'TBB 运行库应入 release/bin/（Release 分层）',
       );
       expect(
         File(joinPath(packOn.path, 'include/tbb/tbb.h')).existsSync(),
@@ -377,9 +395,19 @@ void main() {
         reason: 'TBB 头文件应入 include/tbb/',
       );
       expect(
-        File(joinPath(packOn.path, 'lib/tbb12.lib')).existsSync(),
+        File(joinPath(packOn.path, 'release/lib/tbb12.lib')).existsSync(),
         isTrue,
-        reason: 'TBB 导入库应入 lib/',
+        reason: 'TBB 导入库应入 release/lib/（Release 分层）',
+      );
+      expect(
+        Directory(joinPath(packOn.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
+      expect(
+        Directory(joinPath(packOn.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
       );
       expect(
         File(joinPath(packOn.path, 'TBB-LICENSE')).existsSync(),

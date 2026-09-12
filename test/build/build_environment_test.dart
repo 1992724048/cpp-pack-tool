@@ -329,6 +329,7 @@ void main() {
 
   group('prepareBuildEnvironment', () {
     test('按优先级选择编译器并透传捕获环境与供给工具', () async {
+      final Directory root = _tempDirectory();
       final DetectedCompiler msvc = _compiler();
       final DetectedCompiler clangCl = _compiler(
         kind: CompilerKind.clangCl,
@@ -350,7 +351,7 @@ void main() {
           (_) async => throw StateError('不应执行进程'),
         ),
         provisioner: provisioner,
-        toolsRoot: 'tools',
+        toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: base,
         detect: () async => <DetectedCompiler>[msvc, clangCl],
         capture: _captureStub(captured, (
@@ -371,13 +372,124 @@ void main() {
       expect(base, <String, String>{'FOO': '1'});
     });
 
-    test('无可用编译器时抛 BuildPreparationException 且不捕获/供给', () async {
+    test('注入受控 TMP/TEMP：检测子进程、捕获入参与最终环境一致且不改 base', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      final String expectedTemp = joinPath(
+        Directory(toolsRoot).absolute.path,
+        '.tmp/build',
+      ).replaceAll('/', r'\');
+      final Map<String, String> base = <String, String>{
+        'ONEAPI_ROOT': oneApiRoot,
+        'PROGRAMFILES(X86)': r'C:\uppercase-pf86',
+        'tmp': r'C:\hostile-tmp',
+        'TEMP': r'C:\hostile-temp',
+        'KEEP': '1',
+      };
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      Map<String, String>? captureBase;
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: toolsRoot,
+        baseEnvironment: base,
+        runner: _runner(calls, (_ProcessCall call) async {
+          return ProcessResult(0, 0, 'Compiler 2026.1.0\n', '');
+        }),
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          captureBase = baseEnvironment;
+          return <String, String>{...baseEnvironment, 'CAPTURED': 'yes'};
+        }),
+      );
+
+      expect(result.compiler.kind, CompilerKind.icx);
+      expect(result.compiler.version, '2026.1.0');
+      final Iterable<_ProcessCall> icxProbes = calls.where(
+        (_ProcessCall call) => call.executable.endsWith('icx-cl.exe'),
+      );
+      expect(icxProbes, hasLength(1));
+      expect(icxProbes.single.environment?['TMP'], expectedTemp);
+      expect(icxProbes.single.environment?['TEMP'], expectedTemp);
+      expect(captureBase?['TMP'], expectedTemp);
+      expect(captureBase?['TEMP'], expectedTemp);
+      expect(result.environment['TMP'], expectedTemp);
+      expect(result.environment['TEMP'], expectedTemp);
+      expect(Directory(expectedTemp).existsSync(), isTrue);
+      expect(result.environment['KEEP'], '1');
+      expect(result.environment['CAPTURED'], 'yes');
+      expect(
+        result.environment.keys
+            .where((String key) => key.toLowerCase() == 'tmp')
+            .toList(),
+        <String>['TMP'],
+      );
+      expect(
+        result.environment.keys
+            .where((String key) => key.toLowerCase() == 'temp')
+            .toList(),
+        <String>['TEMP'],
+      );
+      expect(base['tmp'], r'C:\hostile-tmp');
+      expect(base['TEMP'], r'C:\hostile-temp');
+      expect(base['PROGRAMFILES(X86)'], r'C:\uppercase-pf86');
+      expect(base.containsKey('TMP'), isFalse);
+      expect(result.environment['ProgramFiles(x86)'], r'C:\uppercase-pf86');
+      expect(
+        result.environment.keys
+            .where((String key) => key.toLowerCase() == 'programfiles(x86)')
+            .toList(),
+        <String>['ProgramFiles(x86)'],
+      );
+    });
+
+    test('baseEnvironment 为 null 时基于 Platform.environment 副本注入', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String expectedTemp = joinPath(
+        Directory(toolsRoot).absolute.path,
+        '.tmp/build',
+      ).replaceAll('/', r'\');
+      Map<String, String>? captureBase;
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: toolsRoot,
+        detect: () async => <DetectedCompiler>[_compiler()],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          captureBase = baseEnvironment;
+          return Map<String, String>.of(baseEnvironment);
+        }),
+      );
+
+      expect(captureBase, isNotNull);
+      expect(captureBase?['TMP'], expectedTemp);
+      expect(captureBase?['TEMP'], expectedTemp);
+      expect(result.environment['TMP'], expectedTemp);
+      expect(result.environment['TEMP'], expectedTemp);
+      expect(
+        Directory(expectedTemp).existsSync(),
+        isTrue,
+        reason: '受控临时目录应已创建',
+      );
+    });
+
+    test('无可用编译器且 clang 供给失败时抛 BuildPreparationException 且不捕获/供给', () async {
+      final Directory root = _tempDirectory();
       final _FakeProvisioner provisioner = _FakeProvisioner(_cmakeNinja());
       final List<CompilerKind> captured = <CompilerKind>[];
 
       await expectLater(
         prepareBuildEnvironment(
           provisioner: provisioner,
+          toolsRoot: joinPath(root.path, 'tools'),
           baseEnvironment: <String, String>{},
           detect: () async => <DetectedCompiler>[],
           capture: _captureStub(captured, (
@@ -391,20 +503,98 @@ void main() {
           isA<BuildPreparationException>().having(
             (BuildPreparationException error) => error.message,
             'message',
-            contains('未检测到可用编译器'),
+            allOf(
+              contains('未检测到可用编译器'),
+              contains('clang/LLVM 最后手段失败'),
+            ),
           ),
         ),
       );
 
+      expect(provisioner.ensureClangLlvmCalls, 1);
       expect(captured, isEmpty);
       expect(provisioner.ensureCmakeNinjaCalls, 0);
     });
 
+    test('无可用编译器时供给 clang/LLVM 并以 clang-cl 组装', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String clangDir = joinPath(toolsRoot, 'clang');
+      final String clangBin = joinPath(clangDir, 'bin');
+      final String executable = joinPath(clangBin, 'clang-cl.exe');
+      _createFile(executable);
+      final _FakeProvisioner provisioner = _FakeProvisioner(
+        _cmakeNinja(),
+        clangResult: ProvisionedTool(
+          name: 'clang',
+          directory: clangDir,
+          pathEntries: <String>[clangDir, clangBin],
+        ),
+      );
+      final List<CompilerKind> captured = <CompilerKind>[];
+      final List<_ProcessCall> processCalls = <_ProcessCall>[];
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        provisioner: provisioner,
+        toolsRoot: toolsRoot,
+        baseEnvironment: <String, String>{'Path': r'C:\Windows'},
+        detect: () async => <DetectedCompiler>[],
+        runner: _runner(processCalls, (_ProcessCall call) async {
+          if (call.executable == executable) {
+            return ProcessResult(0, 0, 'clang version 23.1.1\n', '');
+          }
+          throw ProcessException(call.executable, call.arguments, 'not found');
+        }),
+        capture: _captureStub(captured, (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(provisioner.ensureClangLlvmCalls, 1);
+      expect(provisioner.ensureCmakeNinjaCalls, 1);
+      expect(captured, <CompilerKind>[CompilerKind.clangCl]);
+      expect(result.compiler.kind, CompilerKind.clangCl);
+      expect(result.compiler.version, '23.1.1');
+      expect(result.compiler.executablePath, executable);
+      expect(result.compiler.environmentScript, isNull);
+      expect(result.compiler.extraPathEntries, <String>[clangBin]);
+      expect(result.environment['CNP_COMPILER_KIND'], 'clang-cl');
+      expect(result.environment['CNP_C_COMPILER'], executable);
+      expect(result.environment['CNP_CXX_COMPILER'], executable);
+      expect(result.environment['Path'], '$clangBin;C:\\Windows');
+    });
+
+    test('有可用编译器时不触发 clang/LLVM 供给（零下载）', () async {
+      final Directory root = _tempDirectory();
+      final _FakeProvisioner provisioner = _FakeProvisioner(_cmakeNinja());
+
+      await prepareBuildEnvironment(
+        provisioner: provisioner,
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        detect: () async => <DetectedCompiler>[_compiler()],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(provisioner.ensureClangLlvmCalls, 0);
+    });
+
     test('检测结果不在优先级列表内时视为无可用编译器', () async {
+      final Directory root = _tempDirectory();
+
       await expectLater(
         prepareBuildEnvironment(
           priority: <String>['icx'],
           provisioner: _FakeProvisioner(_cmakeNinja()),
+          toolsRoot: joinPath(root.path, 'tools'),
           baseEnvironment: <String, String>{},
           detect: () async => <DetectedCompiler>[_compiler()],
           capture: _captureStub(<CompilerKind>[], (
@@ -419,6 +609,7 @@ void main() {
     });
 
     test('返回新环境且不修改传入 base（捕获直接返回 base 时同样安全）', () async {
+      final Directory root = _tempDirectory();
       final Map<String, String> base = <String, String>{
         'FOO': '1',
         'Path': r'C:\Windows',
@@ -428,7 +619,7 @@ void main() {
         provisioner: _FakeProvisioner(
           _cmakeNinja(pathEntries: <String>[r'C:\tools\ninja']),
         ),
-        toolsRoot: 'tools',
+        toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: base,
         detect: () async => <DetectedCompiler>[
           _compiler(extraPathEntries: <String>[r'C:\LLVM\bin']),
@@ -451,6 +642,8 @@ void main() {
     });
 
     test('声明工具按序供给并将工具目录汇入 PATH 的 cmake 之后', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
       final Map<String, String> base = <String, String>{
         'Path': r'C:\Windows',
       };
@@ -481,7 +674,7 @@ void main() {
       final BuildEnvironment result = await prepareBuildEnvironment(
         priority: <String>['msvc'],
         provisioner: provisioner,
-        toolsRoot: 'tools',
+        toolsRoot: toolsRoot,
         baseEnvironment: base,
         tools: const <BuildScriptTool>[
           BuildScriptTool(
@@ -517,12 +710,14 @@ void main() {
       );
       expect(
         result.environment['CNP_TOOLS_DIR'],
-        Directory('tools').absolute.path,
+        Directory(toolsRoot).absolute.path,
       );
       expect(base['Path'], r'C:\Windows');
     });
 
     test('Python 解释器目录前置到声明工具与编译器附加目录之前', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
       final _FakeProvisioner provisioner = _FakeProvisioner(
         _cmakeNinja(
           cmakeExecutable: r'C:\tools\cmake\bin\cmake.exe',
@@ -546,7 +741,7 @@ void main() {
       final BuildEnvironment result = await prepareBuildEnvironment(
         priority: <String>['msvc'],
         provisioner: provisioner,
-        toolsRoot: 'tools',
+        toolsRoot: toolsRoot,
         baseEnvironment: <String, String>{'Path': r'C:\Windows'},
         tools: const <BuildScriptTool>[
           BuildScriptTool(name: 'perl', url: 'https://example.com/perl.zip'),
@@ -618,10 +813,22 @@ void main() {
         }),
       );
 
-      expect(Directory(root.path).listSync(), isEmpty);
+      expect(
+        File(joinPath(root.path, 'cnp_build_support.py')).existsSync(),
+        isFalse,
+      );
+      expect(
+        Directory(root.path)
+            .listSync()
+            .map((FileSystemEntity entity) => baseName(entity.path))
+            .toList(),
+        <String>['.tmp'],
+        reason: '仅应创建受控临时目录',
+      );
     });
 
     test('工具供给失败时传播 BuildPreparationException', () async {
+      final Directory root = _tempDirectory();
       final _FakeProvisioner provisioner = _FakeProvisioner(
         _cmakeNinja(),
         toolError: const BuildPreparationException(
@@ -633,6 +840,7 @@ void main() {
         prepareBuildEnvironment(
           priority: <String>['msvc'],
           provisioner: provisioner,
+          toolsRoot: joinPath(root.path, 'tools'),
           baseEnvironment: <String, String>{},
           tools: const <BuildScriptTool>[
             BuildScriptTool(
@@ -886,14 +1094,17 @@ class _FakeProvisioner implements ToolProvisioner {
       source: PythonSource.local,
       pathEntries: <String>[],
     ),
+    this.clangResult,
   });
 
   final CmakeNinja result;
   final Map<String, ProvisionedTool> toolResults;
   final Object? toolError;
   final ProvisionedPython pythonResult;
+  final ProvisionedTool? clangResult;
   int ensureCmakeNinjaCalls = 0;
   int ensurePythonCalls = 0;
+  int ensureClangLlvmCalls = 0;
   final List<_ToolCall> ensureToolCalls = <_ToolCall>[];
 
   @override
@@ -925,6 +1136,18 @@ class _FakeProvisioner implements ToolProvisioner {
     ensurePythonCalls++;
     return pythonResult;
   }
+
+  @override
+  Future<ProvisionedTool> ensureClangLlvm() async {
+    ensureClangLlvmCalls++;
+    final ProvisionedTool? tool = clangResult;
+    if (tool != null) {
+      return tool;
+    }
+    throw const BuildPreparationException(
+      '工具 clang 下载失败：https://example.com/clang.tar.xz',
+    );
+  }
 }
 
 PackModel _pack({Map<String, String> buildOptions = const <String, String>{}}) {
@@ -935,6 +1158,12 @@ PackModel _pack({Map<String, String> buildOptions = const <String, String>{}}) {
   );
   pack.buildOptions = <String, String>{...buildOptions};
   return pack;
+}
+
+void _createFile(String path, {String content = 'MZ'}) {
+  final File file = File(path);
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(content);
 }
 
 Directory _tempDirectory() {

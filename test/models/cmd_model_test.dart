@@ -29,6 +29,36 @@ void main() {
     expect(cmd.buildModel, BuildModel.all);
   });
 
+  test('system 默认 false 且不写入 map', () {
+    const CmdModel cmd = CmdModel(command: 'echo hi', type: CmdType.preBuild);
+
+    expect(cmd.system, isFalse);
+    expect(cmd.toMap().containsKey('system'), isFalse);
+  });
+
+  test('system: true 往返保留', () {
+    const CmdModel cmd = CmdModel(
+      command: 'echo hi',
+      type: CmdType.postBuild,
+      system: true,
+    );
+
+    expect(cmd.toMap()['system'], isTrue);
+    expect(CmdModel.fromMap(cmd.toMap()).system, isTrue);
+  });
+
+  test('fromMap system 非布尔值容错为 false', () {
+    for (final Object? value in <Object?>['true', 1, <Object?>[]]) {
+      final CmdModel cmd = CmdModel.fromMap(<String, Object?>{
+        'command': 'echo hi',
+        'type': 'preBuild',
+        'system': value,
+      });
+
+      expect(cmd.system, isFalse);
+    }
+  });
+
   test('fromMap 缺少 command 时抛出 FormatException', () {
     expect(
       () => CmdModel.fromMap(<String, Object?>{'type': 'preBuild'}),

@@ -51,10 +51,18 @@ final RegExp _lineSeparator = RegExp(r'\r?\n');
 const String _vcToolsComponent =
     'Microsoft.VisualStudio.Component.VC.Tools.x86.x64';
 
-/// 检测 Intel oneAPI ICX：取 `<oneApiRoot>/compiler/<最高版本|latest>/bin/icx-cl.exe`。
+/// 检测 Intel oneAPI ICX：取 `<oneApiRoot>/compiler/<最高版本|latest>/` 下
+/// `bin/icx-cl.exe`（2024+ 布局）或 `windows/bin/icx-cl.exe`（旧布局）。
+///
+/// [environment] 为版本探测子进程的环境（如注入受控 `TMP`/`TEMP`）；null 时
+/// 继承宿主环境。探测只认退出码 0 且 stdout 命中版本：ICX 在临时目录不可用时
+/// 会以 1 退出（`error #10026`，stdout 为空、横幅与错误写 stderr），不为其放行
+/// ——该文本形态与 stdout 正常输出不同且放行会掩盖真实失败；此失败模式由构建
+/// 环境准备注入受控 `TMP`/`TEMP` 解决。
 Future<DetectedCompiler?> detectIcx({
   PackProcessRunner runner = Process.run,
   required String oneApiRoot,
+  Map<String, String>? environment,
 }) async {
   final String? executable = _findIcxExecutable(oneApiRoot);
   if (executable == null) {
@@ -65,6 +73,7 @@ Future<DetectedCompiler?> detectIcx({
     executable: executable,
     arguments: const <String>['--version'],
     pattern: _icxVersionPattern,
+    environment: environment,
   );
   if (version == null) {
     return null;
@@ -78,9 +87,12 @@ Future<DetectedCompiler?> detectIcx({
 }
 
 /// 检测 `<llvmBinDir>/clang-cl.exe` 的版本。
+///
+/// [environment] 为版本探测子进程的环境；null 时继承宿主环境。
 Future<DetectedCompiler?> detectClangCl({
   PackProcessRunner runner = Process.run,
   required String llvmBinDir,
+  Map<String, String>? environment,
 }) async {
   final String executable = joinPath(llvmBinDir, 'clang-cl.exe');
   if (!File(executable).existsSync()) {
@@ -91,6 +103,7 @@ Future<DetectedCompiler?> detectClangCl({
     executable: executable,
     arguments: const <String>['--version'],
     pattern: _clangVersionPattern,
+    environment: environment,
   );
   if (version == null) {
     return null;
@@ -106,13 +119,17 @@ Future<DetectedCompiler?> detectClangCl({
 
 /// 检测 MSVC：`vswhere` 取安装路径，工具集版本取
 /// `VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt`。
+///
+/// [environment] 为 vswhere 探测子进程的环境；null 时继承宿主环境。
 Future<DetectedCompiler?> detectMsvc({
   PackProcessRunner runner = Process.run,
   required String vswherePath,
+  Map<String, String>? environment,
 }) async {
   final String? installPath = await _queryVswhereInstallation(
     runner,
     vswherePath,
+    environment: environment,
   );
   if (installPath == null) {
     return null;
@@ -138,23 +155,28 @@ Future<DetectedCompiler?> detectMsvc({
 
 /// 检测本机可用编译器，顺序固定为 ICX → clang-cl → MSVC。
 ///
-/// 默认路径从 `ProgramFiles`/`ProgramFiles(x86)` 环境推导；
+/// 默认查找位置（`%ONEAPI_ROOT%`、`ProgramFiles(x86)`/`ProgramFiles` 下的
+/// oneAPI 与 LLVM、vswhere）从 [environment]（缺省 `Platform.environment`）
+/// 推导，并作为各版本探测子进程的环境透传（如受控 `TMP`/`TEMP`）；
 /// [oneApiRoot]/[llvmBinDir]/[vswherePath] 用于测试或自定义位置覆盖。
 Future<List<DetectedCompiler>> detectCompilers({
   PackProcessRunner runner = Process.run,
   String? oneApiRoot,
   String? llvmBinDir,
   String? vswherePath,
+  Map<String, String>? environment,
 }) async {
+  final Map<String, String> env = environment ?? Platform.environment;
   final List<DetectedCompiler> compilers = <DetectedCompiler>[];
 
   final List<String> oneApiRoots = oneApiRoot == null
-      ? _defaultOneApiRoots()
+      ? _defaultOneApiRoots(env)
       : <String>[oneApiRoot];
   for (final String root in oneApiRoots) {
     final DetectedCompiler? icx = await detectIcx(
       runner: runner,
       oneApiRoot: root,
+      environment: env,
     );
     if (icx != null) {
       compilers.add(icx);
@@ -162,22 +184,24 @@ Future<List<DetectedCompiler>> detectCompilers({
     }
   }
 
-  final String? llvmBin = llvmBinDir ?? _defaultLlvmBinDir();
+  final String? llvmBin = llvmBinDir ?? _defaultLlvmBinDir(env);
   if (llvmBin != null) {
     final DetectedCompiler? clangCl = await detectClangCl(
       runner: runner,
       llvmBinDir: llvmBin,
+      environment: env,
     );
     if (clangCl != null) {
       compilers.add(clangCl);
     }
   }
 
-  final String? vswhere = vswherePath ?? _defaultVswherePath();
+  final String? vswhere = vswherePath ?? _defaultVswherePath(env);
   if (vswhere != null) {
     final DetectedCompiler? msvc = await detectMsvc(
       runner: runner,
       vswherePath: vswhere,
+      environment: env,
     );
     if (msvc != null) {
       compilers.add(msvc);
@@ -250,11 +274,8 @@ String? _findIcxExecutable(String oneApiRoot) {
   String? latestExecutable;
   for (final FileSystemEntity entity in entries) {
     final String name = baseName(entity.path);
-    final String executable = joinPath(
-      oneApiRoot,
-      'compiler/$name/bin/icx-cl.exe',
-    );
-    if (!File(executable).existsSync()) {
+    final String? executable = _icxExecutableIn(oneApiRoot, name);
+    if (executable == null) {
       continue;
     }
     if (name.toLowerCase() == 'latest') {
@@ -268,12 +289,24 @@ String? _findIcxExecutable(String oneApiRoot) {
     (String first, String second) => _compareVersionNames(second, first),
   );
   if (versionDirectories.isNotEmpty) {
-    return joinPath(
-      oneApiRoot,
-      'compiler/${versionDirectories.first}/bin/icx-cl.exe',
-    );
+    return _icxExecutableIn(oneApiRoot, versionDirectories.first);
   }
   return latestExecutable;
+}
+
+/// 新布局（2024+）为 `compiler/<目录>/bin/icx-cl.exe`，旧布局为
+/// `compiler/<目录>/windows/bin/icx-cl.exe`；两者都探测，取先命中的布局。
+String? _icxExecutableIn(String oneApiRoot, String compilerDirectoryName) {
+  for (final String layout in const <String>['bin', 'windows/bin']) {
+    final String executable = joinPath(
+      oneApiRoot,
+      'compiler/$compilerDirectoryName/$layout/icx-cl.exe',
+    );
+    if (File(executable).existsSync()) {
+      return executable;
+    }
+  }
+  return null;
 }
 
 int _compareVersionNames(String first, String second) {
@@ -301,10 +334,11 @@ Future<String?> _probeVersion({
   required String executable,
   required List<String> arguments,
   required RegExp pattern,
+  Map<String, String>? environment,
 }) async {
   final ProcessResult result;
   try {
-    result = await runner(executable, arguments);
+    result = await runner(executable, arguments, environment: environment);
   } on ProcessException {
     return null;
   }
@@ -317,8 +351,9 @@ Future<String?> _probeVersion({
 
 Future<String?> _queryVswhereInstallation(
   PackProcessRunner runner,
-  String vswherePath,
-) async {
+  String vswherePath, {
+  Map<String, String>? environment,
+}) async {
   final ProcessResult result;
   try {
     result = await runner(vswherePath, const <String>[
@@ -329,7 +364,7 @@ Future<String?> _queryVswhereInstallation(
       _vcToolsComponent,
       '-property',
       'installationPath',
-    ]);
+    ], environment: environment);
   } on ProcessException {
     return null;
   }
@@ -369,29 +404,54 @@ String _firstNonEmptyLine(String text) {
   return '';
 }
 
-List<String> _defaultOneApiRoots() {
-  final Map<String, String> environment = Platform.environment;
+List<String> _defaultOneApiRoots(Map<String, String> environment) {
   final List<String> roots = <String>[];
+  final String? declaredRoot = _environmentValue(environment, 'ONEAPI_ROOT');
+  if (declaredRoot != null && declaredRoot.isNotEmpty) {
+    roots.add(declaredRoot);
+  }
   for (final String key in const <String>[
     'ProgramFiles(x86)',
     'ProgramFiles',
   ]) {
-    final String? base = environment[key];
-    if (base != null && base.isNotEmpty) {
-      roots.add(joinPath(base, 'Intel/oneAPI'));
+    final String? base = _environmentValue(environment, key);
+    if (base == null || base.isEmpty) {
+      continue;
     }
+    final String root = joinPath(base, 'Intel/oneAPI');
+    if (roots.any((String item) => item.toLowerCase() == root.toLowerCase())) {
+      continue;
+    }
+    roots.add(root);
   }
   return roots;
 }
 
-String? _defaultLlvmBinDir() {
-  final String? base = Platform.environment['ProgramFiles'];
+String? _defaultLlvmBinDir(Map<String, String> environment) {
+  final String? base = _environmentValue(environment, 'ProgramFiles');
   return base == null || base.isEmpty ? null : joinPath(base, 'LLVM/bin');
 }
 
-String? _defaultVswherePath() {
-  final String? base = Platform.environment['ProgramFiles(x86)'];
+String? _defaultVswherePath(Map<String, String> environment) {
+  final String? base = _environmentValue(environment, 'ProgramFiles(x86)');
   return base == null || base.isEmpty
       ? null
       : joinPath(base, 'Microsoft Visual Studio/Installer/vswhere.exe');
+}
+
+/// 大小写不敏感的环境取值：`Platform.environment` 的 `[]` 在 Windows 上大小写
+/// 不敏感、但其键迭代为全大写，经 `Map.of` 复制后普通 map 的精确查找会落空
+/// （如 `ProgramFiles(x86)`）；这里显式做不敏感匹配，[environment] 可为副本。
+String? _environmentValue(Map<String, String> environment, String key) {
+  final String? direct = environment[key];
+  if (direct != null) {
+    return direct;
+  }
+  final String normalized = key.toLowerCase();
+  for (final MapEntry<String, String> entry in environment.entries) {
+    if (entry.key.toLowerCase() == normalized) {
+      return entry.value;
+    }
+  }
+  return null;
 }

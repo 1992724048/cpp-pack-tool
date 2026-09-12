@@ -77,7 +77,7 @@ void main() {
             message: '新记录',
           ),
         ],
-      ),
+      )..buildOptions = <String, String>{'tbb': 'on'},
       onSave: (PackModel pack) async {
         saved = pack;
         return true;
@@ -93,6 +93,7 @@ void main() {
     expect(saved!.files, hasLength(1));
     expect(saved!.history, hasLength(1));
     expect(saved!.history.single.message, '旧记录');
+    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('新记录'), findsNothing);
     expect(find.text('已删除'), findsOneWidget);
   });

@@ -2,7 +2,8 @@
 
 // mimalloc 真机构建验收（P3 L5）：经生产链路 preparePackBuildEnvironment + runPackBuild
 // 真实 clone https://github.com/microsoft/mimalloc.git（默认分支 main3），以本机编译器
-// 构建 Release/Debug 双配置并分类到 BUILD_OUT，另断言预构建工具 bin/minject.exe 入包。
+// 构建 Release/Debug 双配置并分类到 BUILD_OUT（release/lib|bin + debug/lib|bin），另断言
+// 预构建工具 minject.exe 入 release/bin 与 debug/bin、根目录生成 post.bat 注入脚本。
 //
 // 运行：$env:CNP_REAL_LIBRARY_BUILDS='mimalloc'; flutter test test/build/library_build_mimalloc_test.dart
 
@@ -133,7 +134,7 @@ void main() {
   final String? gateReason = _gateReason();
 
   test(
-    'mimalloc 真机构建：拉取源码 → Release/Debug 构建 → lib/dll/minject 分类入库',
+    'mimalloc 真机构建：拉取源码 → Release/Debug 分层构建 → minject/post.bat 入库',
     () async {
       final Stopwatch total = Stopwatch()..start();
       final Directory tempRoot = _createTempDir('cnp_lib_mimalloc_');
@@ -188,11 +189,11 @@ void main() {
 
       final String includeDir = joinPath(packDir.path, 'include');
       final List<String> releaseLibs = _filesWithExtension(
-        joinPath(packDir.path, 'lib'),
+        joinPath(packDir.path, 'release/lib'),
         '.lib',
       );
       final List<String> releaseBins = _filesWithExtension(
-        joinPath(packDir.path, 'bin'),
+        joinPath(packDir.path, 'release/bin'),
         '.dll',
       );
       final List<String> debugLibs = _filesWithExtension(
@@ -204,6 +205,18 @@ void main() {
         '.dll',
       );
       final String licensePath = joinPath(packDir.path, 'LICENSE');
+      final String releaseMinjectPath = joinPath(
+        packDir.path,
+        'release/bin/minject.exe',
+      );
+      final String debugMinjectPath = joinPath(
+        packDir.path,
+        'debug/bin/minject.exe',
+      );
+      final String postBatPath = joinPath(packDir.path, 'post.bat');
+      final String postBatContent = File(postBatPath).existsSync()
+          ? File(postBatPath).readAsStringSync()
+          : '';
 
       print(
         '[evidence] include/mimalloc.h=${File(joinPath(includeDir, 'mimalloc.h')).existsSync()}',
@@ -216,11 +229,14 @@ void main() {
       print('[evidence] debug.lib=$debugLibs');
       print('[evidence] debug.dll=$debugBins');
       print(
-        '[evidence] bin/minject.exe=${File(joinPath(packDir.path, 'bin/minject.exe')).existsSync()}',
+        '[evidence] release/bin/minject.exe=${File(releaseMinjectPath).existsSync()}',
       );
       print(
-        '[evidence] debug/bin/minject.exe=${File(joinPath(packDir.path, 'debug/bin/minject.exe')).existsSync()}',
+        '[evidence] debug/bin/minject.exe=${File(debugMinjectPath).existsSync()}',
       );
+      print('[evidence] post.bat=${File(postBatPath).existsSync()}');
+      print('[evidence] post.bat content:');
+      print(postBatContent.trim());
       print('[evidence] LICENSE=${File(licensePath).existsSync()}');
       print('[evidence] artifacts=${_relativeFiles(packDir.path)}');
 
@@ -237,34 +253,70 @@ void main() {
       expect(
         releaseLibs,
         contains('mimalloc.lib'),
-        reason: 'Release lib/ 应含静态库 mimalloc.lib',
+        reason: 'Release release/lib 应含静态库 mimalloc.lib',
       );
       expect(
         releaseLibs,
         contains('mimalloc.dll.lib'),
-        reason: 'Release lib/ 应含共享库导入库 mimalloc.dll.lib',
+        reason: 'Release release/lib 应含共享库导入库 mimalloc.dll.lib',
       );
       expect(
         releaseBins,
         contains('mimalloc.dll'),
-        reason: 'Release bin/ 应含 mimalloc.dll',
+        reason: 'Release release/bin 应含 mimalloc.dll',
       );
       expect(
         releaseBins,
         contains('mimalloc-redirect.dll'),
-        reason: 'Release bin/ 应含 mimalloc-redirect.dll（MI_WIN_REDIRECT 构建期复制）',
+        reason:
+            'Release release/bin 应含 mimalloc-redirect.dll（MI_WIN_REDIRECT 构建期复制）',
       );
       expect(debugLibs, isNotEmpty, reason: 'debug/lib 应存在且含 .lib');
       expect(debugBins, isNotEmpty, reason: 'debug/bin 应存在且含 .dll');
       expect(
-        File(joinPath(packDir.path, 'bin/minject.exe')).existsSync(),
+        File(releaseMinjectPath).existsSync(),
         isTrue,
-        reason: 'bin/minject.exe 应存在（仓库预构建 x64 工具入包）',
+        reason: 'release/bin/minject.exe 应存在（仓库预构建 x64 工具入包）',
       );
       expect(
-        File(joinPath(packDir.path, 'debug/bin/minject.exe')).existsSync(),
+        File(debugMinjectPath).existsSync(),
         isTrue,
         reason: 'debug/bin/minject.exe 应存在（工具与配置无关，双落位）',
+      );
+      expect(
+        File(postBatPath).existsSync(),
+        isTrue,
+        reason: 'BUILD_OUT 根应生成 post.bat（消费方注入入口）',
+      );
+      expect(
+        postBatContent.contains('minject.exe'),
+        isTrue,
+        reason: 'post.bat 应调用包内 minject.exe',
+      );
+      expect(
+        postBatContent.contains(r'%~1'),
+        isTrue,
+        reason: 'post.bat 应以 %~1 为消费者目标可执行文件路径',
+      );
+      expect(
+        postBatContent.contains(r'release\bin\minject.exe'),
+        isTrue,
+        reason: 'post.bat 应引用 release/bin/minject.exe 落位',
+      );
+      expect(
+        postBatContent.contains('exit /b 0'),
+        isTrue,
+        reason: 'post.bat 注入失败不阻断构建（恒 exit /b 0）',
+      );
+      expect(
+        Directory(joinPath(packDir.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
+      expect(
+        Directory(joinPath(packDir.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
       );
       expect(
         File(licensePath).existsSync(),

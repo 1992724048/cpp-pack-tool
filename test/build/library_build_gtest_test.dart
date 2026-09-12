@@ -293,6 +293,16 @@ void main() {
         isTrue,
         reason: 'googletest 源根 LICENSE 应经 stage_license 落 BUILD_OUT 根',
       );
+      expect(
+        Directory(joinPath(packDir.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（源码分发不应有 lib/）',
+      );
+      expect(
+        Directory(joinPath(packDir.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（源码分发不应有 bin/）',
+      );
 
       total.stop();
       print('[evidence] totalElapsed=${total.elapsed.inSeconds}s');

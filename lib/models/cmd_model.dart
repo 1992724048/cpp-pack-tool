@@ -7,16 +7,21 @@ class CmdModel {
     required this.command,
     required this.type,
     this.buildModel = BuildModel.all,
+    this.system = false,
   });
 
   final String command;
   final CmdType type;
   final BuildModel buildModel;
 
+  /// 构建管线自动注册的系统条目；UI 禁止编辑/删除。
+  final bool system;
+
   Map<String, Object?> toMap() => <String, Object?>{
     'command': command,
     'type': type.name,
     'buildModel': buildModel.name,
+    if (system) 'system': true,
   };
 
   factory CmdModel.fromMap(Map<String, Object?> map) {
@@ -41,6 +46,7 @@ class CmdModel {
       command: command,
       type: type,
       buildModel: BuildModel.fromName(map['buildModel']),
+      system: map['system'] == true,
     );
   }
 }

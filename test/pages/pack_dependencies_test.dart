@@ -52,6 +52,54 @@ void main() {
     expect(find.byType(Divider), findsNWidgets(2));
   });
 
+  testWidgets('系统依赖展示系统标记且编辑删除禁用', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(
+          name: 'libfoo',
+          version: '[1.0.0,)',
+          system: true,
+        ),
+        const DependencyModel(name: 'libbar', version: '2.0'),
+      ];
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        allPacks: <PackModel>[_pack('demo'), _pack('libfoo'), _pack('libbar')],
+      ),
+    );
+
+    expect(find.text('系统'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('dependencyEditButton_libfoo')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('dependencyDeleteButton_libfoo')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('dependencyEditButton_libbar')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(find.byTooltip('由构建管线注册，禁止修改/删除'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('表头与两行依赖的列对齐', (tester) async {
     final PackModel pack = _pack('demo')
       ..dependencies = <DependencyModel>[
@@ -185,7 +233,8 @@ void main() {
       ..libDirectories = <LibDirModel>[
         const LibDirModel(path: 'third_party/lib'),
       ]
-      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
+      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
+      ..buildOptions = <String, String>{'tbb': 'on'};
     PackModel? saved;
 
     await _pumpPage(
@@ -221,6 +270,7 @@ void main() {
     expect(saved!.macros.single.value, 'MY_MACRO=1');
     expect(saved!.libDirectories.single.path, 'third_party/lib');
     expect(saved!.libraries.single.name, 'mylib.lib');
+    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已添加'), findsOneWidget);
     expect(find.byKey(const Key('dependencyDialog')), findsNothing);
   });

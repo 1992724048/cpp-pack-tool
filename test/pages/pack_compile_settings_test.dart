@@ -106,6 +106,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('系统命令条目展示系统标记且编辑删除禁用', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..commands = <CmdModel>[
+        const CmdModel(
+          command:
+              r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+          type: CmdType.preBuild,
+          system: true,
+        ),
+        const CmdModel(command: 'echo post', type: CmdType.postBuild),
+      ];
+
+    await _pumpPage(tester, _page(pack));
+
+    expect(find.text('系统'), findsOneWidget);
+    final IconButton lockedEdit = tester.widget<IconButton>(
+      find.byKey(const Key('preBuildCmdEditButton_0')),
+    );
+    final IconButton lockedDelete = tester.widget<IconButton>(
+      find.byKey(const Key('preBuildCmdDeleteButton_0')),
+    );
+    final IconButton userEdit = tester.widget<IconButton>(
+      find.byKey(const Key('postBuildCmdEditButton_1')),
+    );
+    expect(lockedEdit.onPressed, isNull);
+    expect(lockedDelete.onPressed, isNull);
+    expect(userEdit.onPressed, isNotNull);
+    expect(find.byTooltip('由构建管线注册，禁止修改/删除'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('分区表格的表头与条目列对齐', (tester) async {
     final PackModel pack = _pack('demo')
       ..macros = <MacroModel>[
@@ -163,7 +194,8 @@ void main() {
           ]
           ..macros = <MacroModel>[const MacroModel(value: 'OLD=1')]
           ..libDirectories = <LibDirModel>[const LibDirModel(path: 'libs')]
-          ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')];
+          ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')]
+          ..buildOptions = <String, String>{'tbb': 'on'};
     PackModel? saved;
 
     await _pumpPage(
@@ -202,6 +234,7 @@ void main() {
     expect(saved!.macros[1].buildModel, BuildModel.release);
     expect(saved!.libDirectories.single.path, 'libs');
     expect(saved!.libraries.single.name, 'old.lib');
+    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已添加'), findsOneWidget);
   });
 

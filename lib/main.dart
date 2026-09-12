@@ -1,6 +1,7 @@
 import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -17,6 +18,7 @@ import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
+import 'package:cpp_nuget_pack/util/system_entries.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:file_selector/file_selector.dart';
@@ -116,6 +118,7 @@ class MainLayout extends StatefulWidget {
     this.buildPack = runPackBuild,
     this.prepareBuildEnv,
     this.detectCompilers = toolchain.detectCompilers,
+    this.loadBuildHeader = loadBuildScriptHeader,
     this.now = DateTime.now,
   });
 
@@ -137,6 +140,10 @@ class MainLayout extends StatefulWidget {
   final PackBuildRunner buildPack;
   final Future<BuildEnvironment> Function(PackModel pack)? prepareBuildEnv;
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
+
+  /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
+  final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
+
   final DateTime Function() now;
 
   @override
@@ -416,11 +423,29 @@ class _MainLayoutState extends State<MainLayout> {
         );
       }
     }
-    await widget.store.savePack(pack);
+    final PackModel updated = await _syncSystemEntries(pack);
+    await widget.store.savePack(updated);
     if (!mounted) {
       return;
     }
-    _upsertPack(pack);
+    _upsertPack(updated);
+  }
+
+  /// 注册构建管线系统条目（根级 pre/post.bat 命令与 `# depends:` 依赖）。
+  ///
+  /// build.py 缺失或不可读时仍同步脚本命令，不阻断重映射。
+  Future<PackModel> _syncSystemEntries(PackModel pack) async {
+    BuildScriptHeader? header;
+    try {
+      header = await widget.loadBuildHeader(pack);
+    } catch (_) {
+      header = null;
+    }
+    return applySystemEntries(
+      pack,
+      header: header,
+      resolvePackVersion: (String name) => _findPack(name)?.version,
+    ).pack;
   }
 
   void _selectPackagingBuilder(PackageBuilder builder) {

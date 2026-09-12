@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/version_range.dart';
 
 const String _buildScriptName = 'build.py';
 const String _toolDirectivePrefix = '# tool:';
 const String _optionDirectivePrefix = '# option:';
 const String _sourceDirectivePrefix = '# source:';
+const String _dependsDirectivePrefix = '# depends:';
 
 final RegExp _toolNamePattern = RegExp(r'^[A-Za-z0-9._-]+$');
 final RegExp _optionNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
@@ -62,6 +64,16 @@ class BuildScriptOption {
   String get defaultValue => values.first;
 }
 
+/// `# depends:` 声明的包依赖。
+class BuildScriptDependency {
+  const BuildScriptDependency({required this.name, this.version});
+
+  final String name;
+
+  /// 声明的 NuGet 版本范围；null 表示未声明，由打包侧按本地包版本推断。
+  final String? version;
+}
+
 /// build.py 头部解析结果。
 class BuildScriptHeader {
   const BuildScriptHeader({
@@ -69,6 +81,7 @@ class BuildScriptHeader {
     this.sourceNone = false,
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
+    this.dependencies = const <BuildScriptDependency>[],
   });
 
   final String repo;
@@ -79,10 +92,11 @@ class BuildScriptHeader {
 
   final List<BuildScriptTool> tools;
   final List<BuildScriptOption> options;
+  final List<BuildScriptDependency> dependencies;
 }
 
 /// 解析 build.py 头部：首行仓库地址 + 其后连续 `#` 行中的
-/// `# tool:` / `# option:` / `# source: none` 指令。
+/// `# tool:` / `# option:` / `# source: none` / `# depends:` 指令。
 ///
 /// 首行不合法返回 null；非法或未知指令行按注释忽略，同名声明以首次为准；
 /// 遇到首个非 `#` 行（含空行）即终止头部连续段。
@@ -94,8 +108,10 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   }
   final List<BuildScriptTool> tools = <BuildScriptTool>[];
   final List<BuildScriptOption> options = <BuildScriptOption>[];
+  final List<BuildScriptDependency> dependencies = <BuildScriptDependency>[];
   final Set<String> toolNames = <String>{};
   final Set<String> optionNames = <String>{};
+  final Set<String> dependencyNames = <String>{};
   bool sourceNone = false;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
@@ -117,12 +133,18 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     if (option != null && optionNames.add(option.name)) {
       options.add(option);
     }
+    final BuildScriptDependency? dependency = _parseDependsLine(line);
+    if (dependency != null &&
+        dependencyNames.add(dependency.name.toLowerCase())) {
+      dependencies.add(dependency);
+    }
   }
   return BuildScriptHeader(
     repo: repository,
     sourceNone: sourceNone,
     tools: tools,
     options: options,
+    dependencies: dependencies,
   );
 }
 
@@ -216,6 +238,29 @@ BuildScriptOption? _parseOptionLine(String line) {
     return null;
   }
   return BuildScriptOption(name: name, values: values);
+}
+
+/// 解析 `# depends: <包名> [<版本范围>]`：包名为单个非空白 token，
+/// 版本范围可选且必须通过 [isValidVersionRange]；非法行返回 null（整行忽略）。
+BuildScriptDependency? _parseDependsLine(String line) {
+  if (!line.startsWith(_dependsDirectivePrefix)) {
+    return null;
+  }
+  final String rest = line.substring(_dependsDirectivePrefix.length).trim();
+  if (rest.isEmpty) {
+    return null;
+  }
+  final List<String> tokens = rest.split(_whitespacePattern);
+  if (tokens.length > 2) {
+    return null;
+  }
+  if (tokens.length == 2) {
+    if (!isValidVersionRange(tokens[1])) {
+      return null;
+    }
+    return BuildScriptDependency(name: tokens[0], version: tokens[1]);
+  }
+  return BuildScriptDependency(name: tokens[0]);
 }
 
 /// 解析 build.py 首行的 git 仓库地址（`# <仓库地址>`）。

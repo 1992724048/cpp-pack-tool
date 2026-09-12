@@ -198,11 +198,11 @@ void main() {
       final String mainHeaderPath = joinPath(includeDir, 'sqlite3.h');
       final String extensionHeaderPath = joinPath(includeDir, 'sqlite3ext.h');
       final List<String> releaseLibs = _filesWithExtension(
-        joinPath(packDir.path, 'lib'),
+        joinPath(packDir.path, 'release/lib'),
         '.lib',
       );
       final List<String> releaseBins = _sqlite3Dlls(
-        joinPath(packDir.path, 'bin'),
+        joinPath(packDir.path, 'release/bin'),
       );
       final List<String> debugLibs = _filesWithExtension(
         joinPath(packDir.path, 'debug/lib'),
@@ -236,14 +236,28 @@ void main() {
         isTrue,
         reason: 'include/sqlite3ext.h 应存在',
       );
-      expect(releaseLibs, isNotEmpty, reason: 'Release lib/ 应至少 1 个 .lib');
+      expect(
+        releaseLibs,
+        isNotEmpty,
+        reason: 'Release release/lib 应至少 1 个 .lib',
+      );
       expect(
         releaseBins,
         isNotEmpty,
-        reason: 'Release bin/ 应至少 1 个 sqlite3*.dll',
+        reason: 'Release release/bin 应至少 1 个 sqlite3*.dll',
       );
       expect(debugLibs, isNotEmpty, reason: 'debug/lib 应存在且含 .lib');
       expect(debugBins, isNotEmpty, reason: 'debug/bin 应存在且含 sqlite3*.dll');
+      expect(
+        Directory(joinPath(packDir.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
+      expect(
+        Directory(joinPath(packDir.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
       expect(
         File(licensePath).existsSync(),
         isTrue,

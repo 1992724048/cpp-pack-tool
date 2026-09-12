@@ -10,13 +10,29 @@ import 'package:cpp_nuget_pack/util/format.dart';
 /// 工具包下载器：返回 zip 字节，失败时抛异常。
 typedef ToolFetcher = Future<Uint8List> Function(Uri uri);
 
-/// CMake 官方便携版下载地址（Kitware/CMake release，2026-09-13 核验可达）。
+/// CMake 官方便携版下载地址（解析最新版失败时的兜底；2026-09-13 核验可达）。
 const String cmakeDownloadUrl =
     'https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip';
 
-/// Ninja 官方 Windows 版下载地址（ninja-build/ninja release，2026-09-13 核验可达）。
+/// Ninja 官方 Windows 版下载地址（解析最新版失败时的兜底；2026-09-13 核验可达）。
 const String ninjaDownloadUrl =
-    'https://github.com/ninja-build/ninja/releases/download/v1.13.1/ninja-win.zip';
+    'https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-win.zip';
+
+/// GitHub releases API（`latest` 为最新非预发布正式版），用于下载前解析最新版本。
+const String cmakeReleasesApiUrl =
+    'https://api.github.com/repos/Kitware/CMake/releases/latest';
+const String ninjaReleasesApiUrl =
+    'https://api.github.com/repos/ninja-build/ninja/releases/latest';
+const String clangReleasesApiUrl =
+    'https://api.github.com/repos/llvm/llvm-project/releases/latest';
+
+/// clang/LLVM 最后手段的兜底版本（llvm-project release，2026-09-13 核验可达）。
+const String clangLlvmFallbackVersion = '23.1.1';
+
+/// 指定版本的 LLVM 官方 Windows MSVC 版 tar.xz 下载地址。
+String clangLlvmUrlForVersion(String version) =>
+    'https://github.com/llvm/llvm-project/releases/download/'
+    'llvmorg-$version/clang+llvm-$version-x86_64-pc-windows-msvc.tar.xz';
 
 /// Python 官网 FTP 版本目录（目录列表用于解析最新稳定版）。
 const String pythonFtpIndexUrl = 'https://www.python.org/ftp/python/';
@@ -34,6 +50,7 @@ const Duration _defaultReplaceRetryDelay = Duration(milliseconds: 250);
 const String _markerFileName = '.source';
 const String _tempDirectoryName = '.tmp';
 const String _binDirectoryName = 'bin';
+const Duration _releaseLookupTimeout = Duration(seconds: 10);
 
 /// 版本目录核验上限：FTP 列表可能含尚未发布产物的空目录，逐级下探至多
 /// [_pythonVersionProbeLimit] 个候选，避免异常页面对每个版本各发一次请求。
@@ -44,6 +61,29 @@ final RegExp _cmakeVersionPattern = RegExp(r'cmake version (\d+\.\d+\.\d+)');
 final RegExp _pythonVersionLinkPattern = RegExp(r'href="(\d+\.\d+\.\d+)/"');
 final RegExp _pythonOutputPattern = RegExp(r'Python\s+\d');
 final RegExp _lineSeparator = RegExp(r'\r?\n');
+
+/// 官方发布资产名（用于从 GitHub releases 资产列表挑选稳定版 Windows 包）。
+final RegExp _cmakeAssetNamePattern = RegExp(
+  r'^cmake-\d+\.\d+\.\d+-windows-x86_64\.zip$',
+);
+final RegExp _ninjaAssetNamePattern = RegExp(r'^ninja-win\.zip$');
+final RegExp _clangAssetNamePattern = RegExp(
+  r'^clang\+llvm-\d+\.\d+\.\d+-x86_64-pc-windows-msvc\.tar\.xz$',
+);
+
+/// 已安装工具的 `.source` 标记认可的来源地址形态（命中即复用，不再解析/下载）。
+final RegExp _cmakeSourceUrlPattern = RegExp(
+  r'^https://github\.com/Kitware/CMake/releases/download/'
+  r'v\d+\.\d+\.\d+/cmake-\d+\.\d+\.\d+-windows-x86_64\.zip$',
+);
+final RegExp _ninjaSourceUrlPattern = RegExp(
+  r'^https://github\.com/ninja-build/ninja/releases/download/'
+  r'v[^/]+/ninja-win\.zip$',
+);
+final RegExp _clangSourceUrlPattern = RegExp(
+  r'^https://github\.com/llvm/llvm-project/releases/download/'
+  r'llvmorg-\d+\.\d+\.\d+/clang\+llvm-\d+\.\d+\.\d+-x86_64-pc-windows-msvc\.tar\.xz$',
+);
 
 /// 已供给到 `tools/` 的工具。
 class ProvisionedTool {
@@ -112,11 +152,13 @@ class ProvisionedPython {
   final List<String> pathEntries;
 }
 
-/// 工具供给器：本地优先，缺失时下载 zip 解压到 `tools/<name>/`。
+/// 工具供给器：本地优先，缺失时下载解压到 `tools/<name>/`。
 ///
 /// 来源 URL 记入 `tools/<name>/.source`，标记匹配即复用；下载先解压到
-/// `tools/.tmp/` 再原子替换，失败不留半成品目录。zip 的单层根目录自动剥离。
-/// 替换遇杀软/句柄锁导致的瞬时文件占用时短延迟重试（默认 3 次、间隔 250ms）。
+/// `tools/.tmp/` 再原子替换，失败不留半成品目录。zip 与 tar.xz（LLVM 官方
+/// 发行格式）的单层根目录自动剥离。CMake/Ninja/clang 下载前经 GitHub
+/// releases API 解析最新正式版，解析失败回退内置常量。替换遇杀软/句柄锁
+/// 导致的瞬时文件占用时短延迟重试（默认 3 次、间隔 250ms）。
 class ToolProvisioner {
   ToolProvisioner({
     String toolsRoot = 'tools',
@@ -176,7 +218,7 @@ class ToolProvisioner {
   }
 
   /// 确保 CMake（≥ 3.25）与 Ninja 可用：优先本机 PATH 与
-  /// `%ProgramFiles%\CMake\bin`，否则下载到 `tools/`。
+  /// `%ProgramFiles%\CMake\bin`，否则解析最新稳定版并下载到 `tools/`。
   Future<CmakeNinja> ensureCmakeNinja() async {
     final List<String> pathEntries = <String>[];
     String? cmake = await _probeCmake('cmake');
@@ -185,9 +227,10 @@ class ToolProvisioner {
       cmake = await _probeCmake(fallback);
     }
     if (cmake == null) {
-      final ProvisionedTool tool = await ensureTool(
+      final ProvisionedTool tool = await _ensureReleaseTool(
         name: 'cmake',
-        url: cmakeDownloadUrl,
+        installedMarkerPattern: _cmakeSourceUrlPattern,
+        resolveUrl: _resolveCmakeDownloadUrl,
       );
       cmake = joinPath(tool.directory, 'bin/cmake.exe');
       pathEntries.addAll(tool.pathEntries);
@@ -198,9 +241,10 @@ class ToolProvisioner {
     ]);
     String? ninja = ninjaAvailable ? 'ninja' : null;
     if (ninja == null) {
-      final ProvisionedTool tool = await ensureTool(
+      final ProvisionedTool tool = await _ensureReleaseTool(
         name: 'ninja',
-        url: ninjaDownloadUrl,
+        installedMarkerPattern: _ninjaSourceUrlPattern,
+        resolveUrl: _resolveNinjaDownloadUrl,
       );
       ninja = joinPath(tool.directory, 'ninja.exe');
       pathEntries.addAll(tool.pathEntries);
@@ -210,6 +254,20 @@ class ToolProvisioner {
       cmakeExecutable: cmake,
       ninjaExecutable: ninja,
       pathEntries: pathEntries,
+    );
+  }
+
+  /// 确保 clang/LLVM 最后手段就绪：解析 LLVM 最新正式版，下载官方
+  /// Windows MSVC 版 tar.xz 并解压到 `tools/clang/`。
+  ///
+  /// 供编译器检测全部落空时兜底；解析失败回退 [clangLlvmFallbackVersion]
+  /// 对应地址。LLVM 发行版不含 MSVC 标准库头与链接库，clang-cl 仍需
+  /// MSVC/SDK 提供编译与链接环境，故该工具不携带环境脚本。
+  Future<ProvisionedTool> ensureClangLlvm() {
+    return _ensureReleaseTool(
+      name: 'clang',
+      installedMarkerPattern: _clangSourceUrlPattern,
+      resolveUrl: _resolveClangDownloadUrl,
     );
   }
 
@@ -248,6 +306,99 @@ class ToolProvisioner {
     );
   }
 
+  /// 供给“版本随最新发布变化”的官方工具：`.source` 标记命中该工具任一已知
+  /// 官方地址形态时直接复用（不重复解析/下载）；否则先解析最新资产 URL，
+  /// 再走 [ensureTool] 的下载/替换流程。解析失败由各 resolver 回退内置常量。
+  Future<ProvisionedTool> _ensureReleaseTool({
+    required String name,
+    required RegExp installedMarkerPattern,
+    required Future<String> Function() resolveUrl,
+  }) async {
+    final String safeName = _sanitizeToolName(name);
+    final String toolPath = joinPath(_toolsRoot, safeName);
+    final String? recorded = await _readMarkerUrl(
+      File(joinPath(toolPath, _markerFileName)),
+    );
+    if (recorded != null && installedMarkerPattern.hasMatch(recorded)) {
+      return _describeTool(safeName, toolPath, null);
+    }
+    return ensureTool(name: safeName, url: await resolveUrl());
+  }
+
+  Future<String?> _readMarkerUrl(File marker) async {
+    if (!await marker.exists()) {
+      return null;
+    }
+    try {
+      final String value = (await marker.readAsString()).trim();
+      return value.isEmpty ? null : value;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  Future<String> _resolveCmakeDownloadUrl() async {
+    final Uri? asset = await _resolveLatestGithubReleaseAsset(
+      apiUrl: cmakeReleasesApiUrl,
+      assetPattern: _cmakeAssetNamePattern,
+    );
+    return asset?.toString() ?? cmakeDownloadUrl;
+  }
+
+  Future<String> _resolveNinjaDownloadUrl() async {
+    final Uri? asset = await _resolveLatestGithubReleaseAsset(
+      apiUrl: ninjaReleasesApiUrl,
+      assetPattern: _ninjaAssetNamePattern,
+    );
+    return asset?.toString() ?? ninjaDownloadUrl;
+  }
+
+  Future<String> _resolveClangDownloadUrl() async {
+    final Uri? asset = await _resolveLatestGithubReleaseAsset(
+      apiUrl: clangReleasesApiUrl,
+      assetPattern: _clangAssetNamePattern,
+    );
+    return asset?.toString() ?? clangLlvmUrlForVersion(clangLlvmFallbackVersion);
+  }
+
+  /// 从 GitHub `releases/latest` 响应挑选匹配 [assetPattern] 的资产下载地址。
+  ///
+  /// 预发布（`prerelease: true`）、网络/超时/解析失败或结构不符均返回 null，
+  /// 由调用方回退内置常量；查询限时 [_releaseLookupTimeout]，不阻塞构建路径。
+  Future<Uri?> _resolveLatestGithubReleaseAsset({
+    required String apiUrl,
+    required RegExp assetPattern,
+  }) async {
+    try {
+      final Uint8List bytes = await _fetch(
+        Uri.parse(apiUrl),
+      ).timeout(_releaseLookupTimeout);
+      final Object? decoded = jsonDecode(
+        utf8.decode(bytes, allowMalformed: true),
+      );
+      if (decoded is! Map<String, Object?> || decoded['prerelease'] == true) {
+        return null;
+      }
+      final Object? assets = decoded['assets'];
+      if (assets is! List<Object?>) {
+        return null;
+      }
+      for (final Object? asset in assets) {
+        if (asset is! Map<String, Object?>) {
+          continue;
+        }
+        final Object? name = asset['name'];
+        final Object? url = asset['browser_download_url'];
+        if (name is String && url is String && assetPattern.hasMatch(name)) {
+          return Uri.tryParse(url);
+        }
+      }
+    } catch (_) {
+      // 网络/超时/JSON 解析失败：回退内置常量，不中断构建路径。
+    }
+    return null;
+  }
+
   Future<Uint8List> _download(String name, String url) async {
     try {
       return await _fetch(Uri.parse(url));
@@ -261,7 +412,9 @@ class ToolProvisioner {
   Archive _decodeArchive(String name, String url, Uint8List bytes) {
     final Archive archive;
     try {
-      archive = ZipDecoder().decodeBytes(bytes);
+      archive = _isTarXzArchive(url)
+          ? TarDecoder().decodeBytes(XZDecoder().decodeBytes(bytes))
+          : ZipDecoder().decodeBytes(bytes);
     } catch (error) {
       throw BuildPreparationException('工具 $name 的压缩包无效：$url（$error）');
     }
@@ -455,6 +608,13 @@ class ToolProvisioner {
       }
     }
   }
+}
+
+/// LLVM 官方发布为 tar.xz；其余工具包按 zip 处理。
+bool _isTarXzArchive(String url) {
+  final String path = Uri.tryParse(url)?.path ?? url;
+  final String lower = path.toLowerCase();
+  return lower.endsWith('.tar.xz') || lower.endsWith('.txz');
 }
 
 String _sanitizeToolName(String name) {

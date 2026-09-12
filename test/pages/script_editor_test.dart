@@ -165,6 +165,7 @@ void main() {
     expect(updated.libDirectories, same(pack.libDirectories));
     expect(updated.libraries, same(pack.libraries));
     expect(updated.history, same(pack.history));
+    expect(updated.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已保存'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -1133,7 +1134,8 @@ PackModel _fullPackWithTextNode() {
             type: HistoryType.created,
             message: '创建',
           ),
-        ];
+        ]
+        ..buildOptions = <String, String>{'tbb': 'on'};
   pack.scripts = <ScriptProjectModel>[
     ScriptProjectModel(id: 'script_1', name: '脚本 1', trigger: ScriptTrigger.pre)
       ..nodes.add(ScriptNodeModel(id: 'n1', type: 'value.text', x: 40, y: 60)),

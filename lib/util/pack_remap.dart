@@ -59,5 +59,6 @@ PackModel copyPackWithFiles(PackModel pack, List<FileModel> files) {
     ..libDirectories = pack.libDirectories
     ..libraries = pack.libraries
     ..history = pack.history
-    ..scripts = pack.scripts;
+    ..scripts = pack.scripts
+    ..buildOptions = pack.buildOptions;
 }

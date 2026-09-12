@@ -107,6 +107,7 @@ void main() {
       expect(header.sourceNone, isFalse);
       expect(header.tools, isEmpty);
       expect(header.options, isEmpty);
+      expect(header.dependencies, isEmpty);
     });
 
     test('# source: none 解析（与 tool/option 混排、兼容 CRLF 与无空格形式）', () {
@@ -292,6 +293,73 @@ void main() {
       expect(header.tools.single.url, 'https://one.example.com/a.zip');
       expect(header.options, hasLength(1));
       expect(header.options.single.values, <String>['off', 'on']);
+    });
+
+    test('# depends 解析（包名、缺省版本与显式范围，兼容 CRLF 与无空格）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\r\n'
+        '# depends: libfoo\r\n'
+        '# depends: libbar [1.0,2.0)\r\n'
+        '# depends:libbaz\r\n'
+        '# depends: libqux [2.0,)\r\n'
+        'print(1)\r\n',
+      );
+
+      expect(header!.dependencies, hasLength(4));
+      expect(header.dependencies[0].name, 'libfoo');
+      expect(header.dependencies[0].version, isNull);
+      expect(header.dependencies[1].name, 'libbar');
+      expect(header.dependencies[1].version, '[1.0,2.0)');
+      expect(header.dependencies[2].name, 'libbaz');
+      expect(header.dependencies[2].version, isNull);
+      expect(header.dependencies[3].name, 'libqux');
+      expect(header.dependencies[3].version, '[2.0,)');
+    });
+
+    test('# depends 非法行忽略（空、超 token、非法版本范围）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# depends:\n'
+        '# depends: \n'
+        '# depends: foo bar baz\n'
+        '# depends: foo *\n'
+        '# depends: foo (1.0)\n'
+        '# depends: foo [2.0,1.0]\n'
+        '# depends: foo 1.0.0 extra\n'
+        'print(1)\n',
+      );
+
+      expect(header!.dependencies, isEmpty);
+    });
+
+    test('# depends 同名以首次为准（大小写不敏感）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# depends: libfoo\n'
+        '# depends: LIBFOO [2.0,)\n',
+      );
+
+      expect(header!.dependencies, hasLength(1));
+      expect(header.dependencies.single.name, 'libfoo');
+      expect(header.dependencies.single.version, isNull);
+    });
+
+    test('# depends 位于头部连续段之外时不生效', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '\n'
+        '# depends: libfoo\n',
+      );
+
+      expect(header!.dependencies, isEmpty);
+
+      final BuildScriptHeader? afterCode = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        'print(1)\n'
+        '# depends: libfoo\n',
+      );
+
+      expect(afterCode!.dependencies, isEmpty);
     });
   });
 

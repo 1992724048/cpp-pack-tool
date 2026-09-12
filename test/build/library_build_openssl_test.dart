@@ -228,11 +228,11 @@ void main() {
 
       final String includeDir = joinPath(packDir.path, 'include');
       final List<String> releaseLibs = _filesWithExtension(
-        joinPath(packDir.path, 'lib'),
+        joinPath(packDir.path, 'release/lib'),
         '.lib',
       );
       final List<String> releaseBins = _filesWithExtension(
-        joinPath(packDir.path, 'bin'),
+        joinPath(packDir.path, 'release/bin'),
         '.dll',
       );
       final List<String> debugLibs = _filesWithExtension(
@@ -280,10 +280,28 @@ void main() {
         isTrue,
         reason: 'include/openssl/configuration.h 应存在（Configure 生成头）',
       );
-      expect(releaseLibs, isNotEmpty, reason: 'Release lib/ 应至少 1 个 .lib');
-      expect(releaseBins, isNotEmpty, reason: 'Release bin/ 应至少 1 个 .dll');
+      expect(
+        releaseLibs,
+        isNotEmpty,
+        reason: 'Release release/lib 应至少 1 个 .lib',
+      );
+      expect(
+        releaseBins,
+        isNotEmpty,
+        reason: 'Release release/bin 应至少 1 个 .dll',
+      );
       expect(debugLibs, isNotEmpty, reason: 'debug/lib 应存在且含 .lib');
       expect(debugBins, isNotEmpty, reason: 'debug/bin 应存在且含 .dll');
+      expect(
+        Directory(joinPath(packDir.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
+      expect(
+        Directory(joinPath(packDir.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
       expect(
         licenseFile.existsSync(),
         isTrue,

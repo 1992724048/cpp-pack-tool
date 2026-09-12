@@ -18,15 +18,18 @@
 #
 # 构建方案（out-of-tree：空构建目录跑 `perl <源码>/Configure VC-WIN64A` + nmake）：
 # - 目标 VC-WIN64A（x64）；Debug 用官方 debug- 前缀目标（/Od /MDd /Zi）。
-# - 编译器按工具注入的种类选择：clang-cl（cl 命令行兼容；vcvars 环境由工具捕获，
-#   nmake/link/lib/rc 可用）或 MSVC cl；两条路线均保留。
+# - 编译器按工具注入的编译器（CNP_C_COMPILER/CNP_CXX_COMPILER）选择：首选 ICX
+#   （icx-cl，cl 兼容驱动）；若 ICX 路线 Configure/nmake 失败，自动回退 clang-cl
+#   （PATH 可解析时）并打印失败证据；MSVC 注入时用 cl。注入值为全路径且 oneAPI
+#   目录含空格，nmake 无法可靠展开含空格的 $(CC)，故按可执行文件名映射为命令名
+#   （编译器目录已由工具注入 PATH：setvars.bat / LLVM bin）。
 # - 收窄范围：no-makedepend（免二次依赖扫描）、no-docs；`nmake build_libs` 只出
 #   libcrypto/libssl（含导入库与 DLL），不出 apps/tests 可执行文件。
 # - 头文件：源码 include/openssl 的静态头 + 构建树 include/openssl 的生成头
 #   （ssl.h/configuration.h 等 .in 模板产物），合并镜像到 include/openssl。
 #
-# 产物：Release → lib/ + bin/；Debug → debug/lib + debug/bin；许可证 LICENSE.txt
-# 经 stage_license 落 BUILD_OUT 根；中间构建目录位于 SRC_PATH 下。
+# 产物：Release → release/lib + release/bin；Debug → debug/lib + debug/bin；许可证
+# LICENSE.txt 经 stage_license 落 BUILD_OUT 根；中间构建目录位于 SRC_PATH 下。
 
 import os
 import shutil
@@ -93,27 +96,51 @@ def probe(command):
     )
 
 
-def compiler_variables():
-    """按工具注入的编译器种类选择 CC/CXX（clang-cl 与 cl.exe 命令行兼容）。"""
-    kind = (os.environ.get("CNP_COMPILER_KIND") or "").strip().lower()
-    if kind == "clang-cl":
-        return ["CC=clang-cl", "CXX=clang-cl"]
-    return ["CC=cl", "CXX=cl"]
+def injected_compiler_name():
+    """工具注入编译器的可执行文件名（CNP_C_COMPILER 优先，回退 CNP_CXX_COMPILER）。"""
+    value = (
+        os.environ.get("CNP_C_COMPILER")
+        or os.environ.get("CNP_CXX_COMPILER")
+        or ""
+    ).strip()
+    return os.path.basename(value).lower()
 
 
-def configure(config):
-    build_dir = os.path.join(SRC_PATH, "build-" + config.lower())
-    os.makedirs(build_dir, exist_ok=True)
+def compiler_route():
+    """返回 (路线标签, Configure CC/CXX 变量)：首选工具注入的 ICX。
+
+    注入的编译器全路径无法直接交给 nmake（oneAPI 路径含空格），映射为注入
+    PATH 中的命令名；识别不出时按 MSVC cl 处理。
+    """
+    name = injected_compiler_name()
+    if name.startswith("icx"):
+        return "icx", ["CC=icx-cl", "CXX=icx-cl"]
+    if name.startswith("clang"):
+        return "clang-cl", ["CC=clang-cl", "CXX=clang-cl"]
+    return "msvc", ["CC=cl", "CXX=cl"]
+
+
+def fallback_route(failed_label):
+    """ICX 路线失败时的回退路线（clang-cl，需 PATH 可解析）；其余路线无回退。"""
+    if failed_label != "icx" or shutil.which("clang-cl") is None:
+        return None
+    return "clang-cl", ["CC=clang-cl", "CXX=clang-cl"]
+
+
+def configure(config, build_dir, label, variables):
     command = [
         "perl",
         os.path.join(SRC_PATH, "Configure"),
         CONFIG_TARGETS[config],
     ]
     command.extend(CONFIGURE_FLAGS)
-    command.extend(compiler_variables())
+    command.extend(variables)
     command.append("PERL=perl")
     run(command, build_dir)
-    print("[openssl] configured target=%s dir=%s" % (CONFIG_TARGETS[config], build_dir))
+    print(
+        "[openssl] configured target=%s dir=%s compilerRoute=%s"
+        % (CONFIG_TARGETS[config], build_dir, label)
+    )
     return build_dir
 
 
@@ -137,20 +164,56 @@ def stage_openssl_headers(release_build_dir):
     return copied
 
 
+def clear_staged_binaries():
+    """重跑/回退前清空 release/debug 分层，避免同名不同内容被去重改名。"""
+    for segment in ("release", "debug"):
+        directory = os.path.join(BUILD_OUT, segment)
+        if os.path.isdir(directory):
+            shutil.rmtree(directory)
+
+
+def build_all(label, variables):
+    """以指定编译器路线构建 Release/Debug 并分类，返回构建目录 dict。"""
+    clear_staged_binaries()
+    build_dirs = {}
+    for config in ("Release", "Debug"):
+        build_dir = os.path.join(SRC_PATH, "build-" + config.lower())
+        if os.path.isdir(build_dir):
+            shutil.rmtree(build_dir)
+        os.makedirs(build_dir)
+        configure(config, build_dir, label, variables)
+        run(["nmake", "/NOLOGO", "build_libs"], build_dir)
+        counts = stage_binaries(build_dir, BUILD_OUT, config=config)
+        print(
+            "[openssl] staged config=%s compilerRoute=%s counts=%s"
+            % (config, label, counts)
+        )
+        build_dirs[config] = build_dir
+    return build_dirs
+
+
 def main():
+    label, variables = compiler_route()
     print(
-        "[openssl] compilerKind=%s variables=%s"
-        % (os.environ.get("CNP_COMPILER_KIND", ""), " ".join(compiler_variables()))
+        "[openssl] compilerKind=%s compilerRoute=%s variables=%s"
+        % (os.environ.get("CNP_COMPILER_KIND", ""), label, " ".join(variables))
     )
     probe(["nasm", "-v"])
     probe(["perl", "-v"])
     probe(["git", "-C", SRC_PATH, "log", "-1", "--format=%H %cs %s"])
-    build_dirs = {}
-    for config in ("Release", "Debug"):
-        build_dirs[config] = configure(config)
-        run(["nmake", "/NOLOGO", "build_libs"], build_dirs[config])
-        counts = stage_binaries(build_dirs[config], BUILD_OUT, config=config)
-        print("[openssl] staged config=%s counts=%s" % (config, counts))
+    try:
+        build_dirs = build_all(label, variables)
+    except RuntimeError as error:
+        fallback = fallback_route(label)
+        if fallback is None:
+            raise
+        fallback_label, fallback_variables = fallback
+        print("[openssl] compiler route %s failed: %s" % (label, error))
+        print(
+            "[openssl] falling back to compiler route %s（失败证据见上）"
+            % fallback_label
+        )
+        build_dirs = build_all(fallback_label, fallback_variables)
     stage_openssl_headers(build_dirs["Release"])
     print("[openssl] staged license=%s" % stage_license(SRC_PATH, BUILD_OUT))
     summary(BUILD_OUT)

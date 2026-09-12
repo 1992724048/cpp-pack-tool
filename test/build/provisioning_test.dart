@@ -441,7 +441,7 @@ void main() {
       ]);
     });
 
-    test('本地缺失时下载 cmake 与 ninja 并返回 tools 路径', () async {
+    test('本地缺失且解析失败时回退内置版本下载 cmake 与 ninja', () async {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'tools');
       final List<Uri> fetchCalls = <Uri>[];
@@ -449,7 +449,11 @@ void main() {
       final ToolProvisioner provisioner = ToolProvisioner(
         toolsRoot: toolsRoot,
         fetch: _fetchStub(fetchCalls, (Uri uri) async {
-          if (uri.toString() == cmakeDownloadUrl) {
+          final String url = uri.toString();
+          if (url == cmakeReleasesApiUrl || url == ninjaReleasesApiUrl) {
+            throw StateError('解析不可用（测试回退路径）');
+          }
+          if (url == cmakeDownloadUrl) {
             return _zip(<ArchiveFile>[
               ArchiveFile.directory('cmake-4.4.3-windows-x86_64/'),
               ArchiveFile.string(
@@ -462,10 +466,10 @@ void main() {
               ),
             ]);
           }
-          if (uri.toString() == ninjaDownloadUrl) {
+          if (url == ninjaDownloadUrl) {
             return _zip(<ArchiveFile>[ArchiveFile.string('ninja.exe', 'MZ')]);
           }
-          throw StateError('未知下载地址：$uri');
+          throw StateError('未知下载地址：$url');
         }),
         runner: _runnerStub(
           processCalls,
@@ -477,7 +481,9 @@ void main() {
       final CmakeNinja result = await provisioner.ensureCmakeNinja();
 
       expect(fetchCalls, <Uri>[
+        Uri.parse(cmakeReleasesApiUrl),
         Uri.parse(cmakeDownloadUrl),
+        Uri.parse(ninjaReleasesApiUrl),
         Uri.parse(ninjaDownloadUrl),
       ]);
       expect(
@@ -500,14 +506,128 @@ void main() {
       );
     });
 
-    test('仅缺 ninja 时只下载 ninja', () async {
+    test('解析成功时使用最新正式版资产地址下载', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      const String newCmakeUrl =
+          'https://github.com/Kitware/CMake/releases/download/'
+          'v9.9.9/cmake-9.9.9-windows-x86_64.zip';
+      const String newNinjaUrl =
+          'https://github.com/ninja-build/ninja/releases/download/'
+          'v1.99.0/ninja-win.zip';
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          switch (uri.toString()) {
+            case cmakeReleasesApiUrl:
+              return _releaseAssetJson(
+                assetName: 'cmake-9.9.9-windows-x86_64.zip',
+                assetUrl: newCmakeUrl,
+              );
+            case newCmakeUrl:
+              return _zip(<ArchiveFile>[
+                ArchiveFile.string(
+                  'cmake-9.9.9-windows-x86_64/bin/cmake.exe',
+                  'MZ',
+                ),
+              ]);
+            case ninjaReleasesApiUrl:
+              return _releaseAssetJson(
+                assetName: 'ninja-win.zip',
+                assetUrl: newNinjaUrl,
+              );
+            case newNinjaUrl:
+              return _zip(<ArchiveFile>[
+                ArchiveFile.string('ninja.exe', 'MZ'),
+              ]);
+          }
+          throw StateError('未知下载地址：$uri');
+        }),
+        runner: _runnerStub(
+          <_ProcessCall>[],
+          (_) async => throw ProcessException('missing', const <String>[]),
+        ),
+        environment: const <String, String>{},
+      );
+
+      final CmakeNinja result = await provisioner.ensureCmakeNinja();
+
+      expect(fetchCalls, <Uri>[
+        Uri.parse(cmakeReleasesApiUrl),
+        Uri.parse(newCmakeUrl),
+        Uri.parse(ninjaReleasesApiUrl),
+        Uri.parse(newNinjaUrl),
+      ]);
+      expect(
+        result.cmakeExecutable,
+        joinPath(toolsRoot, 'cmake/bin/cmake.exe'),
+      );
+      expect(result.ninjaExecutable, joinPath(toolsRoot, 'ninja/ninja.exe'));
+      expect(
+        File(joinPath(toolsRoot, 'cmake/.source')).readAsStringSync(),
+        newCmakeUrl,
+      );
+      expect(
+        File(joinPath(toolsRoot, 'ninja/.source')).readAsStringSync(),
+        newNinjaUrl,
+      );
+    });
+
+    test('已安装标记命中时复用，不重复解析/下载', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      File(joinPath(toolsRoot, 'cmake/bin/cmake.exe'))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('MZ');
+      File(
+        joinPath(toolsRoot, 'cmake/.source'),
+      ).writeAsStringSync(cmakeDownloadUrl);
+      File(joinPath(toolsRoot, 'ninja/ninja.exe'))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('MZ');
+      File(
+        joinPath(toolsRoot, 'ninja/.source'),
+      ).writeAsStringSync(ninjaDownloadUrl);
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          fail('不应下载：$uri');
+        }),
+        runner: _runnerStub(
+          <_ProcessCall>[],
+          (_) async => throw ProcessException('missing', const <String>[]),
+        ),
+        environment: const <String, String>{},
+      );
+
+      final CmakeNinja result = await provisioner.ensureCmakeNinja();
+
+      expect(fetchCalls, isEmpty);
+      expect(
+        result.cmakeExecutable,
+        joinPath(toolsRoot, 'cmake/bin/cmake.exe'),
+      );
+      expect(result.ninjaExecutable, joinPath(toolsRoot, 'ninja/ninja.exe'));
+      expect(result.pathEntries, <String>[
+        joinPath(toolsRoot, 'cmake'),
+        joinPath(toolsRoot, 'cmake/bin'),
+        joinPath(toolsRoot, 'ninja'),
+      ]);
+    });
+
+    test('仅缺 ninja 时只下载 ninja（解析失败回退内置版本）', () async {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'tools');
       final List<Uri> fetchCalls = <Uri>[];
       final List<_ProcessCall> processCalls = <_ProcessCall>[];
       final ToolProvisioner provisioner = ToolProvisioner(
         toolsRoot: toolsRoot,
-        fetch: _fetchStub(fetchCalls, (_) async {
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          if (uri.toString() == ninjaReleasesApiUrl) {
+            throw StateError('解析不可用（测试回退路径）');
+          }
           return _zip(<ArchiveFile>[ArchiveFile.string('ninja.exe', 'MZ')]);
         }),
         runner: _runnerStub(processCalls, (_ProcessCall call) async {
@@ -521,10 +641,214 @@ void main() {
 
       final CmakeNinja result = await provisioner.ensureCmakeNinja();
 
-      expect(fetchCalls, <Uri>[Uri.parse(ninjaDownloadUrl)]);
+      expect(fetchCalls, <Uri>[
+        Uri.parse(ninjaReleasesApiUrl),
+        Uri.parse(ninjaDownloadUrl),
+      ]);
       expect(result.cmakeExecutable, 'cmake');
       expect(result.ninjaExecutable, joinPath(toolsRoot, 'ninja/ninja.exe'));
       expect(result.pathEntries, <String>[joinPath(toolsRoot, 'ninja')]);
+    });
+  });
+
+  group('ensureClangLlvm', () {
+    test('解析成功：下载 tar.xz、剥离单层根并解压到 tools/clang', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      const String version = '23.1.1';
+      final String assetUrl = clangLlvmUrlForVersion(version);
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          final String url = uri.toString();
+          if (url == clangReleasesApiUrl) {
+            return _releaseAssetJson(
+              assetName: 'clang+llvm-23.1.1-x86_64-pc-windows-msvc.tar.xz',
+              assetUrl: assetUrl,
+            );
+          }
+          if (url == assetUrl) {
+            return _tarXz(<ArchiveFile>[
+              ArchiveFile.directory(
+                'clang+llvm-23.1.1-x86_64-pc-windows-msvc/',
+              ),
+              ArchiveFile.string(
+                'clang+llvm-23.1.1-x86_64-pc-windows-msvc/bin/clang-cl.exe',
+                'MZ',
+              ),
+              ArchiveFile.string(
+                'clang+llvm-23.1.1-x86_64-pc-windows-msvc/bin/clang.exe',
+                'MZ',
+              ),
+              ArchiveFile.string(
+                'clang+llvm-23.1.1-x86_64-pc-windows-msvc/README.txt',
+                'doc',
+              ),
+            ]);
+          }
+          throw StateError('未知下载地址：$url');
+        }),
+      );
+
+      final ProvisionedTool tool = await provisioner.ensureClangLlvm();
+
+      expect(fetchCalls, <Uri>[
+        Uri.parse(clangReleasesApiUrl),
+        Uri.parse(assetUrl),
+      ]);
+      expect(tool.name, 'clang');
+      expect(tool.directory, joinPath(toolsRoot, 'clang'));
+      expect(
+        File(joinPath(tool.directory, 'bin/clang-cl.exe')).readAsStringSync(),
+        'MZ',
+      );
+      expect(tool.pathEntries, <String>[
+        joinPath(toolsRoot, 'clang'),
+        joinPath(toolsRoot, 'clang/bin'),
+      ]);
+      expect(
+        File(joinPath(tool.directory, '.source')).readAsStringSync(),
+        assetUrl,
+      );
+    });
+
+    test('解析失败回退内置版本地址', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String fallbackUrl = clangLlvmUrlForVersion(clangLlvmFallbackVersion);
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          final String url = uri.toString();
+          if (url == clangReleasesApiUrl) {
+            throw Exception('network down');
+          }
+          if (url == fallbackUrl) {
+            return _tarXz(<ArchiveFile>[
+              ArchiveFile.string(
+                'clang+llvm-$clangLlvmFallbackVersion-x86_64-pc-windows-msvc/'
+                'bin/clang-cl.exe',
+                'MZ',
+              ),
+            ]);
+          }
+          throw StateError('未知下载地址：$url');
+        }),
+      );
+
+      final ProvisionedTool tool = await provisioner.ensureClangLlvm();
+
+      expect(fetchCalls, <Uri>[
+        Uri.parse(clangReleasesApiUrl),
+        Uri.parse(fallbackUrl),
+      ]);
+      expect(
+        File(joinPath(tool.directory, '.source')).readAsStringSync(),
+        fallbackUrl,
+      );
+    });
+
+    test('预发布版本不采用，回退内置版本地址', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String fallbackUrl = clangLlvmUrlForVersion(clangLlvmFallbackVersion);
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          final String url = uri.toString();
+          if (url == clangReleasesApiUrl) {
+            return _releaseAssetJson(
+              assetName: 'clang+llvm-24.0.0-x86_64-pc-windows-msvc.tar.xz',
+              assetUrl: clangLlvmUrlForVersion('24.0.0'),
+              prerelease: true,
+            );
+          }
+          if (url == fallbackUrl) {
+            return _tarXz(<ArchiveFile>[
+              ArchiveFile.string(
+                'clang+llvm-$clangLlvmFallbackVersion-x86_64-pc-windows-msvc/'
+                'bin/clang-cl.exe',
+                'MZ',
+              ),
+            ]);
+          }
+          throw StateError('未知下载地址：$url');
+        }),
+      );
+
+      await provisioner.ensureClangLlvm();
+
+      expect(fetchCalls, <Uri>[
+        Uri.parse(clangReleasesApiUrl),
+        Uri.parse(fallbackUrl),
+      ]);
+      expect(
+        File(joinPath(toolsRoot, 'clang/.source')).readAsStringSync(),
+        fallbackUrl,
+      );
+    });
+
+    test('tar.xz 路径不安全：抛 BuildPreparationException 且不留残留', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String assetUrl = clangLlvmUrlForVersion('23.1.1');
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(<Uri>[], (Uri uri) async {
+          final String url = uri.toString();
+          if (url == clangReleasesApiUrl) {
+            return _releaseAssetJson(
+              assetName: 'clang+llvm-23.1.1-x86_64-pc-windows-msvc.tar.xz',
+              assetUrl: assetUrl,
+            );
+          }
+          return _tarXz(<ArchiveFile>[
+            ArchiveFile.string('../evil.txt', 'evil'),
+          ]);
+        }),
+      );
+
+      await expectLater(
+        provisioner.ensureClangLlvm(),
+        throwsA(_preparationException(message: contains('不安全'))),
+      );
+
+      _expectNoResidue(toolsRoot, 'clang');
+    });
+
+    test('来源标记命中时复用，不重复解析/下载', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String sourceUrl = clangLlvmUrlForVersion('23.1.1');
+      File(joinPath(toolsRoot, 'clang/bin/clang-cl.exe'))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('MZ');
+      File(
+        joinPath(toolsRoot, 'clang/.source'),
+      ).writeAsStringSync(sourceUrl);
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          fail('不应下载：$uri');
+        }),
+      );
+
+      final ProvisionedTool tool = await provisioner.ensureClangLlvm();
+
+      expect(fetchCalls, isEmpty);
+      expect(tool.directory, joinPath(toolsRoot, 'clang'));
+      expect(tool.pathEntries, <String>[
+        joinPath(toolsRoot, 'clang'),
+        joinPath(toolsRoot, 'clang/bin'),
+      ]);
+      expect(
+        File(joinPath(tool.directory, 'bin/clang-cl.exe')).readAsStringSync(),
+        'MZ',
+      );
     });
   });
 
@@ -820,6 +1144,35 @@ Uint8List _zip(List<ArchiveFile> files) {
     archive.addFile(file);
   }
   return ZipEncoder().encodeBytes(archive);
+}
+
+Uint8List _tarXz(List<ArchiveFile> files) {
+  final Archive archive = Archive();
+  for (final ArchiveFile file in files) {
+    archive.addFile(file);
+  }
+  return Uint8List.fromList(XZEncoder().encode(TarEncoder().encode(archive)));
+}
+
+/// GitHub `releases/latest` 形状的响应（仅含解析所需字段）。
+Uint8List _releaseAssetJson({
+  required String assetName,
+  required String assetUrl,
+  bool prerelease = false,
+}) {
+  return Uint8List.fromList(
+    utf8.encode(
+      jsonEncode(<String, Object?>{
+        'prerelease': prerelease,
+        'assets': <Object?>[
+          <String, Object?>{
+            'name': assetName,
+            'browser_download_url': assetUrl,
+          },
+        ],
+      }),
+    ),
+  );
 }
 
 ToolFetcher _fetchStub(

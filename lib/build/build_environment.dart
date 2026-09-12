@@ -22,6 +22,10 @@ final RegExp _lineSeparator = RegExp(r'\r?\n');
 /// 构建设备释放到 `tools/` 的分类辅助模块文件名。
 const String _supportModuleFileName = 'cnp_build_support.py';
 
+/// 受控构建临时目录相对 [toolsRoot] 的路径；取 `.tmp` 下独立子目录，与供给层
+/// 暂存用的随机子目录（`tools/.tmp/<工具名>-<随机>`）互不冲突。
+const String _controlledTempRelativePath = '.tmp/build';
+
 /// 捕获编译器环境（vcvars/setvars）并与 [baseEnvironment] 合并。
 ///
 /// 无环境脚本时返回 base 拷贝；有脚本时把 `call <脚本> >nul 2>&1 && set` 写入
@@ -139,13 +143,18 @@ BuildEnvironment assembleBuildEnvironment({
   );
 }
 
-/// 准备构建环境：检测编译器 → 按 [priority] 选择 → 捕获编译器环境 →
-/// 供给 CMake/Ninja、Python（本机优先，缺失下载 embeddable 版）与 [tools]
-/// 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*` 与选项变量。
+/// 准备构建环境：先创建受控构建临时目录（`<toolsRoot>/.tmp/build`）并把
+/// `TMP`/`TEMP` 注入 base 副本（宿主临时目录不可用时 ICX 等编译器的探测与构建
+/// 会失败）→ 检测编译器 → 按 [priority] 选择（全部落空时下载 clang/LLVM 到
+/// `tools/clang/` 兜底）→ 捕获编译器环境 → 供给 CMake/Ninja、Python（本机
+/// 优先，缺失下载 embeddable 版）与 [tools] 声明的工具 → 释放 [supportModule]
+/// → 装配 `PATH`、`CNP_*` 与选项变量。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
-/// 不改动本进程与系统）；[detect]/[capture] 为测试注入点。无可用编译器或
-/// 任一环节失败时抛 [BuildPreparationException]。
+/// 不改动本进程与系统）；受控 `TMP`/`TEMP` 写入其副本并随编译器检测、环境捕获
+/// 与最终 [BuildEnvironment.environment] 注入子进程；[detect]/[capture] 为测试
+/// 注入点。无可用编译器且 clang/LLVM 兜底失败、或任一环节失败时抛
+/// [BuildPreparationException]。
 Future<BuildEnvironment> prepareBuildEnvironment({
   List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
   PackProcessRunner runner = Process.run,
@@ -159,19 +168,27 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   ToolchainEnvironmentCapture? capture,
 }) async {
   final Map<String, String> base = baseEnvironment ?? Platform.environment;
+  final Map<String, String> childBase = await _withControlledTempEnvironment(
+    base,
+    toolsRoot,
+  );
   final CompilerDetector detector =
-      detect ?? (() => detectCompilers(runner: runner));
-  final DetectedCompiler? compiler = selectCompiler(await detector(), priority);
-  if (compiler == null) {
-    throw BuildPreparationException(_noCompilerMessage(priority));
-  }
+      detect ?? (() => detectCompilers(runner: runner, environment: childBase));
+  DetectedCompiler? compiler = selectCompiler(await detector(), priority);
+  compiler ??= await _provisionFallbackCompiler(
+    provisioner: provisioner,
+    runner: runner,
+    toolsRoot: toolsRoot,
+    baseEnvironment: childBase,
+    priority: priority,
+  );
 
   final ToolchainEnvironmentCapture captureEnvironment =
       capture ?? captureToolchainEnvironment;
   final Map<String, String> captured = await captureEnvironment(
     compiler,
     runner: runner,
-    baseEnvironment: base,
+    baseEnvironment: childBase,
   );
 
   final ToolProvisioner toolProvisioner =
@@ -205,6 +222,97 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     toolPathEntries: toolPathEntries,
     options: options,
   );
+}
+
+/// 创建受控构建临时目录并把它写入 base 副本的 `TMP`/`TEMP`（大小写不敏感替换
+/// 已有键，键统一为规范大写）。
+///
+/// 宿主 `TMP`/`TEMP` 不可用时编译器探测与构建会失败（如 ICX 的
+/// `error #10026: error generating temporary file`），统一改用
+/// `<toolsRoot>/.tmp/build`。`Platform.environment` 的键迭代为全大写、副本的
+/// 精确键查找会落空，故同时把默认查找键复制为规范拼写。返回新 map，不修改
+/// [base]；目录创建失败抛 [BuildPreparationException]（toolsRoot 不可写时后续
+/// 供给/构建同样无法进行）。
+Future<Map<String, String>> _withControlledTempEnvironment(
+  Map<String, String> base,
+  String toolsRoot,
+) async {
+  final String tempPath = Directory(
+    joinPath(Directory(toolsRoot).absolute.path, _controlledTempRelativePath),
+  ).absolute.path.replaceAll('/', r'\');
+  try {
+    await Directory(tempPath).create(recursive: true);
+  } on FileSystemException catch (error) {
+    throw BuildPreparationException('创建构建临时目录失败：$tempPath（$error）');
+  }
+  final Map<String, String> child = Map<String, String>.of(base);
+  _setEnvironmentValue(child, 'TMP', tempPath);
+  _setEnvironmentValue(child, 'TEMP', tempPath);
+  _copyEnvironmentValue(base, child, 'ProgramFiles');
+  _copyEnvironmentValue(base, child, 'ProgramFiles(x86)');
+  return child;
+}
+
+/// 把 [source] 中 [key]（大小写不敏感匹配）的值以规范键名写入 [target]。
+void _copyEnvironmentValue(
+  Map<String, String> source,
+  Map<String, String> target,
+  String key,
+) {
+  final String? existing = _findKeyIgnoreCase(source, key);
+  if (existing == null) {
+    return;
+  }
+  final String value = source[existing]!;
+  if (value.isEmpty) {
+    return;
+  }
+  _setEnvironmentValue(target, key, value);
+}
+
+/// 编译器检测全部落空时的最后手段：下载 clang/LLVM 到 `tools/clang/`，
+/// 以 [baseEnvironment] 探测 clang-cl 版本并组装编译器条目（PATH 注入其 bin
+/// 目录）。
+///
+/// LLVM 发行版不含 MSVC 标准库头与链接库，clang-cl 仍需 MSVC/SDK 环境，
+/// 故不携带环境脚本；供给失败包装 [BuildPreparationException] 保留原详情。
+Future<DetectedCompiler> _provisionFallbackCompiler({
+  required ToolProvisioner? provisioner,
+  required PackProcessRunner runner,
+  required String toolsRoot,
+  required Map<String, String> baseEnvironment,
+  required List<String> priority,
+}) async {
+  final ToolProvisioner toolProvisioner =
+      provisioner ??
+      ToolProvisioner(
+        toolsRoot: toolsRoot,
+        runner: runner,
+        environment: baseEnvironment,
+      );
+  final ProvisionedTool clang;
+  try {
+    clang = await toolProvisioner.ensureClangLlvm();
+  } on BuildPreparationException catch (error) {
+    throw BuildPreparationException(
+      '${_noCompilerMessage(priority)}；clang/LLVM 最后手段失败：${error.message}',
+    );
+  } catch (error) {
+    throw BuildPreparationException(
+      '${_noCompilerMessage(priority)}；clang/LLVM 最后手段失败：$error',
+    );
+  }
+  final DetectedCompiler? compiler = await detectClangCl(
+    runner: runner,
+    llvmBinDir: joinPath(clang.directory, 'bin'),
+    environment: baseEnvironment,
+  );
+  if (compiler == null) {
+    throw BuildPreparationException(
+      'clang/LLVM 已供给予 ${clang.directory}，但 clang-cl 版本探测失败',
+    );
+  }
+  return compiler;
 }
 
 Future<ProvisionedTool> _ensureDeclaredTool(

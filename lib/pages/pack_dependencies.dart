@@ -9,6 +9,8 @@ import 'package:fluent_ui/fluent_ui.dart';
 const double _versionColumnWidth = 160;
 const double _actionColumnWidth = 80;
 
+const String _systemLockTooltip = '由构建管线注册，禁止修改/删除';
+
 class PackDependencies extends StatefulWidget {
   const PackDependencies({
     super.key,
@@ -203,6 +205,14 @@ class _PackDependenciesState extends State<PackDependencies> {
                 Flexible(
                   child: Text(dependency.name, overflow: TextOverflow.ellipsis),
                 ),
+                if (dependency.system) ...[
+                  const SizedBox(width: 5),
+                  Tag(
+                    text: '系统',
+                    color: UCColors.flavor.overlay1,
+                    fontSize: 10,
+                  ),
+                ],
                 if (missing) ...[
                   const SizedBox(width: 5),
                   Tag(text: '缺失', color: UCColors.flavor.red, fontSize: 10),
@@ -224,19 +234,23 @@ class _PackDependenciesState extends State<PackDependencies> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Tooltip(
-                  message: '编辑',
+                  message: dependency.system ? _systemLockTooltip : '编辑',
                   child: IconButton(
                     key: Key('dependencyEditButton_${dependency.name}'),
                     icon: const Icon(FluentIcons.edit, size: 16),
-                    onPressed: _saving ? null : () => _edit(dependency),
+                    onPressed: _saving || dependency.system
+                        ? null
+                        : () => _edit(dependency),
                   ),
                 ),
                 Tooltip(
-                  message: '删除',
+                  message: dependency.system ? _systemLockTooltip : '删除',
                   child: IconButton(
                     key: Key('dependencyDeleteButton_${dependency.name}'),
                     icon: const Icon(FluentIcons.delete, size: 16),
-                    onPressed: _saving ? null : () => _remove(dependency),
+                    onPressed: _saving || dependency.system
+                        ? null
+                        : () => _remove(dependency),
                   ),
                 ),
               ],
@@ -268,5 +282,6 @@ PackModel _withDependencies(
     ..libDirectories = pack.libDirectories
     ..libraries = pack.libraries
     ..history = pack.history
-    ..scripts = pack.scripts;
+    ..scripts = pack.scripts
+    ..buildOptions = pack.buildOptions;
 }

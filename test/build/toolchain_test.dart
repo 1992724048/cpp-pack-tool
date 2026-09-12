@@ -103,6 +103,72 @@ void main() {
       expect(calls.single.executable, latestExecutable);
     });
 
+    test('旧布局 windows/bin/icx-cl.exe 也可检出', () async {
+      final Directory root = _tempDirectory();
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      final String expected = joinPath(
+        oneApiRoot,
+        'compiler/2025.2/windows/bin/icx-cl.exe',
+      );
+      _createFile(expected);
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final DetectedCompiler? detected = await detectIcx(
+        runner: _runner(calls, (_) async => _result('Compiler 2025.2.1\n')),
+        oneApiRoot: oneApiRoot,
+      );
+
+      expect(detected?.executablePath, expected);
+      expect(calls.single.executable, expected);
+    });
+
+    test('同一版本目录中新布局优先于旧布局', () async {
+      final Directory root = _tempDirectory();
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      _createFile(
+        joinPath(oneApiRoot, 'compiler/2026.1/windows/bin/icx-cl.exe'),
+      );
+
+      final DetectedCompiler? detected = await detectIcx(
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => _result('Compiler 2026.1.1\n'),
+        ),
+        oneApiRoot: oneApiRoot,
+      );
+
+      expect(
+        detected?.executablePath,
+        joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'),
+      );
+    });
+
+    test('混合布局下按版本号数值比较选择最高版本', () async {
+      final Directory root = _tempDirectory();
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(
+        joinPath(oneApiRoot, 'compiler/2025.3/windows/bin/icx-cl.exe'),
+      );
+      _createFile(
+        joinPath(oneApiRoot, 'compiler/2026.2/windows/bin/icx-cl.exe'),
+      );
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.10/bin/icx-cl.exe'));
+
+      final DetectedCompiler? detected = await detectIcx(
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => _result('Compiler 2027.0.0\n'),
+        ),
+        oneApiRoot: oneApiRoot,
+      );
+
+      expect(
+        detected?.executablePath,
+        joinPath(oneApiRoot, 'compiler/2026.10/bin/icx-cl.exe'),
+      );
+    });
+
     test('compiler 目录缺失时返回 null 且不执行进程', () async {
       final Directory root = _tempDirectory();
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -406,6 +472,92 @@ void main() {
   });
 
   group('detectCompilers', () {
+    test('默认 oneAPI 根优先使用 %ONEAPI_ROOT%（含自定义安装根）', () async {
+      final Directory root = _tempDirectory();
+      final String declaredRoot = joinPath(root.path, 'custom-oneapi');
+      final String programFilesRoot = joinPath(root.path, 'pf/Intel/oneAPI');
+      _createFile(joinPath(declaredRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      _createFile(joinPath(programFilesRoot, 'compiler/2025.0/bin/icx-cl.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner: _runner(calls, (_) async => _result('Compiler 2026.1.0\n')),
+        environment: <String, String>{
+          'ONEAPI_ROOT': declaredRoot,
+          'ProgramFiles(x86)': joinPath(root.path, 'pf'),
+        },
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+      );
+
+      expect(compilers, hasLength(1));
+      expect(
+        compilers.single.executablePath,
+        joinPath(declaredRoot, 'compiler/2026.1/bin/icx-cl.exe'),
+      );
+      expect(
+        calls
+            .where(
+              (_ProcessCall call) => call.executable.endsWith('icx-cl.exe'),
+            )
+            .length,
+        1,
+      );
+      expect(calls.first.executable, compilers.single.executablePath);
+    });
+
+    test('无 %ONEAPI_ROOT% 时回退 Program Files 安装目录', () async {
+      final Directory root = _tempDirectory();
+      final String programFilesRoot = joinPath(root.path, 'pf/Intel/oneAPI');
+      _createFile(
+        joinPath(programFilesRoot, 'compiler/2026.1/windows/bin/icx-cl.exe'),
+      );
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => _result('Compiler 2026.1.0\n'),
+        ),
+        environment: <String, String>{'ProgramFiles': joinPath(root.path, 'pf')},
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+      );
+
+      expect(compilers, hasLength(1));
+      expect(
+        compilers.single.executablePath,
+        joinPath(programFilesRoot, 'compiler/2026.1/windows/bin/icx-cl.exe'),
+      );
+    });
+
+    test('%ONEAPI_ROOT% 与标准根重合时去重，只探测一次', () async {
+      final Directory root = _tempDirectory();
+      final String programFiles = joinPath(root.path, 'pf');
+      final String sharedRoot = joinPath(programFiles, 'Intel/oneAPI');
+      _createFile(joinPath(sharedRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner: _runner(calls, (_) async => _result('Compiler 2026.1.0\n')),
+        environment: <String, String>{
+          'ONEAPI_ROOT': sharedRoot,
+          'ProgramFiles(x86)': programFiles,
+        },
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+      );
+
+      expect(compilers, hasLength(1));
+      expect(
+        calls
+            .where(
+              (_ProcessCall call) => call.executable.endsWith('icx-cl.exe'),
+            )
+            .length,
+        1,
+      );
+    });
+
     test('从覆盖路径按 icx → clang-cl → msvc 顺序收集', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
@@ -454,6 +606,90 @@ void main() {
         ),
         <String>['icx', 'clang-cl', 'msvc'],
       );
+    });
+
+    test('environment 透传给各编译器探测子进程', () async {
+      final Directory root = _tempDirectory();
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
+      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      final String installPath = joinPath(root.path, 'VisualStudio');
+      _createFile(
+        joinPath(
+          installPath,
+          'VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt',
+        ),
+        content: '14.44.35207',
+      );
+      _createFile(
+        joinPath(
+          installPath,
+          'VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/cl.exe',
+        ),
+      );
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final Map<String, String> environment = <String, String>{
+        'TMP': r'D:\tools\.tmp\build',
+        'TEMP': r'D:\tools\.tmp\build',
+        'CUSTOM': '1',
+      };
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner: _runner(calls, (_ProcessCall call) async {
+          if (call.executable.endsWith('icx-cl.exe')) {
+            return _result('Compiler 2026.1.1\n');
+          }
+          if (call.executable.endsWith('clang-cl.exe')) {
+            return _result('clang version 23.1.1\n');
+          }
+          return _result('$installPath\r\n');
+        }),
+        oneApiRoot: oneApiRoot,
+        llvmBinDir: llvmBinDir,
+        vswherePath: joinPath(root.path, 'vswhere.exe'),
+        environment: environment,
+      );
+
+      expect(
+        compilers.map(
+          (DetectedCompiler compiler) => compilerKindId(compiler.kind),
+        ),
+        <String>['icx', 'clang-cl', 'msvc'],
+      );
+      expect(calls, hasLength(3));
+      for (final _ProcessCall call in calls) {
+        expect(call.environment, environment);
+      }
+    });
+
+    test('environment 键大小写不敏感（副本全大写键仍能定位默认根）', () async {
+      final Directory root = _tempDirectory();
+      final String programFiles = joinPath(root.path, 'pf');
+      final String oneApiRoot = joinPath(programFiles, 'Intel/oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner: _runner(calls, (_) async => _result('Compiler 2026.1.0\n')),
+        environment: <String, String>{
+          'PROGRAMFILES(X86)': programFiles,
+          'TMP': r'C:\tools\.tmp\build',
+        },
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+      );
+
+      expect(compilers, hasLength(1));
+      expect(compilers.single.kind, CompilerKind.icx);
+      expect(
+        compilers.single.executablePath,
+        joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'),
+      );
+      final _ProcessCall icxProbe = calls.singleWhere(
+        (_ProcessCall call) => call.executable.endsWith('icx-cl.exe'),
+      );
+      expect(icxProbe.environment?['TMP'], r'C:\tools\.tmp\build');
     });
 
     test('clang-cl 无环境脚本时继承 MSVC 的 vcvars 脚本', () async {

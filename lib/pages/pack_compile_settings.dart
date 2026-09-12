@@ -23,6 +23,8 @@ const double _triggerColumnWidth = 96;
 const double _statusColumnWidth = 80;
 const double _actionColumnWidth = 80;
 
+const String _systemLockTooltip = '由构建管线注册，禁止修改/删除';
+
 class PackCompileSettings extends StatefulWidget {
   const PackCompileSettings({
     super.key,
@@ -376,7 +378,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       ..libDirectories = libDirectories ?? pack.libDirectories
       ..libraries = libraries ?? pack.libraries
       ..history = pack.history
-      ..scripts = pack.scripts;
+      ..scripts = pack.scripts
+      ..buildOptions = pack.buildOptions;
   }
 
   List<_CompileEntry> _macroEntries() {
@@ -406,6 +409,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             deleteKey: Key('${keyPrefix}DeleteButton_$index'),
             onEdit: () => _editCommand(index),
             onDelete: () => _removeCommand(index),
+            isSystem: commands[index].system,
           ),
     ];
   }
@@ -745,7 +749,23 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Expanded(child: Text(entry.text, overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(entry.text, overflow: TextOverflow.ellipsis),
+                ),
+                if (entry.isSystem) ...[
+                  const SizedBox(width: 5),
+                  Tag(
+                    text: '系统',
+                    color: UCColors.flavor.overlay1,
+                    fontSize: 10,
+                  ),
+                ],
+              ],
+            ),
+          ),
           SizedBox(
             width: _buildModelColumnWidth,
             child: Center(
@@ -762,19 +782,21 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Tooltip(
-                  message: '编辑',
+                  message: entry.isSystem ? _systemLockTooltip : '编辑',
                   child: IconButton(
                     key: entry.editKey,
                     icon: const Icon(FluentIcons.edit, size: 16),
-                    onPressed: _saving ? null : entry.onEdit,
+                    onPressed: _saving || entry.isSystem ? null : entry.onEdit,
                   ),
                 ),
                 Tooltip(
-                  message: '删除',
+                  message: entry.isSystem ? _systemLockTooltip : '删除',
                   child: IconButton(
                     key: entry.deleteKey,
                     icon: const Icon(FluentIcons.delete, size: 16),
-                    onPressed: _saving ? null : entry.onDelete,
+                    onPressed: _saving || entry.isSystem
+                        ? null
+                        : entry.onDelete,
                   ),
                 ),
               ],
@@ -794,6 +816,7 @@ class _CompileEntry {
     required this.deleteKey,
     required this.onEdit,
     required this.onDelete,
+    this.isSystem = false,
   });
 
   final String text;
@@ -802,4 +825,5 @@ class _CompileEntry {
   final Key deleteKey;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final bool isSystem;
 }

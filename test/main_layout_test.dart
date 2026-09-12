@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/app_info.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -653,6 +655,73 @@ void main() {
     expect(find.text('重新映射完成'), findsOneWidget);
     expect(find.text('新增：1 个文件'), findsOneWidget);
     expect(find.text('移除：1 个文件'), findsOneWidget);
+  });
+
+  testWidgets('重新映射后自动注册 pre/post.bat 与 build.py 依赖系统条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'old.h', path: 'old.h', size: 64),
+          ],
+        ),
+        _pack('libfoo', '2.5.0'),
+      ],
+    );
+    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (String path) => completer.future,
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://example.com/demo.git',
+        dependencies: <BuildScriptDependency>[
+          BuildScriptDependency(name: 'libfoo'),
+          BuildScriptDependency(name: 'ghost', version: '[1.0,)'),
+        ],
+      ),
+    );
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    completer.complete(<FileModel>[
+      FileModel(name: 'build.py', path: 'build.py', size: 10),
+      FileModel(name: 'pre.bat', path: 'pre.bat', size: 10),
+      FileModel(name: 'post.bat', path: 'post.bat', size: 10),
+      FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.saveCount, 1);
+    final PackModel saved = store.packs.firstWhere(
+      (PackModel pack) => pack.name == 'demo',
+    );
+    expect(saved.commands, hasLength(2));
+    final CmdModel pre = saved.commands[0];
+    expect(
+      pre.command,
+      r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+    );
+    expect(pre.type, CmdType.preBuild);
+    expect(pre.system, isTrue);
+    expect(saved.commands[1].type, CmdType.postBuild);
+    expect(saved.commands[1].system, isTrue);
+    expect(saved.dependencies, hasLength(2));
+    expect(saved.dependencies[0].name, 'libfoo');
+    expect(saved.dependencies[0].version, '[2.5.0,)');
+    expect(saved.dependencies[0].system, isTrue);
+    expect(saved.dependencies[1].name, 'ghost');
+    expect(saved.dependencies[1].version, '[1.0,)');
+    expect(find.text('重新映射完成'), findsOneWidget);
   });
 
   testWidgets('缺少源目录信息时提示错误且不弹出对话框', (tester) async {
@@ -1550,7 +1619,7 @@ void main() {
           '1.0.0',
           sourcePath: r'C:\libs\demo',
           files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
-        ),
+        )..buildOptions = <String, String>{'tbb': 'on'},
       ],
     );
     final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
@@ -1575,6 +1644,7 @@ void main() {
     await tester.pump();
 
     expect(store.packs.single.files.single.path, 'new/new.h');
+    expect(store.packs.single.buildOptions, <String, String>{'tbb': 'on'});
     expect(store.packs.single.history, hasLength(1));
     final HistoryModel entry = store.packs.single.history.single;
     expect(entry.type, HistoryType.filesChanged);
@@ -1821,6 +1891,7 @@ Future<void> _pumpMainLayout(
   Future<BuildEnvironment> Function(PackModel pack)? prepareBuildEnv,
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
+  Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -1840,6 +1911,7 @@ Future<void> _pumpMainLayout(
         buildPack: buildPack ?? runPackBuild,
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
+        loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
         now: now ?? DateTime.now,
       ),
     ),
