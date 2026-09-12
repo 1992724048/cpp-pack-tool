@@ -50,7 +50,8 @@ class ScriptEditorPage extends StatefulWidget {
   /// 代码生成器；null 时由生成预览（T9）回退 `PowerShell5Generator()`。
   final ScriptCodeGenerator? generator;
 
-  /// 包内路径建议（检查器 T8 使用）；null 时由页面经 `NuGetBuilder` 计算。
+  /// 包内路径建议（检查器 T8 使用）；null 时由检查器经 `NuGetPackageBuilder`
+  /// 计划条目转为 `build/native/` 相对路径。
   final List<String>? packagePaths;
 
   /// 保存与视口写回的防抖时长（§10.1/§10.4，默认 400ms）；测试注入更短值。
@@ -275,14 +276,14 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
                     ),
                     const SizedBox(width: 8),
                     Tag(
-                      text: _scriptTriggerLabel(project.trigger),
-                      color: _scriptTriggerColor(project.trigger),
+                      text: scriptTriggerLabel(project.trigger),
+                      color: scriptTriggerColor(project.trigger),
                       fontSize: 10,
                     ),
                     const SizedBox(width: 4),
                     Tag(
                       text: buildModelLabel(project.buildModel),
-                      color: _scriptBuildModelColor(project.buildModel),
+                      color: buildModelColor(project.buildModel),
                       fontSize: 10,
                     ),
                   ],
@@ -1006,18 +1007,3 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     return updated;
   }
 }
-
-String _scriptTriggerLabel(ScriptTrigger trigger) =>
-    trigger == ScriptTrigger.pre ? '编译前' : '编译后';
-
-/// 触发时机着色（§2.2）：编译前 sky / 编译后 lavender。
-Color _scriptTriggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
-    ? UCColors.flavor.sky
-    : UCColors.flavor.lavender;
-
-/// 构建标签着色（§2.2）：ALL 蓝 / Release 绿 / Debug 橙。
-Color _scriptBuildModelColor(BuildModel buildModel) => switch (buildModel) {
-  BuildModel.all => UCColors.flavor.blue,
-  BuildModel.release => UCColors.flavor.green,
-  BuildModel.debug => UCColors.flavor.peach,
-};

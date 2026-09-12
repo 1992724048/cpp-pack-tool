@@ -1,4 +1,8 @@
+import 'dart:ui' show Color;
+
 import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
 
 final RegExp _pathSeparator = RegExp(r'[/\\]');
 
@@ -13,6 +17,22 @@ String buildModelLabel(BuildModel buildModel) {
     BuildModel.debug => debugBuildLabel,
   };
 }
+
+/// 构建标签着色（视觉规范 §2.2）：ALL 蓝 / Release 绿 / Debug 橙。
+Color buildModelColor(BuildModel buildModel) => switch (buildModel) {
+  BuildModel.all => UCColors.flavor.blue,
+  BuildModel.release => UCColors.flavor.green,
+  BuildModel.debug => UCColors.flavor.peach,
+};
+
+/// 触发时机标签（视觉规范 §2.2）。
+String scriptTriggerLabel(ScriptTrigger trigger) =>
+    trigger == ScriptTrigger.pre ? '编译前' : '编译后';
+
+/// 触发时机着色（视觉规范 §2.2）：编译前 sky / 编译后 lavender。
+Color scriptTriggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
+    ? UCColors.flavor.sky
+    : UCColors.flavor.lavender;
 
 /// 从文件相对路径推断构建配置标签。
 ///

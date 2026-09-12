@@ -206,7 +206,7 @@ class NuGetPackageBuilder implements PackageBuilder {
     final List<String> resourceFiles = <String>[];
     for (final PackageEntry entry in fileEntries) {
       _addDerivedLibEntries(libDirectories, libraries, entry.packagePath);
-      final String? relative = _relativeUnderBuildNative(entry.packagePath);
+      final String? relative = buildNativeRelativePath(entry.packagePath);
       if (relative == null) {
         continue;
       }
@@ -285,13 +285,6 @@ class NuGetPackageBuilder implements PackageBuilder {
       dedupe: true,
     );
     libraries.add(baseName(packagePath), buildModel, dedupe: true);
-  }
-
-  static String? _relativeUnderBuildNative(String packagePath) {
-    if (!packagePath.startsWith('$_buildNative/')) {
-      return null;
-    }
-    return packagePath.substring(_buildNative.length + 1);
   }
 
   static BuildModel _buildModelOf(String relativePath) {

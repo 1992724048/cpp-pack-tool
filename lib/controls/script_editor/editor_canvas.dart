@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' show PointMode;
 
 import 'package:cpp_nuget_pack/controls/script_editor/edge_painter.dart';
+import 'package:cpp_nuget_pack/controls/script_editor/editor_context_menu.dart';
 import 'package:cpp_nuget_pack/controls/script_editor/node_card.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
@@ -130,6 +131,29 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   @override
   Widget build(BuildContext context) {
+    return DragTarget<ScriptNodeTypeDescriptor>(
+      onAcceptWithDetails: _handleLibraryDrop,
+      builder: (BuildContext context, _, _) {
+        return FlyoutTarget(
+          controller: _flyoutController,
+          child: CallbackShortcuts(
+            bindings: <ShortcutActivator, VoidCallback>{
+              const SingleActivator(LogicalKeyboardKey.delete):
+                  _handleDeleteShortcut,
+              const SingleActivator(LogicalKeyboardKey.escape):
+                  _handleEscapeShortcut,
+              const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+                  _handleFlushShortcut,
+            },
+            child: _buildCanvasContent(),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 画布内容（§5.1/§5.2/§5.7/§10.1）：网格背景、连线与节点卡渲染。
+  Widget _buildCanvasContent() {
     final ScriptProjectModel project = widget.controller.project;
     final String? selectedNodeId = widget.controller.selectedNodeId;
     final Map<String, Set<String>> connectedPins = _connectedPins(project);
@@ -148,135 +172,111 @@ class _EditorCanvasState extends State<EditorCanvas> {
     final Size sceneSize = _sceneSize(project.nodes);
     final ScriptEdgeModel? hoveredEdge = _validHoveredEdge(project);
 
-    return DragTarget<ScriptNodeTypeDescriptor>(
-      onAcceptWithDetails: _handleLibraryDrop,
-      builder: (BuildContext context, _, _) {
-        final Widget canvas = Container(
-          color: UCColors.flavor.mantle,
-          child: Focus(
-            focusNode: _focusNode,
-            child: Listener(
-              onPointerDown: (PointerDownEvent event) =>
-                  _focusNode.requestFocus(),
-              child: InteractiveViewer(
-                key: _viewerKey,
-                transformationController: _transformation,
-                constrained: false,
-                minScale: _minScale,
-                maxScale: _maxScale,
-                boundaryMargin: const EdgeInsets.all(80),
-                onInteractionEnd: (ScaleEndDetails details) =>
-                    _persistViewport(),
-                child: GestureDetector(
-                  key: _sceneKey,
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: _handleSceneTap,
-                  onSecondaryTapUp: _handleSceneSecondaryTap,
-                  child: MouseRegion(
-                    opaque: true,
-                    cursor: hoveredEdge == null
-                        ? SystemMouseCursors.basic
-                        : SystemMouseCursors.click,
-                    onHover: _handleSceneHover,
-                    onExit: (PointerExitEvent event) => _setHoveredEdge(null),
-                    child: SizedBox(
-                      key: const Key('editorScene'),
-                      width: sceneSize.width,
-                      height: sceneSize.height,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: <Widget>[
-                          Positioned.fill(
-                            child: CustomPaint(
-                              key: const Key('editorGrid'),
-                              painter: EditorGridPainter(
-                                color: UCColors.flavor.overlay0,
-                              ),
-                            ),
+    return Container(
+      color: UCColors.flavor.mantle,
+      child: Focus(
+        focusNode: _focusNode,
+        child: Listener(
+          onPointerDown: (PointerDownEvent event) => _focusNode.requestFocus(),
+          child: InteractiveViewer(
+            key: _viewerKey,
+            transformationController: _transformation,
+            constrained: false,
+            minScale: _minScale,
+            maxScale: _maxScale,
+            boundaryMargin: const EdgeInsets.all(80),
+            onInteractionEnd: (ScaleEndDetails details) => _persistViewport(),
+            child: GestureDetector(
+              key: _sceneKey,
+              behavior: HitTestBehavior.opaque,
+              onTapUp: _handleSceneTap,
+              onSecondaryTapUp: _handleSceneSecondaryTap,
+              child: MouseRegion(
+                opaque: true,
+                cursor: hoveredEdge == null
+                    ? SystemMouseCursors.basic
+                    : SystemMouseCursors.click,
+                onHover: _handleSceneHover,
+                onExit: (PointerExitEvent event) => _setHoveredEdge(null),
+                child: SizedBox(
+                  key: const Key('editorScene'),
+                  width: sceneSize.width,
+                  height: sceneSize.height,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: <Widget>[
+                      Positioned.fill(
+                        child: CustomPaint(
+                          key: const Key('editorGrid'),
+                          painter: EditorGridPainter(
+                            color: UCColors.flavor.overlay0,
                           ),
-                          Positioned.fill(
-                            child: CustomPaint(
-                              key: const Key('editorEdges'),
-                              painter: EdgePainter(
-                                edges: _edgeVisuals(project, hoveredEdge),
-                                preview: _previewVisual(),
-                              ),
-                            ),
-                          ),
-                          for (final ScriptNodeModel node in orderedNodes)
-                            Positioned(
-                              left: _nodePosition(node).dx - nodeCardOverflow,
-                              top: _nodePosition(node).dy - nodeCardOverflow,
-                              child: NodeCard(
-                                nodeId: node.id,
-                                typeKey: node.type,
-                                descriptor: NodeRegistry.byType(node.type),
-                                selected: node.id == selectedNodeId,
-                                dragging: node.id == _dragNodeId,
-                                hasError: errorNodeIds.contains(node.id),
-                                connectedPins:
-                                    connectedPins[node.id] ?? const <String>{},
-                                errorPins:
-                                    errorPins[node.id] ?? const <String>{},
-                                candidatePins:
-                                    highlights.candidate[node.id] ??
-                                    const <String>{},
-                                rejectedPins:
-                                    highlights.rejected[node.id] ??
-                                    const <String>{},
-                                dimmedPins:
-                                    highlights.dimmed[node.id] ??
-                                    const <String>{},
-                                showPinLabels: _showPinLabels,
-                                onTap: () =>
-                                    widget.controller.selectNode(node.id),
-                                onDragStart: (DragStartDetails details) =>
-                                    _beginNodeDrag(node.id, details),
-                                onDragUpdate: (DragUpdateDetails details) =>
-                                    _updateNodeDrag(node.id, details),
-                                onDragEnd: (DragEndDetails details) =>
-                                    _endNodeDrag(node.id, details),
-                                onDragCancel: () => _cancelNodeDrag(node.id),
-                                onPinDragStart: (
-                                  String pinId,
-                                  DragStartDetails details,
-                                ) => _beginPinDrag(node.id, pinId, details),
-                                onPinDragUpdate: (
-                                  String pinId,
-                                  DragUpdateDetails details,
-                                ) => _updatePinDrag(node.id, pinId, details),
-                                onPinDragEnd: (
-                                  String pinId,
-                                  DragEndDetails details,
-                                ) => _endPinDrag(node.id, pinId, details),
-                                onPinDragCancel: (String pinId) =>
-                                    _cancelPinDrag(node.id, pinId),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
-                    ),
+                      Positioned.fill(
+                        child: CustomPaint(
+                          key: const Key('editorEdges'),
+                          painter: EdgePainter(
+                            edges: _edgeVisuals(project, hoveredEdge),
+                            preview: _previewVisual(),
+                          ),
+                        ),
+                      ),
+                      for (final ScriptNodeModel node in orderedNodes)
+                        Positioned(
+                          left: _nodePosition(node).dx - nodeCardOverflow,
+                          top: _nodePosition(node).dy - nodeCardOverflow,
+                          child: NodeCard(
+                            nodeId: node.id,
+                            typeKey: node.type,
+                            descriptor: NodeRegistry.byType(node.type),
+                            selected: node.id == selectedNodeId,
+                            dragging: node.id == _dragNodeId,
+                            hasError: errorNodeIds.contains(node.id),
+                            connectedPins:
+                                connectedPins[node.id] ?? const <String>{},
+                            errorPins: errorPins[node.id] ?? const <String>{},
+                            candidatePins:
+                                highlights.candidate[node.id] ??
+                                const <String>{},
+                            rejectedPins:
+                                highlights.rejected[node.id] ??
+                                const <String>{},
+                            dimmedPins:
+                                highlights.dimmed[node.id] ?? const <String>{},
+                            showPinLabels: _showPinLabels,
+                            onTap: () => widget.controller.selectNode(node.id),
+                            onDragStart: (DragStartDetails details) =>
+                                _beginNodeDrag(node.id, details),
+                            onDragUpdate: (DragUpdateDetails details) =>
+                                _updateNodeDrag(node.id, details),
+                            onDragEnd: (DragEndDetails details) =>
+                                _endNodeDrag(node.id, details),
+                            onDragCancel: () => _cancelNodeDrag(node.id),
+                            onPinDragStart: (
+                              String pinId,
+                              DragStartDetails details,
+                            ) => _beginPinDrag(node.id, pinId, details),
+                            onPinDragUpdate: (
+                              String pinId,
+                              DragUpdateDetails details,
+                            ) => _updatePinDrag(node.id, pinId, details),
+                            onPinDragEnd: (
+                              String pinId,
+                              DragEndDetails details,
+                            ) => _endPinDrag(node.id, pinId, details),
+                            onPinDragCancel: (String pinId) =>
+                                _cancelPinDrag(node.id, pinId),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-        );
-        return FlyoutTarget(
-          controller: _flyoutController,
-          child: CallbackShortcuts(
-            bindings: <ShortcutActivator, VoidCallback>{
-              const SingleActivator(LogicalKeyboardKey.delete):
-                  _handleDeleteShortcut,
-              const SingleActivator(LogicalKeyboardKey.escape):
-                  _handleEscapeShortcut,
-              const SingleActivator(LogicalKeyboardKey.keyS, control: true):
-                  _handleFlushShortcut,
-            },
-            child: canvas,
-          ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -556,7 +556,16 @@ class _EditorCanvasState extends State<EditorCanvas> {
     }
     _flyoutController.showFlyout(
       position: _flyoutGlobalPosition(details),
-      builder: (BuildContext context) => _buildCanvasMenu(scenePoint),
+      builder: (BuildContext context) => buildEditorContextMenu(
+        scenePoint: scenePoint,
+        hasSelection:
+            widget.controller.selectedNodeId != null ||
+            widget.controller.selectedEdge != null,
+        onResetView: _resetViewport,
+        onDeleteSelection: _handleDeleteShortcut,
+        onAddNode: (String typeKey, Offset point) =>
+            widget.controller.addNode(typeKey, point),
+      ),
     );
   }
 
@@ -576,72 +585,6 @@ class _EditorCanvasState extends State<EditorCanvas> {
       );
     }
     return details.globalPosition;
-  }
-
-  /// 右键菜单（§5.6）：添加节点（8 分类子菜单）、重置视图、删除所选。
-  ///
-  /// 「删除所选」无选中时禁用（`onPressed` 为 null）；分隔线仅在有选中时显示。
-  Widget _buildCanvasMenu(Offset scenePoint) {
-    final bool hasSelection =
-        widget.controller.selectedNodeId != null ||
-        widget.controller.selectedEdge != null;
-    return MenuFlyout(
-      items: <MenuFlyoutItemBase>[
-        MenuFlyoutSubItem(
-          key: const Key('canvasMenuAddNode'),
-          text: const Text('添加节点'),
-          items: _buildAddNodeItems(scenePoint),
-        ),
-        const MenuFlyoutSeparator(),
-        MenuFlyoutItem(
-          key: const Key('canvasMenuResetView'),
-          text: const Text('重置视图'),
-          leading: const Icon(FluentIcons.refresh, size: 14),
-          onPressed: _resetViewport,
-        ),
-        if (hasSelection) const MenuFlyoutSeparator(),
-        MenuFlyoutItem(
-          key: const Key('canvasMenuDeleteSelection'),
-          text: const Text('删除所选'),
-          leading: const Icon(FluentIcons.delete, size: 14),
-          onPressed: hasSelection ? _handleDeleteShortcut : null,
-        ),
-      ],
-    );
-  }
-
-  /// 添加节点子菜单（§5.6）：8 分类子菜单，项 = 该类节点，落点 = 弹出点场景坐标。
-  MenuItemsBuilder _buildAddNodeItems(Offset scenePoint) {
-    return (BuildContext context) => <MenuFlyoutItemBase>[
-      for (final ScriptNodeCategory category in ScriptNodeCategory.values)
-        MenuFlyoutSubItem(
-          key: Key('canvasMenuCategory_${category.name}'),
-          text: Text(category.label),
-          leading: Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: nodeCategoryColor(category),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          items: (BuildContext context) => <MenuFlyoutItemBase>[
-            for (final ScriptNodeTypeDescriptor descriptor
-                in NodeRegistry.byCategory(category))
-              MenuFlyoutItem(
-                key: Key('canvasMenuNode_${descriptor.typeKey}'),
-                text: Text(descriptor.displayName),
-                leading: Icon(
-                  nodeTypeIcon(descriptor.typeKey),
-                  size: 14,
-                  color: nodeCategoryColor(descriptor.category),
-                ),
-                onPressed: () =>
-                    widget.controller.addNode(descriptor.typeKey, scenePoint),
-              ),
-          ],
-        ),
-    ];
   }
 
   /// 重置视图（§5.6）：立即 scale=1.0、视口 (0, 0)，无动画。

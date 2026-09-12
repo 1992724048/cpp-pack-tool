@@ -641,8 +641,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             width: _triggerColumnWidth,
             child: Center(
               child: Tag(
-                text: _triggerLabel(script.trigger),
-                color: _triggerColor(script.trigger),
+                text: scriptTriggerLabel(script.trigger),
+                color: scriptTriggerColor(script.trigger),
                 fontSize: 10,
               ),
             ),
@@ -652,7 +652,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             child: Center(
               child: Tag(
                 text: buildModelLabel(script.buildModel),
-                color: _buildModelColor(script.buildModel),
+                color: buildModelColor(script.buildModel),
                 fontSize: 10,
               ),
             ),
@@ -669,16 +669,6 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         ],
       ),
     );
-  }
-
-  String _triggerLabel(ScriptTrigger trigger) {
-    return trigger == ScriptTrigger.pre ? '编译前' : '编译后';
-  }
-
-  Color _triggerColor(ScriptTrigger trigger) {
-    return trigger == ScriptTrigger.pre
-        ? UCColors.flavor.sky
-        : UCColors.flavor.lavender;
   }
 
   (String, Color) _scriptStatus(ScriptProjectModel script) {
@@ -769,7 +759,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             child: Center(
               child: Tag(
                 text: buildModelLabel(entry.buildModel),
-                color: _buildModelColor(entry.buildModel),
+                color: buildModelColor(entry.buildModel),
                 fontSize: 10,
               ),
             ),
@@ -801,14 +791,6 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         ],
       ),
     );
-  }
-
-  Color _buildModelColor(BuildModel buildModel) {
-    return switch (buildModel) {
-      BuildModel.all => UCColors.flavor.blue,
-      BuildModel.release => UCColors.flavor.green,
-      BuildModel.debug => UCColors.flavor.peach,
-    };
   }
 }
 

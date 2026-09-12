@@ -18,10 +18,6 @@ import 'package:flutter/gestures.dart'
 
 final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
-// 发射侧 `CNP_PackageRoot`（`Join-Path` 基目录）指向包内 `build/native/`，
-// 建议值须为该目录相对路径，否则组合后出现双前缀。
-const String _packageRootPrefix = 'build/native/';
-
 const String _environmentNameError = '变量名须以字母或下划线开头，且仅含字母、数字、下划线';
 const String _noMatchingPathHint = '无匹配路径，将按手填内容使用';
 const String _emptyProjectHint = '请先新建脚本项目';
@@ -156,7 +152,19 @@ class _NodeInspectorState extends State<NodeInspector> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             if (node == null)
-              ..._buildProjectMode(controller)
+              _ProjectPanel(
+                project: controller.project,
+                projects: widget.pack.scripts,
+                nameEditor: _nameEditor,
+                nameFocus: _nameFocus,
+                nameError: _nameError,
+                onNameSubmitted: () => _commitProjectName(controller.project),
+                onTriggerChanged: widget.onTriggerChanged,
+                onBuildModelChanged: widget.onBuildModelChanged,
+                onSelectProject: widget.onSelectProject,
+                onMoveProjectUp: widget.onMoveProjectUp,
+                onMoveProjectDown: widget.onMoveProjectDown,
+              )
             else
               ..._buildNodeMode(node),
           ],
@@ -174,6 +182,8 @@ class _NodeInspectorState extends State<NodeInspector> {
     _loadPackagePaths();
   }
 
+  /// 建议值取包内 `build/native/` 相对路径：发射侧 `CNP_PackageRoot`
+  /// （`Join-Path` 基目录）指向该目录，含前缀会组合出双前缀。
   Future<void> _loadPackagePaths() async {
     final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(
       widget.pack,
@@ -182,11 +192,12 @@ class _NodeInspectorState extends State<NodeInspector> {
       return;
     }
     setState(() {
-      _packagePaths = <String>[
-        for (final PackageEntry entry in plan.entries)
-          if (entry.packagePath.startsWith(_packageRootPrefix))
-            entry.packagePath.substring(_packageRootPrefix.length),
-      ];
+      _packagePaths = plan.entries
+          .map(
+            (PackageEntry entry) => buildNativeRelativePath(entry.packagePath),
+          )
+          .whereType<String>()
+          .toList();
     });
   }
 
@@ -380,6 +391,7 @@ class _NodeInspectorState extends State<NodeInspector> {
         );
       case ScriptParamType.macroKey:
         return _denseComboBox(
+          context,
           ComboBox<String>(
             key: Key('inspectorField_${param.key}'),
             value: value is String && msbuildMacroKeys.contains(value)
@@ -399,6 +411,7 @@ class _NodeInspectorState extends State<NodeInspector> {
         );
       case ScriptParamType.logLevel:
         return _denseComboBox(
+          context,
           _buildOptionComboBox(
             param: param,
             value: value,
@@ -408,6 +421,7 @@ class _NodeInspectorState extends State<NodeInspector> {
         );
       case ScriptParamType.stringOperator:
         return _denseComboBox(
+          context,
           _buildOptionComboBox(
             param: param,
             value: value,
@@ -508,212 +522,6 @@ class _NodeInspectorState extends State<NodeInspector> {
     widget.controller?.updateNodeParam(node.id, paramKey, value);
   }
 
-  Widget _denseComboBox(Widget child) {
-    return FluentTheme(
-      data: FluentTheme.of(context).copyWith(visualDensity: comboBoxDensity),
-      child: child,
-    );
-  }
-
-  List<Widget> _buildProjectMode(GraphEditorController controller) {
-    final ScriptProjectModel project = controller.project;
-    final List<ScriptProjectModel> projects = widget.pack.scripts;
-    return <Widget>[
-      Row(
-        children: <Widget>[
-          Text(
-            '脚本项目',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: UCColors.flavor.text,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              project.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
-            ),
-          ),
-        ],
-      ),
-      const SizedBox(height: 16),
-      _labeledField(
-        '名称',
-        TextBox(
-          key: const Key('inspectorProjectName'),
-          controller: _nameEditor,
-          focusNode: _nameFocus,
-          onSubmitted: (String value) => _commitProjectName(controller.project),
-        ),
-        error: _nameError,
-        errorKey: const Key('inspectorProjectNameError'),
-      ),
-      const SizedBox(height: 16),
-      _labeledField(
-        '触发时机',
-        _denseComboBox(
-          ComboBox<ScriptTrigger>(
-            key: const Key('inspectorProjectTrigger'),
-            value: project.trigger,
-            isExpanded: true,
-            items: <ComboBoxItem<ScriptTrigger>>[
-              ComboBoxItem<ScriptTrigger>(
-                value: ScriptTrigger.pre,
-                child: const Text('编译前'),
-              ),
-              ComboBoxItem<ScriptTrigger>(
-                value: ScriptTrigger.post,
-                child: const Text('编译后'),
-              ),
-            ],
-            onChanged: (ScriptTrigger? next) {
-              if (next != null) {
-                widget.onTriggerChanged?.call(project, next);
-              }
-            },
-          ),
-        ),
-      ),
-      const SizedBox(height: 16),
-      _labeledField(
-        '构建标签',
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _denseComboBox(
-                ComboBox<BuildModel>(
-                  key: const Key('inspectorProjectBuildModel'),
-                  value: project.buildModel,
-                  isExpanded: true,
-                  items: <ComboBoxItem<BuildModel>>[
-                    for (final BuildModel buildModel in BuildModel.values)
-                      ComboBoxItem<BuildModel>(
-                        value: buildModel,
-                        child: Text(buildModelLabel(buildModel)),
-                      ),
-                  ],
-                  onChanged: (BuildModel? next) {
-                    if (next != null) {
-                      widget.onBuildModelChanged?.call(project, next);
-                    }
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Tag(
-              key: const Key('inspectorProjectBuildTag'),
-              text: buildModelLabel(project.buildModel),
-              color: _buildModelColor(project.buildModel),
-              fontSize: 10,
-            ),
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      Text(
-        '脚本 ID',
-        style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        project.id,
-        style: TextStyle(
-          fontFamily: 'Consolas',
-          fontSize: 11,
-          color: UCColors.flavor.subtext0,
-        ),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        '导出时决定包内文件名与 Target 名',
-        style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
-      ),
-      _divider(),
-      Text(
-        '执行顺序',
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: UCColors.flavor.text,
-        ),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        '同组内按列表顺序执行',
-        style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
-      ),
-      const SizedBox(height: 8),
-      for (int index = 0; index < projects.length; index++)
-        Padding(
-          padding: EdgeInsets.only(
-            bottom: index == projects.length - 1 ? 0 : 2,
-          ),
-          child: _ProjectOrderRow(
-            project: projects[index],
-            current: projects[index].id == project.id,
-            canMoveUp: index > 0,
-            canMoveDown: index < projects.length - 1,
-            onTap: () => widget.onSelectProject?.call(projects[index]),
-            onMoveUp: () => widget.onMoveProjectUp?.call(projects[index]),
-            onMoveDown: () => widget.onMoveProjectDown?.call(projects[index]),
-          ),
-        ),
-    ];
-  }
-
-  Widget _labeledField(
-    String label,
-    Widget control, {
-    String? error,
-    Key? errorKey,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
-        ),
-        const SizedBox(height: 4),
-        control,
-        if (error != null && errorKey != null) ...<Widget>[
-          const SizedBox(height: 4),
-          _buildFieldError(errorKey, error),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildFieldError(Key key, String message) {
-    return Row(
-      key: key,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Icon(FluentIcons.error_badge, size: 12, color: UCColors.flavor.red),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            message,
-            style: TextStyle(fontSize: 12, color: UCColors.flavor.red),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _divider() {
-    return Container(
-      height: 1,
-      margin: const EdgeInsets.symmetric(vertical: 12),
-      color: UCColors.flavor.surface2,
-    );
-  }
-
   void _commitProjectName(ScriptProjectModel project) {
     final String value = _nameEditor.text.trim();
     final String? error = _projectNameError(project, value);
@@ -764,6 +572,255 @@ class _NodeInspectorState extends State<NodeInspector> {
       _commitProjectName(project);
     }
   }
+}
+
+/// 项目属性分区（无选中节点时显示）：元信息、触发时机/构建标签与执行顺序。
+class _ProjectPanel extends StatelessWidget {
+  const _ProjectPanel({
+    required this.project,
+    required this.projects,
+    required this.nameEditor,
+    required this.nameFocus,
+    required this.nameError,
+    required this.onNameSubmitted,
+    this.onTriggerChanged,
+    this.onBuildModelChanged,
+    this.onSelectProject,
+    this.onMoveProjectUp,
+    this.onMoveProjectDown,
+  });
+
+  final ScriptProjectModel project;
+  final List<ScriptProjectModel> projects;
+
+  /// 名称编辑控制器与焦点由检查器持有（失焦提交与模型同步在检查器侧）。
+  final TextEditingController nameEditor;
+  final FocusNode nameFocus;
+  final String? nameError;
+
+  final VoidCallback onNameSubmitted;
+
+  final void Function(ScriptProjectModel project, ScriptTrigger trigger)?
+  onTriggerChanged;
+
+  final void Function(ScriptProjectModel project, BuildModel buildModel)?
+  onBuildModelChanged;
+
+  final ValueChanged<ScriptProjectModel>? onSelectProject;
+
+  final void Function(ScriptProjectModel project)? onMoveProjectUp;
+
+  final void Function(ScriptProjectModel project)? onMoveProjectDown;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Text(
+              '脚本项目',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: UCColors.flavor.text,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                project.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _labeledField(
+          '名称',
+          TextBox(
+            key: const Key('inspectorProjectName'),
+            controller: nameEditor,
+            focusNode: nameFocus,
+            onSubmitted: (_) => onNameSubmitted(),
+          ),
+          error: nameError,
+          errorKey: const Key('inspectorProjectNameError'),
+        ),
+        const SizedBox(height: 16),
+        _labeledField(
+          '触发时机',
+          _denseComboBox(
+            context,
+            ComboBox<ScriptTrigger>(
+              key: const Key('inspectorProjectTrigger'),
+              value: project.trigger,
+              isExpanded: true,
+              items: <ComboBoxItem<ScriptTrigger>>[
+                ComboBoxItem<ScriptTrigger>(
+                  value: ScriptTrigger.pre,
+                  child: const Text('编译前'),
+                ),
+                ComboBoxItem<ScriptTrigger>(
+                  value: ScriptTrigger.post,
+                  child: const Text('编译后'),
+                ),
+              ],
+              onChanged: (ScriptTrigger? next) {
+                if (next != null) {
+                  onTriggerChanged?.call(project, next);
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        _labeledField(
+          '构建标签',
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _denseComboBox(
+                  context,
+                  ComboBox<BuildModel>(
+                    key: const Key('inspectorProjectBuildModel'),
+                    value: project.buildModel,
+                    isExpanded: true,
+                    items: <ComboBoxItem<BuildModel>>[
+                      for (final BuildModel buildModel in BuildModel.values)
+                        ComboBoxItem<BuildModel>(
+                          value: buildModel,
+                          child: Text(buildModelLabel(buildModel)),
+                        ),
+                    ],
+                    onChanged: (BuildModel? next) {
+                      if (next != null) {
+                        onBuildModelChanged?.call(project, next);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Tag(
+                key: const Key('inspectorProjectBuildTag'),
+                text: buildModelLabel(project.buildModel),
+                color: buildModelColor(project.buildModel),
+                fontSize: 10,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '脚本 ID',
+          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          project.id,
+          style: TextStyle(
+            fontFamily: 'Consolas',
+            fontSize: 11,
+            color: UCColors.flavor.subtext0,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '导出时决定包内文件名与 Target 名',
+          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+        ),
+        _divider(),
+        Text(
+          '执行顺序',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: UCColors.flavor.text,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '同组内按列表顺序执行',
+          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+        ),
+        const SizedBox(height: 8),
+        for (int index = 0; index < projects.length; index++)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom: index == projects.length - 1 ? 0 : 2,
+            ),
+            child: _ProjectOrderRow(
+              project: projects[index],
+              current: projects[index].id == project.id,
+              canMoveUp: index > 0,
+              canMoveDown: index < projects.length - 1,
+              onTap: () => onSelectProject?.call(projects[index]),
+              onMoveUp: () => onMoveProjectUp?.call(projects[index]),
+              onMoveDown: () => onMoveProjectDown?.call(projects[index]),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+Widget _labeledField(
+  String label,
+  Widget control, {
+  String? error,
+  Key? errorKey,
+}) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      Text(
+        label,
+        style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+      ),
+      const SizedBox(height: 4),
+      control,
+      if (error != null && errorKey != null) ...<Widget>[
+        const SizedBox(height: 4),
+        _buildFieldError(errorKey, error),
+      ],
+    ],
+  );
+}
+
+Widget _buildFieldError(Key key, String message) {
+  return Row(
+    key: key,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      Icon(FluentIcons.error_badge, size: 12, color: UCColors.flavor.red),
+      const SizedBox(width: 4),
+      Expanded(
+        child: Text(
+          message,
+          style: TextStyle(fontSize: 12, color: UCColors.flavor.red),
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _divider() {
+  return Container(
+    height: 1,
+    margin: const EdgeInsets.symmetric(vertical: 12),
+    color: UCColors.flavor.surface2,
+  );
+}
+
+Widget _denseComboBox(BuildContext context, Widget child) {
+  return FluentTheme(
+    data: FluentTheme.of(context).copyWith(visualDensity: comboBoxDensity),
+    child: child,
+  );
 }
 
 class _ProjectOrderRow extends StatefulWidget {
@@ -831,14 +888,14 @@ class _ProjectOrderRowState extends State<_ProjectOrderRow> {
                 ),
               ),
               Tag(
-                text: _triggerLabel(widget.project.trigger),
-                color: _triggerColor(widget.project.trigger),
+                text: scriptTriggerLabel(widget.project.trigger),
+                color: scriptTriggerColor(widget.project.trigger),
                 fontSize: 10,
               ),
               const SizedBox(width: 4),
               Tag(
                 text: buildModelLabel(widget.project.buildModel),
-                color: _buildModelColor(widget.project.buildModel),
+                color: buildModelColor(widget.project.buildModel),
                 fontSize: 10,
               ),
               const SizedBox(width: 4),
@@ -881,16 +938,3 @@ class _ProjectOrderRowState extends State<_ProjectOrderRow> {
     );
   }
 }
-
-String _triggerLabel(ScriptTrigger trigger) =>
-    trigger == ScriptTrigger.pre ? '编译前' : '编译后';
-
-Color _triggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
-    ? UCColors.flavor.sky
-    : UCColors.flavor.lavender;
-
-Color _buildModelColor(BuildModel buildModel) => switch (buildModel) {
-  BuildModel.all => UCColors.flavor.blue,
-  BuildModel.release => UCColors.flavor.green,
-  BuildModel.debug => UCColors.flavor.peach,
-};
