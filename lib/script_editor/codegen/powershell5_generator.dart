@@ -9,6 +9,13 @@ import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 
 const String _packageRootEnvExpression = r'$env:CNP_PackageRoot';
 
+/// 数字字面量：int 直出；double 取 invariant 文本并将指数记号的 `e+` 归一为 `e`
+/// （PowerShell 5.1 不接受 `e+` 写法）；负数整体加括号。
+String numberLiteral(num value) {
+  final String text = value.toString().replaceFirst('e+', 'e');
+  return value.isNegative ? '($text)' : text;
+}
+
 class PowerShell5Generator implements ScriptCodeGenerator {
   @override
   String get fileExtension => 'ps1';
@@ -253,6 +260,10 @@ class _PowerShellEmitter {
         return _textLiteral(_param(node, 'value'));
       case 'value.boolean':
         return _param(node, 'value') == true ? r'$true' : r'$false';
+      case 'value.number':
+        // 数值参数校验（T6）落地前，手改 YAML 可能给出非 num 值；防御性回退 0。
+        final Object? value = _param(node, 'value');
+        return numberLiteral(value is num ? value : 0);
       case 'file.list':
         return _fileListExpression(node);
       case 'file.exists':

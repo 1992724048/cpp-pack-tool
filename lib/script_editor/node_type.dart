@@ -24,6 +24,7 @@ enum ScriptParamType {
   logLevel,
   stringOperator,
   packageFilePath,
+  number,
 }
 
 class ScriptPinDescriptor {

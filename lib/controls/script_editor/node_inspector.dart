@@ -465,6 +465,9 @@ class _NodeInspectorState extends State<NodeInspector> {
       case ScriptParamType.boolean:
         // 开关由 _buildParamField 的行布局处理，此处不可达。
         return const SizedBox.shrink();
+      case ScriptParamType.number:
+        // TODO: 数值输入控件（可负、可小数、非数字不写入）待实现。
+        return const SizedBox.shrink();
     }
   }
 

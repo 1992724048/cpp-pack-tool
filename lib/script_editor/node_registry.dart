@@ -402,6 +402,27 @@ class NodeRegistry {
           ],
         ),
         ScriptNodeTypeDescriptor(
+          typeKey: 'value.number',
+          displayName: '数值',
+          category: ScriptNodeCategory.value,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '值',
+              isInput: false,
+              dataType: ScriptDataType.number,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'value',
+              label: '值',
+              type: ScriptParamType.number,
+              defaultValue: 0,
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
           typeKey: 'string.concat',
           displayName: '拼接',
           category: ScriptNodeCategory.string,

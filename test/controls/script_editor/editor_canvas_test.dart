@@ -155,6 +155,30 @@ void main() {
       );
     });
 
+    testWidgets('value.number 卡片渲染「数值」标题与 number_symbol 图标', (
+      WidgetTester tester,
+    ) async {
+      expect(nodeTypeIcon('value.number'), FluentIcons.number_symbol);
+
+      await _pumpCanvas(
+        tester,
+        _project(nodes: <ScriptNodeModel>[_node('n1', 'value.number')]),
+      );
+
+      final Finder card = find.byKey(const Key('nodeCard_n1'));
+      expect(
+        find.descendant(of: card, matching: find.text('数值')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: card,
+          matching: find.byIcon(FluentIcons.number_symbol),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

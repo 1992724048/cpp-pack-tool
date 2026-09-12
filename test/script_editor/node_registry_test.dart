@@ -19,6 +19,7 @@ const Set<String> _expectedTypeKeys = <String>{
   'context.packageFile',
   'value.text',
   'value.boolean',
+  'value.number',
   'string.concat',
   'string.replace',
   'string.lowerCase',
@@ -42,13 +43,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 25 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(25));
+    test('总数 26 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(26));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(25),
+        hasLength(26),
       );
     });
 
@@ -137,7 +138,7 @@ void main() {
             ScriptNodeCategory.file: 6,
             ScriptNodeCategory.process: 1,
             ScriptNodeCategory.context: 3,
-            ScriptNodeCategory.value: 2,
+            ScriptNodeCategory.value: 3,
             ScriptNodeCategory.string: 6,
             ScriptNodeCategory.log: 1,
             ScriptNodeCategory.logic: 2,
@@ -165,7 +166,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(25),
+        hasLength(26),
       );
     });
 
@@ -558,7 +559,7 @@ void main() {
       }
     });
 
-    test('value 两节点输出类型', () {
+    test('value 三节点输出类型', () {
       final ScriptNodeTypeDescriptor text = NodeRegistry.byType('value.text')!;
       expect(text.category, ScriptNodeCategory.value);
       expect(text.pins.single.id, 'result');
@@ -569,6 +570,13 @@ void main() {
       expect(boolean.category, ScriptNodeCategory.value);
       expect(boolean.pins.single.id, 'result');
       expect(boolean.pins.single.dataType, ScriptDataType.boolean);
+      final ScriptNodeTypeDescriptor number = NodeRegistry.byType(
+        'value.number',
+      )!;
+      expect(number.category, ScriptNodeCategory.value);
+      expect(number.pins.single.id, 'result');
+      expect(number.pins.single.isInput, isFalse);
+      expect(number.pins.single.dataType, ScriptDataType.number);
     });
 
     test('string / path 六节点引脚', () {
@@ -716,6 +724,7 @@ void main() {
         'logic.compareString': <String>['operator', 'ignoreCase'],
         'value.text': <String>['value'],
         'value.boolean': <String>['value'],
+        'value.number': <String>['value'],
         'context.macro': <String>['macro'],
         'context.environment': <String>['name'],
         'context.packageFile': <String>['path'],
@@ -740,6 +749,7 @@ void main() {
       expect(_param('logic.compareString', 'ignoreCase').defaultValue, isFalse);
       expect(_param('value.text', 'value').defaultValue, '');
       expect(_param('value.boolean', 'value').defaultValue, isFalse);
+      expect(_param('value.number', 'value').defaultValue, 0);
       expect(_param('context.macro', 'macro').defaultValue, 'OutDir');
       expect(_param('context.environment', 'name').defaultValue, '');
       expect(_param('context.packageFile', 'path').defaultValue, '');
@@ -772,6 +782,7 @@ void main() {
       );
       expect(_param('value.text', 'value').type, ScriptParamType.text);
       expect(_param('value.boolean', 'value').type, ScriptParamType.boolean);
+      expect(_param('value.number', 'value').type, ScriptParamType.number);
       expect(_param('context.environment', 'name').type, ScriptParamType.text);
     });
   });

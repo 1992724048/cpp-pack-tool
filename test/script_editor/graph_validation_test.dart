@@ -275,6 +275,30 @@ void main() {
       expect(mismatch.message, contains('list<string>'));
     });
 
+    test('number 输出接 string 输入报错：消息含「数值」标签', () {
+      final List<ScriptDiagnostic> errors = _errors(
+        _validate(
+          <ScriptNodeModel>[
+            _node('n1', 'flow.entry'),
+            _node('n2', 'value.number'),
+            _node('n3', 'log.message'),
+          ],
+          edges: <ScriptEdgeModel>[
+            _edge('n1', 'out', 'n3', 'exec'),
+            _edge('n2', 'result', 'n3', 'message'),
+          ],
+        ),
+      );
+      expect(errors, hasLength(1));
+      final ScriptDiagnostic mismatch = _diagnosticWith(errors, '数据类型不匹配');
+      expect(
+        mismatch.message,
+        '数据类型不匹配：「n2.result」输出 数值，「n3.message」需要 string',
+      );
+      expect(mismatch.nodeId, 'n3');
+      expect(mismatch.isError, isTrue);
+    });
+
     test('exec 输出被多条边连接报错', () {
       final List<ScriptDiagnostic> diagnostics = _validate(
         <ScriptNodeModel>[

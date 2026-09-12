@@ -543,6 +543,28 @@ void main() {
       expect(controller.project.edges, isEmpty);
     });
 
+    test('num 输出接 string 输入拒绝：目标引脚需要 string', () {
+      final GraphEditorController controller = GraphEditorController(
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'log.message'),
+            _node('n2', 'value.number'),
+          ],
+        ),
+      );
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      expect(
+        controller.connect(
+          from: _endpoint('n2', 'result'),
+          to: _endpoint('n1', 'message'),
+        ),
+        '无法连接：目标引脚需要 string',
+      );
+      expect(controller.project.edges, isEmpty);
+      expect(notifications, 0);
+    });
+
     test('自连拒绝', () {
       final GraphEditorController controller = GraphEditorController(
         _connectGraph(),

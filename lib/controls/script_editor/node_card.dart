@@ -92,6 +92,7 @@ IconData nodeTypeIcon(String typeKey) {
     'context.packageFile' => FluentIcons.file_symlink,
     'value.text' => FluentIcons.font,
     'value.boolean' => FluentIcons.checkbox,
+    'value.number' => FluentIcons.number_symbol,
     'string.concat' => FluentIcons.link,
     'string.replace' => FluentIcons.edit,
     'string.lowerCase' => FluentIcons.font_decrease,

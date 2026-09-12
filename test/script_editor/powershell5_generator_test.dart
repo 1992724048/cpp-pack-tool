@@ -1028,6 +1028,45 @@ void main() {
     });
   });
 
+  group('value.number 数字字面量', () {
+    test('numberLiteral：int 直出，负值整体加括号', () {
+      expect(numberLiteral(0), '0');
+      expect(numberLiteral(5), '5');
+      expect(numberLiteral(-5), '(-5)');
+    });
+
+    test('numberLiteral：double invariant 文本，`e+` 归一为 `e`', () {
+      expect(numberLiteral(5.5), '5.5');
+      expect(numberLiteral(-0.5), '(-0.5)');
+      expect(numberLiteral(5.0), '5.0');
+      // Dart VM 对 |指数| 有限值使用固定记法（与区域无关、无 e 记号）
+      expect(numberLiteral(1e20), '100000000000000000000.0');
+      expect(numberLiteral(1e-5), '0.00001');
+      // 指数记法仅在 VM 定界外出现：`e+` 必须归一为 `e`（PS 5.1 字面量歧义）
+      expect(numberLiteral(1e21), '1e21');
+      expect(numberLiteral(-1e21), '(-1e21)');
+      expect(numberLiteral(1e-7), '1e-7');
+    });
+
+    test('未消费 value.number：compile 成功、无错误诊断、保留未使用警告', () {
+      final ScriptCompileResult result = _compile(
+        _project(<ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'value.number'),
+        ]),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, isNotNull);
+      expect(
+        result.diagnostics.any(
+          (ScriptDiagnostic diagnostic) =>
+              !diagnostic.isError && diagnostic.message.contains('未被使用'),
+        ),
+        isTrue,
+      );
+    });
+  });
+
   group('字符串与路径节点发射', () {
     test('string.concat：双操作数相加并加括号', () {
       final ScriptCompileResult result = _compile(
