@@ -2289,6 +2289,73 @@ void main() {
       );
     });
 
+    test('crypto.aesEncrypt 幂等：两个节点仅注入一次 helper', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.text',
+            params: <String, Object?>{'value': r'C:\a.bin'},
+          ),
+          _node(
+            'n3',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\b.bin'},
+          ),
+          _node(
+            'n4',
+            'crypto.aesEncrypt',
+            params: <String, Object?>{'password': 'p1'},
+          ),
+          _node(
+            'n5',
+            'value.text',
+            params: <String, Object?>{'value': r'D:\c.bin'},
+          ),
+          _node(
+            'n6',
+            'value.text',
+            params: <String, Object?>{'value': r'E:\d.bin'},
+          ),
+          _node(
+            'n7',
+            'crypto.aesEncrypt',
+            params: <String, Object?>{'passwordEnv': 'CNP_AES_KEY'},
+          ),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n4', 'exec'),
+          _edge('n2', 'result', 'n4', 'source'),
+          _edge('n3', 'result', 'n4', 'destination'),
+          _edge('n4', 'out', 'n7', 'exec'),
+          _edge('n5', 'result', 'n7', 'source'),
+          _edge('n6', 'result', 'n7', 'destination'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        RegExp(r'function Invoke-CnpAesTransform \{').allMatches(code).length,
+        1,
+      );
+      expect(
+        code,
+        contains(
+          "    Invoke-CnpAesTransform -Mode Encrypt -Source 'C:\\a.bin' "
+          "-Destination 'D:\\b.bin' -Password 'p1'\n",
+        ),
+      );
+      expect(
+        code,
+        contains(
+          "    Invoke-CnpAesTransform -Mode Encrypt -Source 'D:\\c.bin' "
+          "-Destination 'E:\\d.bin' -Password \$env:CNP_AES_KEY\n",
+        ),
+      );
+    });
+
     test('crypto.signFile：PFX + 口令 + 时间戳全参数发射', () {
       final ScriptCompileResult result = _compile(
         _signFileGraph(

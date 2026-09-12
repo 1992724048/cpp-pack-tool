@@ -218,6 +218,111 @@ ScriptProjectModel _stringAndProcessFixture() {
   );
 }
 
+/// M4.2 节点家族夹具：file 硬链接 → readHex→writeHex 往返 → crypto
+/// （fileHash crc32 → Base64 解码 → AES 加密 → 代码签名）执行链，穿插
+/// math.arithmetic 与 string.upperCase，触发全部 M4.2 新 helper
+/// （ConvertFrom-CnpHex、Get-CnpFileHash + crc32 块、Invoke-CnpAesTransform、
+/// Invoke-CnpSignFile）。
+ScriptProjectModel _nodeFamiliesFixture() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\src\a.h'},
+      ),
+      _node(
+        'n3',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\dst\a.h'},
+      ),
+      _node('n4', 'file.hardLink'),
+      _node(
+        'n5',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\dst\a.h'},
+      ),
+      _node(
+        'n6',
+        'crypto.fileHash',
+        params: <String, Object?>{'algorithm': 'crc32'},
+      ),
+      _node('n7', 'string.upperCase'),
+      _node(
+        'n8',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\dst\a.b64'},
+      ),
+      _node('n9', 'crypto.base64Decode'),
+      _node(
+        'n10',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\dst\a.enc'},
+      ),
+      _node(
+        'n11',
+        'crypto.aesEncrypt',
+        params: <String, Object?>{'passwordEnv': 'CNP_AES_KEY'},
+      ),
+      _node(
+        'n12',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\dst\a.signed.h'},
+      ),
+      _node(
+        'n13',
+        'crypto.signFile',
+        params: <String, Object?>{
+          'pfxPath': r'C:\cert.pfx',
+          'timestampServer': 'http://ts.example.com',
+        },
+      ),
+      _node('n14', 'value.number', params: <String, Object?>{'value': 2}),
+      _node('n15', 'value.number', params: <String, Object?>{'value': 3}),
+      _node(
+        'n16',
+        'math.arithmetic',
+        params: <String, Object?>{'operator': 'multiply'},
+      ),
+      _node('n17', 'math.numberToString'),
+      _node('n18', 'log.message'),
+      _node('n19', 'file.readHex'),
+      _node('n20', 'file.writeHex'),
+      _node(
+        'n21',
+        'value.text',
+        params: <String, Object?>{'value': r'C:\dst\a.hex.bin'},
+      ),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n4', 'source'),
+      _edge('n3', 'result', 'n4', 'destination'),
+      _edge('n4', 'out', 'n20', 'exec'),
+      _edge('n3', 'result', 'n19', 'path'),
+      _edge('n19', 'result', 'n20', 'hex'),
+      _edge('n21', 'result', 'n20', 'path'),
+      _edge('n20', 'out', 'n9', 'exec'),
+      _edge('n5', 'result', 'n6', 'path'),
+      _edge('n6', 'result', 'n7', 'value'),
+      _edge('n7', 'result', 'n9', 'text'),
+      _edge('n8', 'result', 'n9', 'path'),
+      _edge('n9', 'out', 'n11', 'exec'),
+      _edge('n5', 'result', 'n11', 'source'),
+      _edge('n10', 'result', 'n11', 'destination'),
+      _edge('n11', 'out', 'n13', 'exec'),
+      _edge('n12', 'result', 'n13', 'path'),
+      _edge('n13', 'out', 'n18', 'exec'),
+      _edge('n14', 'result', 'n16', 'a'),
+      _edge('n15', 'result', 'n16', 'b'),
+      _edge('n16', 'result', 'n17', 'value'),
+      _edge('n17', 'result', 'n18', 'message'),
+    ],
+    name: '节点家族夹具',
+  );
+}
+
 String _diagnosticMessages(ScriptCompileResult result) {
   return result.diagnostics
       .map((ScriptDiagnostic diagnostic) => diagnostic.message)
@@ -241,7 +346,7 @@ void main() {
   });
 
   group('PowerShell 5.1 语法解析（仅 Windows）', () {
-    test('三张代表图生成的脚本均通过 Parser::ParseFile', () {
+    test('四张代表图生成的脚本均通过 Parser::ParseFile', () {
       final Directory tempDir = Directory.systemTemp.createTempSync(
         'cnp_ps_syntax_',
       );
@@ -259,6 +364,7 @@ void main() {
             'linear': _linearFixture(),
             'nested_control_flow': _nestedControlFlowFixture(),
             'string_and_process': _stringAndProcessFixture(),
+            'node_families': _nodeFamiliesFixture(),
           };
 
       for (final MapEntry<String, ScriptProjectModel> fixture

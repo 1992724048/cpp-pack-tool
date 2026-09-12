@@ -3,7 +3,8 @@ import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-/// 画布右键菜单（视觉规范 §5.6）：添加节点（8 分类子菜单）、重置视图、删除所选。
+/// 画布右键菜单（视觉规范 §5.6）：添加节点（全部分类子菜单，
+/// `ScriptNodeCategory.values` 声明序）、重置视图、删除所选。
 ///
 /// 「删除所选」无选中时禁用（`onPressed` 为 null）；分隔线仅在有选中时显示。
 /// [onAddNode] 以弹出点的场景坐标落点，实际添加由画布注入控制器操作。

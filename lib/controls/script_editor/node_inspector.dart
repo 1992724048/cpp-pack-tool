@@ -35,7 +35,6 @@ class NodeInspector extends StatefulWidget {
     this.controller,
     required this.pack,
     this.packagePaths,
-    this.extraTypes = const <ScriptNodeTypeDescriptor>[],
     this.onSelectProject,
     this.onRenameProject,
     this.onTriggerChanged,
@@ -52,9 +51,6 @@ class NodeInspector extends StatefulWidget {
   /// 包内路径建议（`build/native/` 相对）；null 时由
   /// `NuGetPackageBuilder().buildPlan(pack)` 计算并剥离该前缀。
   final List<String>? packagePaths;
-
-  /// 额外节点类型（同键优先于注册表；测试注入用，默认空）。
-  final List<ScriptNodeTypeDescriptor> extraTypes;
 
   final ValueChanged<ScriptProjectModel>? onSelectProject;
 
@@ -257,7 +253,7 @@ class _NodeInspectorState extends State<NodeInspector> {
   }
 
   List<Widget> _buildNodeMode(ScriptNodeModel node) {
-    final ScriptNodeTypeDescriptor? descriptor = _resolveDescriptor(node.type);
+    final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(node.type);
     final List<ScriptParamDescriptor> params =
         descriptor?.params ?? const <ScriptParamDescriptor>[];
     return <Widget>[
@@ -275,15 +271,6 @@ class _NodeInspectorState extends State<NodeInspector> {
             child: _buildParamField(node, param),
           ),
     ];
-  }
-
-  ScriptNodeTypeDescriptor? _resolveDescriptor(String typeKey) {
-    for (final ScriptNodeTypeDescriptor type in widget.extraTypes) {
-      if (type.typeKey == typeKey) {
-        return type;
-      }
-    }
-    return NodeRegistry.byType(typeKey);
   }
 
   Widget _buildNodeHeader(

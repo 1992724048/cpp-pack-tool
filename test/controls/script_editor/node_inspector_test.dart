@@ -5,7 +5,6 @@ import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
 import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
-import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -223,19 +222,9 @@ void main() {
     testWidgets('mathOperator 下拉选项为 加/减/乘/除/取模，选择后写回运算符', (
       WidgetTester tester,
     ) async {
-      final _Harness harness = await _pumpInspector(
-        tester,
-        project: _projectWithNode('test.mathOperator'),
-        extraTypes: <ScriptNodeTypeDescriptor>[
-          _paramHostType(
-            'test.mathOperator',
-            ScriptParamType.mathOperator,
-            defaultValue: 'add',
-          ),
-        ],
-      );
+      final _Harness harness = await _pumpInspector(tester);
       final GraphEditorController controller = harness.controller!;
-      controller.selectNode('n1');
+      _addAndSelect(controller, 'math.arithmetic');
       await tester.pump();
 
       final Finder field = find.byKey(const Key('inspectorField_operator'));
@@ -254,19 +243,9 @@ void main() {
     testWidgets('bitwiseOperator 下拉选项为 与/或/异或/左移/右移，选择后写回运算符', (
       WidgetTester tester,
     ) async {
-      final _Harness harness = await _pumpInspector(
-        tester,
-        project: _projectWithNode('test.bitwiseOperator'),
-        extraTypes: <ScriptNodeTypeDescriptor>[
-          _paramHostType(
-            'test.bitwiseOperator',
-            ScriptParamType.bitwiseOperator,
-            defaultValue: 'and',
-          ),
-        ],
-      );
+      final _Harness harness = await _pumpInspector(tester);
       final GraphEditorController controller = harness.controller!;
-      controller.selectNode('n1');
+      _addAndSelect(controller, 'math.bitwise');
       await tester.pump();
 
       final Finder field = find.byKey(const Key('inspectorField_operator'));
@@ -285,19 +264,9 @@ void main() {
     testWidgets('numberOperator 下拉选项为 < ≤ > ≥ = ≠，选择后写回运算符', (
       WidgetTester tester,
     ) async {
-      final _Harness harness = await _pumpInspector(
-        tester,
-        project: _projectWithNode('test.numberOperator'),
-        extraTypes: <ScriptNodeTypeDescriptor>[
-          _paramHostType(
-            'test.numberOperator',
-            ScriptParamType.numberOperator,
-            defaultValue: 'lt',
-          ),
-        ],
-      );
+      final _Harness harness = await _pumpInspector(tester);
       final GraphEditorController controller = harness.controller!;
-      controller.selectNode('n1');
+      _addAndSelect(controller, 'logic.compareNumber');
       await tester.pump();
 
       final Finder field = find.byKey(const Key('inspectorField_operator'));
@@ -316,22 +285,12 @@ void main() {
     testWidgets('hashAlgorithm 下拉选项为 SHA256/SHA1/SHA512/MD5/CRC32，选择后写回算法', (
       WidgetTester tester,
     ) async {
-      final _Harness harness = await _pumpInspector(
-        tester,
-        project: _projectWithNode('test.hashAlgorithm'),
-        extraTypes: <ScriptNodeTypeDescriptor>[
-          _paramHostType(
-            'test.hashAlgorithm',
-            ScriptParamType.hashAlgorithm,
-            defaultValue: 'sha256',
-          ),
-        ],
-      );
+      final _Harness harness = await _pumpInspector(tester);
       final GraphEditorController controller = harness.controller!;
-      controller.selectNode('n1');
+      _addAndSelect(controller, 'crypto.fileHash');
       await tester.pump();
 
-      final Finder field = find.byKey(const Key('inspectorField_operator'));
+      final Finder field = find.byKey(const Key('inspectorField_algorithm'));
       final ComboBox<String> combo = tester.widget<ComboBox<String>>(field);
       expect(combo.value, 'sha256');
       expect(
@@ -341,7 +300,7 @@ void main() {
 
       await _selectCombo(tester, field, 'CRC32');
 
-      expect(controller.project.nodes.single.params['operator'], 'crc32');
+      expect(controller.project.nodes.single.params['algorithm'], 'crc32');
     });
 
     testWidgets('packageFilePath 建议列表来自注入的 packagePaths，选择后写回路径', (
@@ -857,37 +816,6 @@ ScriptProjectModel _project({
   ScriptTrigger trigger = ScriptTrigger.pre,
 }) => ScriptProjectModel(id: id, name: name, trigger: trigger);
 
-/// 预置单个节点（节点注册表接入前的参数类型测试经 [extraTypes] 注入描述符）。
-ScriptProjectModel _projectWithNode(String typeKey) {
-  final ScriptProjectModel project = _project();
-  project.nodes = <ScriptNodeModel>[ScriptNodeModel(id: 'n1', type: typeKey)];
-  return project;
-}
-
-/// 构造仅含单个参数的类型描述符，供检查器控件分支测试注入。
-ScriptNodeTypeDescriptor _paramHostType(
-  String typeKey,
-  ScriptParamType paramType, {
-  String paramKey = 'operator',
-  String label = '运算符',
-  Object? defaultValue,
-}) {
-  return ScriptNodeTypeDescriptor(
-    typeKey: typeKey,
-    displayName: '测试参数节点',
-    category: ScriptNodeCategory.value,
-    pins: const <ScriptPinDescriptor>[],
-    params: <ScriptParamDescriptor>[
-      ScriptParamDescriptor(
-        key: paramKey,
-        label: label,
-        type: paramType,
-        defaultValue: defaultValue,
-      ),
-    ],
-  );
-}
-
 PackModel _packWithProjects() {
   final PackModel pack = _pack();
   pack.scripts = <ScriptProjectModel>[
@@ -908,7 +836,6 @@ Future<_Harness> _pumpInspector(
   PackModel? pack,
   ScriptProjectModel? project,
   List<String>? packagePaths,
-  List<ScriptNodeTypeDescriptor>? extraTypes,
   bool noProject = false,
   ValueChanged<ScriptProjectModel>? onSelectProject,
   void Function(ScriptProjectModel project, String name)? onRenameProject,
@@ -942,7 +869,6 @@ Future<_Harness> _pumpInspector(
             controller: controller,
             pack: resolvedPack,
             packagePaths: packagePaths,
-            extraTypes: extraTypes ?? const <ScriptNodeTypeDescriptor>[],
             onSelectProject: onSelectProject,
             onRenameProject: onRenameProject,
             onTriggerChanged: onTriggerChanged,

@@ -39,17 +39,7 @@ const Set<String> _hashAlgorithms = <String>{
 final RegExp _environmentNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
 
 class GraphValidator {
-  /// [extraTypes] 为额外节点类型（同键优先于 [NodeRegistry]，测试注入用）。
-  static List<ScriptDiagnostic> validate(
-    ScriptProjectModel project, {
-    List<ScriptNodeTypeDescriptor> extraTypes =
-        const <ScriptNodeTypeDescriptor>[],
-  }) {
-    final Map<String, ScriptNodeTypeDescriptor> extraByType =
-        <String, ScriptNodeTypeDescriptor>{
-          for (final ScriptNodeTypeDescriptor type in extraTypes)
-            type.typeKey: type,
-        };
+  static List<ScriptDiagnostic> validate(ScriptProjectModel project) {
     final List<ScriptDiagnostic> diagnostics = <ScriptDiagnostic>[];
     final Set<String> nodeIds = <String>{
       for (final ScriptNodeModel node in project.nodes) node.id,
@@ -57,8 +47,9 @@ class GraphValidator {
     final Map<String, ScriptNodeTypeDescriptor> descriptorById =
         <String, ScriptNodeTypeDescriptor>{};
     for (final ScriptNodeModel node in project.nodes) {
-      final ScriptNodeTypeDescriptor? descriptor =
-          extraByType[node.type] ?? NodeRegistry.byType(node.type);
+      final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(
+        node.type,
+      );
       if (descriptor == null) {
         diagnostics.add(
           ScriptDiagnostic(

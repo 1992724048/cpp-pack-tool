@@ -1,6 +1,5 @@
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
-import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,37 +40,8 @@ ScriptProjectModel _project(
 List<ScriptDiagnostic> _validate(
   List<ScriptNodeModel> nodes, {
   List<ScriptEdgeModel> edges = const <ScriptEdgeModel>[],
-  List<ScriptNodeTypeDescriptor> extraTypes =
-      const <ScriptNodeTypeDescriptor>[],
 }) {
-  return GraphValidator.validate(
-    _project(nodes, edges: edges),
-    extraTypes: extraTypes,
-  );
-}
-
-/// 构造仅含单个参数的类型描述符，用于在节点注册表接入前验证新参数类型分支。
-ScriptNodeTypeDescriptor _paramHostType(
-  String typeKey,
-  ScriptParamType paramType, {
-  String paramKey = 'operator',
-  String label = '运算符',
-  Object? defaultValue,
-}) {
-  return ScriptNodeTypeDescriptor(
-    typeKey: typeKey,
-    displayName: '测试参数节点',
-    category: ScriptNodeCategory.value,
-    pins: const <ScriptPinDescriptor>[],
-    params: <ScriptParamDescriptor>[
-      ScriptParamDescriptor(
-        key: paramKey,
-        label: label,
-        type: paramType,
-        defaultValue: defaultValue,
-      ),
-    ],
-  );
+  return GraphValidator.validate(_project(nodes, edges: edges));
 }
 
 List<ScriptDiagnostic> _errors(List<ScriptDiagnostic> diagnostics) {
@@ -605,21 +575,14 @@ void main() {
     });
 
     test('mathOperator 取值受限', () {
-      final ScriptNodeTypeDescriptor type = _paramHostType(
-        'test.mathOperator',
-        ScriptParamType.mathOperator,
-        defaultValue: 'add',
-      );
-      final List<ScriptNodeTypeDescriptor> extraTypes =
-          <ScriptNodeTypeDescriptor>[type];
       final List<ScriptDiagnostic> paramErrors = _paramErrors(
         _validate(<ScriptNodeModel>[
           _node(
             'n1',
-            'test.mathOperator',
+            'math.arithmetic',
             params: <String, Object?>{'operator': 'pow'},
           ),
-        ], extraTypes: extraTypes),
+        ]),
       );
       expect(paramErrors, hasLength(1));
       expect(paramErrors.single.message, contains('pow'));
@@ -641,38 +604,29 @@ void main() {
           _validate(<ScriptNodeModel>[
             _node(
               'n1',
-              'test.mathOperator',
+              'math.arithmetic',
               params: <String, Object?>{'operator': operator},
             ),
-          ], extraTypes: extraTypes),
+          ]),
         );
         expect(good, isEmpty, reason: '运算符 $operator 应合法');
       }
 
       final List<ScriptDiagnostic> byDefault = _paramErrors(
-        _validate(<ScriptNodeModel>[
-          _node('n1', 'test.mathOperator'),
-        ], extraTypes: extraTypes),
+        _validate(<ScriptNodeModel>[_node('n1', 'math.arithmetic')]),
       );
       expect(byDefault, isEmpty);
     });
 
     test('bitwiseOperator 取值受限', () {
-      final ScriptNodeTypeDescriptor type = _paramHostType(
-        'test.bitwiseOperator',
-        ScriptParamType.bitwiseOperator,
-        defaultValue: 'and',
-      );
-      final List<ScriptNodeTypeDescriptor> extraTypes =
-          <ScriptNodeTypeDescriptor>[type];
       final List<ScriptDiagnostic> paramErrors = _paramErrors(
         _validate(<ScriptNodeModel>[
           _node(
             'n1',
-            'test.bitwiseOperator',
+            'math.bitwise',
             params: <String, Object?>{'operator': 'nand'},
           ),
-        ], extraTypes: extraTypes),
+        ]),
       );
       expect(paramErrors, hasLength(1));
       expect(paramErrors.single.message, contains('nand'));
@@ -693,31 +647,24 @@ void main() {
           _validate(<ScriptNodeModel>[
             _node(
               'n1',
-              'test.bitwiseOperator',
+              'math.bitwise',
               params: <String, Object?>{'operator': operator},
             ),
-          ], extraTypes: extraTypes),
+          ]),
         );
         expect(good, isEmpty, reason: '运算符 $operator 应合法');
       }
     });
 
     test('numberOperator 取值受限', () {
-      final ScriptNodeTypeDescriptor type = _paramHostType(
-        'test.numberOperator',
-        ScriptParamType.numberOperator,
-        defaultValue: 'lt',
-      );
-      final List<ScriptNodeTypeDescriptor> extraTypes =
-          <ScriptNodeTypeDescriptor>[type];
       final List<ScriptDiagnostic> paramErrors = _paramErrors(
         _validate(<ScriptNodeModel>[
           _node(
             'n1',
-            'test.numberOperator',
+            'logic.compareNumber',
             params: <String, Object?>{'operator': 'bogus'},
           ),
-        ], extraTypes: extraTypes),
+        ]),
       );
       expect(paramErrors, hasLength(1));
       expect(paramErrors.single.message, contains('bogus'));
@@ -738,10 +685,10 @@ void main() {
           _validate(<ScriptNodeModel>[
             _node(
               'n1',
-              'test.numberOperator',
+              'logic.compareNumber',
               params: <String, Object?>{'operator': operator},
             ),
-          ], extraTypes: extraTypes),
+          ]),
         );
         expect(good, isEmpty, reason: '运算符 $operator 应合法');
       }
@@ -750,31 +697,24 @@ void main() {
         _validate(<ScriptNodeModel>[
           _node(
             'n1',
-            'test.numberOperator',
+            'logic.compareNumber',
             params: <String, Object?>{'operator': 5},
           ),
-        ], extraTypes: extraTypes),
+        ]),
       );
       expect(nonString, hasLength(1));
       expect(nonString.single.message, contains('非法'));
     });
 
     test('hashAlgorithm 取值受限', () {
-      final ScriptNodeTypeDescriptor type = _paramHostType(
-        'test.hashAlgorithm',
-        ScriptParamType.hashAlgorithm,
-        defaultValue: 'sha256',
-      );
-      final List<ScriptNodeTypeDescriptor> extraTypes =
-          <ScriptNodeTypeDescriptor>[type];
       final List<ScriptDiagnostic> paramErrors = _paramErrors(
         _validate(<ScriptNodeModel>[
           _node(
             'n1',
-            'test.hashAlgorithm',
-            params: <String, Object?>{'operator': 'sha3'},
+            'crypto.fileHash',
+            params: <String, Object?>{'algorithm': 'sha3'},
           ),
-        ], extraTypes: extraTypes),
+        ]),
       );
       expect(paramErrors, hasLength(1));
       expect(paramErrors.single.message, contains('sha3'));
@@ -795,10 +735,10 @@ void main() {
           _validate(<ScriptNodeModel>[
             _node(
               'n1',
-              'test.hashAlgorithm',
-              params: <String, Object?>{'operator': algorithm},
+              'crypto.fileHash',
+              params: <String, Object?>{'algorithm': algorithm},
             ),
-          ], extraTypes: extraTypes),
+          ]),
         );
         expect(good, isEmpty, reason: '算法 $algorithm 应合法');
       }
@@ -1028,6 +968,28 @@ void main() {
           reason: valid,
         );
       }
+    });
+
+    test('signFile：password 非空不豁免口令环境变量名校验', () {
+      final List<ScriptDiagnostic> diagnostics = _errors(
+        _validate(<ScriptNodeModel>[
+          _node(
+            'n1',
+            'crypto.signFile',
+            params: <String, Object?>{
+              'pfxPath': 'cert.pfx',
+              'password': 'pw',
+              'passwordEnv': 'BAD-NAME',
+            },
+          ),
+        ]),
+      );
+      final ScriptDiagnostic envError = _diagnosticWith(
+        diagnostics,
+        '不是合法环境变量名',
+      );
+      expect(envError.nodeId, 'n1');
+      expect(envError.message, contains('BAD-NAME'));
     });
 
     test('passwordEnv 为空时不校验（默认参数只报二选一）', () {

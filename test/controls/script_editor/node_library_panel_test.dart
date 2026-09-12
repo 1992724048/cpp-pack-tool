@@ -213,7 +213,7 @@ void main() {
       );
       expect(find.text('字符串'), findsOneWidget);
 
-      // 分类名匹配：文件 → 文件组全部 6 项
+      // 分类名匹配：文件 → 文件组全部 9 项
       await tester.enterText(find.byKey(const Key('nodeLibrarySearch')), '文件');
       await tester.pump();
       expect(
