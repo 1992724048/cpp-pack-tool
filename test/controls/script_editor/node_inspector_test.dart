@@ -449,52 +449,156 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('scriptFilePath 建议列表仅含脚本扩展名，非脚本路径被滤除', (
+    testWidgets('scriptFilePath 项来自包源目录脚本映射 files/ 前缀，非脚本与生成脚本不出现', (
       WidgetTester tester,
     ) async {
       final ScriptProjectModel project = _project();
       project.nodes = <ScriptNodeModel>[
         ScriptNodeModel(id: 'n1', type: 'context.scriptFile'),
       ];
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'x.lib', path: 'lib/x.lib', size: 4),
+          FileModel(name: 'data.txt', path: 'docs/data.txt', size: 4),
+          FileModel(name: 'run.bat', path: 'scripts/run.bat', size: 4),
+          FileModel(name: 'run.bat', path: 'scripts/run.bat', size: 4),
+          // 文件名酷似生成脚本，但它是源于 pack.files 的源文件，应出现。
+          FileModel(name: 'script_9.ps1', path: 'scripts/script_9.ps1', size: 4),
+          FileModel(name: 'INSTALL.BAT', path: 'INSTALL.BAT', size: 4),
+          FileModel(name: 'setup.exe', path: 'tools/setup.exe', size: 4),
+        ];
       final _Harness harness = await _pumpInspector(
         tester,
+        pack: pack,
         project: project,
         packagePaths: const <String>[
-          'lib/x.lib',
-          'files/run.bat',
           'files/scripts/script_1.ps1',
-          'files/data.txt',
+          'files/from-plan.bat',
         ],
       );
       final GraphEditorController controller = harness.controller!;
       controller.selectNode('n1');
       await tester.pump();
 
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(
+        find.byKey(const Key('inspectorField_file')),
+      );
+      // 大小写不敏感排序 + 同路径去重；非脚本与包内生成脚本不出现。
+      final List<String?> items = combo.items!
+          .map((ComboBoxItem<String> item) => item.value)
+          .toList();
+      expect(items, <String>[
+        'files/INSTALL.BAT',
+        'files/scripts/run.bat',
+        'files/scripts/script_9.ps1',
+        'files/tools/setup.exe',
+      ]);
+      expect(items, isNot(contains('lib/x.lib')));
+      expect(items, isNot(contains('files/docs/data.txt')));
+      expect(items, isNot(contains('files/scripts/script_1.ps1')));
+      expect(items, isNot(contains('files/from-plan.bat')));
+      expect(combo.value, isNull);
+      expect(find.text('选择脚本'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('scriptFilePath 下拉点选后写回包内相对路径', (WidgetTester tester) async {
+      final ScriptProjectModel project = _project();
+      final ScriptNodeModel node = ScriptNodeModel(
+        id: 'n1',
+        type: 'process.runScript',
+      );
+      node.params['script'] = 'files/build.ps1';
+      project.nodes = <ScriptNodeModel>[node];
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'build.ps1', path: 'build.ps1', size: 4),
+          FileModel(name: 'deploy.bat', path: 'tools/deploy.bat', size: 4),
+        ];
+      final _Harness harness = await _pumpInspector(
+        tester,
+        pack: pack,
+        project: project,
+      );
+      final GraphEditorController controller = harness.controller!;
+      controller.selectNode('n1');
+      await tester.pump();
+
+      final Finder field = find.byKey(const Key('inspectorField_script'));
+      // 当前值在项列表内时正常选中（不插入额外首项）。
+      expect(tester.widget<ComboBox<String>>(field).value, 'files/build.ps1');
+      expect(find.text('files/build.ps1'), findsOneWidget);
+
+      await _selectCombo(tester, field, 'files/tools/deploy.bat');
+
+      expect(
+        controller.project.nodes.single.params['script'],
+        'files/tools/deploy.bat',
+      );
+      expect(
+        tester.widget<ComboBox<String>>(field).value,
+        'files/tools/deploy.bat',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('scriptFilePath 当前值缺列时置于首项回显，并可改选其他项', (
+      WidgetTester tester,
+    ) async {
+      final ScriptProjectModel project = _project();
+      final ScriptNodeModel node = ScriptNodeModel(
+        id: 'n1',
+        type: 'context.scriptFile',
+      );
+      node.params['file'] = 'files/legacy/old.ps1';
+      project.nodes = <ScriptNodeModel>[node];
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'new.bat', path: 'new.bat', size: 4),
+        ];
+      final _Harness harness = await _pumpInspector(
+        tester,
+        pack: pack,
+        project: project,
+      );
+      final GraphEditorController controller = harness.controller!;
+      controller.selectNode('n1');
+      await tester.pump();
+
       final Finder field = find.byKey(const Key('inspectorField_file'));
-      expect(field, findsOneWidget);
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(field);
+      expect(combo.value, 'files/legacy/old.ps1');
+      expect(
+        combo.items!.map((ComboBoxItem<String> item) => item.value).toList(),
+        <String>['files/legacy/old.ps1', 'files/new.bat'],
+      );
+      expect(find.text('files/legacy/old.ps1'), findsOneWidget);
 
-      // 非脚本扩展名被滤除：无建议项，显示手填提示
-      await tester.enterText(field, 'data');
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('files/data.txt'), findsNothing);
-      expect(find.text('无匹配路径，将按手填内容使用'), findsOneWidget);
+      await _selectCombo(tester, field, 'files/new.bat');
 
-      // 脚本扩展名可选并写回
-      await tester.enterText(field, 'run');
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('files/run.bat'), findsOneWidget);
-      await tester.tap(find.text('files/run.bat'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(controller.project.nodes.single.params['file'], 'files/run.bat');
+      expect(controller.project.nodes.single.params['file'], 'files/new.bat');
+      expect(tester.takeException(), isNull);
+    });
 
-      // 生成脚本（files/scripts/*.ps1）同为 .ps1，不被过滤
-      await tester.enterText(field, 'script_1');
+    testWidgets('scriptFilePath 无源脚本时空态显示「选择脚本」占位且不禁用', (
+      WidgetTester tester,
+    ) async {
+      final ScriptProjectModel project = _project();
+      project.nodes = <ScriptNodeModel>[
+        ScriptNodeModel(id: 'n1', type: 'context.scriptFile'),
+      ];
+      final _Harness harness = await _pumpInspector(tester, project: project);
+      final GraphEditorController controller = harness.controller!;
+      controller.selectNode('n1');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('files/scripts/script_1.ps1'), findsOneWidget);
+
+      final ComboBox<String> combo = tester.widget<ComboBox<String>>(
+        find.byKey(const Key('inspectorField_file')),
+      );
+      expect(combo.items, isEmpty);
+      expect(combo.value, isNull);
+      expect(combo.onChanged, isNotNull);
+      expect(find.text('选择脚本'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

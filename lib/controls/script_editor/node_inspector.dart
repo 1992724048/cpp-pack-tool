@@ -1,5 +1,6 @@
 import 'package:cpp_nuget_pack/controls/script_editor/node_card.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
@@ -173,14 +174,23 @@ class _NodeInspectorState extends State<NodeInspector> {
     _loadPackagePaths();
   }
 
-  /// `scriptFilePath` 建议项：仅保留脚本扩展名（与「从包中选择脚本」
-  /// 共享 [scriptFileExtensions]）；生成脚本 `files/scripts/*.ps1` 同为
-  /// `.ps1`，按统一规则保留。
+  /// `scriptFilePath` 下拉项：`pack.files` 中的源目录脚本（扩展名 ∈
+  /// [scriptFileExtensions]，与「编译设置-从包中选择脚本」同口径）映射为包内
+  /// `files/<相对路径>`（打包时脚本一律落 `files/` 桶）；去重并按大小写不敏感
+  /// 字典序排序。编辑器生成的 `files/scripts/<id>.ps1` 不在 `pack.files` 内，
+  /// 天然不出现。
   List<String> get _scriptFilePaths {
-    return <String>[
-      for (final String path in _packagePaths)
-        if (isScriptFilePath(path)) path,
-    ];
+    final Set<String> unique = <String>{};
+    for (final FileModel file in widget.pack.files) {
+      if (scriptFileExtensions.contains(file.extension.toLowerCase())) {
+        unique.add('files/${file.path}');
+      }
+    }
+    final List<String> paths = unique.toList();
+    paths.sort(
+      (String a, String b) => a.toLowerCase().compareTo(b.toLowerCase()),
+    );
+    return paths;
   }
 
   List<AutoSuggestBoxItem<String>> _suggestItems(List<String> paths) {
@@ -504,26 +514,13 @@ class _NodeInspectorState extends State<NodeInspector> {
               _writeParam(node, param.key, item.value),
         );
       case ScriptParamType.scriptFilePath:
-        return AutoSuggestBox<String>(
-          key: Key('inspectorField_${param.key}'),
-          controller: _paramEditor(
-            node.id,
-            param.key,
-            value is String ? value : '',
+        return _denseComboBox(
+          context,
+          _buildScriptFileComboBox(
+            param: param,
+            value: value,
+            onSelected: (String next) => _writeParam(node, param.key, next),
           ),
-          items: _suggestItems(_scriptFilePaths),
-          sorter: _sortPackagePaths,
-          noResultsFoundBuilder: (BuildContext context) => Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _noMatchingPathHint,
-              style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
-            ),
-          ),
-          onChanged: (String text, TextChangedReason reason) =>
-              _writeParam(node, param.key, text),
-          onSelected: (AutoSuggestBoxItem<String> item) =>
-              _writeParam(node, param.key, item.value),
         );
       case ScriptParamType.textLines:
         return TextBox(
@@ -558,6 +555,44 @@ class _NodeInspectorState extends State<NodeInspector> {
       items: <ComboBoxItem<String>>[
         for (final MapEntry<String, String> option in options.entries)
           ComboBoxItem<String>(value: option.key, child: Text(option.value)),
+      ],
+      onChanged: (String? next) {
+        if (next != null) {
+          onSelected(next);
+        }
+      },
+    );
+  }
+
+  /// `scriptFilePath` 下拉：项 = 源目录脚本映射的包内相对路径；当前值非空且
+  /// 缺列时置于首项回显（保持可见、不被静默清空）。
+  ComboBox<String> _buildScriptFileComboBox({
+    required ScriptParamDescriptor param,
+    required Object? value,
+    required ValueChanged<String> onSelected,
+  }) {
+    final String? selected = value is String && value.isNotEmpty ? value : null;
+    final List<String> paths = _scriptFilePaths;
+    return ComboBox<String>(
+      key: Key('inspectorField_${param.key}'),
+      value: selected,
+      isExpanded: true,
+      placeholder: const Text('选择脚本'),
+      items: <ComboBoxItem<String>>[
+        if (selected != null && !paths.contains(selected))
+          ComboBoxItem<String>(
+            value: selected,
+            child: Text(
+              selected,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        for (final String path in paths)
+          ComboBoxItem<String>(
+            value: path,
+            child: Text(path, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
       ],
       onChanged: (String? next) {
         if (next != null) {
