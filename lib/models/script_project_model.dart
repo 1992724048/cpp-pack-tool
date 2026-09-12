@@ -218,7 +218,7 @@ Map<String, Object?> _filteredParams(Object? value) {
 }
 
 Object? _filteredParamValue(Object? value) {
-  if (value is String || value is bool) {
+  if (value is String || value is bool || value is num) {
     return value;
   }
   if (value is List && value.every((Object? element) => element is String)) {

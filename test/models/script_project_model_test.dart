@@ -69,7 +69,7 @@ void main() {
       });
     });
 
-    test('toMap 仅写出 string/bool/List<String> 参数', () {
+    test('toMap 写出 string/bool/num/List<String> 参数', () {
       final ScriptNodeModel node = ScriptNodeModel(
         id: 'n1',
         type: 'value.text',
@@ -96,7 +96,33 @@ void main() {
         'text': 'hi',
         'enabled': false,
         'names': <String>['a'],
+        'count': 3,
+        'ratio': 1.5,
       });
+    });
+
+    test('数字参数序列化往返保持 int/double 类型', () {
+      final ScriptNodeModel node = ScriptNodeModel(
+        id: 'n1',
+        type: 'value.number',
+      );
+      node.params['count'] = 5;
+      node.params['ratio'] = -2.5;
+      final ScriptProjectModel project = ScriptProjectModel(
+        id: 'script_1',
+        name: 'x',
+        trigger: ScriptTrigger.pre,
+      )..nodes.add(node);
+
+      final ScriptProjectModel back = ScriptProjectModel.fromMap(
+        project.toMap(),
+      );
+      final Map<String, Object?> params = back.nodes.single.params;
+
+      expect(params['count'], 5);
+      expect(params['count'], isA<int>());
+      expect(params['ratio'], -2.5);
+      expect(params['ratio'], isA<double>());
     });
   });
 
@@ -273,7 +299,7 @@ void main() {
       expect(project.nodes[1].y, 6.5);
     });
 
-    test('params 非 map 回退空且仅保留 string/bool/List<String>', () {
+    test('params 非 map 回退空且仅保留 string/bool/num/List<String>', () {
       final ScriptProjectModel project = ScriptProjectModel.fromMap(
         <String, Object?>{
           'id': 'script_1',
@@ -305,11 +331,50 @@ void main() {
 
       expect(project.nodes[0].params, isEmpty);
       final Map<String, Object?> params = project.nodes[1].params;
-      expect(params, hasLength(4));
+      expect(params, hasLength(6));
       expect(params['text'], 'hello');
       expect(params['enabled'], isTrue);
       expect(params['names'], <String>['a', 'b']);
       expect(params['loose'], <String>['x', 'y']);
+      expect(params['count'], 3);
+      expect(params['count'], isA<int>());
+      expect(params['ratio'], 1.5);
+      expect(params['ratio'], isA<double>());
+    });
+
+    test('数字参数读回保持 int/double 类型，含负数与零', () {
+      final ScriptProjectModel project = ScriptProjectModel.fromMap(
+        <String, Object?>{
+          'id': 'script_1',
+          'name': 'x',
+          'trigger': 'pre',
+          'nodes': <Object?>[
+            <String, Object?>{
+              'id': 'n1',
+              'type': 'value.number',
+              'params': <String, Object?>{
+                'intValue': 5,
+                'doubleValue': 5.5,
+                'negativeInt': -3,
+                'negativeDouble': -3.25,
+                'zero': 0,
+              },
+            },
+          ],
+        },
+      );
+
+      final Map<String, Object?> params = project.nodes.single.params;
+      expect(params['intValue'], 5);
+      expect(params['intValue'], isA<int>());
+      expect(params['doubleValue'], 5.5);
+      expect(params['doubleValue'], isA<double>());
+      expect(params['negativeInt'], -3);
+      expect(params['negativeInt'], isA<int>());
+      expect(params['negativeDouble'], -3.25);
+      expect(params['negativeDouble'], isA<double>());
+      expect(params['zero'], 0);
+      expect(params['zero'], isA<int>());
     });
 
     test('悬空边与端点非法边被丢弃', () {

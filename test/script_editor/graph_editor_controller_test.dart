@@ -251,7 +251,7 @@ void main() {
   });
 
   group('updateNodeParam', () {
-    test('接受 String / bool / List<String> 并写回', () {
+    test('接受 String / bool / num / List<String> 并写回', () {
       final GraphEditorController controller = GraphEditorController(
         _project(
           nodes: <ScriptNodeModel>[
@@ -266,6 +266,8 @@ void main() {
       controller.updateNodeParam('n3', 'filter', '*.dll');
       controller.updateNodeParam('n3', 'recursive', false);
       controller.updateNodeParam('n3', 'extraList', <String>['a', 'b']);
+      controller.updateNodeParam('n3', 'count', 3);
+      controller.updateNodeParam('n3', 'ratio', -1.5);
       expect(controller.project.nodes[0].params['value'], 'hello');
       expect(controller.project.nodes[1].params['value'], true);
       expect(controller.project.nodes[2].params['filter'], '*.dll');
@@ -274,6 +276,10 @@ void main() {
         'a',
         'b',
       ]);
+      expect(controller.project.nodes[2].params['count'], 3);
+      expect(controller.project.nodes[2].params['count'], isA<int>());
+      expect(controller.project.nodes[2].params['ratio'], -1.5);
+      expect(controller.project.nodes[2].params['ratio'], isA<double>());
     });
 
     test('List<String> 值写入防御性拷贝', () {
@@ -288,17 +294,35 @@ void main() {
       ]);
     });
 
-    test('值域外类型忽略：不写入、不通知、不抛错', () {
+    test('num 写入 int/double 原样保留且同值不重复通知', () {
+      final GraphEditorController controller = GraphEditorController(
+        _project(nodes: <ScriptNodeModel>[_node('n1', 'value.number')]),
+      );
+      int notifications = 0;
+      controller.addListener(() => notifications++);
+      controller.updateNodeParam('n1', 'value', 42);
+      expect(controller.project.nodes.single.params['value'], 42);
+      expect(controller.project.nodes.single.params['value'], isA<int>());
+      controller.updateNodeParam('n1', 'value', 42);
+      controller.updateNodeParam('n1', 'value', 3.5);
+      expect(controller.project.nodes.single.params['value'], 3.5);
+      expect(controller.project.nodes.single.params['value'], isA<double>());
+      controller.updateNodeParam('n1', 'value', -7);
+      expect(controller.project.nodes.single.params['value'], -7);
+      expect(notifications, 3);
+    });
+
+    test('值域外类型仍忽略：不写入、不通知、不抛错', () {
       final GraphEditorController controller = GraphEditorController(
         _project(nodes: <ScriptNodeModel>[_node('n1', 'value.text')]),
       );
       int notifications = 0;
       controller.addListener(() => notifications++);
-      controller.updateNodeParam('n1', 'value', 42);
-      controller.updateNodeParam('n1', 'value', 3.14);
       controller.updateNodeParam('n1', 'value', null);
       controller.updateNodeParam('n1', 'value', <Object?>['a', 1]);
       controller.updateNodeParam('n1', 'value', <int>[1, 2]);
+      controller.updateNodeParam('n1', 'value', Object());
+      controller.updateNodeParam('n1', 'value', <String, Object?>{'a': 1});
       expect(
         controller.project.nodes.single.params.containsKey('value'),
         isFalse,
@@ -977,7 +1001,7 @@ void main() {
       controller.setViewport(x: 1, y: 2, scale: 1.5);
       controller.updateNodeParam(id, 'ignored', 42);
       controller.removeNode('missing');
-      expect(notifications, 5);
+      expect(notifications, 6);
     });
   });
 }

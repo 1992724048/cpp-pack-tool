@@ -91,7 +91,7 @@ class GraphEditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 写入参数值；仅接受 String / bool / `List<String>`，其他类型忽略。
+  /// 写入参数值；仅接受 String / bool / num / `List<String>`，其他类型忽略。
   void updateNodeParam(String nodeId, String paramKey, Object? value) {
     final ScriptNodeModel? node = _findNode(nodeId);
     if (node == null) {
@@ -342,7 +342,7 @@ class GraphEditorController extends ChangeNotifier {
   }
 
   Object? _acceptedParamValue(Object? value) {
-    if (value is String || value is bool) {
+    if (value is String || value is bool || value is num) {
       return value;
     }
     if (value is List && value.every((Object? item) => item is String)) {
