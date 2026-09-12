@@ -222,8 +222,8 @@ class GraphValidator {
     return _paramErrorMessage(descriptor, param, value);
   }
 
-  /// 节点级参数规则：注册表参数声明无法表达的跨参数约束
-  /// （AES 口令二选一、签名证书来源二选一、口令环境变量名格式、变量同名同类型）。
+  /// 节点级参数规则：注册表参数声明无法表达的规则（AES 口令二选一、
+  /// 签名证书来源二选一、口令环境变量名格式、变量同名同类型、findTool 工具名必填）。
   /// 在参数校验循环之后按节点声明序追加，不改变既有诊断顺序。
   static void _validateNodeLevelParams(
     List<ScriptNodeModel> nodes,
@@ -241,6 +241,8 @@ class GraphValidator {
           _validateAesParams(node, descriptor, diagnostics);
         case 'crypto.signFile':
           _validateSignFileParams(node, descriptor, diagnostics);
+        case 'system.findTool':
+          _validateFindToolParams(node, descriptor, diagnostics);
       }
     }
     _validateVariableNameTypes(nodes, descriptorById, diagnostics);
@@ -350,6 +352,24 @@ class GraphValidator {
         isError: true,
       ),
     );
+  }
+
+  /// findTool 工具名必填：空名会令 `Find-CnpTool` 内的 `Get-Command -Name ''`
+  /// 抛参数绑定异常（`-ErrorAction SilentlyContinue` 无法抑制），故默认态即拦截。
+  static void _validateFindToolParams(
+    ScriptNodeModel node,
+    ScriptNodeTypeDescriptor descriptor,
+    List<ScriptDiagnostic> diagnostics,
+  ) {
+    if (_paramText(node, descriptor, 'name').trim().isEmpty) {
+      diagnostics.add(
+        ScriptDiagnostic(
+          message: '参数「${_paramLabel(descriptor, 'name')}」不能为空',
+          nodeId: node.id,
+          isError: true,
+        ),
+      );
+    }
   }
 
   /// 取字符串参数有效值：节点未写时回退注册表默认值，非字符串按空串处理。

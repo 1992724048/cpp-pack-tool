@@ -1136,6 +1136,81 @@ void main() {
     });
   });
 
+  group('system.findTool 名称必填（M4.4 T2）', () {
+    test('空/空白 name 恰报一条参数错误', () {
+      for (final String invalid in <String>['', '   ']) {
+        final List<ScriptDiagnostic> errors = _errors(
+          _validate(<ScriptNodeModel>[
+            _node('n1', 'flow.entry'),
+            _node(
+              'n2',
+              'system.findTool',
+              params: <String, Object?>{'name': invalid},
+            ),
+          ]),
+        );
+        expect(errors, hasLength(1), reason: '「$invalid」应判空');
+        expect(errors.single.message, '参数「工具名」不能为空');
+        expect(errors.single.nodeId, 'n2');
+        expect(errors.single.isError, isTrue);
+      }
+    });
+
+    test('未填写 name（默认空串）报错', () {
+      final List<ScriptDiagnostic> errors = _errors(
+        _validate(<ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node('n2', 'system.findTool'),
+        ]),
+      );
+      expect(errors, hasLength(1));
+      expect(errors.single.message, '参数「工具名」不能为空');
+      expect(errors.single.nodeId, 'n2');
+    });
+
+    test('非空 name 无 error', () {
+      for (final String valid in <String>['signtool', '7z', 'tool.exe']) {
+        final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'system.findTool',
+            params: <String, Object?>{'name': valid},
+          ),
+        ]);
+        expect(_errors(diagnostics), isEmpty, reason: '「$valid」应合法');
+      }
+    });
+
+    test('诊断顺序：参数错误 → findTool 名称错误 → 必填输入', () {
+      final List<ScriptDiagnostic> diagnostics = _validate(<ScriptNodeModel>[
+        _node('n1', 'flow.entry'),
+        _node(
+          'n2',
+          'context.macro',
+          params: <String, Object?>{'macro': 'Nope'},
+        ),
+        _node('n3', 'system.findTool', params: <String, Object?>{'name': ''}),
+        _node('n4', 'log.message'),
+      ]);
+      final int paramIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) =>
+            diagnostic.message.contains('MSBuild 宏白名单'),
+      );
+      final int findToolIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('不能为空'),
+      );
+      final int requiredIndex = diagnostics.indexWhere(
+        (ScriptDiagnostic diagnostic) => diagnostic.message.contains('必填输入'),
+      );
+      expect(paramIndex, greaterThanOrEqualTo(0));
+      expect(findToolIndex, greaterThanOrEqualTo(0));
+      expect(requiredIndex, greaterThanOrEqualTo(0));
+      expect(paramIndex, lessThan(findToolIndex));
+      expect(findToolIndex, lessThan(requiredIndex));
+    });
+  });
+
   group('变量名校验（M4.3 T2）', () {
     const List<String> variableTypes = <String>[
       'variable.setNumber',
