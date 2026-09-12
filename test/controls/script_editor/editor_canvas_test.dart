@@ -107,6 +107,32 @@ void main() {
       );
     });
 
+    testWidgets('值条读取节点参数：process.run 关闭失败中断显示「否」', (
+      WidgetTester tester,
+    ) async {
+      await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'process.run', x: 40, y: 60)
+              ..params['abortOnFailure'] = false,
+          ],
+        ),
+      );
+
+      final Finder strip = find.byKey(const Key('nodeValueStrip_n1'));
+      expect(strip, findsOneWidget);
+      expect(
+        find.descendant(of: strip, matching: find.text('否')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: strip, matching: find.text('是')),
+        findsNothing,
+        reason: '区分默认回退：值条必须读节点参数（paramValues 接线）而非注册表默认 true',
+      );
+    });
+
     testWidgets('无参数节点不渲染值条且几何与 M2 基准一致', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

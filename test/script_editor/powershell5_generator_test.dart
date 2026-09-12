@@ -1042,7 +1042,7 @@ void main() {
       // Dart VM 对 |指数| 有限值使用固定记法（与区域无关、无 e 记号）
       expect(numberLiteral(1e20), '100000000000000000000.0');
       expect(numberLiteral(1e-5), '0.00001');
-      // 指数记法仅在 VM 定界外出现：`e+` 必须归一为 `e`（PS 5.1 字面量歧义）
+      // 指数记法仅在 VM 定界外出现：`e+` 归一为 `e`（canonical 形式）
       expect(numberLiteral(1e21), '1e21');
       expect(numberLiteral(-1e21), '(-1e21)');
       expect(numberLiteral(1e-7), '1e-7');

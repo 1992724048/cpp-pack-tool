@@ -223,7 +223,8 @@ void main() {
         buildModel: BuildModel.release,
       );
       script.nodes.add(
-        ScriptNodeModel(id: 'n1', type: 'flow.entry', x: 40, y: 60),
+        ScriptNodeModel(id: 'n1', type: 'flow.entry', x: 40, y: 60)
+          ..params['value'] = 5.5,
       );
       script.edges.add(
         ScriptEdgeModel(
@@ -248,6 +249,9 @@ void main() {
       expect(loaded.buildModel, BuildModel.release);
       expect(loaded.nodes.single.type, 'flow.entry');
       expect(loaded.nodes.single.x, 40);
+      final Object? storedNumber = loaded.nodes.single.params['value'];
+      expect(storedNumber, isA<double>());
+      expect(storedNumber, 5.5);
       expect(loaded.edges.single.to.pin, 'exec');
     });
 
