@@ -267,5 +267,6 @@ PackModel _withDependencies(
     ..macros = pack.macros
     ..libDirectories = pack.libDirectories
     ..libraries = pack.libraries
-    ..history = pack.history;
+    ..history = pack.history
+    ..scripts = pack.scripts;
 }

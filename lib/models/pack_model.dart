@@ -5,6 +5,8 @@ import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 
 class PackModel {
   final String name;
@@ -22,6 +24,7 @@ class PackModel {
   List<LibDirModel> libDirectories = [];
   List<LibraryModel> libraries = [];
   List<HistoryModel> history = [];
+  List<ScriptProjectModel> scripts = [];
 
   static List<PackModel> packs = [];
 
@@ -67,10 +70,16 @@ class PackModel {
       'history': <Map<String, Object?>>[
         for (final HistoryModel entry in history) entry.toMap(),
       ],
+      'scripts': <Map<String, Object?>>[
+        for (final ScriptProjectModel script in scripts) script.toMap(),
+      ],
     };
   }
 
-  factory PackModel.fromMap(Map<String, Object?> map) {
+  factory PackModel.fromMap(
+    Map<String, Object?> map, {
+    List<String>? warnings,
+  }) {
     final PackModel pack = PackModel(
       name: _requiredString(map, 'name'),
       version: _requiredString(map, 'version'),
@@ -109,6 +118,23 @@ class PackModel {
       for (final Map<String, Object?> item in _mapList(map, 'history'))
         HistoryModel.fromMap(item),
     ]);
+
+    final Set<String> scriptIds = <String>{};
+    for (final Map<String, Object?> item in _mapList(map, 'scripts')) {
+      try {
+        final ScriptProjectModel script = ScriptProjectModel.fromMap(
+          item,
+          warnings: warnings,
+        );
+        if (!scriptIds.add(script.id)) {
+          warnings?.add('脚本 id 重复，已丢弃：${script.id}');
+          continue;
+        }
+        pack.scripts.add(script);
+      } catch (error) {
+        warnings?.add(_describeScriptError(item, error));
+      }
+    }
     return pack;
   }
 }
@@ -158,4 +184,10 @@ String? _optionalString(Map<String, Object?> map, String key) {
     throw FormatException('字段 $key 类型错误，应为字符串');
   }
   return value.isEmpty ? null : value;
+}
+
+String _describeScriptError(Map<String, Object?> item, Object error) {
+  final Object? id = item['id'];
+  final String label = id is String && id.isNotEmpty ? id : '未知 id';
+  return '脚本「$label」解析失败，已丢弃：${formatError(error)}';
 }

@@ -63,12 +63,20 @@ class PackStore {
         if (document is! Map) {
           throw const FormatException('文件内容为空或不是 YAML 映射');
         }
-        packs.add(PackModel.fromMap(_stringKeyMap(document)));
+        final List<String> warnings = <String>[];
+        packs.add(
+          PackModel.fromMap(_stringKeyMap(document), warnings: warnings),
+        );
+        for (final String warning in warnings) {
+          errors.add(
+            PackLoadError(fileName: baseName(file.path), message: warning),
+          );
+        }
       } catch (error) {
         errors.add(
           PackLoadError(
             fileName: baseName(file.path),
-            message: _describeError(error),
+            message: formatError(error),
           ),
         );
       }
@@ -169,14 +177,4 @@ int _compareNames(String first, String second) {
     return insensitive;
   }
   return first.compareTo(second);
-}
-
-String _describeError(Object error) {
-  if (error is FormatException) {
-    final Object message = error.message;
-    if (message is String && message.isNotEmpty) {
-      return message;
-    }
-  }
-  return error.toString();
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/packaging/cmake_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
@@ -382,6 +383,31 @@ void main() {
       ].fold<int>(0, (int sum, String text) => sum + utf8.encode(text).length);
       expect(plan.totalSize, 100 + generatedBytes);
     });
+
+    test('含脚本包不产出脚本条目与脚本 Target 片段', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ]
+        ..scripts = <ScriptProjectModel>[_validScript()];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final List<String> paths = plan.entries
+          .map((PackageEntry entry) => entry.packagePath)
+          .toList();
+
+      expect(
+        paths.where((String path) => path.toLowerCase().endsWith('.ps1')),
+        isEmpty,
+      );
+      expect(paths.where((String path) => path.contains('scripts/')), isEmpty);
+      final String targets = _generated(
+        plan,
+        'lib/cmake/demo/demoTargets.cmake',
+      );
+      expect(targets, isNot(contains('CnpScripts_')));
+      expect(targets, isNot(contains('<Exec')));
+    });
   });
 }
 
@@ -432,3 +458,27 @@ String _generated(PackagePlan plan, String packagePath) {
 }
 
 String _joinLines(List<String> lines) => '${lines.join('\n')}\n';
+
+ScriptProjectModel _validScript() {
+  final ScriptProjectModel project = ScriptProjectModel(
+    id: 'script_1',
+    name: '脚本 1',
+    trigger: ScriptTrigger.pre,
+  );
+  project.nodes = <ScriptNodeModel>[
+    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
+    ScriptNodeModel(id: 'n2', type: 'value.text')..params['value'] = '你好',
+    ScriptNodeModel(id: 'n3', type: 'log.message'),
+  ];
+  project.edges = <ScriptEdgeModel>[
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
+      to: ScriptEdgeEndpoint(node: 'n3', pin: 'exec'),
+    ),
+    ScriptEdgeModel(
+      from: ScriptEdgeEndpoint(node: 'n2', pin: 'result'),
+      to: ScriptEdgeEndpoint(node: 'n3', pin: 'message'),
+    ),
+  ];
+  return project;
+}

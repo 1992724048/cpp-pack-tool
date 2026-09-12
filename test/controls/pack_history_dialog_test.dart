@@ -4,6 +4,7 @@ import 'package:cpp_nuget_pack/controls/pack_history_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -94,6 +95,50 @@ void main() {
     expect(saved!.history.single.message, '旧记录');
     expect(find.text('新记录'), findsNothing);
     expect(find.text('已删除'), findsOneWidget);
+  });
+
+  testWidgets('删除历史条目后保存的包保留脚本', (tester) async {
+    final PackModel pack =
+        _pack(
+            history: <HistoryModel>[
+              HistoryModel(
+                time: DateTime(2026, 9, 11, 14, 30, 5),
+                type: HistoryType.created,
+                message: '旧记录',
+              ),
+              HistoryModel(
+                time: DateTime(2026, 9, 12, 9, 0, 0),
+                type: HistoryType.exported,
+                message: '新记录',
+              ),
+            ],
+          )
+          ..scripts = <ScriptProjectModel>[
+            ScriptProjectModel(
+              id: 'script_1',
+              name: '脚本 1',
+              trigger: ScriptTrigger.pre,
+            ),
+          ];
+    PackModel? saved;
+
+    await _pumpDialog(
+      tester,
+      pack: pack,
+      onSave: (PackModel pack) async {
+        saved = pack;
+        return true;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('historyDeleteButton_0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.history, hasLength(1));
+    expect(saved!.scripts, hasLength(1));
+    expect(saved!.scripts.single.id, 'script_1');
   });
 
   testWidgets('保存失败时保留条目且不显示已删除', (tester) async {
