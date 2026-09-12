@@ -14,11 +14,13 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
   Map<String, String>? environment,
 });
 
-/// UI 层构建入口：以位置参数 `onStage` 调用 [runPackBuild]。
+/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment` 调用
+/// [runPackBuild]。
 typedef PackBuildRunner = Future<void> Function(
   PackModel pack,
-  void Function(PackBuildStage) onStage,
-);
+  void Function(PackBuildStage) onStage, {
+  Map<String, String>? environment,
+});
 
 /// 构建阶段：下载源码 / 执行构建。
 enum PackBuildStage { downloading, building }
@@ -42,11 +44,15 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// 流程：解析 `build.py` 首行仓库地址 → 目标目录（`<cacheRoot>/build/<清洗包ID>`）
 /// 克隆或拉取 → 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`（包源目录）环境变量
 /// 运行 `python build.py`。
+///
+/// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
+/// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
 Future<void> runPackBuild(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   PackProcessRunner processRunner = Process.run,
   String cacheRoot = 'cache',
+  Map<String, String>? environment,
 }) async {
   final String? sourcePath = pack.sourcePath;
   if (sourcePath == null) {
@@ -74,13 +80,19 @@ Future<void> runPackBuild(
   );
   await target.parent.create(recursive: true);
   if (await _hasGitDirectory(target)) {
-    await _pullRepository(processRunner, target);
+    await _pullRepository(processRunner, target, environment);
   } else {
-    await _cloneRepository(processRunner, target, repository);
+    await _cloneRepository(processRunner, target, repository, environment);
   }
 
   onStage(PackBuildStage.building);
-  await _runBuildScript(processRunner, sourcePath, scriptFile.path, target);
+  await _runBuildScript(
+    processRunner,
+    sourcePath,
+    scriptFile.path,
+    target,
+    environment,
+  );
 }
 
 Future<bool> _hasGitDirectory(Directory target) async {
@@ -93,11 +105,14 @@ Future<bool> _hasGitDirectory(Directory target) async {
 Future<void> _pullRepository(
   PackProcessRunner processRunner,
   Directory target,
+  Map<String, String>? environment,
 ) async {
-  final ProcessResult result = await _runGit(processRunner, const <String>[
-    'pull',
-    '--ff-only',
-  ], workingDirectory: target.path);
+  final ProcessResult result = await _runGit(
+    processRunner,
+    const <String>['pull', '--ff-only'],
+    workingDirectory: target.path,
+    environment: environment,
+  );
   if (result.exitCode != 0) {
     throw PackBuildException(
       '拉取源码失败（退出码 ${result.exitCode}）',
@@ -110,13 +125,14 @@ Future<void> _cloneRepository(
   PackProcessRunner processRunner,
   Directory target,
   String repository,
+  Map<String, String>? environment,
 ) async {
   await _deleteResidual(target.path);
   final ProcessResult result = await _runGit(processRunner, <String>[
     'clone',
     repository,
     target.path,
-  ]);
+  ], environment: environment);
   if (result.exitCode == 0) {
     return;
   }
@@ -131,12 +147,16 @@ Future<ProcessResult> _runGit(
   PackProcessRunner processRunner,
   List<String> arguments, {
   String? workingDirectory,
+  Map<String, String>? environment,
 }) {
   return processRunner(
     'git',
     arguments,
     workingDirectory: workingDirectory,
-    environment: const <String, String>{_gitPromptEnvironmentKey: '0'},
+    environment: <String, String>{
+      ...?environment,
+      _gitPromptEnvironmentKey: '0',
+    },
   );
 }
 
@@ -156,8 +176,10 @@ Future<void> _runBuildScript(
   String sourcePath,
   String scriptPath,
   Directory target,
+  Map<String, String>? environment,
 ) async {
-  final Map<String, String> environment = <String, String>{
+  final Map<String, String> variables = <String, String>{
+    ...?environment,
     'SRC_PATH': target.absolute.path,
     'BUILD_OUT': Directory(sourcePath).absolute.path,
   };
@@ -165,7 +187,7 @@ Future<void> _runBuildScript(
     processRunner,
     sourcePath,
     scriptPath,
-    environment,
+    variables,
   );
   if (result.exitCode != 0) {
     throw PackBuildException(

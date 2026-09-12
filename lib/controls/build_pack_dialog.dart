@@ -1,23 +1,34 @@
+import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-enum _BuildStage { downloading, building, remapping, completed, failed }
+enum _BuildStage {
+  preparing,
+  downloading,
+  building,
+  remapping,
+  completed,
+  failed,
+}
 
 class BuildPackDialog extends StatefulWidget {
   const BuildPackDialog({
     super.key,
     required this.pack,
     this.build = runPackBuild,
+    required this.prepare,
     required this.scanFiles,
     required this.onApply,
   });
 
   final PackModel pack;
   final PackBuildRunner build;
+  final Future<BuildEnvironment> Function(PackModel pack) prepare;
   final Future<List<FileModel>> Function(String sourcePath) scanFiles;
   final Future<void> Function(PackModel pack) onApply;
 
@@ -32,9 +43,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     fontSize: 13,
   );
 
-  _BuildStage _stage = _BuildStage.downloading;
+  _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
   String? _outputTail;
+  BuildEnvironment? _environment;
   List<FileModel> _files = const <FileModel>[];
   int _addedCount = 0;
   int _removedCount = 0;
@@ -42,12 +54,31 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   @override
   void initState() {
     super.initState();
-    _build();
+    _prepare();
   }
 
-  Future<void> _build() async {
+  Future<void> _prepare() async {
+    final BuildEnvironment environment;
     try {
-      await widget.build(widget.pack, _onBuildStage);
+      environment = await widget.prepare(widget.pack);
+    } catch (error) {
+      _showFailure(error);
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _environment = environment);
+    await _build(environment);
+  }
+
+  Future<void> _build(BuildEnvironment environment) async {
+    try {
+      await widget.build(
+        widget.pack,
+        _onBuildStage,
+        environment: environment.environment,
+      );
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
       return;
@@ -122,6 +153,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final BuildEnvironment? environment = _environment;
     return ContentDialog(
       key: const Key('buildPackDialog'),
       title: const Text('构建'),
@@ -134,6 +166,14 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
             Text('包名：${widget.pack.name}'),
             const SizedBox(height: 4),
             Text('源目录：${widget.pack.sourcePath ?? '未知'}'),
+            if (environment != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '编译器：${compilerKindLabel(environment.compiler.kind)} '
+                '${environment.compiler.version}',
+                key: const Key('buildCompilerLabel'),
+              ),
+            ],
             const SizedBox(height: 12),
             _buildStatus(),
           ],
@@ -150,12 +190,17 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   }
 
   bool get _isRunning =>
+      _stage == _BuildStage.preparing ||
       _stage == _BuildStage.downloading ||
       _stage == _BuildStage.building ||
       _stage == _BuildStage.remapping;
 
   Widget _buildStatus() {
     switch (_stage) {
+      case _BuildStage.preparing:
+        return const Row(
+          children: [ProgressRing(), SizedBox(width: 12), Text('正在准备构建环境…')],
+        );
       case _BuildStage.downloading:
         return const Row(
           children: [ProgressRing(), SizedBox(width: 12), Text('正在下载源码…')],

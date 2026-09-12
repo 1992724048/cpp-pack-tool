@@ -2,12 +2,19 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 
 enum ThemeModeSetting { system, dark, light }
 
+const List<String> _defaultCompilerPriority = <String>[
+  'icx',
+  'clang-cl',
+  'msvc',
+];
+
 class SettingsModel {
   const SettingsModel({
     this.outputDirectory,
     this.themeMode = ThemeModeSetting.system,
     this.darkFlavor = 'mocha',
     this.accent = 'teal',
+    this.compilerPriority = _defaultCompilerPriority,
   });
 
   final String? outputDirectory;
@@ -15,12 +22,16 @@ class SettingsModel {
   final String darkFlavor;
   final String accent;
 
+  /// 编译器优先级（`icx` / `clang-cl` / `msvc`，自高到低）。
+  final List<String> compilerPriority;
+
   Map<String, Object?> toMap() {
     return <String, Object?>{
       if (outputDirectory != null) 'outputDirectory': outputDirectory,
       'themeMode': themeMode.name,
       'darkFlavor': darkFlavor,
       'accent': accent,
+      'compilerPriority': <String>[...compilerPriority],
     };
   }
 
@@ -30,8 +41,20 @@ class SettingsModel {
       themeMode: _themeModeFrom(map['themeMode']),
       darkFlavor: _allowedValue(map['darkFlavor'], darkFlavorNames, 'mocha'),
       accent: _allowedValue(map['accent'], accentColorNames, 'teal'),
+      compilerPriority: _compilerPriorityFrom(map['compilerPriority']),
     );
   }
+}
+
+List<String> _compilerPriorityFrom(Object? value) {
+  if (value is! List) {
+    return _defaultCompilerPriority;
+  }
+  final List<String> entries = <String>[
+    for (final Object? item in value)
+      if (item is String && item.trim().isNotEmpty) item.trim(),
+  ];
+  return entries.isEmpty ? _defaultCompilerPriority : entries;
 }
 
 String? _optionalString(Object? value) {

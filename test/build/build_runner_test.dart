@@ -388,6 +388,137 @@ void main() {
       );
     });
   });
+
+  group('环境注入', () {
+    test('注入的子进程环境透传到 git 与 python 调用', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final Map<String, String> injected = <String, String>{
+        'CNP_COMPILER_KIND': 'icx',
+        'CNP_TOOLS_DIR': r'D:\tools',
+        'PATH': r'D:\tools\ninja;D:\tools\cmake\bin',
+      };
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+        environment: injected,
+      );
+
+      expect(calls, hasLength(2));
+      expect(calls[0].environment, <String, String>{
+        ...injected,
+        'GIT_TERMINAL_PROMPT': '0',
+      });
+      expect(calls[1].environment, <String, String>{
+        ...injected,
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+    });
+
+    test('未注入环境（null）时沿用既有内建变量', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+      );
+
+      expect(calls, hasLength(2));
+      expect(calls[0].environment, <String, String>{
+        'GIT_TERMINAL_PROMPT': '0',
+      });
+      expect(calls[1].environment, <String, String>{
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+    });
+
+    test('注入的同名变量不覆盖必需变量', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+        environment: <String, String>{
+          'GIT_TERMINAL_PROMPT': '1',
+          'SRC_PATH': r'D:\bogus',
+          'BUILD_OUT': r'D:\bogus',
+        },
+      );
+
+      expect(calls, hasLength(2));
+      expect(calls[0].environment, <String, String>{
+        'GIT_TERMINAL_PROMPT': '0',
+        'SRC_PATH': r'D:\bogus',
+        'BUILD_OUT': r'D:\bogus',
+      });
+      expect(calls[1].environment, <String, String>{
+        'GIT_TERMINAL_PROMPT': '1',
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+    });
+
+    test('python 回退 py 时同样携带注入环境', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n');
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final Map<String, String> injected = <String, String>{
+        'CNP_CMAKE': r'D:\tools\cmake\bin\cmake.exe',
+      };
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (call) async {
+          if (call.executable == 'python') {
+            throw ProcessException('python', <String>['build.py'], 'not found');
+          }
+          return _success();
+        }),
+        cacheRoot: cacheRoot,
+        environment: injected,
+      );
+
+      expect(calls, hasLength(3));
+      expect(calls[2].executable, 'py');
+      expect(calls[2].environment, <String, String>{
+        ...injected,
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+    });
+  });
 }
 
 PackModel _pack({String? sourcePath, List<FileModel>? files}) {

@@ -9,6 +9,7 @@ void main() {
     expect(settings.themeMode, ThemeModeSetting.system);
     expect(settings.darkFlavor, 'mocha');
     expect(settings.accent, 'teal');
+    expect(settings.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
   });
 
   test('toMap 省略 null 输出目录且保留其余字段', () {
@@ -18,6 +19,7 @@ void main() {
     expect(map['themeMode'], 'system');
     expect(map['darkFlavor'], 'mocha');
     expect(map['accent'], 'teal');
+    expect(map['compilerPriority'], <String>['icx', 'clang-cl', 'msvc']);
   });
 
   test('往返保留全部字段', () {
@@ -26,6 +28,7 @@ void main() {
       themeMode: ThemeModeSetting.dark,
       darkFlavor: 'frappe',
       accent: 'mauve',
+      compilerPriority: <String>['msvc', 'icx'],
     );
 
     final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
@@ -34,6 +37,7 @@ void main() {
     expect(loaded.themeMode, ThemeModeSetting.dark);
     expect(loaded.darkFlavor, 'frappe');
     expect(loaded.accent, 'mauve');
+    expect(loaded.compilerPriority, <String>['msvc', 'icx']);
   });
 
   test('未知枚举与非法值回退默认', () {
@@ -57,6 +61,23 @@ void main() {
     expect(loaded.darkFlavor, 'mocha');
     expect(loaded.accent, 'teal');
     expect(loaded.outputDirectory, isNull);
+    expect(loaded.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+  });
+
+  test('编译器优先级容错：非列表、空列表回退默认，非法项过滤', () {
+    final SettingsModel nonList = SettingsModel.fromMap(<String, Object?>{
+      'compilerPriority': 42,
+    });
+    final SettingsModel empty = SettingsModel.fromMap(<String, Object?>{
+      'compilerPriority': <Object?>[],
+    });
+    final SettingsModel filtered = SettingsModel.fromMap(<String, Object?>{
+      'compilerPriority': <Object?>['msvc', 42, '', '  ', 'icx'],
+    });
+
+    expect(nonList.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(empty.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(filtered.compilerPriority, <String>['msvc', 'icx']);
   });
 
   test('空字符串输出目录视为未设置', () {

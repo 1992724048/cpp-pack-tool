@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -155,6 +158,141 @@ void main() {
     expect(find.text('已保存'), findsNothing);
   });
 
+  testWidgets('编译器列表按优先级顺序展示检测结果', (tester) async {
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(compilerPriority: <String>['msvc', 'icx']),
+      onSave: (_) async {},
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+        _compiler(CompilerKind.msvc, '14.44.35207'),
+      ],
+    );
+
+    expect(find.text('编译器'), findsOneWidget);
+    expect(find.text('MSVC'), findsOneWidget);
+    expect(find.text('14.44.35207'), findsOneWidget);
+    expect(find.text('ICX'), findsOneWidget);
+    expect(find.text('2026.1.1'), findsOneWidget);
+
+    final double msvcTop = tester
+        .getTopLeft(find.byKey(const Key('settingCompilerRow_msvc')))
+        .dy;
+    final double icxTop = tester
+        .getTopLeft(find.byKey(const Key('settingCompilerRow_icx')))
+        .dy;
+    expect(msvcTop, lessThan(icxTop));
+  });
+
+  testWidgets('未检测到的编译器显示未检测到', (tester) async {
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(
+        compilerPriority: <String>['icx', 'clang-cl'],
+      ),
+      onSave: (_) async {},
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+      ],
+    );
+
+    expect(find.text('clang-cl'), findsOneWidget);
+    expect(find.text('未检测到'), findsOneWidget);
+    expect(find.text('2026.1.1'), findsOneWidget);
+  });
+
+  testWidgets('检测进行中显示加载态', (tester) async {
+    final Completer<List<DetectedCompiler>> gate =
+        Completer<List<DetectedCompiler>>();
+
+    await _pumpSetting(
+      tester,
+      onSave: (_) async {},
+      detectCompilers: () => gate.future,
+    );
+
+    expect(find.text('正在检测编译器…'), findsOneWidget);
+    expect(find.byKey(const Key('settingCompilerRow_icx')), findsNothing);
+
+    gate.complete(<DetectedCompiler>[_compiler(CompilerKind.icx, '2026.1.1')]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('正在检测编译器…'), findsNothing);
+    expect(find.byKey(const Key('settingCompilerRow_icx')), findsOneWidget);
+    expect(find.text('2026.1.1'), findsOneWidget);
+  });
+
+  testWidgets('上移下移交换顺序并保存完整模型', (tester) async {
+    SettingsModel? saved;
+
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(
+        outputDirectory: r'D:\nuget\out',
+        themeMode: ThemeModeSetting.dark,
+        darkFlavor: 'frappe',
+        accent: 'mauve',
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('settingCompilerMoveDown_icx')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.compilerPriority, <String>['clang-cl', 'icx', 'msvc']);
+    expect(saved!.outputDirectory, r'D:\nuget\out');
+    expect(saved!.themeMode, ThemeModeSetting.dark);
+    expect(saved!.darkFlavor, 'frappe');
+    expect(saved!.accent, 'mauve');
+    expect(find.text('已保存'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('settingCompilerMoveUp_icx')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved!.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+  });
+
+  testWidgets('编译器首行上移与末行下移禁用', (tester) async {
+    await _pumpSetting(tester, onSave: (_) async {});
+
+    expect(_moveUpButton(tester, 'icx').onPressed, isNull);
+    expect(_moveDownButton(tester, 'icx').onPressed, isNotNull);
+    expect(_moveUpButton(tester, 'msvc').onPressed, isNotNull);
+    expect(_moveDownButton(tester, 'msvc').onPressed, isNull);
+  });
+
+  testWidgets('重新检测刷新编译器版本', (tester) async {
+    int calls = 0;
+
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(compilerPriority: <String>['icx']),
+      onSave: (_) async {},
+      detectCompilers: () async {
+        calls++;
+        return <DetectedCompiler>[
+          _compiler(CompilerKind.icx, calls == 1 ? '2026.1.1' : '2026.2.0'),
+        ];
+      },
+    );
+
+    expect(find.text('2026.1.1'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('settingCompilerRefreshButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(calls, 2);
+    expect(find.text('2026.2.0'), findsOneWidget);
+    expect(find.text('2026.1.1'), findsNothing);
+  });
+
   testWidgets('宽松约束下铺满可用区域且带页面背景表面', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -168,6 +306,7 @@ void main() {
             settings: const SettingsModel(),
             pickDirectory: () async => null,
             onSave: (_) async {},
+            detectCompilers: _noCompilers,
           ),
         ),
       ),
@@ -190,6 +329,7 @@ Future<void> _pumpSetting(
   SettingsModel settings = const SettingsModel(),
   required Future<void> Function(SettingsModel settings) onSave,
   Future<String?> Function()? pickDirectory,
+  Future<List<DetectedCompiler>> Function()? detectCompilers,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -206,13 +346,33 @@ Future<void> _pumpSetting(
               await onSave(next);
               setState(() => settings = next);
             },
+            detectCompilers: detectCompilers ?? _noCompilers,
           );
         },
       ),
     ),
   );
   await tester.pump();
+  await tester.pump();
 }
+
+Future<List<DetectedCompiler>> _noCompilers() async =>
+    const <DetectedCompiler>[];
+
+DetectedCompiler _compiler(CompilerKind kind, String version) {
+  return DetectedCompiler(
+    kind: kind,
+    version: version,
+    executablePath: 'C:/fake/${compilerKindId(kind)}.exe',
+    environmentScript: null,
+  );
+}
+
+IconButton _moveUpButton(WidgetTester tester, String id) =>
+    tester.widget<IconButton>(find.byKey(Key('settingCompilerMoveUp_$id')));
+
+IconButton _moveDownButton(WidgetTester tester, String id) =>
+    tester.widget<IconButton>(find.byKey(Key('settingCompilerMoveDown_$id')));
 
 Future<void> _selectCombo(WidgetTester tester, Key key, String label) async {
   await tester.tap(find.byKey(key));

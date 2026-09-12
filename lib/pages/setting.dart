@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -12,11 +13,13 @@ class Setting extends StatefulWidget {
     required this.settings,
     required this.onSave,
     this.pickDirectory = getDirectoryPath,
+    this.detectCompilers = toolchain.detectCompilers,
   });
 
   final SettingsModel settings;
   final Future<void> Function(SettingsModel settings) onSave;
   final Future<String?> Function() pickDirectory;
+  final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
 
   @override
   State<Setting> createState() => _SettingState();
@@ -29,6 +32,43 @@ class _SettingState extends State<Setting> {
         ThemeModeSetting.dark: '深色',
         ThemeModeSetting.light: '浅色',
       };
+
+  List<toolchain.DetectedCompiler> _detected =
+      const <toolchain.DetectedCompiler>[];
+  bool _detecting = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _detectCompilers(showLoading: false);
+  }
+
+  Future<void> _detectCompilers({required bool showLoading}) async {
+    if (showLoading) {
+      setState(() => _detecting = true);
+    }
+    List<toolchain.DetectedCompiler> detected;
+    try {
+      detected = await widget.detectCompilers();
+    } catch (error) {
+      if (mounted) {
+        showFloatingToast(
+          context,
+          '编译器检测失败：${formatError(error)}',
+          type: FloatingToastType.error,
+          duration: const Duration(seconds: 5),
+        );
+      }
+      detected = const <toolchain.DetectedCompiler>[];
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _detected = detected;
+      _detecting = false;
+    });
+  }
 
   Future<void> _apply(SettingsModel next) async {
     try {
@@ -58,6 +98,7 @@ class _SettingState extends State<Setting> {
       themeMode: current.themeMode,
       darkFlavor: current.darkFlavor,
       accent: current.accent,
+      compilerPriority: current.compilerPriority,
     );
   }
 
@@ -72,7 +113,32 @@ class _SettingState extends State<Setting> {
       themeMode: themeMode ?? current.themeMode,
       darkFlavor: darkFlavor ?? current.darkFlavor,
       accent: accent ?? current.accent,
+      compilerPriority: current.compilerPriority,
     );
+  }
+
+  SettingsModel _compilerSettings(List<String> compilerPriority) {
+    final SettingsModel current = widget.settings;
+    return SettingsModel(
+      outputDirectory: current.outputDirectory,
+      themeMode: current.themeMode,
+      darkFlavor: current.darkFlavor,
+      accent: current.accent,
+      compilerPriority: compilerPriority,
+    );
+  }
+
+  void _moveCompiler(int index, int offset) {
+    final List<String> priority = List<String>.of(
+      widget.settings.compilerPriority,
+    );
+    final int target = index + offset;
+    if (target < 0 || target >= priority.length) {
+      return;
+    }
+    final String moved = priority.removeAt(index);
+    priority.insert(target, moved);
+    _apply(_compilerSettings(priority));
   }
 
   Future<void> _pickDirectory() async {
@@ -107,6 +173,10 @@ class _SettingState extends State<Setting> {
                 InfoLabel(label: '深色主题配色', child: _buildDarkFlavorField()),
                 const SizedBox(height: 12),
                 InfoLabel(label: '强调色', child: _buildAccentField()),
+                const SizedBox(height: 24),
+                _buildSectionTitle(context, '编译器'),
+                const SizedBox(height: 12),
+                _buildCompilerSection(context),
               ],
             ),
           ),
@@ -227,6 +297,124 @@ class _SettingState extends State<Setting> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompilerSection(BuildContext context) {
+    if (_detecting && _detected.isEmpty) {
+      return const Row(
+        children: [
+          SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2)),
+          SizedBox(width: 12),
+          Text('正在检测编译器…'),
+        ],
+      );
+    }
+    final List<String> priority = widget.settings.compilerPriority;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '优先使用的编译器（自上而下）',
+                style: TextStyle(
+                  color: FluentTheme.of(context)
+                      .resources
+                      .textFillColorSecondary,
+                ),
+              ),
+            ),
+            Button(
+              key: const Key('settingCompilerRefreshButton'),
+              onPressed: _detecting
+                  ? null
+                  : () => _detectCompilers(showLoading: true),
+              child: const Text('重新检测'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (var index = 0; index < priority.length; index++)
+          _buildCompilerRow(priority[index], index),
+      ],
+    );
+  }
+
+  Widget _buildCompilerRow(String id, int index) {
+    final toolchain.DetectedCompiler? compiler = _findCompiler(id);
+    final FluentThemeData theme = FluentTheme.of(context);
+    return SizedBox(
+      key: Key('settingCompilerRow_$id'),
+      height: 32,
+      child: Row(
+        children: [
+          SizedBox(width: 96, child: Text(_compilerLabel(id))),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              compiler?.version ?? '未检测到',
+              overflow: TextOverflow.ellipsis,
+              style: compiler == null
+                  ? TextStyle(color: theme.resources.textFillColorSecondary)
+                  : null,
+            ),
+          ),
+          _buildMoveButton(
+            key: Key('settingCompilerMoveUp_$id'),
+            icon: FluentIcons.chevron_up,
+            tooltip: '上移',
+            onPressed: index > 0 ? () => _moveCompiler(index, -1) : null,
+          ),
+          _buildMoveButton(
+            key: Key('settingCompilerMoveDown_$id'),
+            icon: FluentIcons.chevron_down,
+            tooltip: '下移',
+            onPressed: index < widget.settings.compilerPriority.length - 1
+                ? () => _moveCompiler(index, 1)
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  toolchain.DetectedCompiler? _findCompiler(String id) {
+    for (final toolchain.DetectedCompiler compiler in _detected) {
+      if (toolchain.compilerKindId(compiler.kind) == id) {
+        return compiler;
+      }
+    }
+    return null;
+  }
+
+  String _compilerLabel(String id) {
+    for (final toolchain.CompilerKind kind in toolchain.CompilerKind.values) {
+      if (toolchain.compilerKindId(kind) == id) {
+        return toolchain.compilerKindLabel(kind);
+      }
+    }
+    return id;
+  }
+
+  Widget _buildMoveButton({
+    required Key key,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 24,
+        height: 24,
+        child: IconButton(
+          key: key,
+          icon: Icon(icon, size: 14),
+          onPressed: onPressed,
+        ),
       ),
     );
   }

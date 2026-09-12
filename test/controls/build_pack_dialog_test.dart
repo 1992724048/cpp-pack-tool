@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -8,7 +10,9 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('构建成功后依次经历阶段并显示完成统计', (tester) async {
+  testWidgets('构建成功后依次经历各阶段并显示完成统计', (tester) async {
+    final Completer<BuildEnvironment> prepareGate =
+        Completer<BuildEnvironment>();
     final Completer<void> downloadGate = Completer<void>();
     final Completer<void> buildGate = Completer<void>();
     final Completer<List<FileModel>> scanCompleter =
@@ -18,12 +22,18 @@ void main() {
 
     await _pumpDialog(
       tester,
-      build: (PackModel pack, void Function(PackBuildStage) onStage) async {
-        onStage(PackBuildStage.downloading);
-        await downloadGate.future;
-        onStage(PackBuildStage.building);
-        await buildGate.future;
-      },
+      prepare: (PackModel pack) => prepareGate.future,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+          }) async {
+            onStage(PackBuildStage.downloading);
+            await downloadGate.future;
+            onStage(PackBuildStage.building);
+            await buildGate.future;
+          },
       scanFiles: (_) => scanCompleter.future,
       onApply: (PackModel pack) {
         applied = pack;
@@ -35,13 +45,22 @@ void main() {
     expect(find.text('构建'), findsOneWidget);
     expect(find.text('包名：demo'), findsOneWidget);
     expect(find.text(r'源目录：C:\libs\demo'), findsOneWidget);
-    expect(find.text('正在下载源码…'), findsOneWidget);
+    expect(find.text('正在准备构建环境…'), findsOneWidget);
+    expect(find.byKey(const Key('buildCompilerLabel')), findsNothing);
     expect(find.byType(ProgressRing), findsOneWidget);
+    expect(_closeButton(tester).onPressed, isNull);
+
+    prepareGate.complete(_environment());
+    await tester.pump();
+    expect(find.text('正在下载源码…'), findsOneWidget);
+    expect(find.byKey(const Key('buildCompilerLabel')), findsOneWidget);
+    expect(find.text('编译器：ICX 2026.1.1'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
     downloadGate.complete();
     await tester.pump();
     expect(find.text('正在执行构建…'), findsOneWidget);
+    expect(find.text('编译器：ICX 2026.1.1'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
     buildGate.complete();
@@ -84,12 +103,17 @@ void main() {
 
     await _pumpDialog(
       tester,
-      build: (PackModel pack, void Function(PackBuildStage) onStage) async {
-        throw const PackBuildException(
-          '构建失败（退出码 1）',
-          outputTail: 'Traceback (most recent call last):\nboom',
-        );
-      },
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+          }) async {
+            throw const PackBuildException(
+              '构建失败（退出码 1）',
+              outputTail: 'Traceback (most recent call last):\nboom',
+            );
+          },
       scanFiles: (String sourcePath) async {
         scanCount++;
         return const <FileModel>[];
@@ -109,7 +133,11 @@ void main() {
   testWidgets('重新扫描失败时显示去前缀错误', (tester) async {
     await _pumpDialog(
       tester,
-      build: (PackModel pack, void Function(PackBuildStage) onStage) async {},
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+      }) async {},
       scanFiles: (String sourcePath) async => throw ArgumentError('目录不存在: X'),
       onApply: (PackModel pack) async {},
     );
@@ -124,7 +152,11 @@ void main() {
   testWidgets('应用更新失败时显示错误', (tester) async {
     await _pumpDialog(
       tester,
-      build: (PackModel pack, void Function(PackBuildStage) onStage) async {},
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+      }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async => throw Exception('写入失败'),
     );
@@ -140,7 +172,11 @@ void main() {
     await _pumpDialog(
       tester,
       pack: _pack(sourcePath: null),
-      build: (PackModel pack, void Function(PackBuildStage) onStage) async {},
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+      }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
     );
@@ -154,7 +190,11 @@ void main() {
   testWidgets('完成后点击关闭按钮关闭对话框', (tester) async {
     await _pumpDialog(
       tester,
-      build: (PackModel pack, void Function(PackBuildStage) onStage) async {},
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+      }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
     );
@@ -167,6 +207,87 @@ void main() {
 
     expect(find.byKey(const Key('buildPackDialog')), findsNothing);
   });
+
+  testWidgets('准备环境失败时显示错误且不执行构建', (tester) async {
+    int buildCount = 0;
+
+    await _pumpDialog(
+      tester,
+      prepare: (PackModel pack) async => throw const BuildPreparationException(
+        '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
+      ),
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+          }) async {
+            buildCount++;
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('构建失败：未检测到可用编译器（优先级：icx > clang-cl > msvc）'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('buildCompilerLabel')), findsNothing);
+    expect(buildCount, 0);
+    expect(find.byType(ProgressRing), findsNothing);
+    expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('准备环境结果透传给构建函数并显示 MSVC 标签', (tester) async {
+    final BuildEnvironment prepared = _environment(
+      kind: CompilerKind.msvc,
+      version: '14.44.35207',
+    );
+    Map<String, String>? received;
+
+    await _pumpDialog(
+      tester,
+      prepare: (PackModel pack) async => prepared,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+          }) async {
+            received = environment;
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(received, same(prepared.environment));
+    expect(find.text('编译器：MSVC 14.44.35207'), findsOneWidget);
+  });
+}
+
+BuildEnvironment _environment({
+  CompilerKind kind = CompilerKind.icx,
+  String version = '2026.1.1',
+}) {
+  return BuildEnvironment(
+    compiler: DetectedCompiler(
+      kind: kind,
+      version: version,
+      executablePath: r'C:\tools\icx-cl.exe',
+      environmentScript: null,
+    ),
+    environment: const <String, String>{
+      'CNP_COMPILER_KIND': 'icx',
+      'Path': r'C:\tools\bin',
+    },
+    cmakePath: r'C:\tools\cmake\bin\cmake.exe',
+    ninjaPath: r'C:\tools\ninja\ninja.exe',
+    toolsDir: r'C:\tools',
+  );
 }
 
 PackModel _pack({String? sourcePath = r'C:\libs\demo'}) {
@@ -189,6 +310,7 @@ Button _closeButton(WidgetTester tester) =>
 Future<void> _pumpDialog(
   WidgetTester tester, {
   required PackBuildRunner build,
+  Future<BuildEnvironment> Function(PackModel pack)? prepare,
   required Future<List<FileModel>> Function(String sourcePath) scanFiles,
   required Future<void> Function(PackModel pack) onApply,
   PackModel? pack,
@@ -207,6 +329,7 @@ Future<void> _pumpDialog(
               builder: (_) => BuildPackDialog(
                 pack: pack ?? _pack(),
                 build: build,
+                prepare: prepare ?? (PackModel pack) async => _environment(),
                 scanFiles: scanFiles,
                 onApply: onApply,
               ),

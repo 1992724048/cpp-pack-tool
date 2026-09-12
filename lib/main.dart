@@ -1,5 +1,7 @@
 import 'package:catppuccin_flutter/catppuccin_flutter.dart';
+import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -111,6 +113,8 @@ class MainLayout extends StatefulWidget {
     this.exportPackage = exportNuGetPackage,
     this.exportCmakePackage = cmake_exporter.exportCmakePackage,
     this.buildPack = runPackBuild,
+    this.prepareBuildEnv,
+    this.detectCompilers = toolchain.detectCompilers,
     this.now = DateTime.now,
   });
 
@@ -130,6 +134,8 @@ class MainLayout extends StatefulWidget {
   )
   exportCmakePackage;
   final PackBuildRunner buildPack;
+  final Future<BuildEnvironment> Function(PackModel pack)? prepareBuildEnv;
+  final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
   final DateTime Function() now;
 
   @override
@@ -421,11 +427,16 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _buildPack(PackModel pack) async {
+    final Future<BuildEnvironment> Function(PackModel pack) prepare =
+        widget.prepareBuildEnv ??
+        (PackModel pack) =>
+            prepareBuildEnvironment(priority: widget.settings.compilerPriority);
     await showDialog<void>(
       context: context,
       builder: (_) => BuildPackDialog(
         pack: pack,
         build: widget.buildPack,
+        prepare: prepare,
         scanFiles: widget.scanFiles,
         onApply: _applyRemap,
       ),
@@ -688,6 +699,7 @@ class _MainLayoutState extends State<MainLayout> {
               settings: widget.settings,
               onSave: widget.onSaveSettings,
               pickDirectory: widget.pickDirectory,
+              detectCompilers: widget.detectCompilers,
             ),
           ),
           LibraryItem(

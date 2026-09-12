@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/app_info.dart';
+import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -83,12 +85,18 @@ void main() {
       tester,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+      ],
       onSaveSettings: (SettingsModel settings) async => saved = settings,
     );
 
     await tester.tap(find.text('设置'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('settingCompilerRow_icx')), findsOneWidget);
+    expect(find.text('2026.1.1'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('settingThemeModeField')));
     await tester.pump();
@@ -686,6 +694,8 @@ void main() {
     );
     PackModel? builtPack;
     final List<PackBuildStage> stages = <PackBuildStage>[];
+    final BuildEnvironment prepared = _buildEnvironment();
+    Map<String, String>? receivedEnvironment;
 
     await _pumpMainLayout(
       tester,
@@ -694,16 +704,23 @@ void main() {
       scanFiles: (_) async => <FileModel>[
         FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
       ],
-      buildPack: (PackModel pack, void Function(PackBuildStage) onStage) async {
-        builtPack = pack;
-        for (final PackBuildStage stage in <PackBuildStage>[
-          PackBuildStage.downloading,
-          PackBuildStage.building,
-        ]) {
-          stages.add(stage);
-          onStage(stage);
-        }
-      },
+      prepareBuildEnv: (PackModel pack) async => prepared,
+      buildPack:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+          }) async {
+            builtPack = pack;
+            receivedEnvironment = environment;
+            for (final PackBuildStage stage in <PackBuildStage>[
+              PackBuildStage.downloading,
+              PackBuildStage.building,
+            ]) {
+              stages.add(stage);
+              onStage(stage);
+            }
+          },
     );
 
     await tester.tap(find.text('文件管理'));
@@ -715,6 +732,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(builtPack?.name, 'demo');
+    expect(receivedEnvironment, same(prepared.environment));
     expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
     expect(find.text('构建完成'), findsOneWidget);
     expect(find.text('新增：1 个文件'), findsOneWidget);
@@ -1799,6 +1817,8 @@ Future<void> _pumpMainLayout(
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportCmakePackage,
   PackBuildRunner? buildPack,
+  Future<BuildEnvironment> Function(PackModel pack)? prepareBuildEnv,
+  Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -1817,12 +1837,39 @@ Future<void> _pumpMainLayout(
         exportCmakePackage:
             exportCmakePackage ?? cmake_exporter.exportCmakePackage,
         buildPack: buildPack ?? runPackBuild,
+        prepareBuildEnv: prepareBuildEnv,
+        detectCompilers: detectCompilers ?? _noCompilers,
         now: now ?? DateTime.now,
       ),
     ),
   );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
+}
+
+Future<List<DetectedCompiler>> _noCompilers() async =>
+    const <DetectedCompiler>[];
+
+DetectedCompiler _compiler(CompilerKind kind, String version) {
+  return DetectedCompiler(
+    kind: kind,
+    version: version,
+    executablePath: 'C:/fake/${compilerKindId(kind)}.exe',
+    environmentScript: null,
+  );
+}
+
+BuildEnvironment _buildEnvironment() {
+  return BuildEnvironment(
+    compiler: _compiler(CompilerKind.icx, '2026.1.1'),
+    environment: const <String, String>{
+      'CNP_COMPILER_KIND': 'icx',
+      'Path': r'C:\tools\bin',
+    },
+    cmakePath: r'C:\tools\cmake\bin\cmake.exe',
+    ninjaPath: r'C:\tools\ninja\ninja.exe',
+    toolsDir: r'C:\tools',
+  );
 }
 
 Future<void> _fillRequiredFields(
