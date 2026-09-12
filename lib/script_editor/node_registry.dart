@@ -1109,6 +1109,97 @@ class NodeRegistry {
             ),
           ],
         ),
+        // 工具查找经 Find-CnpTool 辅助函数：Get-Command -CommandType Application
+        // 命中返回应用路径，否则逐候选展开环境变量 + Test-Path，未命中返回 null
+        // （found=false、path=''）；两个输出各自内联一次调用（纯查询、开销小，
+        // spec §3.6），helper 由生成器幂等注册。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'system.findTool',
+          displayName: '查找工具',
+          category: ScriptNodeCategory.system,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'found',
+              label: '是否找到',
+              isInput: false,
+              dataType: ScriptDataType.boolean,
+            ),
+            ScriptPinDescriptor(
+              id: 'path',
+              label: '路径',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'name',
+              label: '工具名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+            ScriptParamDescriptor(
+              key: 'candidates',
+              label: '候选路径',
+              type: ScriptParamType.textLines,
+              defaultValue: <String>[],
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'system.download',
+          displayName: '下载文件',
+          category: ScriptNodeCategory.system,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'url',
+              label: 'URL',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'destination',
+              label: '目标路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'system.upload',
+          displayName: '上传文件',
+          category: ScriptNodeCategory.system,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'url',
+              label: 'URL',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'source',
+              label: '源路径',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'method',
+              label: '方法',
+              type: ScriptParamType.text,
+              defaultValue: 'PUT',
+            ),
+          ],
+        ),
         // 变量读写共用一个名称参数；名称正则与同名同类型校验由校验器负责
         // （M4.3 T2），生成器直接取参数文本发射 `$var_<name>`。自动初始化
         // 保证 get 在 set 之前执行时也不为 $null（生成器收集变量名后注入）。

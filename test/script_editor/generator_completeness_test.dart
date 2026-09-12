@@ -28,11 +28,13 @@ const Map<ScriptDataType, String> _consumerTypeKeys = <ScriptDataType, String>{
 
 /// 注册表默认参数不满足校验的类型需给出最小合法夹具值
 /// （context.environment 与 variable 四类的名称须匹配正则、context.packageFile
-/// 路径须非空、crypto 加密/签名节点的口令与证书来源二选一）。
+/// 路径须非空、crypto 加密/签名节点的口令与证书来源二选一、
+/// system.findTool 的名称按 spec §3.6 必填给出非空值）。
 const Map<String, Map<String, Object?>> _fixtureParams =
     <String, Map<String, Object?>>{
       'context.environment': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'context.packageFile': <String, Object?>{'path': 'lib/sample.lib'},
+      'system.findTool': <String, Object?>{'name': 'clang'},
       'variable.setNumber': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'variable.getNumber': <String, Object?>{'name': 'CNP_COMPLETENESS'},
       'variable.setString': <String, Object?>{'name': 'CNP_COMPLETENESS'},
@@ -170,6 +172,13 @@ ScriptProjectModel _minimalGraphFor(ScriptNodeTypeDescriptor type) {
     project.edges.add(_edge(entry.id, defaultExecPinId, node.id, execInput.id));
   }
 
+  // 执行锚点：数据输出的消费节点依次串接（多数据输出节点的多个消费节点若都
+  // 挂在同一 exec 输出上会违反单连接约束；system.findTool 是首个两输出节点）。
+  String execAnchorNodeId = execInput == null ? entry.id : node.id;
+  String execAnchorPinId = execInput == null
+      ? defaultExecPinId
+      : _execOutputPinId(type.typeKey);
+
   for (final ScriptPinDescriptor pin in type.pins) {
     if (!pin.isInput || !pin.required || pin.kind != ScriptPinKind.data) {
       continue;
@@ -217,18 +226,16 @@ ScriptProjectModel _minimalGraphFor(ScriptNodeTypeDescriptor type) {
       consumerTypeKey,
     );
     if (consumerExecInput != null) {
-      final String execSourceNodeId = execInput == null ? entry.id : node.id;
-      final String execSourcePinId = execInput == null
-          ? defaultExecPinId
-          : _execOutputPinId(type.typeKey);
       project.edges.add(
         _edge(
-          execSourceNodeId,
-          execSourcePinId,
+          execAnchorNodeId,
+          execAnchorPinId,
           consumer.id,
           consumerExecInput.id,
         ),
       );
+      execAnchorNodeId = consumer.id;
+      execAnchorPinId = _execOutputPinId(consumerTypeKey);
       return;
     }
     for (final ScriptPinDescriptor consumerPin in consumerDescriptor.pins) {
@@ -288,8 +295,8 @@ void main() {
       );
       expect(
         NodeRegistry.all.length,
-        greaterThanOrEqualTo(46),
-        reason: '注册表类型数量异常缩减（当前 46 类），护栏失效',
+        greaterThanOrEqualTo(49),
+        reason: '注册表类型数量异常缩减（当前 49 类），护栏失效',
       );
     });
   });

@@ -226,6 +226,10 @@ class _PowerShellEmitter {
         _emitAesTransform(node, mode: 'Decrypt');
       case 'crypto.signFile':
         _emitSignFile(node);
+      case 'system.download':
+        _emitDownload(node);
+      case 'system.upload':
+        _emitUpload(node);
       case 'variable.setNumber':
         _emitVariableSet(node, dataType: ScriptDataType.number);
       case 'variable.setString':
@@ -558,6 +562,8 @@ class _PowerShellEmitter {
             '[IO.File]::ReadAllBytes(${_expression(node, 'path')})))';
       case 'crypto.fileHash':
         return _fileHashExpression(node);
+      case 'system.findTool':
+        return _findToolExpression(node, pinId);
       case 'variable.getNumber':
         return _variableReadExpression(node, ScriptDataType.number);
       case 'variable.getString':
@@ -661,6 +667,51 @@ class _PowerShellEmitter {
     }
     return '(Get-CnpFileHash -Path ${_expression(node, 'path')} '
         '-Algorithm ${_textLiteral(algorithm)})';
+  }
+
+  /// 查找工具：`found`/`path` 两输出各自内联一次 [Find-CnpTool] 调用
+  /// （纯查询、开销小，spec §3.6）；helper 注册幂等（多输出/多节点仅注入一次）。
+  String _findToolExpression(ScriptNodeModel node, String pinId) {
+    registerPrelude('Find-CnpTool');
+    final String command =
+        'Find-CnpTool -Name ${_textLiteral(_param(node, 'name'))} '
+        '-Candidates ${_candidatesLiteral(_param(node, 'candidates'))}';
+    switch (pinId) {
+      case 'found':
+        return '(($command) -ne \$null)';
+      case 'path':
+        return '([string]($command))';
+      default:
+        throw UnsupportedError('节点类型「${node.type}」的引脚「$pinId」不支持数据表达式');
+    }
+  }
+
+  /// `textLines` 值 → PowerShell 数组字面量：`@('l1','l2')`；空 → `@()`。
+  String _candidatesLiteral(Object? value) {
+    final List<String> candidates = value is List
+        ? value.whereType<String>().toList(growable: false)
+        : const <String>[];
+    if (candidates.isEmpty) {
+      return '@()';
+    }
+    return '@(${candidates.map(_textLiteral).join(',')})';
+  }
+
+  /// 下载文件：`DownloadFile` 不经 Invoke-WebRequest（TLS 走系统默认）。
+  void _emitDownload(ScriptNodeModel node) {
+    writer.writeln(
+      '(New-Object Net.WebClient).DownloadFile('
+      '${_expression(node, 'url')}, ${_expression(node, 'destination')})',
+    );
+  }
+
+  /// 上传文件：`method` 参数文本原样透传（PUT/POST，缺省走注册表默认 PUT）。
+  void _emitUpload(ScriptNodeModel node) {
+    writer.writeln(
+      '(New-Object Net.WebClient).UploadFile('
+      '${_expression(node, 'url')}, ${_textLiteral(_param(node, 'method'))}, '
+      '${_expression(node, 'source')})',
+    );
   }
 
   Object? _param(ScriptNodeModel node, String key) {

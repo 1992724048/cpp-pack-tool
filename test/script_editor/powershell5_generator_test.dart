@@ -574,6 +574,113 @@ ScriptProjectModel _whileAccumulatorGraph() {
   );
 }
 
+/// 查找工具真实消费链：findTool.found → flow.branch.condition、
+/// findTool.path → log.message（两输出均接入发射路径，各自内联一次调用）；
+/// `candidates` 缺省（null）时不写入 params，走注册表默认值。
+ScriptProjectModel _findToolGraph({
+  String name = 'clang',
+  List<String>? candidates,
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'system.findTool',
+        params: <String, Object?>{'name': name, 'candidates': ?candidates},
+      ),
+      _node('n3', 'flow.branch'),
+      _node('n4', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'found', 'n3', 'condition'),
+      _edge('n3', 'then', 'n4', 'exec'),
+      _edge('n2', 'path', 'n4', 'message'),
+    ],
+  );
+}
+
+/// 查找工具路径消费链（多候选）：findTool.path → log.message。
+ScriptProjectModel _findToolPathGraph({
+  String name = 'dumpbin',
+  List<String> candidates = const <String>[],
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'system.findTool',
+        params: <String, Object?>{'name': name, 'candidates': candidates},
+      ),
+      _node('n3', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'path', 'n3', 'message'),
+    ],
+  );
+}
+
+/// 下载文件链：url/destination 文本 → download → log.message。
+ScriptProjectModel _downloadGraph({
+  String url = 'https://example.com/pkg.zip',
+  String destination = r'D:\dl\pkg.zip',
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': url}),
+      _node(
+        'n3',
+        'value.text',
+        params: <String, Object?>{'value': destination},
+      ),
+      _node('n4', 'system.download'),
+      _node('n5', 'value.text', params: <String, Object?>{'value': '已下载'}),
+      _node('n6', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n4', 'url'),
+      _edge('n3', 'result', 'n4', 'destination'),
+      _edge('n4', 'out', 'n6', 'exec'),
+      _edge('n5', 'result', 'n6', 'message'),
+    ],
+  );
+}
+
+/// 上传文件链：url/source 文本 → upload（method 缺省走注册表默认 PUT）→
+/// log.message。
+ScriptProjectModel _uploadGraph({
+  String? method,
+  String url = 'https://example.com/upload',
+  String source = r'D:\up\pkg.zip',
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': url}),
+      _node('n3', 'value.text', params: <String, Object?>{'value': source}),
+      _node(
+        'n4',
+        'system.upload',
+        params: <String, Object?>{'method': ?method},
+      ),
+      _node('n5', 'value.text', params: <String, Object?>{'value': '已上传'}),
+      _node('n6', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n4', 'url'),
+      _edge('n3', 'result', 'n4', 'source'),
+      _edge('n4', 'out', 'n6', 'exec'),
+      _edge('n5', 'result', 'n6', 'message'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -3159,6 +3266,95 @@ void main() {
       final ScriptCompileResult result = _compile(_whileAccumulatorGraph());
       expect(result.hasErrors, isFalse);
       expect(result.code, whileAccumulatorGolden);
+    });
+  });
+
+  group('system 节点发射（M4.4 T2）', () {
+    test('findTool：found/path 两输出各自内联调用，helper 恰注入一次', () {
+      final ScriptCompileResult result = _compile(_findToolGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          "    if (((Find-CnpTool -Name 'clang' -Candidates @()) -ne \$null)) {\n"
+          "        Write-Host ([string](Find-CnpTool -Name 'clang' -Candidates @()))\n"
+          '    } else {\n'
+          '    }\n',
+        ),
+      );
+      // 两个输出节点级重复注册：helper 片段幂等，恰注入一次
+      expect(RegExp(r'function Find-CnpTool \{').allMatches(code).length, 1);
+      final int stopIndex = code.indexOf(r"$ErrorActionPreference = 'Stop'");
+      final int functionIndex = code.indexOf('function Find-CnpTool {');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(stopIndex, lessThan(functionIndex));
+      expect(functionIndex, lessThan(tryIndex));
+    });
+
+    test('findTool：多候选路径按数组字面量发射（path 输出）', () {
+      final ScriptCompileResult result = _compile(
+        _findToolPathGraph(
+          candidates: <String>[
+            r'C:\Program Files\LLVM\bin\dumpbin.exe',
+            r'D:\tools\dumpbin.exe',
+          ],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host ([string](Find-CnpTool -Name 'dumpbin' -Candidates "
+          "@('C:\\Program Files\\LLVM\\bin\\dumpbin.exe','D:\\tools\\dumpbin.exe')))\n",
+        ),
+      );
+      expect(
+        RegExp(r'function Find-CnpTool \{').allMatches(result.code!).length,
+        1,
+      );
+    });
+
+    test('system.download：DownloadFile 行并沿 out 续链，无 helper 注入', () {
+      final ScriptCompileResult result = _compile(_downloadGraph());
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    (New-Object Net.WebClient).DownloadFile('
+          "'https://example.com/pkg.zip', 'D:\\dl\\pkg.zip')\n"
+          "    Write-Host '已下载'\n",
+        ),
+      );
+      expect(result.code, isNot(contains('function Find-CnpTool {')));
+    });
+
+    test('system.upload：method 缺省取注册表默认 PUT', () {
+      final ScriptCompileResult result = _compile(_uploadGraph());
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    (New-Object Net.WebClient).UploadFile('
+          "'https://example.com/upload', 'PUT', 'D:\\up\\pkg.zip')\n"
+          "    Write-Host '已上传'\n",
+        ),
+      );
+      expect(result.code, isNot(contains('function Find-CnpTool {')));
+    });
+
+    test('system.upload：显式 method 透传', () {
+      final ScriptCompileResult result = _compile(
+        _uploadGraph(method: 'POST'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    (New-Object Net.WebClient).UploadFile('
+          "'https://example.com/upload', 'POST', 'D:\\up\\pkg.zip')\n",
+        ),
+      );
     });
   });
 }

@@ -45,6 +45,9 @@ const Set<String> _expectedTypeKeys = <String>{
   'crypto.aesEncrypt',
   'crypto.aesDecrypt',
   'crypto.signFile',
+  'system.findTool',
+  'system.download',
+  'system.upload',
   'variable.setNumber',
   'variable.getNumber',
   'variable.setString',
@@ -63,13 +66,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 46 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(46));
+    test('总数 49 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(49));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(46),
+        hasLength(49),
       );
     });
 
@@ -164,6 +167,7 @@ void main() {
             ScriptNodeCategory.logic: 3,
             ScriptNodeCategory.math: 5,
             ScriptNodeCategory.crypto: 6,
+            ScriptNodeCategory.system: 3,
             ScriptNodeCategory.variable: 4,
           };
       final List<ScriptNodeTypeDescriptor> collected =
@@ -189,7 +193,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(46),
+        hasLength(49),
       );
     });
 
@@ -1235,6 +1239,95 @@ void main() {
         expect(_param(typeKey, 'name').defaultValue, '');
       }
     });
+
+    test('system 三节点（M4.4 T2）', () {
+      final ScriptNodeTypeDescriptor findTool = NodeRegistry.byType(
+        'system.findTool',
+      )!;
+      expect(findTool.category, ScriptNodeCategory.system);
+      expect(findTool.displayName, '查找工具');
+      expect(
+        findTool.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'found', 'path'},
+      );
+      expect(
+        findTool.pins.every(
+          (ScriptPinDescriptor pin) => pin.kind == ScriptPinKind.data,
+        ),
+        isTrue,
+      );
+      expect(_pin('system.findTool', 'found').dataType, ScriptDataType.boolean);
+      expect(_pin('system.findTool', 'found').isInput, isFalse);
+      expect(_pin('system.findTool', 'found').label, isNotEmpty);
+      expect(_pin('system.findTool', 'path').dataType, ScriptDataType.string);
+      expect(_pin('system.findTool', 'path').isInput, isFalse);
+      expect(_pin('system.findTool', 'path').label, isNotEmpty);
+      expect(
+        findTool.params
+            .map((ScriptParamDescriptor param) => param.key)
+            .toList(),
+        <String>['name', 'candidates'],
+      );
+      expect(_param('system.findTool', 'name').type, ScriptParamType.text);
+      expect(_param('system.findTool', 'name').defaultValue, '');
+      expect(
+        _param('system.findTool', 'candidates').type,
+        ScriptParamType.textLines,
+      );
+      expect(_param('system.findTool', 'candidates').defaultValue, <String>[]);
+
+      final ScriptNodeTypeDescriptor download = NodeRegistry.byType(
+        'system.download',
+      )!;
+      expect(download.category, ScriptNodeCategory.system);
+      expect(download.displayName, '下载文件');
+      expect(
+        download.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'url', 'destination', 'out'},
+      );
+      expect(_pin('system.download', 'exec').kind, ScriptPinKind.exec);
+      expect(_pin('system.download', 'exec').isInput, isTrue);
+      expect(_pin('system.download', 'exec').required, isTrue);
+      expect(_pin('system.download', 'url').dataType, ScriptDataType.string);
+      expect(_pin('system.download', 'url').isInput, isTrue);
+      expect(_pin('system.download', 'url').required, isTrue);
+      expect(
+        _pin('system.download', 'destination').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('system.download', 'destination').isInput, isTrue);
+      expect(_pin('system.download', 'destination').required, isTrue);
+      expect(_pin('system.download', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('system.download', 'out').isInput, isFalse);
+      expect(download.params, isEmpty);
+
+      final ScriptNodeTypeDescriptor upload = NodeRegistry.byType(
+        'system.upload',
+      )!;
+      expect(upload.category, ScriptNodeCategory.system);
+      expect(upload.displayName, '上传文件');
+      expect(
+        upload.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'exec', 'url', 'source', 'out'},
+      );
+      expect(_pin('system.upload', 'exec').kind, ScriptPinKind.exec);
+      expect(_pin('system.upload', 'exec').isInput, isTrue);
+      expect(_pin('system.upload', 'exec').required, isTrue);
+      expect(_pin('system.upload', 'url').dataType, ScriptDataType.string);
+      expect(_pin('system.upload', 'url').isInput, isTrue);
+      expect(_pin('system.upload', 'url').required, isTrue);
+      expect(_pin('system.upload', 'source').dataType, ScriptDataType.string);
+      expect(_pin('system.upload', 'source').isInput, isTrue);
+      expect(_pin('system.upload', 'source').required, isTrue);
+      expect(_pin('system.upload', 'out').kind, ScriptPinKind.exec);
+      expect(_pin('system.upload', 'out').isInput, isFalse);
+      expect(
+        upload.params.map((ScriptParamDescriptor param) => param.key).toList(),
+        <String>['method'],
+      );
+      expect(_param('system.upload', 'method').type, ScriptParamType.text);
+      expect(_param('system.upload', 'method').defaultValue, 'PUT');
+    });
   });
 
   group('参数清单 / 默认值 / 类型', () {
@@ -1264,6 +1357,8 @@ void main() {
           'passwordEnv',
           'timestampServer',
         ],
+        'system.findTool': <String>['name', 'candidates'],
+        'system.upload': <String>['method'],
         'variable.setNumber': <String>['name'],
         'variable.getNumber': <String>['name'],
         'variable.setString': <String>['name'],
@@ -1306,6 +1401,9 @@ void main() {
       expect(_param('crypto.signFile', 'password').defaultValue, '');
       expect(_param('crypto.signFile', 'passwordEnv').defaultValue, '');
       expect(_param('crypto.signFile', 'timestampServer').defaultValue, '');
+      expect(_param('system.findTool', 'name').defaultValue, '');
+      expect(_param('system.findTool', 'candidates').defaultValue, <String>[]);
+      expect(_param('system.upload', 'method').defaultValue, 'PUT');
       for (final String typeKey in <String>[
         'variable.setNumber',
         'variable.getNumber',
@@ -1374,6 +1472,12 @@ void main() {
       ]) {
         expect(_param('crypto.signFile', key).type, ScriptParamType.text);
       }
+      expect(_param('system.findTool', 'name').type, ScriptParamType.text);
+      expect(
+        _param('system.findTool', 'candidates').type,
+        ScriptParamType.textLines,
+      );
+      expect(_param('system.upload', 'method').type, ScriptParamType.text);
       for (final String typeKey in <String>[
         'variable.setNumber',
         'variable.getNumber',
