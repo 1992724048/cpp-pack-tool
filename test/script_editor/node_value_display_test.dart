@@ -161,6 +161,35 @@ void main() {
       );
     });
 
+    test('scriptFilePath 输出原样', () {
+      expect(
+        paramValueText(
+          _param(ScriptParamType.scriptFilePath),
+          r'files\scripts\build.bat',
+        ),
+        r'files\scripts\build.bat',
+      );
+    });
+
+    test('textLines 以空格连接各行；空列表输出空文本', () {
+      expect(
+        paramValueText(_param(ScriptParamType.textLines), <String>[
+          r'C:\Tools',
+          r'C:\bin',
+        ]),
+        r'C:\Tools C:\bin',
+      );
+      expect(
+        paramValueText(_param(ScriptParamType.textLines), const <String>[]),
+        '',
+      );
+    });
+
+    test('textLines 非 List<String> 值回退 toString', () {
+      expect(paramValueText(_param(ScriptParamType.textLines), 'a\nb'), 'a\nb');
+      expect(paramValueText(_param(ScriptParamType.textLines), 5), '5');
+    });
+
     test('未识别值回退原文（logLevel / stringOperator / 4 新类型）', () {
       expect(paramValueText(_param(ScriptParamType.logLevel), 'debug'), 'debug');
       expect(
@@ -328,6 +357,31 @@ void main() {
         _param(ScriptParamType.text, key: 'a', defaultValue: '甲'),
       ];
       expect(nodeValueSummary(params, <String, Object?>{'b': '乙'}), '甲');
+    });
+
+    test('textLines 多行走空格连接、空列表跳过，scriptFilePath 参与拼接', () {
+      final List<ScriptParamDescriptor> params = <ScriptParamDescriptor>[
+        _param(
+          ScriptParamType.textLines,
+          key: 'lines',
+          defaultValue: const <String>[],
+        ),
+        _param(ScriptParamType.scriptFilePath, key: 'file', defaultValue: ''),
+      ];
+      expect(
+        nodeValueSummary(params, <String, Object?>{
+          'lines': <String>['C:/Tools', 'D:/bin'],
+          'file': 'files/run.bat',
+        }),
+        'C:/Tools D:/bin · files/run.bat',
+      );
+      expect(
+        nodeValueSummary(params, <String, Object?>{
+          'lines': const <String>[],
+          'file': '',
+        }),
+        '—',
+      );
     });
   });
 }

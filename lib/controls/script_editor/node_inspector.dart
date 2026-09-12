@@ -12,6 +12,7 @@ import 'package:cpp_nuget_pack/script_editor/node_value_display.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
+import 'package:cpp_nuget_pack/util/script_files.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart'
@@ -45,6 +46,7 @@ class NodeInspector extends StatefulWidget {
     this.controller,
     required this.pack,
     this.packagePaths,
+    this.nodeTypeResolver,
     this.onSelectProject,
     this.onRenameProject,
     this.onTriggerChanged,
@@ -61,6 +63,11 @@ class NodeInspector extends StatefulWidget {
   /// 包内路径建议（`build/native/` 相对）；null 时由
   /// `NuGetPackageBuilder().buildPlan(pack)` 计算并剥离该前缀。
   final List<String>? packagePaths;
+
+  /// 节点类型描述符解析器；null 时按 [NodeRegistry.byType] 解析。
+  /// 测试可注入合成描述符（`scriptFilePath` / `textLines` 暂无注册载体，
+  /// 以合成类型验证控件渲染与写回）。
+  final ScriptNodeTypeDescriptor? Function(String typeKey)? nodeTypeResolver;
 
   final ValueChanged<ScriptProjectModel>? onSelectProject;
 
@@ -181,6 +188,33 @@ class _NodeInspectorState extends State<NodeInspector> {
     _loadPackagePaths();
   }
 
+  ScriptNodeTypeDescriptor? _descriptorOf(String typeKey) {
+    final ScriptNodeTypeDescriptor? Function(String)? resolver =
+        widget.nodeTypeResolver;
+    return resolver != null ? resolver(typeKey) : NodeRegistry.byType(typeKey);
+  }
+
+  /// `scriptFilePath` 建议项：仅保留脚本扩展名（与「从包中选择脚本」
+  /// 共享 [scriptFileExtensions]）；生成脚本 `files/scripts/*.ps1` 同为
+  /// `.ps1`，按统一规则保留。
+  List<String> get _scriptFilePaths {
+    return <String>[
+      for (final String path in _packagePaths)
+        if (isScriptFilePath(path)) path,
+    ];
+  }
+
+  List<AutoSuggestBoxItem<String>> _suggestItems(List<String> paths) {
+    return <AutoSuggestBoxItem<String>>[
+      for (final String path in paths)
+        AutoSuggestBoxItem<String>(
+          value: path,
+          label: path,
+          child: Text(path, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+    ];
+  }
+
   /// 建议值取包内 `build/native/` 相对路径：发射侧 `CNP_PackageRoot`
   /// （`Join-Path` 基目录）指向该目录，含前缀会组合出双前缀。
   Future<void> _loadPackagePaths() async {
@@ -263,7 +297,7 @@ class _NodeInspectorState extends State<NodeInspector> {
   }
 
   List<Widget> _buildNodeMode(ScriptNodeModel node) {
-    final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(node.type);
+    final ScriptNodeTypeDescriptor? descriptor = _descriptorOf(node.type);
     final List<ScriptParamDescriptor> params =
         descriptor?.params ?? const <ScriptParamDescriptor>[];
     return <Widget>[
@@ -476,18 +510,7 @@ class _NodeInspectorState extends State<NodeInspector> {
             param.key,
             value is String ? value : '',
           ),
-          items: <AutoSuggestBoxItem<String>>[
-            for (final String path in _packagePaths)
-              AutoSuggestBoxItem<String>(
-                value: path,
-                label: path,
-                child: Text(
-                  path,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
+          items: _suggestItems(_packagePaths),
           sorter: _sortPackagePaths,
           noResultsFoundBuilder: (BuildContext context) => Align(
             alignment: Alignment.centerLeft,
@@ -500,6 +523,36 @@ class _NodeInspectorState extends State<NodeInspector> {
               _writeParam(node, param.key, text),
           onSelected: (AutoSuggestBoxItem<String> item) =>
               _writeParam(node, param.key, item.value),
+        );
+      case ScriptParamType.scriptFilePath:
+        return AutoSuggestBox<String>(
+          key: Key('inspectorField_${param.key}'),
+          controller: _paramEditor(
+            node.id,
+            param.key,
+            value is String ? value : '',
+          ),
+          items: _suggestItems(_scriptFilePaths),
+          sorter: _sortPackagePaths,
+          noResultsFoundBuilder: (BuildContext context) => Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _noMatchingPathHint,
+              style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+            ),
+          ),
+          onChanged: (String text, TextChangedReason reason) =>
+              _writeParam(node, param.key, text),
+          onSelected: (AutoSuggestBoxItem<String> item) =>
+              _writeParam(node, param.key, item.value),
+        );
+      case ScriptParamType.textLines:
+        return TextBox(
+          key: Key('inspectorField_${param.key}'),
+          controller: _paramEditor(node.id, param.key, _textLinesText(value)),
+          maxLines: null,
+          onChanged: (String next) =>
+              _writeParam(node, param.key, _cleanTextLines(next)),
         );
       case ScriptParamType.boolean:
         // 开关由 _buildParamField 的行布局处理，此处不可达。
@@ -856,6 +909,24 @@ num? _parseNumberInput(String text) {
     return null;
   }
   return parsed;
+}
+
+/// `textLines` 参数值 → 多行文本框初始文本：每行一项以 `\n` 连接；
+/// 非 `List<String>` 按空处理。
+String _textLinesText(Object? value) {
+  return value is List<String> ? value.join('\n') : '';
+}
+
+/// 多行文本 → `List<String>`：按行拆分、trim、丢弃空行（§2.3）。
+List<String> _cleanTextLines(String text) {
+  final List<String> lines = <String>[];
+  for (final String raw in text.split('\n')) {
+    final String line = raw.trim();
+    if (line.isNotEmpty) {
+      lines.add(line);
+    }
+  }
+  return lines;
 }
 
 Widget _buildFieldError(Key key, String message) {

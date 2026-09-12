@@ -1,5 +1,6 @@
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
+import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -819,6 +820,67 @@ void main() {
         ]),
       );
       expect(good, isEmpty);
+    });
+
+    test('scriptFilePath 不能为空', () {
+      const ScriptNodeTypeDescriptor descriptor = ScriptNodeTypeDescriptor(
+        typeKey: 'context.scriptFile',
+        displayName: '包内脚本文件',
+        category: ScriptNodeCategory.context,
+        pins: <ScriptPinDescriptor>[],
+      );
+      const ScriptParamDescriptor param = ScriptParamDescriptor(
+        key: 'file',
+        label: '文件',
+        type: ScriptParamType.scriptFilePath,
+        defaultValue: '',
+      );
+      for (final String valid in <String>[
+        'files/run.bat',
+        r'files\scripts\build.ps1',
+        'a',
+      ]) {
+        expect(
+          GraphValidator.paramErrorMessage(descriptor, param, valid),
+          isNull,
+          reason: '「$valid」应合法',
+        );
+      }
+      for (final Object? empty in <Object?>[null, '', '   ', 5]) {
+        expect(
+          GraphValidator.paramErrorMessage(descriptor, param, empty),
+          '参数「文件」不能为空',
+          reason: '「$empty」应判空',
+        );
+      }
+    });
+
+    test('textLines 无参数级错误规则（清洗在写入侧）', () {
+      const ScriptNodeTypeDescriptor descriptor = ScriptNodeTypeDescriptor(
+        typeKey: 'system.findTool',
+        displayName: '查找工具',
+        category: ScriptNodeCategory.system,
+        pins: <ScriptPinDescriptor>[],
+      );
+      const ScriptParamDescriptor param = ScriptParamDescriptor(
+        key: 'candidates',
+        label: '候选路径',
+        type: ScriptParamType.textLines,
+        defaultValue: <String>[],
+      );
+      for (final Object? value in <Object?>[
+        null,
+        '',
+        <String>[],
+        <String>['a', 'b'],
+        5,
+      ]) {
+        expect(
+          GraphValidator.paramErrorMessage(descriptor, param, value),
+          isNull,
+          reason: '「$value」不应报参数错误',
+        );
+      }
     });
 
     test('环境变量名格式受限', () {

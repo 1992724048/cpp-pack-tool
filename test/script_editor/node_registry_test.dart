@@ -204,7 +204,32 @@ void main() {
       expect(ScriptNodeCategory.logic.label, '逻辑');
       expect(ScriptNodeCategory.math.label, '数值');
       expect(ScriptNodeCategory.crypto.label, '编码与安全');
+      expect(ScriptNodeCategory.system.label, '系统与网络');
       expect(ScriptNodeCategory.variable.label, '变量');
+    });
+
+    test('分类声明序含 system（crypto 与 variable 之间）', () {
+      expect(ScriptNodeCategory.values, hasLength(12));
+      expect(
+        ScriptNodeCategory.values.sublist(ScriptNodeCategory.values.length - 4),
+        <ScriptNodeCategory>[
+          ScriptNodeCategory.math,
+          ScriptNodeCategory.crypto,
+          ScriptNodeCategory.system,
+          ScriptNodeCategory.variable,
+        ],
+      );
+    });
+
+    test('参数类型枚举末尾追加 scriptFilePath / textLines（共 13 值）', () {
+      expect(ScriptParamType.values, hasLength(13));
+      expect(
+        ScriptParamType.values.sublist(ScriptParamType.values.length - 2),
+        <ScriptParamType>[
+          ScriptParamType.scriptFilePath,
+          ScriptParamType.textLines,
+        ],
+      );
     });
   });
 

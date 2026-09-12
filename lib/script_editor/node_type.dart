@@ -13,6 +13,7 @@ enum ScriptNodeCategory {
   logic('逻辑'),
   math('数值'),
   crypto('编码与安全'),
+  system('系统与网络'),
   variable('变量');
 
   const ScriptNodeCategory(this.label);
@@ -32,6 +33,8 @@ enum ScriptParamType {
   bitwiseOperator,
   numberOperator,
   hashAlgorithm,
+  scriptFilePath,
+  textLines,
 }
 
 class ScriptPinDescriptor {

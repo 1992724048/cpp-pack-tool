@@ -12,18 +12,11 @@ import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/util/script_files.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-
-const Set<String> _commandScriptExtensions = <String>{
-  'bat',
-  'cmd',
-  'exe',
-  'ps1',
-  'py',
-};
 
 const double _buildModelColumnWidth = 96;
 const double _triggerColumnWidth = 96;
@@ -336,8 +329,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   List<FileModel> _commandScripts() {
     return <FileModel>[
       for (final FileModel file in widget.pack.files)
-        if (_commandScriptExtensions.contains(file.extension.toLowerCase()))
-          file,
+        if (scriptFileExtensions.contains(file.extension.toLowerCase())) file,
     ];
   }
 

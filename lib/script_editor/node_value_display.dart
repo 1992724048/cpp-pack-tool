@@ -56,19 +56,23 @@ const Map<String, String> hashAlgorithmLabels = <String, String>{
 /// 参数值 → 值条显示文本（null → `''`）。
 ///
 /// 按 [ScriptParamType] 穷尽分派（新增类型由编译期强制补齐）：标签类取对应
-/// 公共标签 map 并在值不在已知集合时回退原文；其余类型输出原文。
+/// 公共标签 map 并在值不在已知集合时回退原文；`textLines` 以空格连接各行
+/// （§5.2）；其余类型输出原文。
 String paramValueText(ScriptParamDescriptor param, Object? value) {
   if (value == null) {
     return '';
   }
   return switch (param.type) {
     ScriptParamType.text => value.toString(),
+    ScriptParamType.textLines =>
+      value is List<String> ? value.join(' ') : value.toString(),
     ScriptParamType.boolean => value == true ? '是' : '否',
     ScriptParamType.macroKey => '\$($value)',
     ScriptParamType.logLevel => logLevelLabels[value] ?? value.toString(),
     ScriptParamType.stringOperator =>
       stringOperatorLabels[value] ?? value.toString(),
     ScriptParamType.packageFilePath => value.toString(),
+    ScriptParamType.scriptFilePath => value.toString(),
     ScriptParamType.number => value.toString(),
     ScriptParamType.mathOperator =>
       mathOperatorLabels[value] ?? value.toString(),

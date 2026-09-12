@@ -3,6 +3,7 @@ import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
+import 'package:flutter/foundation.dart';
 
 const String _branchTypeKey = 'flow.branch';
 const Set<String> _logLevels = <String>{'info', 'warn', 'error'};
@@ -172,6 +173,14 @@ class GraphValidator {
           return null;
         }
         return '参数「${param.label}」的值「$value」非法，应为非空路径';
+      case ScriptParamType.scriptFilePath:
+        if (value is String && value.trim().isNotEmpty) {
+          return null;
+        }
+        return '参数「${param.label}」不能为空';
+      case ScriptParamType.textLines:
+        // 多行列表清洗在写入侧（检查器控件）完成，无参数级错误规则。
+        return null;
       case ScriptParamType.text:
         if (param.key != 'name') {
           return null;
@@ -198,6 +207,19 @@ class GraphValidator {
         }
         return '参数「${param.label}」的值「$value」必须为数字';
     }
+  }
+
+  /// 参数级校验的测试入口（`validate` 内部经 [_paramErrorMessage] 分派）。
+  ///
+  /// `scriptFilePath` / `textLines` 的载体节点注册在后续任务（M4.4 T2/T3），
+  /// 测试经此以合成描述符直接验证单参数规则。
+  @visibleForTesting
+  static String? paramErrorMessage(
+    ScriptNodeTypeDescriptor descriptor,
+    ScriptParamDescriptor param,
+    Object? value,
+  ) {
+    return _paramErrorMessage(descriptor, param, value);
   }
 
   /// 节点级参数规则：注册表参数声明无法表达的跨参数约束
