@@ -119,6 +119,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   List<FileModel> _files = const <FileModel>[];
   int _addedCount = 0;
   int _removedCount = 0;
+  String? _sourceVersion;
 
   @override
   void initState() {
@@ -154,6 +155,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         _onBuildStage,
         environment: environment.environment,
         onOutput: _onBuildOutput,
+        onSourceVersion: _onSourceVersion,
       );
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
@@ -183,6 +185,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
     final PackModel updated = copyPackWithFiles(widget.pack, files);
+    updated.sourceVersion = _sourceVersion ?? widget.pack.sourceVersion;
     setState(() {
       _files = files;
       _addedCount = diff.added;
@@ -211,6 +214,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         PackBuildStage.building => _BuildStage.building,
       };
     });
+  }
+
+  void _onSourceVersion(String version) {
+    _sourceVersion = version;
   }
 
   void _onBuildOutput(String line) {

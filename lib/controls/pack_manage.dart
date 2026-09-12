@@ -1,4 +1,5 @@
-﻿import 'package:cpp_nuget_pack/models/pack_model.dart';
+﻿import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -19,6 +20,8 @@ class PackManage extends StatefulWidget {
     this.onBuildPack,
     this.packagingBuilder,
     this.onPackagingBuilderChanged,
+    this.loadLatestVersion,
+    this.loadHeader,
   });
 
   final PackModel pack;
@@ -28,6 +31,12 @@ class PackManage extends StatefulWidget {
   final Future<void> Function(PackModel pack)? onBuildPack;
   final PackageBuilder? packagingBuilder;
   final ValueChanged<PackageBuilder>? onPackagingBuilderChanged;
+
+  /// 按仓库地址懒查询远端最新 tag；测试可注入。
+  final Future<String?> Function(String repoUrl)? loadLatestVersion;
+
+  /// 读取包内 build.py 头部；为 null 时由文件管理页使用默认真实读取。
+  final Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader;
 
   @override
   State<PackManage> createState() => _PackManageState();
@@ -107,6 +116,8 @@ class _PackManageState extends State<PackManage> {
             pack: pack,
             onBuildPack: widget.onBuildPack,
             onSave: widget.onSave,
+            loadLatestVersion: widget.loadLatestVersion,
+            loadHeader: widget.loadHeader ?? loadBuildScriptHeader,
           ),
     );
   }

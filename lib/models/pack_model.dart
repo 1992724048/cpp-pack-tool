@@ -17,6 +17,10 @@ class PackModel {
   final String? iconPath;
   final String? sourcePath;
 
+  /// 上次构建记录的仓库版本（git tag，回退短哈希）；未构建过为 null。
+  /// 构建流程会以 `# source: none` 跳过记录，构建回调在构建完成前原地更新本字段。
+  String? sourceVersion;
+
   List<FileModel> files = [];
   List<CmdModel> commands = [];
   List<DependencyModel> dependencies = [];
@@ -37,6 +41,7 @@ class PackModel {
     this.license,
     this.iconPath,
     this.sourcePath,
+    this.sourceVersion,
   });
 
   Map<String, Object?> toMap() {
@@ -48,6 +53,7 @@ class PackModel {
       if (license != null) 'license': license,
       if (iconPath != null) 'iconPath': iconPath,
       if (sourcePath != null) 'sourcePath': sourcePath,
+      if (sourceVersion != null) 'sourceVersion': sourceVersion,
       'files': <Map<String, Object?>>[
         for (final FileModel file in files) file.toMap(),
       ],
@@ -91,6 +97,7 @@ class PackModel {
       license: _optionalString(map, 'license'),
       iconPath: _optionalString(map, 'iconPath'),
       sourcePath: _optionalString(map, 'sourcePath'),
+      sourceVersion: _optionalSourceVersion(map),
     );
 
     pack.files.addAll(<FileModel>[
@@ -200,6 +207,12 @@ String? _optionalString(Map<String, Object?> map, String key) {
     throw FormatException('字段 $key 类型错误，应为字符串');
   }
   return value.isEmpty ? null : value;
+}
+
+/// 记录字段容错读取：非字符串或空串视为未记录（不阻断配置加载）。
+String? _optionalSourceVersion(Map<String, Object?> map) {
+  final Object? value = map['sourceVersion'];
+  return value is String && value.isNotEmpty ? value : null;
 }
 
 String _describeScriptError(Map<String, Object?> item, Object error) {

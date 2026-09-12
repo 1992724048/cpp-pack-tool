@@ -54,6 +54,33 @@ void main() {
     expect(image.fit, BoxFit.contain);
     expect(image.errorBuilder, isNotNull);
   });
+
+  testWidgets('未提供徽标状态时不渲染仓库徽标', (tester) async {
+    await _pumpItems(tester, _items(<PackModel>[_pack()]));
+
+    expect(find.byKey(const Key('repoBadge_demo')), findsNothing);
+    expect(find.byKey(const Key('repoUpdateBadge_demo')), findsNothing);
+  });
+
+  testWidgets('git 状态渲染 git 徽标', (tester) async {
+    await _pumpItems(
+      tester,
+      _items(<PackModel>[_pack()], repoBadgeFor: (_) => RepoBadge.git),
+    );
+
+    expect(find.byKey(const Key('repoBadge_demo')), findsOneWidget);
+    expect(find.byKey(const Key('repoUpdateBadge_demo')), findsNothing);
+  });
+
+  testWidgets('update 状态渲染更新徽标且不显示 git 徽标', (tester) async {
+    await _pumpItems(
+      tester,
+      _items(<PackModel>[_pack()], repoBadgeFor: (_) => RepoBadge.update),
+    );
+
+    expect(find.byKey(const Key('repoUpdateBadge_demo')), findsOneWidget);
+    expect(find.byKey(const Key('repoBadge_demo')), findsNothing);
+  });
 }
 
 PackModel _pack({String? iconPath, String? sourcePath}) => PackModel(
@@ -71,6 +98,40 @@ LibraryItem _firstItem(PackModel pack) =>
           pickDirectory: _pickDirectory,
         ).single
         as LibraryItem;
+
+List<NavigationPaneItem> _items(
+  List<PackModel> packs, {
+  RepoBadge? Function(PackModel pack)? repoBadgeFor,
+}) {
+  return PackList.buildCards(
+    packs,
+    onSave: _acceptSave,
+    pickDirectory: _pickDirectory,
+    repoBadgeFor: repoBadgeFor,
+  );
+}
+
+Future<void> _pumpItems(
+  WidgetTester tester,
+  List<NavigationPaneItem> items,
+) async {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(
+    FluentApp(
+      home: NavigationView(
+        pane: NavigationPane(
+          selected: 0,
+          displayMode: PaneDisplayMode.expanded,
+          items: items,
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
 
 Future<bool> _acceptSave(PackModel pack) async => true;
 

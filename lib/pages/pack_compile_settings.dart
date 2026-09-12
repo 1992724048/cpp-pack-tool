@@ -370,6 +370,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         license: pack.license,
         iconPath: pack.iconPath,
         sourcePath: pack.sourcePath,
+        sourceVersion: pack.sourceVersion,
       )
       ..files = pack.files
       ..commands = commands ?? pack.commands

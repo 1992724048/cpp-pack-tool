@@ -51,6 +51,7 @@ PackModel copyPackWithFiles(PackModel pack, List<FileModel> files) {
       license: pack.license,
       iconPath: findIconFile(files)?.path,
       sourcePath: pack.sourcePath,
+      sourceVersion: pack.sourceVersion,
     )
     ..files = files
     ..commands = pack.commands

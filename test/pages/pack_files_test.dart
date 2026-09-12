@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -758,6 +760,86 @@ void main() {
     expect(calls, 2);
     expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
     expect(find.byKey(const Key('buildOption_target')), findsOneWidget);
+  });
+
+  testWidgets('有仓库时显示当前与最新版本', (tester) async {
+    final Completer<String?> latest = Completer<String?>();
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) => latest.future,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
+    expect(find.text('当前版本：v1.0.0'), findsOneWidget);
+    expect(find.text('最新版本：查询中…'), findsOneWidget);
+
+    latest.complete('v2.0.0');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('最新版本：v2.0.0'), findsOneWidget);
+    expect(find.text('最新版本：查询中…'), findsNothing);
+  });
+
+  testWidgets('未注入最新版本加载器时显示占位', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
+    expect(find.text('当前版本：—'), findsOneWidget);
+    expect(find.text('最新版本：—'), findsOneWidget);
+  });
+
+  testWidgets('无仓库的包不显示版本行', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => null,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsNothing);
+  });
+
+  testWidgets('最新版本查询失败时显示占位', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => null,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('当前版本：v1.0.0'), findsOneWidget);
+    expect(find.text('最新版本：—'), findsOneWidget);
   });
 }
 

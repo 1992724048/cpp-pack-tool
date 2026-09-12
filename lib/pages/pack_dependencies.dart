@@ -274,6 +274,7 @@ PackModel _withDependencies(
       license: pack.license,
       iconPath: pack.iconPath,
       sourcePath: pack.sourcePath,
+      sourceVersion: pack.sourceVersion,
     )
     ..files = pack.files
     ..commands = pack.commands

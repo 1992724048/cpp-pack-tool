@@ -265,7 +265,8 @@ void main() {
             type: HistoryType.created,
             message: '创建包',
           ),
-        ];
+        ]
+        ..sourceVersion = 'v5.6.7';
       const BuildScriptHeader header = BuildScriptHeader(
         repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
@@ -294,6 +295,7 @@ void main() {
       expect(updated.dependencies[1].version, '[1.2.3,)');
       expect(updated.macros.single.value, 'A=1');
       expect(updated.history.single.message, '创建包');
+      expect(updated.sourceVersion, 'v5.6.7');
       expect(updated.buildOptions, <String, String>{'tbb': 'on'});
       // 不修改入参：原包列表保持原样
       expect(pack.commands, isEmpty);

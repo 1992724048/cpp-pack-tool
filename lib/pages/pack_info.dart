@@ -109,6 +109,7 @@ class _PackInfoState extends State<PackInfo> {
             license: _license,
             iconPath: widget.pack.iconPath,
             sourcePath: widget.pack.sourcePath,
+            sourceVersion: widget.pack.sourceVersion,
           )
           ..files = widget.pack.files
           ..commands = widget.pack.commands

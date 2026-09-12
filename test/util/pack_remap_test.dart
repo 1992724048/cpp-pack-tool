@@ -74,6 +74,7 @@ void main() {
               license: 'MIT',
               iconPath: 'assets/old.png',
               sourcePath: r'D:\src',
+              sourceVersion: 'v2.3.4',
             )
             ..files = <FileModel>[
               FileModel(name: 'old.h', path: 'include/old.h', size: 64),
@@ -122,6 +123,7 @@ void main() {
       expect(updated.description, '描述');
       expect(updated.license, 'MIT');
       expect(updated.sourcePath, r'D:\src');
+      expect(updated.sourceVersion, 'v2.3.4');
       expect(updated.iconPath, 'assets/logo.svg');
       expect(updated.files, same(files));
       expect(updated.commands, same(pack.commands));

@@ -30,6 +30,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             onStage(PackBuildStage.downloading);
             await downloadGate.future;
@@ -111,6 +112,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -141,6 +143,7 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
       }) async {},
       scanFiles: (String sourcePath) async => throw ArgumentError('目录不存在: X'),
       onApply: (PackModel pack) async {},
@@ -161,6 +164,7 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async => throw Exception('写入失败'),
@@ -182,6 +186,7 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -201,6 +206,7 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -229,6 +235,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             buildCount++;
           },
@@ -264,6 +271,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             received = environment;
           },
@@ -288,6 +296,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -317,6 +326,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             receivedLines = <String>[
               'INFO: 开始构建',
@@ -360,6 +370,7 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
           }) async {
             onOutput?.call('ERROR: 即将失败');
             throw const PackBuildException(
@@ -387,6 +398,57 @@ void main() {
       findsNothing,
     );
     expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('构建回调的仓库版本写入应用包', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {
+        onSourceVersion?.call('v3.1.4');
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied, isNotNull);
+    expect(applied!.sourceVersion, 'v3.1.4');
+  });
+
+  testWidgets('未收到版本回调时保留原记录', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      pack: _pack()..sourceVersion = 'v1.0.0',
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied, isNotNull);
+    expect(applied!.sourceVersion, 'v1.0.0');
   });
 }
 

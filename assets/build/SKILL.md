@@ -19,7 +19,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 1. 解析库源码根目录的 `build.py`（文件名大小写不敏感；根级 `build.py` 不随包分发）；
 2. 检测编译器（ICX > clang-cl > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
 3. `git clone` / `git pull --ff-only` 源码到 `cache/build/<清洗包ID>/`（声明 `# source: none` 时跳过，仅创建该目录）；
-4. 以**包源目录为工作目录**运行 `python build.py`（无 `python` 时回退 `py -3`），并注入「环境变量」一节的变量；
+4. 以**包源目录为工作目录**运行 `python build.py`（Python 缺失时工具自动下载最小版到 `tools/python`；`python` 优先、`py -3` 兜底），并注入「环境变量」一节的变量；
 5. 退出码 0 = 成功，非 0 = 失败（工具会显示输出尾部）；成功后自动扫描并重新映射产物。
 
 ## 契约总览（build.py 头部）
@@ -32,9 +32,12 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | 其后连续行 | `# tool: <name> <url> [bin=<子目录>]` | 声明自动下载的环境工具：zip 解压到 `tools/<name>/` 并加入子进程 PATH。`name` 限 `[A-Za-z0-9._-]+`；`url` 为 http(s) zip；`bin` 为相对子目录（如 `perl/bin`），不得含盘符或 `..`。 |
 | 其后连续行 | `# option: <name> = <默认值> \| <备选值> …` | 声明构建选项：**首值为默认值**，工具 UI 在「构建」按钮旁渲染下拉框，选中值经 `CNP_OPTION_<NAME>` 传入。`name` 限 `[A-Za-z_][A-Za-z0-9_]*`；候选值用 `\|` 分隔，不得为空或重复。 |
 | 其后连续行 | `# source: none` | 预构建配方：跳过 git 源码拉取；`SRC_PATH` 目录仍会创建并注入，作为脚本自行下载 / 解压的工作区。仅字面值 `none` 合法，其余值按注释忽略。 |
+| 其后连续行 | `# depends: <包名> [<版本范围>]` | 声明依赖的包：重映射/构建时自动加入依赖管理（系统条目，禁改删）。`<包名>` 非空白；`<版本范围>` 可选单 token（如 `[1.2.0,)`），缺省时按本地同名包版本推断。 |
 | 其余 `#` 行 | 普通注释 | 忽略；非法指令行同样按注释忽略（不报错）。 |
 
 > 同名 tool / option 以首次声明为准；未声明的选项不会下发环境变量。
+>
+> 根级 `pre.bat` / `post.bat` 会被工具自动注册为系统编译命令（执行时附加 `"$(TargetPath)"` 参数，脚本内以 `%~1` 取目标路径；系统条目禁改删）。
 
 ## 环境变量（工具注入，脚本只读）
 
@@ -203,4 +206,6 @@ BUILD_OUT = os.environ["BUILD_OUT"]
 - [ ] 中间构建目录位于 `SRC_PATH` 下，`BUILD_OUT` 无临时 / 中间文件残留。
 - [ ] 选项经 `os.environ.get("CNP_OPTION_<NAME>")` 读取；未声明选项不下发。
 - [ ] 预构建配方：头部声明 `# source: none`；下载 / 解压缓存位于 `SRC_PATH` 下且可复用；无关目录未进入 `BUILD_OUT`。
+- [ ] 依赖其它包时在头部声明 `# depends: <包名> [<版本范围>]`。
+- [ ] 需消费方构建前/后处理（如注入）时，在源目录根部提供 `pre.bat` / `post.bat`（以 `%~1` 为目标路径）。
 - [ ] 根级 `build.py` 不随包分发（打包器自动排除，无需手动处理）。

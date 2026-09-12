@@ -16,13 +16,14 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
   Map<String, String>? environment,
 });
 
-/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`
-/// 调用 [runPackBuild]。
+/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`/
+/// `onSourceVersion` 调用 [runPackBuild]。
 typedef PackBuildRunner = Future<void> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  void Function(String version)? onSourceVersion,
 });
 
 /// 流式子进程执行器：与 `Process.start` 同形的可注入替代（测试用）。
@@ -61,6 +62,9 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
 /// [onOutput] 非空时构建进程走流式捕获：stdout/stderr 逐行转发（不去重、按流
 /// 顺序），同时汇聚完整输出用于失败诊断；为 null 时保持一次性捕获（无流式）。
+/// [onSourceVersion] 非空时在源码就绪后查询仓库版本（`git describe --tags
+/// --abbrev=0`，失败回退 `git rev-parse --short HEAD`）并回调；查询失败静默
+/// 跳过，`# source: none` 包不查询。为 null 时不产生任何额外 git 调用。
 /// [streamRunner] 供测试注入 `Process.start` 的替代实现。
 Future<void> runPackBuild(
   PackModel pack,
@@ -68,6 +72,7 @@ Future<void> runPackBuild(
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
+  void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
 }) async {
@@ -105,6 +110,16 @@ Future<void> runPackBuild(
       await _pullRepository(processRunner, target, environment);
     } else {
       await _cloneRepository(processRunner, target, header.repo, environment);
+    }
+    if (onSourceVersion != null) {
+      final String? version = await _querySourceVersion(
+        processRunner,
+        target,
+        environment,
+      );
+      if (version != null) {
+        onSourceVersion(version);
+      }
     }
   }
 
@@ -183,6 +198,63 @@ Future<ProcessResult> _runGit(
       _gitPromptEnvironmentKey: '0',
     },
   );
+}
+
+/// 查询仓库版本：`git describe --tags --abbrev=0`，失败回退短哈希；均失败返回 null。
+Future<String?> _querySourceVersion(
+  PackProcessRunner processRunner,
+  Directory target,
+  Map<String, String>? environment,
+) async {
+  final String? tag = await _describeTag(processRunner, target, environment);
+  if (tag != null) {
+    return tag;
+  }
+  return _shortHead(processRunner, target, environment);
+}
+
+Future<String?> _describeTag(
+  PackProcessRunner processRunner,
+  Directory target,
+  Map<String, String>? environment,
+) async {
+  try {
+    final ProcessResult result = await _runGit(
+      processRunner,
+      const <String>['describe', '--tags', '--abbrev=0'],
+      workingDirectory: target.path,
+      environment: environment,
+    );
+    if (result.exitCode != 0) {
+      return null;
+    }
+    final String tag = '${result.stdout}'.trim();
+    return tag.isEmpty ? null : tag;
+  } on ProcessException {
+    return null;
+  }
+}
+
+Future<String?> _shortHead(
+  PackProcessRunner processRunner,
+  Directory target,
+  Map<String, String>? environment,
+) async {
+  try {
+    final ProcessResult result = await _runGit(
+      processRunner,
+      const <String>['rev-parse', '--short', 'HEAD'],
+      workingDirectory: target.path,
+      environment: environment,
+    );
+    if (result.exitCode != 0) {
+      return null;
+    }
+    final String hash = '${result.stdout}'.trim();
+    return hash.isEmpty ? null : hash;
+  } on ProcessException {
+    return null;
+  }
 }
 
 Future<void> _deleteResidual(String path) async {

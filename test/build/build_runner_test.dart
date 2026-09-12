@@ -821,6 +821,189 @@ void main() {
       expect(_streamCalls.last.arguments, <String>['-3', 'build.py']);
     });
   });
+
+  group('源码版本记录', () {
+    test('describe 命中最近 tag 时回调版本', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<String> versions = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (call) async {
+          if (call.arguments.first == 'describe') {
+            return ProcessResult(1, 0, 'v1.2.3\n', '');
+          }
+          return _success();
+        }),
+        onSourceVersion: versions.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(versions, <String>['v1.2.3']);
+      final _ProcessCall describe = calls.firstWhere(
+        (_ProcessCall call) => call.arguments.first == 'describe',
+      );
+      expect(describe.arguments, <String>['describe', '--tags', '--abbrev=0']);
+      expect(describe.workingDirectory, targetPath);
+      expect(describe.environment, <String, String>{
+        'GIT_TERMINAL_PROMPT': '0',
+      });
+      expect(
+        calls.where((_ProcessCall call) => call.arguments.first == 'rev-parse'),
+        isEmpty,
+      );
+    });
+
+    test('describe 失败时回退短哈希', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<String> versions = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (call) async {
+          if (call.arguments.first == 'describe') {
+            return ProcessResult(1, 128, '', 'fatal: no names found\n');
+          }
+          if (call.arguments.first == 'rev-parse') {
+            return ProcessResult(1, 0, 'abc1234\n', '');
+          }
+          return _success();
+        }),
+        onSourceVersion: versions.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(versions, <String>['abc1234']);
+      final _ProcessCall head = calls.firstWhere(
+        (_ProcessCall call) => call.arguments.first == 'rev-parse',
+      );
+      expect(head.arguments, <String>['rev-parse', '--short', 'HEAD']);
+    });
+
+    test('describe 抛异常时回退短哈希', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<String> versions = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(<_ProcessCall>[], (call) async {
+          if (call.arguments.first == 'describe') {
+            throw ProcessException('git', call.arguments, 'not found');
+          }
+          if (call.arguments.first == 'rev-parse') {
+            return ProcessResult(1, 0, 'deadbee', '');
+          }
+          return _success();
+        }),
+        onSourceVersion: versions.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(versions, <String>['deadbee']);
+    });
+
+    test('两种查询均失败时静默且构建继续', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<String> versions = <String>[];
+      final List<PackBuildStage> stages = <PackBuildStage>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        stages.add,
+        processRunner: _runner(calls, (call) async {
+          if (call.arguments.first == 'describe' ||
+              call.arguments.first == 'rev-parse') {
+            return ProcessResult(1, 128, '', 'fatal\n');
+          }
+          return _success();
+        }),
+        onSourceVersion: versions.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(versions, isEmpty);
+      expect(stages, <PackBuildStage>[
+        PackBuildStage.downloading,
+        PackBuildStage.building,
+      ]);
+    });
+
+    test('# source: none 不查询版本', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# source: none\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<String> versions = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        onSourceVersion: versions.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(versions, isEmpty);
+      expect(
+        calls.where((_ProcessCall call) => call.executable == 'git'),
+        isEmpty,
+      );
+      expect(calls, hasLength(1));
+      expect(calls.single.executable, 'python');
+    });
+
+    test('未提供回调时不产生额外 git 调用', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+      );
+
+      expect(calls, hasLength(2));
+      expect(calls[0].arguments.first, 'clone');
+      expect(calls[1].executable, 'python');
+    });
+  });
 }
 
 PackModel _pack({String? sourcePath, List<FileModel>? files}) {

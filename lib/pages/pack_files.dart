@@ -19,6 +19,7 @@ class PackFiles extends StatefulWidget {
     this.onBuildPack,
     this.onSave,
     this.loadHeader = loadBuildScriptHeader,
+    this.loadLatestVersion,
   });
 
   final PackModel pack;
@@ -30,6 +31,9 @@ class PackFiles extends StatefulWidget {
 
   /// 读取包内 build.py 头部；测试可注入。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadHeader;
+
+  /// 按仓库地址懒查询远端最新 tag；为 null 时不查询（最新版本显示 —）。
+  final Future<String?> Function(String repoUrl)? loadLatestVersion;
 
   @override
   State<PackFiles> createState() => _PackFilesState();
@@ -53,6 +57,9 @@ class _PackFilesState extends State<PackFiles> {
   BuildScriptHeader? _header;
   bool _savingOption = false;
   int _headerLoadId = 0;
+  String? _latestVersion;
+  bool _latestLoaded = false;
+  int _latestLoadId = 0;
 
   @override
   void initState() {
@@ -92,6 +99,45 @@ class _PackFilesState extends State<PackFiles> {
       return;
     }
     setState(() => _header = header);
+    _refreshLatestVersion();
+  }
+
+  Future<void> _refreshLatestVersion() async {
+    final String? repo = _header?.repo;
+    final Future<String?> Function(String repoUrl)? loader =
+        widget.loadLatestVersion;
+    final int loadId = ++_latestLoadId;
+    if (repo == null) {
+      setState(() {
+        _latestVersion = null;
+        _latestLoaded = false;
+      });
+      return;
+    }
+    if (loader == null) {
+      setState(() {
+        _latestVersion = null;
+        _latestLoaded = true;
+      });
+      return;
+    }
+    setState(() {
+      _latestVersion = null;
+      _latestLoaded = false;
+    });
+    String? latest;
+    try {
+      latest = await loader(repo);
+    } catch (_) {
+      latest = null;
+    }
+    if (!mounted || loadId != _latestLoadId) {
+      return;
+    }
+    setState(() {
+      _latestVersion = latest;
+      _latestLoaded = true;
+    });
   }
 
   static List<String> _pathSegments(String path) => path
@@ -316,6 +362,22 @@ class _PackFilesState extends State<PackFiles> {
     );
   }
 
+  Widget _buildRepoVersionRow() {
+    final String current = widget.pack.sourceVersion ?? '—';
+    final String latest = _latestLoaded ? (_latestVersion ?? '—') : '查询中…';
+    return Padding(
+      key: const Key('packRepoVersionLabel'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        children: <Widget>[
+          Text('当前版本：$current'),
+          const SizedBox(width: 24),
+          Text('最新版本：$latest'),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOptionField(BuildScriptOption option) {
     final String value =
         widget.pack.buildOptions[option.name] ?? option.defaultValue;
@@ -390,6 +452,7 @@ class _PackFilesState extends State<PackFiles> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (canBuild) _buildToolbar(),
+        if (_header?.repo != null) _buildRepoVersionRow(),
         Expanded(
           child: widget.pack.files.isEmpty
               ? const Center(child: Text('该包暂无文件'))
@@ -428,6 +491,7 @@ PackModel _withBuildOption(PackModel pack, String name, String value) {
       license: pack.license,
       iconPath: pack.iconPath,
       sourcePath: pack.sourcePath,
+      sourceVersion: pack.sourceVersion,
     )
     ..files = pack.files
     ..commands = pack.commands

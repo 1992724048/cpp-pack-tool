@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -119,6 +122,7 @@ class MainLayout extends StatefulWidget {
     this.prepareBuildEnv,
     this.detectCompilers = toolchain.detectCompilers,
     this.loadBuildHeader = loadBuildScriptHeader,
+    this.loadRemoteTags = listRemoteTags,
     this.now = DateTime.now,
   });
 
@@ -144,6 +148,9 @@ class MainLayout extends StatefulWidget {
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
 
+  /// 查询仓库远端 tag 列表（懒查询 + 按 URL 会话缓存的底层入口）；测试注入避免触网。
+  final Future<List<String>?> Function(String repoUrl) loadRemoteTags;
+
   final DateTime Function() now;
 
   @override
@@ -157,6 +164,18 @@ class _MainLayoutState extends State<MainLayout> {
   List<PackModel> _packs = [];
   int? _selected;
   PackageBuilder _packagingBuilder = PackageBuilderRegistry.all.first;
+
+  /// 包名（小写）→ 远程仓库地址；已解析但无仓库时为 null。
+  final Map<String, String?> _packRepos = <String, String?>{};
+
+  /// 包名（小写）→ 上次解析头部时的源目录/脚本路径指纹，避免重复读取。
+  final Map<String, String> _resolvedHeaderKeys = <String, String>{};
+
+  /// 仓库地址 → 远端最新 tag 查询 Future（去重同一仓库的并发查询）。
+  final Map<String, Future<String?>> _latestTagQueries = <String, Future<String?>>{};
+
+  /// 仓库地址 → 已完成的远端最新 tag；查询失败/无可用 tag 时为 null。
+  final Map<String, String?> _latestTags = <String, String?>{};
 
   @override
   void initState() {
@@ -188,6 +207,7 @@ class _MainLayoutState extends State<MainLayout> {
       _sortPacks();
       _selected = _packs.isEmpty ? null : 0;
     });
+    _resolveRepos();
     if (errors.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _showLoadErrorsToast(errors),
@@ -298,6 +318,7 @@ class _MainLayoutState extends State<MainLayout> {
         _selected = selected;
       }
     });
+    _resolveRepos();
   }
 
   bool get _hasSelectedPack {
@@ -313,6 +334,81 @@ class _MainLayoutState extends State<MainLayout> {
       }
     }
     return null;
+  }
+
+  static String _packRepoKey(PackModel pack) {
+    final FileModel? script = findBuildScript(pack.files);
+    return '${pack.sourcePath ?? ''}\u0000${script?.path ?? ''}';
+  }
+
+  /// 低优先级解析全部包的 build.py 头部（非阻塞）；键未变化时跳过重复读取。
+  void _resolveRepos() {
+    for (final PackModel pack in List<PackModel>.of(_packs)) {
+      unawaited(_resolveRepoFor(pack));
+    }
+  }
+
+  Future<void> _resolveRepoFor(PackModel pack) async {
+    final String name = pack.name.toLowerCase();
+    final String key = _packRepoKey(pack);
+    if (_resolvedHeaderKeys[name] == key) {
+      return;
+    }
+    _resolvedHeaderKeys[name] = key;
+    String? repo;
+    try {
+      final BuildScriptHeader? header = await widget.loadBuildHeader(pack);
+      repo = header?.repo;
+    } catch (_) {
+      repo = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _packRepos[name] = repo);
+    if (repo != null) {
+      unawaited(_latestTagFor(repo));
+    }
+  }
+
+  /// 仓库远端最新 tag：命中缓存直接返回，进行中的查询去重复用。
+  Future<String?> _latestTagFor(String repoUrl) {
+    final Future<String?>? pending = _latestTagQueries[repoUrl];
+    if (pending != null) {
+      return pending;
+    }
+    final Future<String?> query = _queryLatestTag(repoUrl);
+    _latestTagQueries[repoUrl] = query;
+    return query;
+  }
+
+  Future<String?> _queryLatestTag(String repoUrl) async {
+    List<String>? tags;
+    try {
+      tags = await widget.loadRemoteTags(repoUrl);
+    } catch (_) {
+      tags = null;
+    }
+    final String? latest = tags == null ? null : latestTag(tags);
+    if (mounted) {
+      setState(() => _latestTags[repoUrl] = latest);
+    }
+    return latest;
+  }
+
+  RepoBadge? _repoBadgeFor(PackModel pack) {
+    final String? repo = _packRepos[pack.name.toLowerCase()];
+    if (repo == null) {
+      return null;
+    }
+    final String? current = pack.sourceVersion;
+    final String? latest = _latestTags[repo];
+    if (current != null &&
+        latest != null &&
+        compareTagVersions(latest, current) > 0) {
+      return RepoBadge.update;
+    }
+    return RepoBadge.git;
   }
 
   Future<void> _deleteSelectedPack() async {
@@ -355,6 +451,8 @@ class _MainLayoutState extends State<MainLayout> {
     }
     setState(() {
       _packs.removeAt(selected);
+      _packRepos.remove(pack.name.toLowerCase());
+      _resolvedHeaderKeys.remove(pack.name.toLowerCase());
       if (_packs.isEmpty) {
         _selected = null;
       } else if (selected >= _packs.length) {
@@ -424,6 +522,8 @@ class _MainLayoutState extends State<MainLayout> {
       }
     }
     final PackModel updated = await _syncSystemEntries(pack);
+    // 系统条目与重映射拷贝均为全字段重建：构建流程携带的新版本优先，否则保留原记录
+    updated.sourceVersion = pack.sourceVersion ?? previous?.sourceVersion;
     await widget.store.savePack(updated);
     if (!mounted) {
       return;
@@ -719,6 +819,9 @@ class _MainLayoutState extends State<MainLayout> {
           onBuildPack: _buildPack,
           packagingBuilder: _packagingBuilder,
           onPackagingBuilderChanged: _selectPackagingBuilder,
+          loadLatestVersion: _latestTagFor,
+          repoBadgeFor: _repoBadgeFor,
+          loadHeader: widget.loadBuildHeader,
         ),
         footerItems: [
           PaneItemSeparator(),
