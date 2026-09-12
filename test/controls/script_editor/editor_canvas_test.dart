@@ -267,6 +267,14 @@ void main() {
       );
     });
 
+    test('math 五节点图标（视觉规范 §9）', () {
+      expect(nodeTypeIcon('math.arithmetic'), FluentIcons.calculator_addition);
+      expect(nodeTypeIcon('math.bitwise'), FluentIcons.calculator_delta);
+      expect(nodeTypeIcon('math.bitNot'), FluentIcons.undo);
+      expect(nodeTypeIcon('math.numberToString'), FluentIcons.text_field);
+      expect(nodeTypeIcon('math.stringToNumber'), FluentIcons.number_field);
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,
@@ -965,6 +973,40 @@ void main() {
       expect(controller.project.edges.single.from.node, 'n0');
     });
 
+    testWidgets('拖到类型不匹配引脚拒绝：string → 数值提示且图不变', (WidgetTester tester) async {
+      final GraphEditorController controller = await _pumpCanvas(
+        tester,
+        _project(
+          nodes: <ScriptNodeModel>[
+            _node('n1', 'value.text', x: 40, y: 60),
+            _node('n2', 'math.arithmetic', x: 400, y: 60),
+            _node('n3', 'value.number', x: 760, y: 60),
+          ],
+          edges: <ScriptEdgeModel>[
+            ScriptEdgeModel(
+              from: ScriptEdgeEndpoint(node: 'n3', pin: 'result'),
+              to: ScriptEdgeEndpoint(node: 'n2', pin: 'a'),
+            ),
+          ],
+        ),
+      );
+
+      // 目标引脚已被 number 提供者占用：类型不匹配先于静默替换判定（拒绝且图不变），
+      // 且非诊断错误环——引脚红环仅来自拒绝红闪，可验证红闪随 300ms 结束消失。
+      await _dragPinToPin(tester, 'n1', 'result', 'n2', 'a');
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('无法连接：目标引脚需要 数值'), findsOneWidget);
+      expect(find.byKey(const Key('pinRing_n2_a')), findsOneWidget);
+      expect(controller.project.edges, hasLength(1));
+      expect(controller.project.edges.single.from.node, 'n3');
+
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(find.byKey(const Key('pinRing_n2_a')), findsNothing);
+      expect(controller.project.edges, hasLength(1));
+    });
+
     testWidgets('拖到占用输入引脚替换旧连接（静默）', (WidgetTester tester) async {
       final GraphEditorController controller = await _pumpCanvas(
         tester,
@@ -1463,7 +1505,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('添加节点子菜单含 8 分类，节点项在弹出点场景坐标添加', (WidgetTester tester) async {
+    testWidgets('添加节点子菜单含全部分类，节点项在弹出点场景坐标添加', (WidgetTester tester) async {
       final GraphEditorController controller = await _pumpCanvas(
         tester,
         _project(),

@@ -39,7 +39,8 @@ Widget buildEditorContextMenu({
   );
 }
 
-/// 添加节点子菜单（§5.6）：8 分类子菜单，项 = 该类节点，落点 = 弹出点场景坐标。
+/// 添加节点子菜单（§5.6）：分类子菜单（ScriptNodeCategory.values 声明序），
+/// 项 = 该类节点，落点 = 弹出点场景坐标。
 MenuItemsBuilder _buildAddNodeItems(
   Offset scenePoint,
   void Function(String typeKey, Offset scenePoint) onAddNode,

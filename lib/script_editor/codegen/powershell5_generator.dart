@@ -367,6 +367,18 @@ class _PowerShellEmitter {
         return _compareStringExpression(node);
       case 'logic.not':
         return '(-not (${_expression(node, 'input')}))';
+      case 'math.arithmetic':
+        return _arithmeticExpression(node);
+      case 'math.bitwise':
+        return _bitwiseExpression(node);
+      case 'math.bitNot':
+        return '(-bnot [long](${_expression(node, 'value')}))';
+      case 'math.numberToString':
+        return '(Convert.ToString(${_expression(node, 'value')}, '
+            '[Globalization.CultureInfo]::InvariantCulture))';
+      case 'math.stringToNumber':
+        return '([double]::Parse(${_expression(node, 'value')}, '
+            '[Globalization.CultureInfo]::InvariantCulture))';
       default:
         // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的表达式生成尚未实现');
@@ -418,6 +430,29 @@ class _PowerShellEmitter {
       default:
         return '($left ${ignoreCase ? '-ieq' : '-ceq'} $right)';
     }
+  }
+
+  String _arithmeticExpression(ScriptNodeModel node) {
+    final String symbol = switch (_param(node, 'operator')) {
+      'subtract' => '-',
+      'multiply' => '*',
+      'divide' => '/',
+      'modulo' => '%',
+      _ => '+',
+    };
+    return '(${_expression(node, 'a')} $symbol ${_expression(node, 'b')})';
+  }
+
+  String _bitwiseExpression(ScriptNodeModel node) {
+    final String psOperator = switch (_param(node, 'operator')) {
+      'or' => '-bor',
+      'xor' => '-bxor',
+      'shiftLeft' => '-shl',
+      'shiftRight' => '-shr',
+      _ => '-band',
+    };
+    return '([long](${_expression(node, 'a')}) $psOperator '
+        '[long](${_expression(node, 'b')}))';
   }
 
   Object? _param(ScriptNodeModel node, String key) {

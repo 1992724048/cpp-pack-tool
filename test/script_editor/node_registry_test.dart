@@ -29,6 +29,11 @@ const Set<String> _expectedTypeKeys = <String>{
   'log.message',
   'logic.compareString',
   'logic.not',
+  'math.arithmetic',
+  'math.bitwise',
+  'math.bitNot',
+  'math.numberToString',
+  'math.stringToNumber',
 };
 
 ScriptParamDescriptor _param(String typeKey, String paramKey) {
@@ -43,13 +48,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 26 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(26));
+    test('总数 31 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(31));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(26),
+        hasLength(31),
       );
     });
 
@@ -142,6 +147,7 @@ void main() {
             ScriptNodeCategory.string: 6,
             ScriptNodeCategory.log: 1,
             ScriptNodeCategory.logic: 2,
+            ScriptNodeCategory.math: 5,
           };
       final List<ScriptNodeTypeDescriptor> collected =
           <ScriptNodeTypeDescriptor>[];
@@ -166,7 +172,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(26),
+        hasLength(31),
       );
     });
 
@@ -179,6 +185,7 @@ void main() {
       expect(ScriptNodeCategory.string.label, '字符串');
       expect(ScriptNodeCategory.log.label, '日志');
       expect(ScriptNodeCategory.logic.label, '逻辑');
+      expect(ScriptNodeCategory.math.label, '数值');
     });
   });
 
@@ -712,6 +719,120 @@ void main() {
         ScriptDataType.boolean,
       );
     });
+
+    test('math.arithmetic：a/b(number) → result，operator 默认 add', () {
+      final ScriptNodeTypeDescriptor arithmetic = NodeRegistry.byType(
+        'math.arithmetic',
+      )!;
+      expect(arithmetic.category, ScriptNodeCategory.math);
+      expect(arithmetic.displayName, '算术运算');
+      expect(
+        arithmetic.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'a', 'b', 'result'},
+      );
+      expect(
+        arithmetic.pins.every(
+          (ScriptPinDescriptor pin) => pin.kind == ScriptPinKind.data,
+        ),
+        isTrue,
+      );
+      for (final String pinId in <String>['a', 'b', 'result']) {
+        expect(_pin('math.arithmetic', pinId).dataType, ScriptDataType.number);
+      }
+      expect(_pin('math.arithmetic', 'a').isInput, isTrue);
+      expect(_pin('math.arithmetic', 'a').required, isTrue);
+      expect(_pin('math.arithmetic', 'b').isInput, isTrue);
+      expect(_pin('math.arithmetic', 'b').required, isTrue);
+      expect(_pin('math.arithmetic', 'result').isInput, isFalse);
+      expect(
+        _param('math.arithmetic', 'operator').type,
+        ScriptParamType.mathOperator,
+      );
+      expect(_param('math.arithmetic', 'operator').defaultValue, 'add');
+    });
+
+    test('math.bitwise：a/b(number) → result，operator 默认 and', () {
+      final ScriptNodeTypeDescriptor bitwise = NodeRegistry.byType(
+        'math.bitwise',
+      )!;
+      expect(bitwise.category, ScriptNodeCategory.math);
+      expect(bitwise.displayName, '位运算');
+      expect(
+        bitwise.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'a', 'b', 'result'},
+      );
+      for (final String pinId in <String>['a', 'b', 'result']) {
+        expect(_pin('math.bitwise', pinId).dataType, ScriptDataType.number);
+      }
+      expect(_pin('math.bitwise', 'a').required, isTrue);
+      expect(_pin('math.bitwise', 'b').required, isTrue);
+      expect(
+        _param('math.bitwise', 'operator').type,
+        ScriptParamType.bitwiseOperator,
+      );
+      expect(_param('math.bitwise', 'operator').defaultValue, 'and');
+    });
+
+    test('math.bitNot：value(number) → result(number)', () {
+      final ScriptNodeTypeDescriptor bitNot = NodeRegistry.byType(
+        'math.bitNot',
+      )!;
+      expect(bitNot.category, ScriptNodeCategory.math);
+      expect(bitNot.displayName, '按位取反');
+      expect(
+        bitNot.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'value', 'result'},
+      );
+      expect(_pin('math.bitNot', 'value').isInput, isTrue);
+      expect(_pin('math.bitNot', 'value').required, isTrue);
+      expect(_pin('math.bitNot', 'value').dataType, ScriptDataType.number);
+      expect(_pin('math.bitNot', 'result').dataType, ScriptDataType.number);
+      expect(bitNot.params, isEmpty);
+    });
+
+    test('math.numberToString：value(number) → result(string)', () {
+      final ScriptNodeTypeDescriptor numberToString = NodeRegistry.byType(
+        'math.numberToString',
+      )!;
+      expect(numberToString.category, ScriptNodeCategory.math);
+      expect(numberToString.displayName, '数值转文本');
+      expect(
+        numberToString.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'value', 'result'},
+      );
+      expect(
+        _pin('math.numberToString', 'value').dataType,
+        ScriptDataType.number,
+      );
+      expect(_pin('math.numberToString', 'value').required, isTrue);
+      expect(
+        _pin('math.numberToString', 'result').dataType,
+        ScriptDataType.string,
+      );
+      expect(numberToString.params, isEmpty);
+    });
+
+    test('math.stringToNumber：value(string) → result(number)', () {
+      final ScriptNodeTypeDescriptor stringToNumber = NodeRegistry.byType(
+        'math.stringToNumber',
+      )!;
+      expect(stringToNumber.category, ScriptNodeCategory.math);
+      expect(stringToNumber.displayName, '文本转数值');
+      expect(
+        stringToNumber.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+        <String>{'value', 'result'},
+      );
+      expect(
+        _pin('math.stringToNumber', 'value').dataType,
+        ScriptDataType.string,
+      );
+      expect(_pin('math.stringToNumber', 'value').required, isTrue);
+      expect(
+        _pin('math.stringToNumber', 'result').dataType,
+        ScriptDataType.number,
+      );
+      expect(stringToNumber.params, isEmpty);
+    });
   });
 
   group('参数清单 / 默认值 / 类型', () {
@@ -725,6 +846,8 @@ void main() {
         'value.text': <String>['value'],
         'value.boolean': <String>['value'],
         'value.number': <String>['value'],
+        'math.arithmetic': <String>['operator'],
+        'math.bitwise': <String>['operator'],
         'context.macro': <String>['macro'],
         'context.environment': <String>['name'],
         'context.packageFile': <String>['path'],
@@ -750,6 +873,8 @@ void main() {
       expect(_param('value.text', 'value').defaultValue, '');
       expect(_param('value.boolean', 'value').defaultValue, isFalse);
       expect(_param('value.number', 'value').defaultValue, 0);
+      expect(_param('math.arithmetic', 'operator').defaultValue, 'add');
+      expect(_param('math.bitwise', 'operator').defaultValue, 'and');
       expect(_param('context.macro', 'macro').defaultValue, 'OutDir');
       expect(_param('context.environment', 'name').defaultValue, '');
       expect(_param('context.packageFile', 'path').defaultValue, '');
@@ -783,6 +908,14 @@ void main() {
       expect(_param('value.text', 'value').type, ScriptParamType.text);
       expect(_param('value.boolean', 'value').type, ScriptParamType.boolean);
       expect(_param('value.number', 'value').type, ScriptParamType.number);
+      expect(
+        _param('math.arithmetic', 'operator').type,
+        ScriptParamType.mathOperator,
+      );
+      expect(
+        _param('math.bitwise', 'operator').type,
+        ScriptParamType.bitwiseOperator,
+      );
       expect(_param('context.environment', 'name').type, ScriptParamType.text);
     });
   });

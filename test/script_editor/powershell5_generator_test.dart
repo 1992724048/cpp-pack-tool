@@ -114,6 +114,81 @@ ScriptProjectModel _compareStringGraph({
   );
 }
 
+/// math 二元节点真实消费链：value.number(a) → 节点.a、value.number(b) → 节点.b，
+/// number 输出经 math.numberToString 转文本后写入 log.message。
+ScriptProjectModel _mathBinaryGraph({
+  required String typeKey,
+  required num a,
+  required num b,
+  String? operator,
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': a}),
+      _node('n3', 'value.number', params: <String, Object?>{'value': b}),
+      _node(
+        'n4',
+        typeKey,
+        params: operator == null
+            ? null
+            : <String, Object?>{'operator': operator},
+      ),
+      _node('n5', 'math.numberToString'),
+      _node('n6', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n6', 'exec'),
+      _edge('n2', 'result', 'n4', 'a'),
+      _edge('n3', 'result', 'n4', 'b'),
+      _edge('n4', 'result', 'n5', 'value'),
+      _edge('n5', 'result', 'n6', 'message'),
+    ],
+  );
+}
+
+/// math 一元数值节点真实消费链：value.number(value) → 节点.value →
+/// numberToString → log.message。
+ScriptProjectModel _mathUnaryGraph({
+  required String typeKey,
+  required num value,
+}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': value}),
+      _node('n3', typeKey),
+      _node('n4', 'math.numberToString'),
+      _node('n5', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n5', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'result', 'n4', 'value'),
+      _edge('n4', 'result', 'n5', 'message'),
+    ],
+  );
+}
+
+/// 文本转数值消费链：value.text(text) → stringToNumber → numberToString → log.message。
+ScriptProjectModel _stringToNumberGraph({required String text}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': text}),
+      _node('n3', 'math.stringToNumber'),
+      _node('n4', 'math.numberToString'),
+      _node('n5', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n5', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'result', 'n4', 'value'),
+      _edge('n4', 'result', 'n5', 'message'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -1354,6 +1429,160 @@ void main() {
         contains(
           "    if (('Abc'.IndexOf('b', "
           '[System.StringComparison]::OrdinalIgnoreCase) -ge 0)) {\n',
+        ),
+      );
+    });
+  });
+
+  group('math 节点发射（M4.2 T3）', () {
+    test('math.arithmetic：add 默认，value.number 字面量真实消费链', () {
+      final ScriptCompileResult leftLiteral = _compile(
+        _mathBinaryGraph(typeKey: 'math.arithmetic', a: 3, b: 5),
+      );
+      expect(leftLiteral.hasErrors, isFalse);
+      expect(
+        leftLiteral.code,
+        contains(
+          '    Write-Host (Convert.ToString((3 + 5), '
+          '[Globalization.CultureInfo]::InvariantCulture))\n',
+        ),
+      );
+
+      // value.number(3) → math.arithmetic(b)：右操作数亦为真实字面量
+      final ScriptCompileResult rightLiteral = _compile(
+        _mathBinaryGraph(typeKey: 'math.arithmetic', a: 10, b: 3),
+      );
+      expect(rightLiteral.hasErrors, isFalse);
+      expect(rightLiteral.code, contains('(10 + 3)'));
+    });
+
+    test('math.arithmetic：五种运算符映射', () {
+      const Map<String, String> symbols = <String, String>{
+        'add': '+',
+        'subtract': '-',
+        'multiply': '*',
+        'divide': '/',
+        'modulo': '%',
+      };
+      for (final MapEntry<String, String> entry in symbols.entries) {
+        final ScriptCompileResult result = _compile(
+          _mathBinaryGraph(
+            typeKey: 'math.arithmetic',
+            a: 6,
+            b: 4,
+            operator: entry.key,
+          ),
+        );
+        expect(result.hasErrors, isFalse, reason: entry.key);
+        expect(
+          result.code,
+          contains('(6 ${entry.value} 4)'),
+          reason: entry.key,
+        );
+      }
+    });
+
+    test('math.bitwise：and 默认与 shiftLeft 显式 Int64 定宽', () {
+      final ScriptCompileResult andResult = _compile(
+        _mathBinaryGraph(typeKey: 'math.bitwise', a: 12, b: 10),
+      );
+      expect(andResult.hasErrors, isFalse);
+      expect(
+        andResult.code,
+        contains(
+          '    Write-Host (Convert.ToString(([long](12) -band [long](10)), '
+          '[Globalization.CultureInfo]::InvariantCulture))\n',
+        ),
+      );
+
+      final ScriptCompileResult shiftResult = _compile(
+        _mathBinaryGraph(
+          typeKey: 'math.bitwise',
+          a: 1,
+          b: 4,
+          operator: 'shiftLeft',
+        ),
+      );
+      expect(shiftResult.hasErrors, isFalse);
+      expect(shiftResult.code, contains('([long](1) -shl [long](4))'));
+    });
+
+    test('math.bitwise：or / xor / shiftRight 映射', () {
+      expect(
+        _compile(
+          _mathBinaryGraph(typeKey: 'math.bitwise', a: 1, b: 2, operator: 'or'),
+        ).code,
+        contains('([long](1) -bor [long](2))'),
+      );
+      expect(
+        _compile(
+          _mathBinaryGraph(
+            typeKey: 'math.bitwise',
+            a: 1,
+            b: 2,
+            operator: 'xor',
+          ),
+        ).code,
+        contains('([long](1) -bxor [long](2))'),
+      );
+      expect(
+        _compile(
+          _mathBinaryGraph(
+            typeKey: 'math.bitwise',
+            a: 8,
+            b: 2,
+            operator: 'shiftRight',
+          ),
+        ).code,
+        contains('([long](8) -shr [long](2))'),
+      );
+    });
+
+    test('math.bitNot：数值真实消费链（-bnot [long]）', () {
+      final ScriptCompileResult result = _compile(
+        _mathUnaryGraph(typeKey: 'math.bitNot', value: 7),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    Write-Host (Convert.ToString((-bnot [long](7)), '
+          '[Globalization.CultureInfo]::InvariantCulture))\n',
+        ),
+      );
+    });
+
+    test('math.numberToString：数值转文本（InvariantCulture）', () {
+      final ScriptCompileResult result = _compile(
+        _dataLogGraph(
+          _node('n4', 'math.numberToString'),
+          inputs: <ScriptNodeModel>[
+            _node('n2', 'value.number', params: <String, Object?>{'value': 5}),
+          ],
+          inputEdges: <ScriptEdgeModel>[_edge('n2', 'result', 'n4', 'value')],
+        ),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          '    Write-Host (Convert.ToString(5, '
+          '[Globalization.CultureInfo]::InvariantCulture))\n',
+        ),
+      );
+    });
+
+    test('math.stringToNumber：文本转数值（[double]::Parse）', () {
+      final ScriptCompileResult result = _compile(
+        _stringToNumberGraph(text: '3.5'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          "    Write-Host (Convert.ToString(([double]::Parse('3.5', "
+          '[Globalization.CultureInfo]::InvariantCulture)), '
+          '[Globalization.CultureInfo]::InvariantCulture))\n',
         ),
       );
     });

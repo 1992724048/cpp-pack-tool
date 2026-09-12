@@ -79,6 +79,7 @@ Color nodeCategoryColor(ScriptNodeCategory category) {
     ScriptNodeCategory.string => UCColors.flavor.green,
     ScriptNodeCategory.log => UCColors.flavor.sky,
     ScriptNodeCategory.logic => UCColors.flavor.maroon,
+    ScriptNodeCategory.math => UCColors.flavor.sapphire,
   };
 }
 
@@ -111,6 +112,11 @@ IconData nodeTypeIcon(String typeKey) {
     'log.message' => FluentIcons.message,
     'logic.compareString' => FluentIcons.calculator,
     'logic.not' => FluentIcons.cancel,
+    'math.arithmetic' => FluentIcons.calculator_addition,
+    'math.bitwise' => FluentIcons.calculator_delta,
+    'math.bitNot' => FluentIcons.undo,
+    'math.numberToString' => FluentIcons.text_field,
+    'math.stringToNumber' => FluentIcons.number_field,
     _ => FluentIcons.cube_shape,
   };
 }

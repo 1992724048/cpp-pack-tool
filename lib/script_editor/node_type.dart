@@ -10,7 +10,8 @@ enum ScriptNodeCategory {
   value('常量'),
   string('字符串'),
   log('日志'),
-  logic('逻辑');
+  logic('逻辑'),
+  math('数值');
 
   const ScriptNodeCategory(this.label);
 

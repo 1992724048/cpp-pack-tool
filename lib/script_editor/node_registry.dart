@@ -655,6 +655,136 @@ class NodeRegistry {
             ),
           ],
         ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'math.arithmetic',
+          displayName: '算术运算',
+          category: ScriptNodeCategory.math,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'a',
+              label: 'A',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'b',
+              label: 'B',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.number,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'operator',
+              label: '运算符',
+              type: ScriptParamType.mathOperator,
+              defaultValue: 'add',
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'math.bitwise',
+          displayName: '位运算',
+          category: ScriptNodeCategory.math,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'a',
+              label: 'A',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'b',
+              label: 'B',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.number,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'operator',
+              label: '运算符',
+              type: ScriptParamType.bitwiseOperator,
+              defaultValue: 'and',
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'math.bitNot',
+          displayName: '按位取反',
+          category: ScriptNodeCategory.math,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'value',
+              label: '值',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.number,
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'math.numberToString',
+          displayName: '数值转文本',
+          category: ScriptNodeCategory.math,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'value',
+              label: '值',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'math.stringToNumber',
+          displayName: '文本转数值',
+          category: ScriptNodeCategory.math,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'value',
+              label: '值',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.number,
+            ),
+          ],
+        ),
       ];
 
   static final Map<String, ScriptNodeTypeDescriptor> _byType =

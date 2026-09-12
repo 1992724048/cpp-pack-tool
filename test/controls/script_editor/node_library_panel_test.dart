@@ -99,7 +99,7 @@ void main() {
         28,
       );
 
-      // 顶部首组条目默认可见
+      // 顶部首组条目默认可见，条目高 28
       for (final String typeKey in <String>[
         'flow.entry',
         'flow.branch',
@@ -108,57 +108,51 @@ void main() {
       ]) {
         expect(find.byKey(Key('nodeLibraryItem_$typeKey')), findsOneWidget);
       }
+      expect(
+        tester
+            .getSize(find.byKey(const Key('nodeLibraryItem_flow.entry')))
+            .height,
+        28,
+      );
 
-      // 滚到底：全部 8 组头与 26 个条目均已构建（默认全展开；列表懒加载）
+      // 逐个滚到目标：全部分组头与条目均已构建，且分组头按声明序浮出
+      // （默认全展开；列表懒加载——内容超出构建窗口后不能只跳到底部一次性断言）。
       final ScrollableState scrollable = tester.state<ScrollableState>(
         find.descendant(
           of: find.byType(Scrollbar),
           matching: find.byType(Scrollable),
         ),
       );
-      scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
-      await tester.pump();
-
-      // 尾部两组头仍按声明序
-      final double logTop = tester
-          .getTopLeft(find.byKey(const Key('nodeLibraryGroup_log')))
-          .dy;
-      final double logicTop = tester
-          .getTopLeft(find.byKey(const Key('nodeLibraryGroup_logic')))
-          .dy;
-      expect(logicTop, greaterThan(logTop));
-
+      double? previousGroupContentTop;
       for (final ScriptNodeCategory category in ScriptNodeCategory.values) {
-        expect(
-          find.byKey(
-            Key('nodeLibraryGroup_${category.name}'),
-            skipOffstage: false,
-          ),
-          findsOneWidget,
-          reason: category.name,
+        final Finder group = find.byKey(
+          Key('nodeLibraryGroup_${category.name}'),
         );
-      }
-      for (final ScriptNodeTypeDescriptor descriptor in NodeRegistry.all) {
-        expect(
-          find.byKey(
+        await _scrollLibraryUntilVisible(tester, scrollable, group);
+        expect(group, findsOneWidget, reason: category.name);
+        // 内容坐标 = 窗口坐标 + 滚动偏移（滚动下不变），跨滚动步比较才有效。
+        final double groupContentTop =
+            tester.getTopLeft(group).dy + scrollable.position.pixels;
+        if (previousGroupContentTop != null) {
+          expect(
+            groupContentTop,
+            greaterThan(previousGroupContentTop),
+            reason: '${category.name} 分组头未按声明序',
+          );
+        }
+        previousGroupContentTop = groupContentTop;
+
+        for (final ScriptNodeTypeDescriptor descriptor
+            in NodeRegistry.byCategory(category)) {
+          final Finder item = find.byKey(
             Key('nodeLibraryItem_${descriptor.typeKey}'),
-            skipOffstage: false,
-          ),
-          findsOneWidget,
-          reason: descriptor.typeKey,
-        );
+          );
+          if (item.evaluate().isEmpty) {
+            await _scrollLibraryUntilVisible(tester, scrollable, item);
+          }
+          expect(item, findsOneWidget, reason: descriptor.typeKey);
+        }
       }
-      expect(
-        tester
-            .getSize(
-              find.byKey(
-                const Key('nodeLibraryItem_flow.entry'),
-                skipOffstage: false,
-              ),
-            )
-            .height,
-        28,
-      );
     });
 
     testWidgets('条目 tooltip 为类型键、悬停背景 surface0', (WidgetTester tester) async {
@@ -382,6 +376,26 @@ Future<void> _pumpPanel(
     ),
   );
   await tester.pump();
+}
+
+/// 在节点库列表中逐段前滚，直到 [target] 被懒加载构建（或已到滚动尽头）。
+Future<void> _scrollLibraryUntilVisible(
+  WidgetTester tester,
+  ScrollableState scrollable,
+  Finder target,
+) async {
+  while (target.evaluate().isEmpty) {
+    final ScrollPosition position = scrollable.position;
+    final double candidate = position.pixels + 100;
+    final double next = candidate > position.maxScrollExtent
+        ? position.maxScrollExtent
+        : candidate;
+    if (next <= position.pixels) {
+      return; // 已到尽头仍不可见：交由调用方断言失败
+    }
+    position.jumpTo(next);
+    await tester.pump();
+  }
 }
 
 Future<void> _pumpPage(WidgetTester tester, PackModel pack) async {

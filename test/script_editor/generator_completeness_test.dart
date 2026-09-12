@@ -17,11 +17,13 @@ const Map<ScriptDataType, String> _providerTypeKeys = <ScriptDataType, String>{
 
 /// 各数据类型输出的「消费节点」类型：把被测类型的输出真正接入表达式发射
 /// 路径（未消费的纯数据节点不会触发输出发射，护栏会漏掉其缺失 case）。
-/// number 当前无消费者，M4.2 math / compareNumber 落地后在此补充。
+/// 消费节点为纯数据节点时（number → math.numberToString）继续向下桥接，
+/// 直到接入含 exec 的消费节点，保证发射路径真正执行。
 const Map<ScriptDataType, String> _consumerTypeKeys = <ScriptDataType, String>{
   ScriptDataType.string: 'log.message',
   ScriptDataType.boolean: 'flow.branch',
   ScriptDataType.listString: 'flow.foreach',
+  ScriptDataType.number: 'math.numberToString',
 };
 
 /// 注册表默认参数不满足校验的类型需给出最小合法夹具值
@@ -176,20 +178,29 @@ ScriptProjectModel _minimalGraphFor(ScriptNodeTypeDescriptor type) {
     );
   }
 
-  for (final ScriptPinDescriptor pin in type.pins) {
-    if (pin.isInput || pin.kind != ScriptPinKind.data) {
-      continue;
-    }
-    final ScriptDataType dataType = pin.dataType!;
+  /// 把 [source] 的 [dataType] 输出接给该类型的消费节点；消费节点为纯数据
+  /// 节点时继续为其数据输出桥接下游（visited 防环），直到接入 exec 消费节点。
+  void connectConsumer(
+    ScriptNodeModel source,
+    String outputPinId,
+    ScriptDataType dataType,
+    Set<ScriptDataType> visited,
+  ) {
     final String? consumerTypeKey = _consumerTypeKeys[dataType];
     if (consumerTypeKey == null) {
-      continue;
+      return;
+    }
+    final ScriptNodeTypeDescriptor? consumerDescriptor = NodeRegistry.byType(
+      consumerTypeKey,
+    );
+    if (consumerDescriptor == null) {
+      throw StateError('消费节点类型「$consumerTypeKey」未注册');
     }
     final ScriptNodeModel consumer = addNode(consumerTypeKey);
     project.edges.add(
       _edge(
-        node.id,
-        pin.id,
+        source.id,
+        outputPinId,
         consumer.id,
         _dataInputPinId(consumerTypeKey, dataType),
       ),
@@ -197,16 +208,39 @@ ScriptProjectModel _minimalGraphFor(ScriptNodeTypeDescriptor type) {
     final ScriptPinDescriptor? consumerExecInput = _execInputPin(
       consumerTypeKey,
     );
-    if (consumerExecInput == null) {
+    if (consumerExecInput != null) {
+      final String execSourceNodeId = execInput == null ? entry.id : node.id;
+      final String execSourcePinId = execInput == null
+          ? defaultExecPinId
+          : _execOutputPinId(type.typeKey);
+      project.edges.add(
+        _edge(
+          execSourceNodeId,
+          execSourcePinId,
+          consumer.id,
+          consumerExecInput.id,
+        ),
+      );
+      return;
+    }
+    for (final ScriptPinDescriptor consumerPin in consumerDescriptor.pins) {
+      if (consumerPin.isInput || consumerPin.kind != ScriptPinKind.data) {
+        continue;
+      }
+      final ScriptDataType nextType = consumerPin.dataType!;
+      if (!visited.add(nextType)) {
+        continue;
+      }
+      connectConsumer(consumer, consumerPin.id, nextType, visited);
+    }
+  }
+
+  for (final ScriptPinDescriptor pin in type.pins) {
+    if (pin.isInput || pin.kind != ScriptPinKind.data) {
       continue;
     }
-    final String sourceNodeId = execInput == null ? entry.id : node.id;
-    final String sourcePinId = execInput == null
-        ? defaultExecPinId
-        : _execOutputPinId(type.typeKey);
-    project.edges.add(
-      _edge(sourceNodeId, sourcePinId, consumer.id, consumerExecInput.id),
-    );
+    final ScriptDataType dataType = pin.dataType!;
+    connectConsumer(node, pin.id, dataType, <ScriptDataType>{dataType});
   }
 
   return project;
@@ -246,8 +280,8 @@ void main() {
       );
       expect(
         NodeRegistry.all.length,
-        greaterThanOrEqualTo(26),
-        reason: '注册表类型数量异常缩减（当前 26 类），护栏失效',
+        greaterThanOrEqualTo(31),
+        reason: '注册表类型数量异常缩减（当前 31 类），护栏失效',
       );
     });
   });
