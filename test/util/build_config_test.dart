@@ -34,6 +34,21 @@ void main() {
       expect(inferBuildLabel('a//release//mylib.lib'), 'Release');
       expect(inferBuildLabel(r'a\\debug\\mylib.lib'), 'Debug');
     });
+
+    test('构建产物 release/debug 分层布局映射标签', () {
+      expect(inferBuildLabel('release/lib/mylib.lib'), 'Release');
+      expect(inferBuildLabel('release/bin/mylib.dll'), 'Release');
+      expect(inferBuildLabel('release/bin/mylib.pdb'), 'Release');
+      expect(inferBuildLabel('debug/lib/mylib.lib'), 'Debug');
+      expect(inferBuildLabel('debug/bin/mylib.dll'), 'Debug');
+      expect(inferBuildLabel(r'release\lib\mylib.lib'), 'Release');
+      expect(inferBuildLabel(r'debug\bin\mylib.dll'), 'Debug');
+    });
+
+    test('头文件与非构建目录不产生标签', () {
+      expect(inferBuildLabel('include/mylib.h'), isNull);
+      expect(inferBuildLabel('include/src/mylib.hpp'), isNull);
+    });
   });
 
   group('buildModelLabel', () {

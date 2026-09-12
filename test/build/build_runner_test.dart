@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
@@ -13,7 +15,68 @@ typedef _ProcessCall = ({
   Map<String, String>? environment,
 });
 
+typedef _StreamCall = ({
+  String executable,
+  List<String> arguments,
+  String? workingDirectory,
+  Map<String, String>? environment,
+});
+
+/// 流式执行器替身的行为：记录调用并返回一个假进程。
+typedef _FakeProcessHandler = Future<_FakeProcess> Function(_StreamCall call);
+
+/// 与 `Process` 同形的最小子集：stdout/stderr 为可订阅的字节流，
+/// [pid]/[exitCode] 供 `runPackBuild` 组装 `ProcessResult` 使用。
+class _FakeProcess implements Process {
+  _FakeProcess({
+    required String stdout,
+    required String stderr,
+    this._exitCode = 0,
+  }) : stdout = _FakeStream(stdout),
+       stderr = _FakeStream(stderr);
+
+  @override
+  final int pid = 1;
+
+  @override
+  final Stream<List<int>> stdout;
+
+  @override
+  final Stream<List<int>> stderr;
+
+  final int _exitCode;
+
+  @override
+  Future<int> get exitCode => Future<int>.value(_exitCode);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeStream extends Stream<List<int>> {
+  _FakeStream(this.text);
+
+  final String text;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    return Stream<List<int>>.value(utf8.encode(text)).listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+}
+
 void main() {
+  setUp(_streamCalls.clear);
+
   group('前置校验', () {
     test('缺少源目录信息时抛错且不执行进程', () async {
       final Directory root = _tempDirectory();
@@ -623,6 +686,141 @@ void main() {
       });
     });
   });
+
+  group('流式输出', () {
+    test('注入流式执行器且回调非空时逐行转发 stdout/stderr 并转发环境', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<String> lines = <String>[];
+      final Map<String, String> injected = <String, String>{
+        'CNP_TOOLS_DIR': r'D:\tools',
+      };
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        streamRunner: _streamingRunner(
+          (_StreamCall call) async =>
+              _fakeProcess(stdout: 'line1\nline2\n', stderr: 'warn1\n'),
+        ),
+        onOutput: lines.add,
+        cacheRoot: cacheRoot,
+        environment: injected,
+      );
+
+      expect(lines, <String>['line1', 'line2', 'warn1']);
+      expect(calls, hasLength(1));
+      expect(calls.single.executable, 'git');
+
+      expect(_streamCalls, hasLength(1));
+      final _StreamCall stream = _streamCalls.single;
+      expect(stream.executable, 'python');
+      expect(stream.arguments, <String>['build.py']);
+      expect(stream.workingDirectory, sourcePath);
+      expect(stream.environment, <String, String>{
+        ...injected,
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+      });
+    });
+
+    test('流式构建非零退出时异常携带合并输出末尾 20 行', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n');
+      final String stdout = <String>[
+        for (int index = 1; index <= 25; index++)
+          'line${index.toString().padLeft(2, '0')}',
+      ].join('\n');
+      final List<String> lines = <String>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          (_) {},
+          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+          streamRunner: _streamingRunner(
+            (_StreamCall call) async => _fakeProcess(
+              stdout: '$stdout\n',
+              stderr: 'err-line\n',
+              exitCode: 3,
+            ),
+          ),
+          onOutput: lines.add,
+          cacheRoot: joinPath(root.path, 'cache'),
+        ),
+        throwsA(
+          _buildException(
+            '构建失败（退出码 3）',
+            outputTail: allOf(
+              contains('line25'),
+              contains('err-line'),
+              isNot(contains('line01')),
+              predicate<String>(
+                (String text) => text.split('\n').length == 20,
+                '输出末尾 20 行',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(lines, hasLength(26), reason: '25 行 stdout + 1 行 stderr 都经回调转发');
+    });
+
+    test('未提供流式执行器时 onOutput 静默降级为一次性捕获', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n');
+      final List<String> lines = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(
+          <_ProcessCall>[],
+          (_) async => ProcessResult(1, 0, 'done\n', ''),
+        ),
+        onOutput: lines.add,
+        cacheRoot: joinPath(root.path, 'cache'),
+      );
+
+      expect(lines, isEmpty);
+    });
+
+    test('流式 python 不可用时回退 py -3 并同样转发输出', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n');
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<String> lines = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+        streamRunner: _streamingRunner((_StreamCall call) async {
+          if (call.executable == 'python') {
+            throw ProcessException('python', <String>['build.py'], 'not found');
+          }
+          return _fakeProcess(stdout: 'fallback done\n');
+        }),
+        onOutput: lines.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(lines, <String>['fallback done']);
+      expect(_streamCalls.map((_StreamCall call) => call.executable), <String>[
+        'python',
+        'py',
+      ]);
+      expect(_streamCalls.last.arguments, <String>['-3', 'build.py']);
+    });
+  });
 }
 
 PackModel _pack({String? sourcePath, List<FileModel>? files}) {
@@ -657,6 +855,34 @@ String _createSource(Directory root, String scriptContent) {
 }
 
 ProcessResult _success() => ProcessResult(1, 0, '', '');
+
+PackStreamingProcessRunner _streamingRunner(_FakeProcessHandler handler) {
+  return (
+    String executable,
+    List<String> arguments, {
+    String? workingDirectory,
+    Map<String, String>? environment,
+  }) {
+    final _StreamCall call = (
+      executable: executable,
+      arguments: arguments,
+      workingDirectory: workingDirectory,
+      environment: environment,
+    );
+    _streamCalls.add(call);
+    return handler(call);
+  };
+}
+
+final List<_StreamCall> _streamCalls = <_StreamCall>[];
+
+_FakeProcess _fakeProcess({
+  String stdout = '',
+  String stderr = '',
+  int exitCode = 0,
+}) {
+  return _FakeProcess(stdout: stdout, stderr: stderr, exitCode: exitCode);
+}
 
 PackProcessRunner _runner(
   List<_ProcessCall> calls,

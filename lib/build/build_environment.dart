@@ -91,7 +91,8 @@ class BuildEnvironment {
 /// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
 ///
 /// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
-/// 未能归属的工具目录 → [toolPathEntries]（`# tool` 声明的工具） →
+/// 未能归属的工具目录 → [pythonPathEntries]（Python 解释器目录） →
+/// [toolPathEntries]（`# tool` 声明的工具） →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
 /// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
 /// `PYTHONPATH` 前置 [toolsRoot] 绝对路径（保留原值）；[environment] 不被修改。
@@ -100,6 +101,7 @@ BuildEnvironment assembleBuildEnvironment({
   required Map<String, String> environment,
   required CmakeNinja cmakeNinja,
   required String toolsRoot,
+  List<String> pythonPathEntries = const <String>[],
   List<String> toolPathEntries = const <String>[],
   Map<String, String> options = const <String, String>{},
 }) {
@@ -122,6 +124,7 @@ BuildEnvironment assembleBuildEnvironment({
     child,
     _orderedToolPathEntries(
       cmakeNinja,
+      pythonPathEntries,
       toolPathEntries,
       compiler.extraPathEntries,
     ),
@@ -137,8 +140,8 @@ BuildEnvironment assembleBuildEnvironment({
 }
 
 /// 准备构建环境：检测编译器 → 按 [priority] 选择 → 捕获编译器环境 →
-/// 供给 CMake/Ninja 与 [tools] 声明的工具 → 释放 [supportModule] → 装配
-/// `PATH`、`CNP_*` 与选项变量。
+/// 供给 CMake/Ninja、Python（本机优先，缺失下载 embeddable 版）与 [tools]
+/// 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*` 与选项变量。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统）；[detect]/[capture] 为测试注入点。无可用编译器或
@@ -179,6 +182,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
         environment: captured,
       );
   final CmakeNinja cmakeNinja = await toolProvisioner.ensureCmakeNinja();
+  final ProvisionedPython python = await toolProvisioner.ensurePython();
 
   final List<String> toolPathEntries = <String>[];
   for (final BuildScriptTool tool in tools) {
@@ -197,6 +201,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     environment: captured,
     cmakeNinja: cmakeNinja,
     toolsRoot: toolsRoot,
+    pythonPathEntries: python.pathEntries,
     toolPathEntries: toolPathEntries,
     options: options,
   );
@@ -231,7 +236,7 @@ Future<void> _releaseSupportModule(String toolsRoot, String content) async {
 }
 
 /// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 供给声明工具与
-/// CMake/Ninja → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
+/// CMake/Ninja/Python → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
 ///
 /// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
 /// [BuildPreparationException]。其余参数透传 [prepareBuildEnvironment]。
@@ -363,13 +368,14 @@ String _noCompilerMessage(List<String> priority) {
   return '未检测到可用编译器（优先级：${priority.join(' > ')}）';
 }
 
-/// 工具目录前置排序：Ninja → CMake → 未能归属的目录 → 声明工具目录 →
-/// 编译器附加目录。
+/// 工具目录前置排序：Ninja → CMake → 未能归属的目录 → Python 解释器目录 →
+/// 声明工具目录 → 编译器附加目录。
 ///
 /// [CmakeNinja.pathEntries] 不区分工具归属（供给顺序为先 CMake 后 Ninja），
 /// 这里按可执行文件路径归属分组，使 PATH 结构稳定。
 List<String> _orderedToolPathEntries(
   CmakeNinja cmakeNinja,
+  List<String> pythonPathEntries,
   List<String> toolPathEntries,
   List<String> extraPathEntries,
 ) {
@@ -389,6 +395,7 @@ List<String> _orderedToolPathEntries(
     ...ninjaEntries,
     ...cmakeEntries,
     ...unknownEntries,
+    ...pythonPathEntries,
     ...toolPathEntries,
     ...extraPathEntries,
   ];

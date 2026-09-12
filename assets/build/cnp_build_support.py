@@ -12,16 +12,18 @@
     stage_license(SRC_PATH, BUILD_OUT)
     summary(BUILD_OUT)
 
-输出布局（类 vcpkg 参考，非逐条复刻）：
+输出布局（release/debug 分层，与打包侧的构建类型识别对齐）：
 
-    <out>/include/                头文件
-    <out>/lib/                    静态库（非 Debug 路径段）
-    <out>/bin/                    动态库 / 符号 / 可执行（非 Debug 路径段）
-    <out>/debug/lib, debug/bin    Debug 配置产物
-    <out>/<原文件名>              root 根部的许可证文件
+    <out>/include/                  头文件
+    <out>/release/lib, release/bin  Release 静态库 / 动态库、符号、可执行
+    <out>/debug/lib, debug/bin      Debug 配置产物
+    <out>/<原文件名>                root 根部的许可证文件
 
 CMake 相关函数读取 cpp_nuget_pack 注入的子进程环境变量：CNP_CMAKE、CNP_NINJA、
-CNP_C_COMPILER、CNP_CXX_COMPILER；CNP_CMAKE 缺失或为空时给出明确错误。
+CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND；CNP_CMAKE 缺失或为空时给出
+明确错误。`cmake_configure` 按编译器注入 AVX2（全部配置）与 Release 最高优化 /
+IPO（不支持或经 CNP_NO_IPO / enable_ipo=False 时自动退化），不注入任何语言标准
+参数；`cmake_build` 缺省以 CPU 逻辑核数并行构建。
 """
 
 import filecmp
@@ -30,7 +32,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "2"
+VERSION = "3"
 
 __all__ = (
     "VERSION",
@@ -57,15 +59,66 @@ _CMAKE_RUNTIME_LIBRARY = "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
 _OUTPUT_TAIL_LINES = 20
 _INTERMEDIATE_DIR_SUFFIXES = (".dir", "-c")
 
+# 编译器种类标识与 lib/build/toolchain.dart 的 CNP_COMPILER_KIND 对应。
+_COMPILER_KINDS = ("icx", "clang-cl", "msvc")
 
-def cmake_configure(source, build_dir, config="Release", extra_args=()):
+# AVX2 向量化（全部配置）。
+_AVX2_FLAGS = {
+    "icx": ("/QxCORE-AVX2", "/QaxCORE-AVX2"),
+    "clang-cl": ("/arch:AVX2",),
+    "msvc": ("/arch:AVX2",),
+}
+
+# Release 最高优化（各编译器上限）。
+_RELEASE_OPTIMIZATION_FLAGS = {
+    "icx": ("/O3",),
+    "clang-cl": ("-O3",),
+    "msvc": ("/O2",),
+}
+
+# NDEBUG 定义前缀按编译器习惯书写（cl / icx-cl 兼容 `-D`，此处保留 MSVC 风格）。
+_DEFINE_FLAG_PREFIX = {"icx": "/D", "clang-cl": "-D", "msvc": "/D"}
+
+# CMake IPO（Release）：msvc → /GL + /LTCG；icx → -Qipo；clang-cl → -flto=thin。
+_IPO_CMAKE_VARIABLE = "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE"
+_IPO_LINKER_PROBE = "lld-link"
+_DISABLE_IPO_ENV = "CNP_NO_IPO"
+
+
+def cmake_configure(
+    source, build_dir, config="Release", extra_args=(), enable_ipo=None
+):
     """以 Ninja 生成器配置 CMake 工程（单配置，运行时库 MD/MDd）。
 
     固定拼接 `-G Ninja`、`-DCMAKE_BUILD_TYPE`、`-DCMAKE_MSVC_RUNTIME_LIBRARY`；
     `CNP_NINJA`/`CNP_C_COMPILER`/`CNP_CXX_COMPILER` 存在时追加对应 `-D` 参数；
-    `extra_args` 原样追加。子进程失败抛 RuntimeError（含输出尾部）。
+    `extra_args` 原样追加（其中同名 `-DCMAKE_*` 优先于本函数注入的优化参数）。
+
+    优化参数按编译器种类（`CNP_COMPILER_KIND`，回退从编译器路径推断）注入，
+    **不注入任何语言标准（std/c++ 标准）参数**：
+
+    - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang-cl / msvc →
+      `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS`）；
+    - Release 最高优化：icx `/O3`、clang-cl `-O3`、msvc `/O2`，并保留 `NDEBUG`
+      （写入 `CMAKE_C_FLAGS_RELEASE` / `CMAKE_CXX_FLAGS_RELEASE`）；
+    - Release 启用 CMake IPO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`）：
+      msvc `/GL`+`/LTCG`、icx `-Qipo`；clang-cl 需 PATH 中可解析 `lld-link`，
+      缺失时自动退化；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可显式关闭
+      （供单个库按兼容性退化）；
+    - Debug 不注入任何优化参数（保留调试信息），AVX2 仍保留。
+
+    编译器种类未知时不注入优化参数；子进程失败抛 RuntimeError（含输出尾部）。
     """
     cmake = _required_environment_path("CNP_CMAKE")
+    extra = [str(argument) for argument in extra_args]
+    provided = _provided_definition_variables(extra)
+    kind = _compiler_kind()
+    avx2_flags = _AVX2_FLAGS.get(kind, ()) if kind else ()
+    is_release = str(config).lower() == "release"
+    optimization_flags = ()
+    if is_release and kind:
+        optimization_flags = _RELEASE_OPTIMIZATION_FLAGS.get(kind, ())
+
     command = [
         cmake,
         "-S",
@@ -86,19 +139,53 @@ def cmake_configure(source, build_dir, config="Release", extra_args=()):
     cxx_compiler = _optional_environment_path("CNP_CXX_COMPILER")
     if cxx_compiler:
         command.append("-DCMAKE_CXX_COMPILER=" + cxx_compiler)
-    command.extend(str(argument) for argument in extra_args)
+    command.extend(
+        _optimization_arguments(avx2_flags, optimization_flags, kind, provided)
+    )
+
+    ipo_state, ipo_reason = _resolve_ipo_state(
+        kind, config, enable_ipo, provided
+    )
+    if ipo_state == "on":
+        command.append("-D%s=ON" % _IPO_CMAKE_VARIABLE)
+    print(
+        "[cnp_build_support] cmake_configure: config=%s compiler=%s avx2=%s "
+        "optimization=%s ipo=%s"
+        % (
+            config,
+            kind or "unknown",
+            " ".join(avx2_flags) if avx2_flags else "-",
+            " ".join(optimization_flags) if optimization_flags else "-",
+            ipo_state,
+        )
+    )
+    if ipo_reason:
+        print(
+            "[cnp_build_support] cmake_configure: "
+            "ipo=off reason=%s" % ipo_reason
+        )
+    command.extend(extra)
     return _run_process(command, "cmake 配置")
 
 
 def cmake_build(build_dir, config="Release", jobs=None):
     """以 `cmake --build` 构建已配置的工程（Ninja 单配置）。
 
-    `jobs` 为正整数时追加 `--parallel <jobs>`；失败抛 RuntimeError（含输出尾部）。
+    `jobs` 缺省为 `os.cpu_count()`（尽可能多线程）；显式正整数追加
+    `--parallel <jobs>`；传 0/负数（或平台无法获取核数）时不追加。失败抛
+    RuntimeError（含输出尾部）。
     """
     cmake = _required_environment_path("CNP_CMAKE")
     command = [cmake, "--build", os.fspath(build_dir), "--config", str(config)]
-    if jobs is not None and int(jobs) > 0:
-        command.extend(("--parallel", str(int(jobs))))
+    if jobs is None:
+        jobs = os.cpu_count()
+    parallel = int(jobs) if jobs is not None and int(jobs) > 0 else None
+    if parallel is not None:
+        command.extend(("--parallel", str(parallel)))
+    print(
+        "[cnp_build_support] cmake_build: config=%s parallel=%s"
+        % (config, parallel if parallel is not None else "-")
+    )
     return _run_process(command, "cmake 构建")
 
 
@@ -138,23 +225,25 @@ def stage_headers(paths, out):
 
 
 def stage_binaries(build_dir, out, config="Release"):
-    """递归收集构建树中的 `.lib/.dll/.pdb` 并按配置分类，返回计数 dict。
+    """递归收集构建树中的 `.lib/.dll/.pdb` 并按配置分层，返回计数 dict。
 
-    - Release → `<out>/lib/`（.lib）与 `<out>/bin/`（.dll/.pdb）；
+    - Release → `<out>/release/lib/`（.lib）与 `<out>/release/bin/`（.dll/.pdb）；
     - Debug → `<out>/debug/lib/` 与 `<out>/debug/bin/`；
+    - 库类产物不落 `<out>` 根（打包侧按 release/debug 路径段识别构建类型）；
     - 跳过 `CMakeFiles`、`*.dir`、`*-c` 中间目录与 `out` 自身；
     - 同名不同内容按父目录名后缀去重（同名同内容只保留一份）。
 
     返回 `{"copied": n, "lib": n, "bin": n, "skipped": n}`；`lib`/`bin` 为实际
-    落点计数（Debug 时对应 debug/lib、debug/bin）。
+    落点计数（Release 时对应 release/lib、release/bin；Debug 时对应 debug/*）。
     """
     build_dir = os.path.abspath(os.fspath(build_dir))
     out = os.path.abspath(os.fspath(out))
     if not os.path.isdir(build_dir):
         raise FileNotFoundError("构建目录不存在：%s" % build_dir)
     is_debug = str(config).lower() == "debug"
-    lib_dir = os.path.join(out, "debug", "lib") if is_debug else os.path.join(out, "lib")
-    bin_dir = os.path.join(out, "debug", "bin") if is_debug else os.path.join(out, "bin")
+    segment = "debug" if is_debug else "release"
+    lib_dir = os.path.join(out, segment, "lib")
+    bin_dir = os.path.join(out, segment, "bin")
 
     candidates = []
     for current, directory_names, file_names in os.walk(build_dir):
@@ -202,15 +291,16 @@ def stage_license(source_root, out):
 
 
 def classify_tree(root, out, exclude=()):
-    """把预构建产物树分类到类 vcpkg 布局，返回各类计数 dict。
+    """把预构建产物树分类到 release/debug 分层布局，返回各类计数 dict。
 
     - 头文件 → `<out>/include/`（保留相对结构）；
-    - `.lib/.a` → `<out>/lib/`，`.dll/.pdb/.exe` → `<out>/bin/`；
+    - `.lib/.a` → `<out>/release/lib/`，`.dll/.pdb/.exe` → `<out>/release/bin/`；
     - 相对路径中任一段小写为 `debug` 时分别落 `<out>/debug/lib`、`<out>/debug/bin`；
     - `root` **根部**的许可证名文件 → `<out>/` 根（保留原文件名）；
     - 跳过 `.git`、`exclude` 命中项（相对路径或名称）与 `out` 自身；其余文件跳过。
 
-    计数键：include / lib / bin / debug_lib / debug_bin / license。
+    计数键：include / lib / bin / debug_lib / debug_bin / license（lib/bin 指
+    release 分层）。
     """
     root = os.path.abspath(os.fspath(root))
     out = os.path.abspath(os.fspath(out))
@@ -254,13 +344,13 @@ def classify_tree(root, out, exclude=()):
                 category = "include"
             elif extension in LIBRARY_EXTENSIONS:
                 destination_dir = os.path.join(
-                    out, "debug", "lib"
-                ) if is_debug else os.path.join(out, "lib")
+                    out, "debug" if is_debug else "release", "lib"
+                )
                 category = "debug_lib" if is_debug else "lib"
             elif extension in BINARY_EXTENSIONS:
                 destination_dir = os.path.join(
-                    out, "debug", "bin"
-                ) if is_debug else os.path.join(out, "bin")
+                    out, "debug" if is_debug else "release", "bin"
+                )
                 category = "debug_bin" if is_debug else "bin"
             elif "/" not in relative and _is_license_name(file_name):
                 destination_dir = out
@@ -276,8 +366,10 @@ def classify_tree(root, out, exclude=()):
 def summary(out):
     """遍历输出树打印统计（各类计数与总大小），返回同口径 dict。
 
-    返回键：include / lib / bin / debug_lib / debug_bin / license / other /
-    files / bytes；输出树不存在时打印零统计。
+    分类口径与产物布局一致：`release/lib` ↔ lib、`release/bin` ↔ bin、
+    `debug/lib` ↔ debug_lib、`debug/bin` ↔ debug_bin；兼容旧根布局的 `lib` /
+    `bin` 目录。返回键：include / lib / bin / debug_lib / debug_bin / license /
+    other / files / bytes；输出树不存在时打印零统计。
     """
     out = os.path.abspath(os.fspath(out))
     result = {
@@ -302,10 +394,15 @@ def summary(out):
                     size = 0
                 relative = _relative_forward_path(path, out)
                 segments = relative.lower().split("/")
-                if segments[0] == "debug" and len(segments) >= 2 and segments[1] == "lib":
+                first_two = segments[:2]
+                if first_two == ["debug", "lib"]:
                     category = "debug_lib"
-                elif segments[0] == "debug" and len(segments) >= 2 and segments[1] == "bin":
+                elif first_two == ["debug", "bin"]:
                     category = "debug_bin"
+                elif first_two == ["release", "lib"]:
+                    category = "lib"
+                elif first_two == ["release", "bin"]:
+                    category = "bin"
                 elif segments[0] == "include":
                     category = "include"
                 elif segments[0] == "lib":
@@ -349,6 +446,89 @@ def _required_environment_path(name):
 def _optional_environment_path(name):
     value = os.environ.get(name, "").strip()
     return value or None
+
+
+def _compiler_kind():
+    """编译器种类：`CNP_COMPILER_KIND`（msvc/clang-cl/icx），回退从编译器路径推断。
+
+    两者都识别不出时返回 None（调用方不注入优化参数）。
+    """
+    kind = os.environ.get("CNP_COMPILER_KIND", "").strip().lower()
+    if kind in _COMPILER_KINDS:
+        return kind
+    for name in ("CNP_CXX_COMPILER", "CNP_C_COMPILER"):
+        executable = os.path.basename(os.environ.get(name, "").strip()).lower()
+        if executable.startswith("icx"):
+            return "icx"
+        if executable.startswith("clang"):
+            return "clang-cl"
+        if executable in ("cl", "cl.exe"):
+            return "msvc"
+    return None
+
+
+def _provided_definition_variables(extra_args):
+    """`extra_args` 中 `-D<变量>=...` 的变量名集合（配方自定义优先）。"""
+    provided = set()
+    for argument in extra_args:
+        if not argument.startswith("-D"):
+            continue
+        name = argument[2:].split("=", 1)[0]
+        if name:
+            provided.add(name)
+    return provided
+
+
+def _optimization_arguments(avx2_flags, optimization_flags, kind, provided):
+    """组装优化 `-D` 参数；配方已提供的同名变量不重复注入。"""
+    arguments = []
+    joined_avx2 = " ".join(avx2_flags)
+    if joined_avx2:
+        if "CMAKE_C_FLAGS" not in provided:
+            arguments.append("-DCMAKE_C_FLAGS=" + joined_avx2)
+        if "CMAKE_CXX_FLAGS" not in provided:
+            arguments.append("-DCMAKE_CXX_FLAGS=" + joined_avx2)
+    if optimization_flags:
+        ndebug = _DEFINE_FLAG_PREFIX.get(kind, "-D") + "NDEBUG"
+        joined_release = " ".join(tuple(optimization_flags) + (ndebug,))
+        if "CMAKE_C_FLAGS_RELEASE" not in provided:
+            arguments.append("-DCMAKE_C_FLAGS_RELEASE=" + joined_release)
+        if "CMAKE_CXX_FLAGS_RELEASE" not in provided:
+            arguments.append("-DCMAKE_CXX_FLAGS_RELEASE=" + joined_release)
+    return arguments
+
+
+def _resolve_ipo_state(kind, config, enable_ipo, provided):
+    """判定 Release IPO 状态：("on"/"off"/"preset", 退化原因或 None)。
+
+    - 非 Release 配置不启用（不算退化）；
+    - 配方经 `extra_args` 自带 IPO 变量时保持其取值（"preset"）；
+    - `enable_ipo=False` / 环境变量 `CNP_NO_IPO` 显式关闭；`enable_ipo=True` 强制；
+    - auto：编译器种类未知 → 退化；clang-cl 无 `lld-link` → 退化（需 lld 链接器）。
+    """
+    if str(config).lower() != "release":
+        return "off", None
+    if _IPO_CMAKE_VARIABLE in provided:
+        return "preset", None
+    if enable_ipo is False:
+        return "off", "disabled-by-call"
+    if _environment_flag(_DISABLE_IPO_ENV):
+        return "off", "disabled-by-env"
+    if enable_ipo is True:
+        if kind is not None:
+            return "on", None
+        return "off", "unknown-compiler"
+    if kind is None:
+        return "off", "unknown-compiler"
+    if kind == "clang-cl" and shutil.which(_IPO_LINKER_PROBE) is None:
+        return "off", "lld-link-missing"
+    return "on", None
+
+
+def _environment_flag(name):
+    """环境变量视为开启：非空且不是 0/false/no/off。"""
+    value = os.environ.get(name, "").strip().lower()
+    return value not in ("", "0", "false", "no", "off")
 
 
 def _run_process(command, label):

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -526,6 +527,291 @@ void main() {
       expect(result.pathEntries, <String>[joinPath(toolsRoot, 'ninja')]);
     });
   });
+
+  group('ensurePython', () {
+    test('本机 python 可用时直接返回且不下载', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final List<Uri> fetchCalls = <Uri>[];
+      final List<_ProcessCall> processCalls = <_ProcessCall>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          fail('不应下载：$uri');
+        }),
+        runner: _runnerStub(
+          processCalls,
+          (_) async => ProcessResult(0, 0, 'Python 3.14.7\r\n', ''),
+        ),
+        environment: const <String, String>{},
+      );
+
+      final ProvisionedPython python = await provisioner.ensurePython();
+
+      expect(python.executable, 'python');
+      expect(python.source, PythonSource.local);
+      expect(python.pathEntries, isEmpty);
+      expect(fetchCalls, isEmpty);
+      expect(processCalls, hasLength(1));
+      expect(processCalls.single.executable, 'python');
+      expect(processCalls.single.arguments, <String>['--version']);
+    });
+
+    test('python 为 Store 别名假体时回退 py -3 并前置真实解释器目录', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final Directory interpreterDir = Directory(
+        joinPath(root.path, 'Python312'),
+      )..createSync(recursive: true);
+      final List<Uri> fetchCalls = <Uri>[];
+      final List<_ProcessCall> processCalls = <_ProcessCall>[];
+      const String stubOutput =
+          'Python was not found; run without arguments to install from the '
+          'Microsoft Store, or disable this shortcut from Settings > Manage '
+          'App Execution Aliases.\r\n';
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          fail('不应下载：$uri');
+        }),
+        runner: _runnerStub(processCalls, (_ProcessCall call) async {
+          if (call.executable == 'python') {
+            return ProcessResult(0, 0, stubOutput, '');
+          }
+          if (call.arguments.length == 2) {
+            return ProcessResult(0, 0, 'Python 3.12.4\r\n', '');
+          }
+          return ProcessResult(
+            0,
+            0,
+            '${joinPath(interpreterDir.path, 'python.exe')}\r\n',
+            '',
+          );
+        }),
+        environment: const <String, String>{},
+      );
+
+      final ProvisionedPython python = await provisioner.ensurePython();
+
+      final String expectedDirectory = File(
+        joinPath(interpreterDir.path, 'python.exe'),
+      ).parent.path;
+      expect(python.executable, 'py');
+      expect(python.source, PythonSource.launcher);
+      expect(python.pathEntries, <String>[expectedDirectory]);
+      expect(fetchCalls, isEmpty);
+      expect(
+        processCalls.map((_ProcessCall call) => call.executable),
+        <String>['python', 'py', 'py'],
+      );
+      expect(processCalls[1].arguments, <String>['-3', '--version']);
+      expect(processCalls[2].arguments, <String>[
+        '-3',
+        '-c',
+        'import sys; print(sys.executable)',
+      ]);
+    });
+
+    test('无本机 Python 时下载 embeddable 包并解压到 tools/python', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      const String indexHtml =
+          '<html><body>'
+          '<a href="2.7.18/">2.7.18/</a>'
+          '<a href="3.5.10/">3.5.10/</a>'
+          '<a href="3.14.7/">3.14.7/</a>'
+          '<a href="3.15.0/">3.15.0/</a>'
+          '<a href="3.15.0a1/">3.15.0a1/</a>'
+          '</body></html>';
+      final String embedUrl = pythonEmbedUrlForVersion('3.14.7');
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          final String url = uri.toString();
+          if (url == pythonFtpIndexUrl) {
+            return Uint8List.fromList(utf8.encode(indexHtml));
+          }
+          if (url == '${pythonFtpIndexUrl}3.15.0/') {
+            return Uint8List.fromList(utf8.encode('<html></html>'));
+          }
+          if (url == '${pythonFtpIndexUrl}3.14.7/') {
+            return Uint8List.fromList(
+              utf8.encode('<a href="python-3.14.7-embed-amd64.zip">x</a>'),
+            );
+          }
+          if (url == embedUrl) {
+            return _zip(<ArchiveFile>[
+              ArchiveFile.string('python.exe', 'MZ'),
+              ArchiveFile.string('python314.dll', 'DLL'),
+              ArchiveFile.string('python314.zip', 'STDLIB'),
+            ]);
+          }
+          throw StateError('未知下载地址：$url');
+        }),
+        runner: _missingProcessRunner(),
+        environment: const <String, String>{},
+      );
+
+      final ProvisionedPython python = await provisioner.ensurePython();
+
+      expect(python.executable, joinPath(toolsRoot, 'python/python.exe'));
+      expect(python.source, PythonSource.provisioned);
+      expect(python.pathEntries, <String>[joinPath(toolsRoot, 'python')]);
+      expect(fetchCalls, <Uri>[
+        Uri.parse(pythonFtpIndexUrl),
+        Uri.parse('${pythonFtpIndexUrl}3.15.0/'),
+        Uri.parse('${pythonFtpIndexUrl}3.14.7/'),
+        Uri.parse(embedUrl),
+      ]);
+      expect(
+        File(joinPath(toolsRoot, 'python/python.exe')).readAsStringSync(),
+        'MZ',
+      );
+      expect(
+        File(joinPath(toolsRoot, 'python/python314.zip')).readAsStringSync(),
+        'STDLIB',
+      );
+      expect(
+        File(joinPath(toolsRoot, 'python/.source')).readAsStringSync(),
+        embedUrl,
+      );
+    });
+
+    test('目录列表不可用时回退内置版本', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String fallbackUrl = pythonEmbedUrlForVersion(
+        pythonFallbackVersion,
+      );
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          if (uri.toString() == pythonFtpIndexUrl) {
+            throw Exception('index down');
+          }
+          if (uri.toString() == fallbackUrl) {
+            return _zip(<ArchiveFile>[ArchiveFile.string('python.exe', 'MZ')]);
+          }
+          throw StateError('未知下载地址：$uri');
+        }),
+        runner: _missingProcessRunner(),
+        environment: const <String, String>{},
+      );
+
+      final ProvisionedPython python = await provisioner.ensurePython();
+
+      expect(python.source, PythonSource.provisioned);
+      expect(fetchCalls, <Uri>[
+        Uri.parse(pythonFtpIndexUrl),
+        Uri.parse(fallbackUrl),
+      ]);
+      expect(
+        File(joinPath(toolsRoot, 'python/.source')).readAsStringSync(),
+        fallbackUrl,
+      );
+    });
+
+    test('来源标记命中时复用已供给解释器，不重复下载压缩包', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final Directory toolDir = Directory(joinPath(toolsRoot, 'python'))
+        ..createSync(recursive: true);
+      File(joinPath(toolDir.path, 'python.exe')).writeAsStringSync('MZ');
+      File(
+        joinPath(toolDir.path, '.source'),
+      ).writeAsStringSync(pythonEmbedUrlForVersion('3.14.7'));
+      final List<Uri> fetchCalls = <Uri>[];
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(fetchCalls, (Uri uri) async {
+          final String url = uri.toString();
+          if (url == pythonFtpIndexUrl) {
+            return _pythonIndexBytes();
+          }
+          if (url == '${pythonFtpIndexUrl}3.14.7/') {
+            return _pythonVersionListingBytes();
+          }
+          fail('不应下载压缩包：$url');
+        }),
+        runner: _missingProcessRunner(),
+        environment: const <String, String>{},
+      );
+
+      final ProvisionedPython python = await provisioner.ensurePython();
+
+      expect(python.source, PythonSource.provisioned);
+      expect(python.pathEntries, <String>[joinPath(toolsRoot, 'python')]);
+      expect(fetchCalls, <Uri>[
+        Uri.parse(pythonFtpIndexUrl),
+        Uri.parse('${pythonFtpIndexUrl}3.14.7/'),
+      ]);
+      expect(
+        File(joinPath(toolsRoot, 'python/python.exe')).readAsStringSync(),
+        'MZ',
+      );
+    });
+
+    test('压缩包下载失败：抛 BuildPreparationException 且不留残留', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String embedUrl = pythonEmbedUrlForVersion('3.14.7');
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(<Uri>[], (Uri uri) async {
+          final String url = uri.toString();
+          if (url == pythonFtpIndexUrl) {
+            return _pythonIndexBytes();
+          }
+          if (url == '${pythonFtpIndexUrl}3.14.7/') {
+            return _pythonVersionListingBytes();
+          }
+          throw Exception('network down');
+        }),
+        runner: _missingProcessRunner(),
+        environment: const <String, String>{},
+      );
+
+      await expectLater(
+        provisioner.ensurePython(),
+        throwsA(
+          _preparationException(
+            message: allOf(contains(embedUrl), contains('下载失败')),
+          ),
+        ),
+      );
+
+      _expectNoResidue(toolsRoot, 'python');
+    });
+
+    test('压缩包路径不安全：抛 BuildPreparationException 且不留残留', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(<Uri>[], (Uri uri) async {
+          final String url = uri.toString();
+          if (url == pythonFtpIndexUrl) {
+            return _pythonIndexBytes();
+          }
+          if (url == '${pythonFtpIndexUrl}3.14.7/') {
+            return _pythonVersionListingBytes();
+          }
+          return _zip(<ArchiveFile>[ArchiveFile.string('../evil.txt', 'evil')]);
+        }),
+        runner: _missingProcessRunner(),
+        environment: const <String, String>{},
+      );
+
+      await expectLater(
+        provisioner.ensurePython(),
+        throwsA(_preparationException(message: contains('不安全'))),
+      );
+
+      _expectNoResidue(toolsRoot, 'python');
+    });
+  });
 }
 
 Uint8List _zip(List<ArchiveFile> files) {
@@ -590,6 +876,19 @@ PackProcessRunner _runnerStub(
     return handler(call);
   };
 }
+
+PackProcessRunner _missingProcessRunner() {
+  return _runnerStub(
+    <_ProcessCall>[],
+    (_) async => throw ProcessException('missing', const <String>[]),
+  );
+}
+
+Uint8List _pythonIndexBytes() =>
+    Uint8List.fromList(utf8.encode('<a href="3.14.7/">3.14.7/</a>'));
+
+Uint8List _pythonVersionListingBytes() =>
+    Uint8List.fromList(utf8.encode('python-3.14.7-embed-amd64.zip'));
 
 Matcher _preparationException({Matcher? message}) {
   final TypeMatcher<BuildPreparationException> matcher =

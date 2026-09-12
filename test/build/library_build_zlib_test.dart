@@ -187,14 +187,10 @@ void main() {
       );
 
       final String includeDir = joinPath(packDir.path, 'include');
-      final List<String> releaseLibs = _filesWithExtension(
-        joinPath(packDir.path, 'lib'),
-        '.lib',
-      );
-      final List<String> releaseBins = _filesWithExtension(
-        joinPath(packDir.path, 'bin'),
-        '.dll',
-      );
+      final String releaseLibDir = joinPath(packDir.path, 'release/lib');
+      final String releaseBinDir = joinPath(packDir.path, 'release/bin');
+      final List<String> releaseLibs = _filesWithExtension(releaseLibDir, '.lib');
+      final List<String> releaseBins = _filesWithExtension(releaseBinDir, '.dll');
       final List<String> debugLibs = _filesWithExtension(
         joinPath(packDir.path, 'debug/lib'),
         '.lib',
@@ -228,10 +224,37 @@ void main() {
         isTrue,
         reason: 'include/zconf.h 应存在（CMake 生成版）',
       );
-      expect(releaseLibs, isNotEmpty, reason: 'Release lib/ 应至少 1 个 .lib');
-      expect(releaseBins, isNotEmpty, reason: 'Release bin/ 应至少 1 个 .dll');
-      expect(debugLibs, isNotEmpty, reason: 'debug/lib 应存在且含 .lib');
+      expect(
+        Directory(releaseLibDir).existsSync(),
+        isTrue,
+        reason: 'Release 产物应分层到 release/lib',
+      );
+      expect(
+        releaseLibs,
+        isNotEmpty,
+        reason: 'release/lib 应至少 1 个 .lib',
+      );
+      expect(
+        releaseBins,
+        isNotEmpty,
+        reason: 'release/bin 应至少 1 个 .dll',
+      );
+      expect(
+        debugLibs,
+        isNotEmpty,
+        reason: 'debug/lib 应存在且含 .lib',
+      );
       expect(debugBins, isNotEmpty, reason: 'debug/bin 应存在且含 .dll');
+      expect(
+        Directory(joinPath(packDir.path, 'lib')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
+      expect(
+        Directory(joinPath(packDir.path, 'bin')).existsSync(),
+        isFalse,
+        reason: '库类产物不得落 BUILD_OUT 根（打包侧识别 release 分层）',
+      );
       expect(
         File(licensePath).existsSync(),
         isTrue,

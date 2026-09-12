@@ -710,6 +710,7 @@ void main() {
             PackModel pack,
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
+            void Function(String line)? onOutput,
           }) async {
             builtPack = pack;
             receivedEnvironment = environment;

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -17,15 +18,32 @@ const String cmakeDownloadUrl =
 const String ninjaDownloadUrl =
     'https://github.com/ninja-build/ninja/releases/download/v1.13.1/ninja-win.zip';
 
+/// Python 官网 FTP 版本目录（目录列表用于解析最新稳定版）。
+const String pythonFtpIndexUrl = 'https://www.python.org/ftp/python/';
+
+/// 官网目录列表不可用时的兜底版本（2026-09-13 核验 embed-amd64.zip 可下载）。
+const String pythonFallbackVersion = '3.14.7';
+
+/// 指定版本的 Windows embeddable 包下载地址（最小发行版，不含 pip）。
+String pythonEmbedUrlForVersion(String version) =>
+    '$pythonFtpIndexUrl$version/python-$version-embed-amd64.zip';
+
 const String _minimumCmakeVersion = '3.25.0';
 const int _defaultReplaceAttempts = 3;
 const Duration _defaultReplaceRetryDelay = Duration(milliseconds: 250);
 const String _markerFileName = '.source';
 const String _tempDirectoryName = '.tmp';
 const String _binDirectoryName = 'bin';
+
+/// 版本目录核验上限：FTP 列表可能含尚未发布产物的空目录，逐级下探至多
+/// [_pythonVersionProbeLimit] 个候选，避免异常页面对每个版本各发一次请求。
+const int _pythonVersionProbeLimit = 5;
 final RegExp _invalidNamePattern = RegExp(r'[^A-Za-z0-9._-]');
 final RegExp _alphanumericPattern = RegExp(r'[A-Za-z0-9]');
 final RegExp _cmakeVersionPattern = RegExp(r'cmake version (\d+\.\d+\.\d+)');
+final RegExp _pythonVersionLinkPattern = RegExp(r'href="(\d+\.\d+\.\d+)/"');
+final RegExp _pythonOutputPattern = RegExp(r'Python\s+\d');
+final RegExp _lineSeparator = RegExp(r'\r?\n');
 
 /// 已供给到 `tools/` 的工具。
 class ProvisionedTool {
@@ -60,6 +78,37 @@ class CmakeNinja {
   final String ninjaExecutable;
 
   /// 需补充进 PATH 的目录；全部本地可用时为空。
+  final List<String> pathEntries;
+}
+
+/// Python 解释器供给来源。
+enum PythonSource {
+  /// 本机 PATH 上的 `python`（`--version` 输出形如 `Python 3.x`，非 Store 假体）。
+  local,
+
+  /// 本机 `py` 启动器（以 `-3` 调用，与 runPackBuild 的回退口径一致）。
+  launcher,
+
+  /// 下载到 `tools/python/` 的 python.org embeddable 发行版。
+  provisioned,
+}
+
+/// Python 解释器供给结果。
+class ProvisionedPython {
+  const ProvisionedPython({
+    required this.executable,
+    required this.source,
+    required this.pathEntries,
+  });
+
+  /// 解释器命令（本机命中为 `python` / `py`）或可执行文件绝对路径（供给版）。
+  final String executable;
+
+  /// 来源。
+  final PythonSource source;
+
+  /// 需前置到 PATH 的目录；本机 `python` 可直接解析时为空，`py -3` 命中时为
+  /// 其真实解释器目录，供给版为 `tools/python/`。
   final List<String> pathEntries;
 }
 
@@ -164,6 +213,41 @@ class ToolProvisioner {
     );
   }
 
+  /// 确保 Python 解释器就绪：本机 `python` / `py -3` 优先，均不可用时下载
+  /// python.org embeddable 包（最小化发行版，无 pip）到 `tools/python/`。
+  ///
+  /// `python` 探测要求 `--version` 成功且输出形如 `Python <数字>`——Windows
+  /// Store 别名假体（`Python was not found...`）因此被排除；`py -3` 命中时
+  /// 解析真实解释器目录用于 PATH 注入，保证构建子进程的 `python` 解析到
+  /// 可用解释器。版本解析失败回退 [pythonFallbackVersion]，下载/解压失败
+  /// 抛 [BuildPreparationException]。
+  Future<ProvisionedPython> ensurePython() async {
+    if (await _usablePython('python', const <String>['--version'])) {
+      return const ProvisionedPython(
+        executable: 'python',
+        source: PythonSource.local,
+        pathEntries: <String>[],
+      );
+    }
+    if (await _usablePython('py', const <String>['-3', '--version'])) {
+      return ProvisionedPython(
+        executable: 'py',
+        source: PythonSource.launcher,
+        pathEntries: await _launcherPathEntries(),
+      );
+    }
+    final String version = await _resolvePythonVersion();
+    final ProvisionedTool tool = await ensureTool(
+      name: 'python',
+      url: pythonEmbedUrlForVersion(version),
+    );
+    return ProvisionedPython(
+      executable: joinPath(tool.directory, 'python.exe'),
+      source: PythonSource.provisioned,
+      pathEntries: tool.pathEntries,
+    );
+  }
+
   Future<Uint8List> _download(String name, String url) async {
     try {
       return await _fetch(Uri.parse(url));
@@ -251,6 +335,81 @@ class ToolProvisioner {
       return null;
     }
     return joinPath(programFiles, 'CMake/bin/cmake.exe');
+  }
+
+  Future<bool> _usablePython(String executable, List<String> arguments) async {
+    final ProcessResult result;
+    try {
+      result = await _runner(executable, arguments, environment: _environment);
+    } on ProcessException {
+      return false;
+    }
+    if (result.exitCode != 0) {
+      return false;
+    }
+    return _pythonOutputPattern.hasMatch('${result.stdout}\n${result.stderr}');
+  }
+
+  /// `py -3` 的真实解释器目录（`sys.executable` 父目录，存在时）。
+  Future<List<String>> _launcherPathEntries() async {
+    final ProcessResult result;
+    try {
+      result = await _runner(
+        'py',
+        const <String>['-3', '-c', 'import sys; print(sys.executable)'],
+        environment: _environment,
+      );
+    } on ProcessException {
+      return const <String>[];
+    }
+    if (result.exitCode != 0) {
+      return const <String>[];
+    }
+    final List<String> lines = '${result.stdout}'
+        .split(_lineSeparator)
+        .map((String line) => line.trim())
+        .where((String line) => line.isNotEmpty)
+        .toList();
+    if (lines.isEmpty) {
+      return const <String>[];
+    }
+    final String directory = File(lines.last).parent.path;
+    return Directory(directory).existsSync()
+        ? <String>[directory]
+        : const <String>[];
+  }
+
+  /// 解析最新稳定版：FTP 目录列表按版本降序，取首个存在
+  /// `python-<版本>-embed-amd64.zip` 的候选（列表可能包含尚未发布产物的空
+  /// 目录）；列表不可用（离线/页面改版）时回退 [pythonFallbackVersion]。
+  Future<String> _resolvePythonVersion() async {
+    try {
+      final Uint8List bytes = await _fetch(Uri.parse(pythonFtpIndexUrl));
+      final List<String> candidates = _stablePythonVersions(
+        utf8.decode(bytes, allowMalformed: true),
+      ).take(_pythonVersionProbeLimit).toList();
+      for (final String version in candidates) {
+        if (await _hasEmbeddablePackage(version)) {
+          return version;
+        }
+      }
+    } catch (_) {
+      // 目录列表不可用时回退内置版本；下载失败会另行报错。
+    }
+    return pythonFallbackVersion;
+  }
+
+  Future<bool> _hasEmbeddablePackage(String version) async {
+    try {
+      final Uint8List bytes = await _fetch(
+        Uri.parse('$pythonFtpIndexUrl$version/'),
+      );
+      return utf8
+          .decode(bytes, allowMalformed: true)
+          .contains('python-$version-embed-amd64.zip');
+    } catch (_) {
+      return false;
+    }
   }
 
   ProvisionedTool _describeTool(
@@ -407,6 +566,33 @@ bool _meetsMinimumVersion(String version) {
 
 List<int> _versionParts(String version) =>
     version.split('.').map(int.parse).toList();
+
+/// 从 FTP 目录列表 HTML 提取稳定版 3.x，按版本号从高到低排序。
+List<String> _stablePythonVersions(String html) {
+  final Set<String> found = <String>{};
+  for (final RegExpMatch match in _pythonVersionLinkPattern.allMatches(html)) {
+    final String version = match.group(1)!;
+    if (_versionParts(version).first == 3) {
+      found.add(version);
+    }
+  }
+  return found.toList()
+    ..sort(
+      (String left, String right) => _compareVersionParts(
+        _versionParts(right),
+        _versionParts(left),
+      ),
+    );
+}
+
+int _compareVersionParts(List<int> left, List<int> right) {
+  for (int index = 0; index < left.length; index++) {
+    if (left[index] != right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
+}
 
 Future<Uint8List> _fetchBytesOverHttp(Uri uri) async {
   final HttpClient client = HttpClient();

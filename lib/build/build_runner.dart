@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_script.dart';
@@ -14,11 +16,20 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
   Map<String, String>? environment,
 });
 
-/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment` 调用
-/// [runPackBuild]。
+/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`
+/// 调用 [runPackBuild]。
 typedef PackBuildRunner = Future<void> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
+  Map<String, String>? environment,
+  void Function(String line)? onOutput,
+});
+
+/// 流式子进程执行器：与 `Process.start` 同形的可注入替代（测试用）。
+typedef PackStreamingProcessRunner = Future<Process> Function(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
   Map<String, String>? environment,
 });
 
@@ -48,10 +59,15 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
 /// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
+/// [onOutput] 非空时构建进程走流式捕获：stdout/stderr 逐行转发（不去重、按流
+/// 顺序），同时汇聚完整输出用于失败诊断；为 null 时保持一次性捕获（无流式）。
+/// [streamRunner] 供测试注入 `Process.start` 的替代实现。
 Future<void> runPackBuild(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   PackProcessRunner processRunner = Process.run,
+  PackStreamingProcessRunner? streamRunner,
+  void Function(String line)? onOutput,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
 }) async {
@@ -95,6 +111,8 @@ Future<void> runPackBuild(
   onStage(PackBuildStage.building);
   await _runBuildScript(
     processRunner,
+    streamRunner,
+    onOutput,
     sourcePath,
     scriptFile.path,
     target,
@@ -180,21 +198,21 @@ Future<void> _deleteResidual(String path) async {
 
 Future<void> _runBuildScript(
   PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
+  void Function(String line)? onOutput,
   String sourcePath,
   String scriptPath,
   Directory target,
   Map<String, String>? environment,
 ) async {
-  final Map<String, String> variables = <String, String>{
-    ...?environment,
-    'SRC_PATH': target.absolute.path,
-    'BUILD_OUT': Directory(sourcePath).absolute.path,
-  };
   final ProcessResult result = await _runPython(
     processRunner,
+    streamRunner,
+    onOutput,
     sourcePath,
     scriptPath,
-    variables,
+    target,
+    environment,
   );
   if (result.exitCode != 0) {
     throw PackBuildException(
@@ -206,37 +224,113 @@ Future<void> _runBuildScript(
 
 Future<ProcessResult> _runPython(
   PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
+  void Function(String line)? onOutput,
   String sourcePath,
   String scriptPath,
+  Directory target,
+  Map<String, String>? environment,
+) async {
+  final Map<String, String> variables = <String, String>{
+    ...?environment,
+    'SRC_PATH': target.absolute.path,
+    'BUILD_OUT': Directory(sourcePath).absolute.path,
+  };
+  final _PythonLauncher launcher = _PythonLauncher(scriptPath);
+  if (streamRunner != null) {
+    return _runStreamingPython(
+      streamRunner,
+      launcher,
+      onOutput,
+      sourcePath,
+      variables,
+    );
+  }
+  try {
+    return await processRunner(
+      launcher.executable,
+      launcher.arguments,
+      workingDirectory: sourcePath,
+      environment: variables,
+    );
+  } on ProcessException {
+    return _runFallbackPython(processRunner, launcher, sourcePath, variables);
+  }
+}
+
+/// Python 启动命令：首选 `python <script>`，回退 `py -3 <script>`。
+class _PythonLauncher {
+  const _PythonLauncher(this.scriptPath);
+
+  final String scriptPath;
+
+  String get executable => 'python';
+
+  List<String> get arguments => <String>[scriptPath];
+
+  String get fallbackExecutable => 'py';
+
+  List<String> get fallbackArguments => <String>['-3', scriptPath];
+}
+
+Future<ProcessResult> _runStreamingPython(
+  PackStreamingProcessRunner streamRunner,
+  _PythonLauncher launcher,
+  void Function(String line)? onOutput,
+  String sourcePath,
   Map<String, String> environment,
 ) async {
   try {
-    return await processRunner(
-      'python',
-      <String>[scriptPath],
-      workingDirectory: sourcePath,
-      environment: environment,
+    return await _runStreamingProcess(
+      streamRunner,
+      launcher.executable,
+      launcher.arguments,
+      sourcePath,
+      environment,
+      onOutput,
     );
   } on ProcessException {
-    return _runFallbackPython(
-      processRunner,
+    return _runFallbackStreamingPython(
+      streamRunner,
+      launcher,
+      onOutput,
       sourcePath,
-      scriptPath,
       environment,
     );
   }
 }
 
+Future<ProcessResult> _runFallbackStreamingPython(
+  PackStreamingProcessRunner streamRunner,
+  _PythonLauncher launcher,
+  void Function(String line)? onOutput,
+  String sourcePath,
+  Map<String, String> environment,
+) async {
+  try {
+    return await _runStreamingProcess(
+      streamRunner,
+      launcher.fallbackExecutable,
+      launcher.fallbackArguments,
+      sourcePath,
+      environment,
+      onOutput,
+    );
+  } on ProcessException {
+    throw const PackBuildException('未找到 Python（python / py），无法执行构建');
+  }
+}
+
 Future<ProcessResult> _runFallbackPython(
   PackProcessRunner processRunner,
+  _PythonLauncher launcher,
   String sourcePath,
-  String scriptPath,
   Map<String, String> environment,
 ) async {
   try {
     return await processRunner(
-      'py',
-      <String>['-3', scriptPath],
+      launcher.fallbackExecutable,
+      launcher.fallbackArguments,
       workingDirectory: sourcePath,
       environment: environment,
     );
@@ -244,6 +338,58 @@ Future<ProcessResult> _runFallbackPython(
     throw const PackBuildException('未找到 Python（python / py），无法执行构建');
   }
 }
+
+Future<ProcessResult> _runStreamingProcess(
+  PackStreamingProcessRunner streamRunner,
+  String executable,
+  List<String> arguments,
+  String workingDirectory,
+  Map<String, String> environment,
+  void Function(String line)? onOutput,
+) async {
+  final Process process = await streamRunner(
+    executable,
+    arguments,
+    workingDirectory: workingDirectory,
+    environment: environment,
+  );
+  final List<String> stdoutLines = <String>[];
+  final List<String> stderrLines = <String>[];
+  final Future<void> stdoutDone = _collectProcessLines(
+    process.stdout,
+    stdoutLines,
+    onOutput,
+  );
+  final Future<void> stderrDone = _collectProcessLines(
+    process.stderr,
+    stderrLines,
+    onOutput,
+  );
+  final int exitCode = await process.exitCode;
+  await Future.wait(<Future<void>>[stdoutDone, stderrDone]);
+  return ProcessResult(
+    process.pid,
+    exitCode,
+    _withTrailingNewline(stdoutLines),
+    _withTrailingNewline(stderrLines),
+  );
+}
+
+Future<void> _collectProcessLines(
+  Stream<List<int>> stream,
+  List<String> lines,
+  void Function(String line)? onOutput,
+) async {
+  await for (final String line
+      in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+    lines.add(line);
+    onOutput?.call(line);
+  }
+}
+
+/// 还原单流末尾换行的原始文本形态（与 `ProcessResult.stdout` 语义一致）。
+String _withTrailingNewline(List<String> lines) =>
+    lines.isEmpty ? '' : '${lines.join('\n')}\n';
 
 String? _outputTail(ProcessResult result) {
   final List<String> lines = '${result.stdout}\n${result.stderr}'.split(

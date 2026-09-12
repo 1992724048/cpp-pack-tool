@@ -6,6 +6,7 @@ import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -28,6 +29,7 @@ void main() {
             PackModel pack,
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
+            void Function(String line)? onOutput,
           }) async {
             onStage(PackBuildStage.downloading);
             await downloadGate.future;
@@ -108,6 +110,7 @@ void main() {
             PackModel pack,
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
+            void Function(String line)? onOutput,
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -124,7 +127,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('构建失败：构建失败（退出码 1）'), findsOneWidget);
-    expect(find.textContaining('boom'), findsOneWidget);
+    expect(find.textContaining('boom', findRichText: true), findsOneWidget);
     expect(scanCount, 0);
     expect(find.byType(ProgressRing), findsNothing);
     expect(_closeButton(tester).onPressed, isNotNull);
@@ -137,6 +140,7 @@ void main() {
         PackModel pack,
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
+        void Function(String line)? onOutput,
       }) async {},
       scanFiles: (String sourcePath) async => throw ArgumentError('目录不存在: X'),
       onApply: (PackModel pack) async {},
@@ -156,6 +160,7 @@ void main() {
         PackModel pack,
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
+        void Function(String line)? onOutput,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async => throw Exception('写入失败'),
@@ -176,6 +181,7 @@ void main() {
         PackModel pack,
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
+        void Function(String line)? onOutput,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -194,6 +200,7 @@ void main() {
         PackModel pack,
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
+        void Function(String line)? onOutput,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -221,6 +228,7 @@ void main() {
             PackModel pack,
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
+            void Function(String line)? onOutput,
           }) async {
             buildCount++;
           },
@@ -255,6 +263,7 @@ void main() {
             PackModel pack,
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
+            void Function(String line)? onOutput,
           }) async {
             received = environment;
           },
@@ -267,6 +276,128 @@ void main() {
     expect(received, same(prepared.environment));
     expect(find.text('编译器：MSVC 14.44.35207'), findsOneWidget);
   });
+
+  testWidgets('无输出时显示等待占位', (tester) async {
+    final Completer<void> buildGate = Completer<void>();
+
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+          }) async {
+            onStage(PackBuildStage.building);
+            await buildGate.future;
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildOutputPanel')), findsOneWidget);
+    expect(find.text('等待输出…'), findsOneWidget);
+
+    buildGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  testWidgets('构建输出逐行展示并高亮 ERROR/WARNING/INFO', (tester) async {
+    List<String>? receivedLines;
+
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+          }) async {
+            receivedLines = <String>[
+              'INFO: 开始构建',
+              'WARNING: 未启用 LTO',
+              'error: 编译失败',
+              '普通输出',
+            ];
+            for (final String line in receivedLines!) {
+              onOutput?.call(line);
+            }
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(receivedLines, isNotNull, reason: '构建函数应收到输出回调');
+    expect(find.text('等待输出…'), findsNothing);
+    for (final String line in receivedLines!) {
+      expect(
+        find.textContaining(line, findRichText: true),
+        findsOneWidget,
+        reason: '面板应展示输出行：$line',
+      );
+    }
+
+    expect(_outputLine(tester, 'INFO: 开始构建'), UCColors.flavor.blue);
+    expect(_outputLine(tester, 'WARNING: 未启用 LTO'), UCColors.flavor.peach);
+    expect(findOutputKeyword('error: 编译失败')?.keyword, 'ERROR');
+    expect(_outputLine(tester, 'error: 编译失败'), UCColors.flavor.red);
+    expect(_outputLine(tester, '普通输出'), UCColors.flavor.text);
+  });
+
+  testWidgets('失败时输出尾部进入面板且不残留流式行', (tester) async {
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+          }) async {
+            onOutput?.call('ERROR: 即将失败');
+            throw const PackBuildException(
+              '构建失败（退出码 1）',
+              outputTail: 'trace line A\ntrace line B',
+            );
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('构建失败：构建失败（退出码 1）'), findsOneWidget);
+    expect(
+      find.textContaining('trace line A', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('trace line B', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('ERROR: 即将失败', findRichText: true),
+      findsNothing,
+    );
+    expect(_closeButton(tester).onPressed, isNotNull);
+  });
+}
+
+/// 输出面板中某行的关键字颜色（无关键字行取常规文本色）。
+Color _outputLine(WidgetTester tester, String line) {
+  return outputLineColor(
+    tester
+        .widget<RichText>(find.textContaining(line, findRichText: true))
+        .text
+        .toPlainText(),
+  );
 }
 
 BuildEnvironment _environment({

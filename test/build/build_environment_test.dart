@@ -522,6 +522,54 @@ void main() {
       expect(base['Path'], r'C:\Windows');
     });
 
+    test('Python 解释器目录前置到声明工具与编译器附加目录之前', () async {
+      final _FakeProvisioner provisioner = _FakeProvisioner(
+        _cmakeNinja(
+          cmakeExecutable: r'C:\tools\cmake\bin\cmake.exe',
+          ninjaExecutable: r'C:\tools\ninja\ninja.exe',
+          pathEntries: <String>[r'C:\tools\ninja', r'C:\tools\cmake\bin'],
+        ),
+        pythonResult: const ProvisionedPython(
+          executable: r'C:\tools\python\python.exe',
+          source: PythonSource.provisioned,
+          pathEntries: <String>[r'C:\tools\python'],
+        ),
+        toolResults: <String, ProvisionedTool>{
+          'perl': ProvisionedTool(
+            name: 'perl',
+            directory: r'C:\tools\perl',
+            pathEntries: <String>[r'C:\tools\perl\bin'],
+          ),
+        },
+      );
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: provisioner,
+        toolsRoot: 'tools',
+        baseEnvironment: <String, String>{'Path': r'C:\Windows'},
+        tools: const <BuildScriptTool>[
+          BuildScriptTool(name: 'perl', url: 'https://example.com/perl.zip'),
+        ],
+        detect: () async => <DetectedCompiler>[
+          _compiler(extraPathEntries: <String>[r'C:\LLVM\bin']),
+        ],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(provisioner.ensurePythonCalls, 1);
+      expect(
+        result.environment['Path'],
+        r'C:\tools\ninja;C:\tools\cmake\bin;C:\tools\python;'
+        r'C:\tools\perl\bin;C:\LLVM\bin;C:\Windows',
+      );
+    });
+
     test('释放辅助模块到 toolsRoot（目录不存在则创建并覆盖写）', () async {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'nested/tools');
@@ -633,6 +681,11 @@ void main() {
             pathEntries: <String>[r'C:\tools\perl\bin'],
           ),
         },
+        pythonResult: const ProvisionedPython(
+          executable: r'C:\tools\python\python.exe',
+          source: PythonSource.provisioned,
+          pathEntries: <String>[r'C:\tools\python'],
+        ),
       );
       PackModel? loadedPack;
 
@@ -670,9 +723,13 @@ void main() {
       );
 
       expect(loadedPack, same(pack));
+      expect(provisioner.ensurePythonCalls, 1);
       expect(provisioner.ensureToolCalls.single.name, 'perl');
       expect(provisioner.ensureToolCalls.single.binSubdir, 'perl/bin');
-      expect(result.environment['Path'], r'C:\tools\perl\bin');
+      expect(
+        result.environment['Path'],
+        r'C:\tools\python;C:\tools\perl\bin',
+      );
       expect(result.environment['CNP_OPTION_TBB'], 'on');
       expect(result.environment['CNP_OPTION_MPI'], 'off');
       expect(result.environment.containsKey('CNP_OPTION_UNKNOWN'), isFalse);
@@ -824,12 +881,19 @@ class _FakeProvisioner implements ToolProvisioner {
     this.result, {
     this.toolResults = const <String, ProvisionedTool>{},
     this.toolError,
+    this.pythonResult = const ProvisionedPython(
+      executable: 'python',
+      source: PythonSource.local,
+      pathEntries: <String>[],
+    ),
   });
 
   final CmakeNinja result;
   final Map<String, ProvisionedTool> toolResults;
   final Object? toolError;
+  final ProvisionedPython pythonResult;
   int ensureCmakeNinjaCalls = 0;
+  int ensurePythonCalls = 0;
   final List<_ToolCall> ensureToolCalls = <_ToolCall>[];
 
   @override
@@ -854,6 +918,12 @@ class _FakeProvisioner implements ToolProvisioner {
   Future<CmakeNinja> ensureCmakeNinja() async {
     ensureCmakeNinjaCalls++;
     return result;
+  }
+
+  @override
+  Future<ProvisionedPython> ensurePython() async {
+    ensurePythonCalls++;
+    return pythonResult;
   }
 }
 

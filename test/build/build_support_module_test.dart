@@ -126,8 +126,8 @@ List<String> _relativeFiles(String root) {
   return files;
 }
 
-/// cmake_configure 命令装配与缺 CNP_CMAKE 报错：monkeypatch subprocess.run
-/// 捕获命令，不真实执行 cmake。
+/// cmake_configure 命令装配、优化参数注入与缺 CNP_CMAKE 报错：monkeypatch
+/// subprocess.run 捕获命令，不真实执行 cmake。
 const String _cmakeDriver = r'''
 import os
 
@@ -162,20 +162,116 @@ def fake_run(command, **kwargs):
     return FakeCompleted()
 
 
+def option(command, name):
+    prefix = '-D' + name + '='
+    for item in command:
+        if item.startswith(prefix):
+            return item[len(prefix):]
+    return 'none'
+
+
 original_run = cnp_build_support.subprocess.run
+original_which = cnp_build_support.shutil.which
 cnp_build_support.subprocess.run = fake_run
+cnp_build_support.shutil.which = lambda name: (
+    'C:/llvm/lld-link.exe' if name == 'lld-link' else None)
 try:
     os.environ['CNP_CMAKE'] = 'C:/tools/cmake/bin/cmake.exe'
     os.environ['CNP_NINJA'] = 'C:/tools/ninja/ninja.exe'
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
     os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_COMPILER_KIND'] = 'icx'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release', ['-DEXTRA=1'])
-    os.environ.pop('CNP_NINJA', None)
+    icx_release = list(captured[-1])
+
+    os.environ['CNP_COMPILER_KIND'] = 'gcc'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    inferred_release = list(captured[-1])
+    os.environ['CNP_COMPILER_KIND'] = 'icx'
+
+    os.environ['CNP_COMPILER_KIND'] = 'clang-cl'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    clang_release = list(captured[-1])
+
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    msvc_release = list(captured[-1])
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
+    msvc_debug = list(captured[-1])
+
+    os.environ.pop('CNP_COMPILER_KIND', None)
     os.environ.pop('CNP_C_COMPILER', None)
     os.environ.pop('CNP_CXX_COMPILER', None)
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    unknown_release = list(captured[-1])
+
+    os.environ.pop('CNP_NINJA', None)
     cnp_build_support.cmake_configure('C:/src', 'C:/build')
+    minimal = list(captured[-1])
+
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    cnp_build_support.cmake_configure(
+        'C:/src', 'C:/build', 'Release', [], enable_ipo=False)
+    disabled_call = list(captured[-1])
+
+    os.environ['CNP_NO_IPO'] = '1'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    disabled_env = list(captured[-1])
+    os.environ.pop('CNP_NO_IPO', None)
+
+    cnp_build_support.shutil.which = lambda name: None
+    os.environ['CNP_COMPILER_KIND'] = 'clang-cl'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    clang_no_lld = list(captured[-1])
+
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    cnp_build_support.cmake_configure(
+        'C:/src', 'C:/build', 'Release',
+        ['-DCMAKE_CXX_FLAGS_RELEASE=/O1',
+         '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF'])
+    preset_release = list(captured[-1])
 finally:
     cnp_build_support.subprocess.run = original_run
+    cnp_build_support.shutil.which = original_which
+
+print('icx_avx2_c=%s' % option(icx_release, 'CMAKE_C_FLAGS'))
+print('icx_avx2_cxx=%s' % option(icx_release, 'CMAKE_CXX_FLAGS'))
+print('icx_opt=%s' % option(icx_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('icx_opt_cxx=%s' % option(icx_release, 'CMAKE_CXX_FLAGS_RELEASE'))
+print('icx_ipo=%s' % option(icx_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('inferred_avx2=%s' % option(inferred_release, 'CMAKE_C_FLAGS'))
+print('inferred_opt=%s' % option(inferred_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('clang_avx2_c=%s' % option(clang_release, 'CMAKE_C_FLAGS'))
+print('clang_opt_cxx=%s' % option(clang_release, 'CMAKE_CXX_FLAGS_RELEASE'))
+print('clang_ipo=%s' % option(clang_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('msvc_opt=%s' % option(msvc_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('msvc_opt_cxx=%s' % option(msvc_release, 'CMAKE_CXX_FLAGS_RELEASE'))
+print('msvc_ipo=%s' % option(msvc_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('debug_avx2=%s' % option(msvc_debug, 'CMAKE_C_FLAGS'))
+print('debug_opt=%s' % option(msvc_debug, 'CMAKE_C_FLAGS_RELEASE'))
+print('debug_ipo=%s' % option(msvc_debug, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('unknown_avx2=%s' % option(unknown_release, 'CMAKE_C_FLAGS'))
+print('unknown_opt=%s' % option(unknown_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('disabled_call_ipo=%s' % option(
+    disabled_call, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('disabled_env_ipo=%s' % option(
+    disabled_env, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('clang_no_lld_ipo=%s' % option(
+    clang_no_lld, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('preset_opt_cxx=%s' % option(preset_release, 'CMAKE_CXX_FLAGS_RELEASE'))
+print('preset_opt_c=%s' % option(preset_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('preset_ipo=%s' % option(
+    preset_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+
+command = captured[0]
+print('generator=%s' % command[command.index('-G') + 1])
+print('build_type=%s' % [item for item in command if item.startswith('-DCMAKE_BUILD_TYPE=')][0])
+print('runtime=%s' % [item for item in command if item.startswith('-DCMAKE_MSVC_RUNTIME_LIBRARY=')][0])
+print('make_program=%s' % [item for item in command if item.startswith('-DCMAKE_MAKE_PROGRAM=')][0])
+print('c_compiler=%s' % [item for item in command if item.startswith('-DCMAKE_C_COMPILER=')][0])
+print('extra=%s' % command[-1])
+print('minimal_make_program=%s' % any(
+    item.startswith('-DCMAKE_MAKE_PROGRAM=') for item in minimal))
 
 
 class FailingCompleted(object):
@@ -209,17 +305,50 @@ except Exception as error:
     print('spawn=unexpected:' + type(error).__name__)
 finally:
     cnp_build_support.subprocess.run = original_run
+''';
 
-command = captured[0]
-print('generator=%s' % command[command.index('-G') + 1])
-print('build_type=%s' % [item for item in command if item.startswith('-DCMAKE_BUILD_TYPE=')][0])
-print('runtime=%s' % [item for item in command if item.startswith('-DCMAKE_MSVC_RUNTIME_LIBRARY=')][0])
-print('make_program=%s' % [item for item in command if item.startswith('-DCMAKE_MAKE_PROGRAM=')][0])
-print('c_compiler=%s' % [item for item in command if item.startswith('-DCMAKE_C_COMPILER=')][0])
-print('extra=%s' % command[-1])
-minimal = captured[1]
-print('minimal_make_program=%s' % any(
-    item.startswith('-DCMAKE_MAKE_PROGRAM=') for item in minimal))
+/// cmake_build：缺省并行到 CPU 逻辑核数、显式 jobs 与 0 禁用。
+const String _cmakeBuildDriver = r'''
+import os
+
+import cnp_build_support
+
+os.environ['CNP_CMAKE'] = 'C:/tools/cmake/bin/cmake.exe'
+captured = []
+
+
+class FakeCompleted(object):
+    returncode = 0
+    stdout = ''
+
+
+def fake_run(command, **kwargs):
+    captured.append(list(command))
+    return FakeCompleted()
+
+
+original_run = cnp_build_support.subprocess.run
+cnp_build_support.subprocess.run = fake_run
+try:
+    cnp_build_support.cmake_build('C:/build', 'Release')
+    default_command = list(captured[-1])
+    cnp_build_support.cmake_build('C:/build', 'Release', jobs=2)
+    explicit_command = list(captured[-1])
+    cnp_build_support.cmake_build('C:/build', 'Release', jobs=0)
+    zero_command = list(captured[-1])
+finally:
+    cnp_build_support.subprocess.run = original_run
+
+
+def parallel_value(command):
+    if '--parallel' not in command:
+        return 'none'
+    return command[command.index('--parallel') + 1]
+
+
+print('default_parallel=%s' % parallel_value(default_command))
+print('explicit_parallel=%s' % parallel_value(explicit_command))
+print('zero_parallel=%s' % parallel_value(zero_command))
 ''';
 
 /// stage_headers：目录内容镜像（不含目录名层、滤除非头文件）+ 显式文件复制。
@@ -389,8 +518,8 @@ def write(relative, text):
 
 
 write('include/a.h', 'aa')
-write('lib/x.lib', 'xxx')
-write('bin/y.dll', 'yyyy')
+write('release/lib/x.lib', 'xxx')
+write('release/bin/y.dll', 'yyyy')
 write('debug/lib/d.lib', 'dddd')
 write('debug/bin/d.pdb', 'ddddd')
 write('LICENSE', 'license')
@@ -426,7 +555,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "2"'));
+      expect(source, contains('VERSION = "3"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -443,7 +572,7 @@ void main() {
       );
     }, skip: _skipReason);
 
-    test('cmake_configure：命令装配与缺 CNP_CMAKE 明确报错', () async {
+    test('cmake_configure：命令装配、优化注入与缺 CNP_CMAKE 明确报错', () async {
       final Directory tempDir = _createTempDir('cnp_support_cmake_');
       final File driver = _writeDriver(
         tempDir,
@@ -479,10 +608,75 @@ void main() {
       );
       expect(stdout, contains('extra=-DEXTRA=1'));
       expect(stdout, contains('minimal_make_program=False'));
+      // icx：AVX2 + O3 + NDEBUG + IPO。
+      expect(stdout, contains('icx_avx2_c=/QxCORE-AVX2 /QaxCORE-AVX2'));
+      expect(stdout, contains('icx_avx2_cxx=/QxCORE-AVX2 /QaxCORE-AVX2'));
+      expect(stdout, contains('icx_opt=/O3 /DNDEBUG'));
+      expect(stdout, contains('icx_opt_cxx=/O3 /DNDEBUG'));
+      expect(stdout, contains('icx_ipo=ON'));
+      // 非法种类标识时回退按编译器路径推断（icx-cl.exe → icx）。
+      expect(stdout, contains('inferred_avx2=/QxCORE-AVX2 /QaxCORE-AVX2'));
+      expect(stdout, contains('inferred_opt=/O3 /DNDEBUG'));
+      // clang-cl：/arch:AVX2 + -O3 + lld 可解析时 IPO。
+      expect(stdout, contains('clang_avx2_c=/arch:AVX2'));
+      expect(stdout, contains('clang_opt_cxx=-O3 -DNDEBUG'));
+      expect(stdout, contains('clang_ipo=ON'));
+      // msvc：/O2 + IPO。
+      expect(stdout, contains('msvc_opt=/O2 /DNDEBUG'));
+      expect(stdout, contains('msvc_opt_cxx=/O2 /DNDEBUG'));
+      expect(stdout, contains('msvc_ipo=ON'));
+      // Debug 不注入优化与 IPO；AVX2 保留。
+      expect(stdout, contains('debug_avx2=/arch:AVX2'));
+      expect(stdout, contains('debug_opt=none'));
+      expect(stdout, contains('debug_ipo=none'));
+      // 编译器种类未知时不注入任何优化参数。
+      expect(stdout, contains('unknown_avx2=none'));
+      expect(stdout, contains('unknown_opt=none'));
+      // 退化路径：调用参数 / 环境变量 / clang-cl 缺 lld。
+      expect(stdout, contains('disabled_call_ipo=none'));
+      expect(stdout, contains('disabled_env_ipo=none'));
+      expect(stdout, contains('clang_no_lld_ipo=none'));
+      expect(stdout, contains('ipo=off reason=disabled-by-call'));
+      expect(stdout, contains('ipo=off reason=disabled-by-env'));
+      expect(stdout, contains('ipo=off reason=lld-link-missing'));
+      expect(stdout, contains('ipo=off reason=unknown-compiler'));
+      // 配方自带同名变量时保持其取值，模块不重复注入。
+      expect(stdout, contains('preset_opt_cxx=/O1'));
+      expect(stdout, contains('preset_opt_c=/O2 /DNDEBUG'));
+      expect(stdout, contains('preset_ipo=OFF'));
+      // 证据行。
+      expect(
+        stdout,
+        contains(
+          '[cnp_build_support] cmake_configure: config=Release compiler=icx '
+          'avx2=/QxCORE-AVX2 /QaxCORE-AVX2 optimization=/O3 ipo=on',
+        ),
+      );
       expect(stdout, contains('nonzero=RuntimeError'));
       expect(stdout, contains('nonzero_has_tail=True'));
       expect(stdout, contains('nonzero_has_code=True'));
       expect(stdout, contains('spawn=RuntimeError'));
+    }, skip: _skipReason);
+
+    test('cmake_build：缺省并行到 CPU 核数、显式 jobs 与 0 禁用', () async {
+      final Directory tempDir = _createTempDir('cnp_support_cmake_build_');
+      final File driver = _writeDriver(tempDir, _cmakeBuildDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'cmake_build');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(stdout, matches(RegExp(r'default_parallel=\d+')));
+      expect(stdout, contains('explicit_parallel=2'));
+      expect(stdout, contains('zero_parallel=none'));
+      expect(
+        stdout,
+        contains('[cnp_build_support] cmake_build: config=Release parallel='),
+      );
     }, skip: _skipReason);
 
     test('stage_headers：文件与目录内容镜像（不含目录名层）', () async {
@@ -541,18 +735,23 @@ void main() {
 
       final String outRelease = _join(tempDir.path, 'out_release');
       expect(_relativeFiles(outRelease), <String>[
-        'bin/bar.dll',
-        'bin/foo.pdb',
-        'lib/foo.lib',
-        'lib/foo_libB.lib',
+        'release/bin/bar.dll',
+        'release/bin/foo.pdb',
+        'release/lib/foo.lib',
+        'release/lib/foo_libB.lib',
       ]);
-      expect(_readText(_join(_join(outRelease, 'lib'), 'foo.lib')), 'foo-a');
       expect(
-        _readText(_join(_join(outRelease, 'lib'), 'foo_libB.lib')),
+        _readText(_join(_join(_join(outRelease, 'release'), 'lib'), 'foo.lib')),
+        'foo-a',
+      );
+      expect(
+        _readText(
+          _join(_join(_join(outRelease, 'release'), 'lib'), 'foo_libB.lib'),
+        ),
         'foo-b',
       );
       expect(
-        _readText(_join(_join(outRelease, 'bin'), 'foo.pdb')),
+        _readText(_join(_join(_join(outRelease, 'release'), 'bin'), 'foo.pdb')),
         'pdb-a',
       );
 
@@ -632,16 +831,16 @@ void main() {
       final String out = _join(_join(tempDir.path, 'root'), 'out');
       expect(_relativeFiles(out), <String>[
         'LICENSE',
-        'bin/foo.dll',
-        'bin/helper.exe',
-        'bin/tool.exe',
         'debug/bin/foo.pdb',
         'debug/lib/foo.lib',
         'include/headers/alpha.h',
         'include/src/beta.hpp',
         'include/src/impl/igamma.inl',
-        'lib/bar.a',
-        'lib/foo.lib',
+        'release/bin/foo.dll',
+        'release/bin/helper.exe',
+        'release/bin/tool.exe',
+        'release/lib/bar.a',
+        'release/lib/foo.lib',
       ]);
       expect(_readText(_join(out, 'LICENSE')), 'license-root');
       expect(
