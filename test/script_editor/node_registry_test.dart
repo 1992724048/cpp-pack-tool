@@ -45,6 +45,10 @@ const Set<String> _expectedTypeKeys = <String>{
   'crypto.aesEncrypt',
   'crypto.aesDecrypt',
   'crypto.signFile',
+  'variable.setNumber',
+  'variable.getNumber',
+  'variable.setString',
+  'variable.getString',
 };
 
 ScriptParamDescriptor _param(String typeKey, String paramKey) {
@@ -59,13 +63,13 @@ ScriptPinDescriptor _pin(String typeKey, String pinId) {
 
 void main() {
   group('NodeRegistry 注册表自洽性', () {
-    test('总数 42 且类型键唯一', () {
-      expect(NodeRegistry.all, hasLength(42));
+    test('总数 46 且类型键唯一', () {
+      expect(NodeRegistry.all, hasLength(46));
       expect(
         NodeRegistry.all
             .map((ScriptNodeTypeDescriptor type) => type.typeKey)
             .toSet(),
-        hasLength(42),
+        hasLength(46),
       );
     });
 
@@ -160,6 +164,7 @@ void main() {
             ScriptNodeCategory.logic: 3,
             ScriptNodeCategory.math: 5,
             ScriptNodeCategory.crypto: 6,
+            ScriptNodeCategory.variable: 4,
           };
       final List<ScriptNodeTypeDescriptor> collected =
           <ScriptNodeTypeDescriptor>[];
@@ -184,7 +189,7 @@ void main() {
       }
       expect(
         collected.map((ScriptNodeTypeDescriptor type) => type.typeKey).toSet(),
-        hasLength(42),
+        hasLength(46),
       );
     });
 
@@ -199,6 +204,7 @@ void main() {
       expect(ScriptNodeCategory.logic.label, '逻辑');
       expect(ScriptNodeCategory.math.label, '数值');
       expect(ScriptNodeCategory.crypto.label, '编码与安全');
+      expect(ScriptNodeCategory.variable.label, '变量');
     });
   });
 
@@ -1130,6 +1136,80 @@ void main() {
         expect(_param('crypto.signFile', key).defaultValue, '', reason: key);
       }
     });
+
+    test('variable 四节点引脚与参数（M4.3 T1）', () {
+      for (final String typeKey in <String>[
+        'variable.setNumber',
+        'variable.setString',
+      ]) {
+        final ScriptNodeTypeDescriptor setNode = NodeRegistry.byType(typeKey)!;
+        expect(setNode.category, ScriptNodeCategory.variable);
+        expect(
+          setNode.displayName,
+          typeKey == 'variable.setNumber' ? '写入数值变量' : '写入文本变量',
+        );
+        expect(
+          setNode.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+          <String>{'exec', 'value', 'out'},
+        );
+        expect(_pin(typeKey, 'exec').kind, ScriptPinKind.exec);
+        expect(_pin(typeKey, 'exec').isInput, isTrue);
+        expect(_pin(typeKey, 'exec').required, isTrue);
+        expect(
+          _pin(typeKey, 'value').dataType,
+          typeKey == 'variable.setNumber'
+              ? ScriptDataType.number
+              : ScriptDataType.string,
+        );
+        expect(_pin(typeKey, 'value').isInput, isTrue);
+        expect(_pin(typeKey, 'value').required, isTrue);
+        expect(_pin(typeKey, 'value').label, '值');
+        expect(_pin(typeKey, 'out').kind, ScriptPinKind.exec);
+        expect(_pin(typeKey, 'out').isInput, isFalse);
+        expect(
+          setNode.params
+              .map((ScriptParamDescriptor param) => param.key)
+              .toList(),
+          <String>['name'],
+        );
+        expect(_param(typeKey, 'name').label, '变量名');
+        expect(_param(typeKey, 'name').type, ScriptParamType.text);
+        expect(_param(typeKey, 'name').defaultValue, '');
+      }
+
+      for (final String typeKey in <String>[
+        'variable.getNumber',
+        'variable.getString',
+      ]) {
+        final ScriptNodeTypeDescriptor getNode = NodeRegistry.byType(typeKey)!;
+        expect(getNode.category, ScriptNodeCategory.variable);
+        expect(
+          getNode.displayName,
+          typeKey == 'variable.getNumber' ? '读取数值变量' : '读取文本变量',
+        );
+        expect(
+          getNode.pins.map((ScriptPinDescriptor pin) => pin.id).toSet(),
+          <String>{'result'},
+        );
+        expect(
+          _pin(typeKey, 'result').dataType,
+          typeKey == 'variable.getNumber'
+              ? ScriptDataType.number
+              : ScriptDataType.string,
+        );
+        expect(_pin(typeKey, 'result').isInput, isFalse);
+        expect(_pin(typeKey, 'result').label, '结果');
+        expect(
+          getNode.params
+              .map((ScriptParamDescriptor param) => param.key)
+              .toList(),
+          <String>['name'],
+        );
+        expect(_param(typeKey, 'name').label, '变量名');
+        expect(_param(typeKey, 'name').type, ScriptParamType.text);
+        expect(_param(typeKey, 'name').defaultValue, '');
+      }
+    });
   });
 
   group('参数清单 / 默认值 / 类型', () {
@@ -1159,6 +1239,10 @@ void main() {
           'passwordEnv',
           'timestampServer',
         ],
+        'variable.setNumber': <String>['name'],
+        'variable.getNumber': <String>['name'],
+        'variable.setString': <String>['name'],
+        'variable.getString': <String>['name'],
       };
       for (final ScriptNodeTypeDescriptor type in NodeRegistry.all) {
         final List<String> expectedKeys = expected[type.typeKey] ?? <String>[];
@@ -1197,6 +1281,14 @@ void main() {
       expect(_param('crypto.signFile', 'password').defaultValue, '');
       expect(_param('crypto.signFile', 'passwordEnv').defaultValue, '');
       expect(_param('crypto.signFile', 'timestampServer').defaultValue, '');
+      for (final String typeKey in <String>[
+        'variable.setNumber',
+        'variable.getNumber',
+        'variable.setString',
+        'variable.getString',
+      ]) {
+        expect(_param(typeKey, 'name').defaultValue, '', reason: typeKey);
+      }
     });
 
     test('参数类型映射', () {
@@ -1256,6 +1348,18 @@ void main() {
         'timestampServer',
       ]) {
         expect(_param('crypto.signFile', key).type, ScriptParamType.text);
+      }
+      for (final String typeKey in <String>[
+        'variable.setNumber',
+        'variable.getNumber',
+        'variable.setString',
+        'variable.getString',
+      ]) {
+        expect(
+          _param(typeKey, 'name').type,
+          ScriptParamType.text,
+          reason: typeKey,
+        );
       }
     });
   });

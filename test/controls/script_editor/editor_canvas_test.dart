@@ -301,6 +301,17 @@ void main() {
       expect(nodeTypeIcon('crypto.signFile'), FluentIcons.certificate);
     });
 
+    test('变量四节点图标与分类色（视觉规范 §2.2/§9）', () {
+      expect(nodeTypeIcon('variable.setNumber'), FluentIcons.save);
+      expect(nodeTypeIcon('variable.getNumber'), FluentIcons.open_file);
+      expect(nodeTypeIcon('variable.setString'), FluentIcons.save_as);
+      expect(nodeTypeIcon('variable.getString'), FluentIcons.read);
+      expect(
+        nodeCategoryColor(ScriptNodeCategory.variable),
+        UCColors.flavor.lavender,
+      );
+    });
+
     testWidgets('节点卡悬停态描边与背景变化，移出恢复', (WidgetTester tester) async {
       await _pumpCanvas(
         tester,

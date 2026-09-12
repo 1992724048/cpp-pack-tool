@@ -12,7 +12,8 @@ enum ScriptNodeCategory {
   log('日志'),
   logic('逻辑'),
   math('数值'),
-  crypto('编码与安全');
+  crypto('编码与安全'),
+  variable('变量');
 
   const ScriptNodeCategory(this.label);
 

@@ -1109,6 +1109,99 @@ class NodeRegistry {
             ),
           ],
         ),
+        // 变量读写共用一个名称参数；名称正则与同名同类型校验由校验器负责
+        // （M4.3 T2），生成器直接取参数文本发射 `$var_<name>`。自动初始化
+        // 保证 get 在 set 之前执行时也不为 $null（生成器收集变量名后注入）。
+        ScriptNodeTypeDescriptor(
+          typeKey: 'variable.setNumber',
+          displayName: '写入数值变量',
+          category: ScriptNodeCategory.variable,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'value',
+              label: '值',
+              isInput: true,
+              dataType: ScriptDataType.number,
+              required: true,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'name',
+              label: '变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'variable.getNumber',
+          displayName: '读取数值变量',
+          category: ScriptNodeCategory.variable,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.number,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'name',
+              label: '变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'variable.setString',
+          displayName: '写入文本变量',
+          category: ScriptNodeCategory.variable,
+          pins: <ScriptPinDescriptor>[
+            _execInput,
+            ScriptPinDescriptor(
+              id: 'value',
+              label: '值',
+              isInput: true,
+              dataType: ScriptDataType.string,
+              required: true,
+            ),
+            _execOutput,
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'name',
+              label: '变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
+        ScriptNodeTypeDescriptor(
+          typeKey: 'variable.getString',
+          displayName: '读取文本变量',
+          category: ScriptNodeCategory.variable,
+          pins: <ScriptPinDescriptor>[
+            ScriptPinDescriptor(
+              id: 'result',
+              label: '结果',
+              isInput: false,
+              dataType: ScriptDataType.string,
+            ),
+          ],
+          params: <ScriptParamDescriptor>[
+            ScriptParamDescriptor(
+              key: 'name',
+              label: '变量名',
+              type: ScriptParamType.text,
+              defaultValue: '',
+            ),
+          ],
+        ),
       ];
 
   static final Map<String, ScriptNodeTypeDescriptor> _byType =

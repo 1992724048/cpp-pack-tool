@@ -328,6 +328,186 @@ ScriptProjectModel _signFileGraph({
   );
 }
 
+/// 数值变量读写真实消费链：entry → setNumber（value.number 字面量）→
+/// log.message（消息 = numberToString(getNumber)，同一变量读回）。
+ScriptProjectModel _variableNumberGraph({num value = 5}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': value}),
+      _node(
+        'n3',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node(
+        'n4',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n5', 'math.numberToString'),
+      _node('n6', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'out', 'n6', 'exec'),
+      _edge('n4', 'result', 'n5', 'value'),
+      _edge('n5', 'result', 'n6', 'message'),
+    ],
+  );
+}
+
+/// 文本变量读写真实消费链：entry → setString（value.text 字面量）→
+/// log.message（消息 = getString，同一变量读回）。
+ScriptProjectModel _variableStringGraph({String value = '你好'}) {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.text', params: <String, Object?>{'value': value}),
+      _node(
+        'n3',
+        'variable.setString',
+        params: <String, Object?>{'name': 'label'},
+      ),
+      _node(
+        'n4',
+        'variable.getString',
+        params: <String, Object?>{'name': 'label'},
+      ),
+      _node('n5', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'out', 'n5', 'exec'),
+      _edge('n4', 'result', 'n5', 'message'),
+    ],
+  );
+}
+
+/// 三变量读写链（发射序 zeta → mid → alpha，用于锁定初始化块的字典序）。
+ScriptProjectModel _variableDictionaryOrderGraph() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': 3}),
+      _node(
+        'n3',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'zeta'},
+      ),
+      _node('n4', 'value.text', params: <String, Object?>{'value': 'x'}),
+      _node(
+        'n5',
+        'variable.setString',
+        params: <String, Object?>{'name': 'mid'},
+      ),
+      _node('n6', 'value.number', params: <String, Object?>{'value': 1}),
+      _node(
+        'n7',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'alpha'},
+      ),
+      _node(
+        'n8',
+        'variable.getString',
+        params: <String, Object?>{'name': 'mid'},
+      ),
+      _node('n9', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'out', 'n5', 'exec'),
+      _edge('n4', 'result', 'n5', 'value'),
+      _edge('n5', 'out', 'n7', 'exec'),
+      _edge('n6', 'result', 'n7', 'value'),
+      _edge('n7', 'out', 'n9', 'exec'),
+      _edge('n8', 'result', 'n9', 'message'),
+    ],
+  );
+}
+
+/// 仅 get 无 set 的变量图：getNumber → numberToString → log.message。
+ScriptProjectModel _variableGetOnlyGraph() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node(
+        'n2',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'total'},
+      ),
+      _node('n3', 'math.numberToString'),
+      _node('n4', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n4', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'result', 'n4', 'message'),
+    ],
+  );
+}
+
+/// while 累加器 TC 范例：count = 0 → while (count < 5) { count = count + 1 }
+/// → 输出 count。
+ScriptProjectModel _whileAccumulatorGraph() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': 0}),
+      _node(
+        'n3',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node(
+        'n4',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n5', 'value.number', params: <String, Object?>{'value': 5}),
+      _node('n6', 'logic.compareNumber'),
+      _node('n7', 'flow.while'),
+      _node(
+        'n8',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n9', 'value.number', params: <String, Object?>{'value': 1}),
+      _node('n10', 'math.arithmetic'),
+      _node(
+        'n11',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node(
+        'n12',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n13', 'math.numberToString'),
+      _node('n14', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'out', 'n7', 'exec'),
+      _edge('n4', 'result', 'n6', 'a'),
+      _edge('n5', 'result', 'n6', 'b'),
+      _edge('n6', 'result', 'n7', 'condition'),
+      _edge('n7', 'body', 'n11', 'exec'),
+      _edge('n8', 'result', 'n10', 'a'),
+      _edge('n9', 'result', 'n10', 'b'),
+      _edge('n10', 'result', 'n11', 'value'),
+      _edge('n7', 'completed', 'n14', 'exec'),
+      _edge('n12', 'result', 'n13', 'value'),
+      _edge('n13', 'result', 'n14', 'message'),
+    ],
+  );
+}
+
 ScriptCompileResult _compile(
   ScriptProjectModel project, {
   String packName = 'demo',
@@ -2704,6 +2884,135 @@ void main() {
       final String code = result.code!;
       expect(code, isNot(contains('\r')));
       expect(code, contains(r'$var_a = 0' '\n' r'$var_b = 0'));
+    });
+  });
+
+  group('variable 变量节点发射（M4.3 T1）', () {
+    const String whileAccumulatorGolden =
+        '\uFEFF'
+        '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'
+        r"$ErrorActionPreference = 'Stop'"
+        '\n'
+        '\n'
+        r'$var_count = 0'
+        '\n'
+        '\n'
+        'try {\n'
+        r'    $var_count = 0'
+        '\n'
+        r'    while (($var_count -lt 5)) {'
+        '\n'
+        r'        $var_count = ($var_count + 1)'
+        '\n'
+        '    }\n'
+        r'    Write-Host (Convert.ToString($var_count, [Globalization.CultureInfo]::InvariantCulture))'
+        '\n'
+        '} catch {\n'
+        r'    Write-Host "脚本执行失败: $($_.Exception.Message)" -ForegroundColor Red'
+        '\n'
+        '    exit 1\n'
+        '}\n';
+
+    test('variable.setNumber/getNumber：赋值与读回内联，初始化 0', () {
+      final ScriptCompileResult result = _compile(_variableNumberGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          r"$ErrorActionPreference = 'Stop'"
+          '\n\n'
+          r'$var_count = 0'
+          '\n\ntry {\n',
+        ),
+      );
+      expect(code, contains(r'    $var_count = 5' '\n'));
+      expect(
+        code,
+        contains(
+          '    Write-Host (Convert.ToString('
+          r'$var_count'
+          ', [Globalization.CultureInfo]::InvariantCulture))\n',
+        ),
+      );
+      expect(
+        RegExp(r'^\$var_count = 0$', multiLine: true).allMatches(code).length,
+        1,
+      );
+    });
+
+    test('variable.setString/getString：文本赋值与读回，初始化空串', () {
+      final ScriptCompileResult result = _compile(_variableStringGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(
+        code,
+        contains(
+          r"$ErrorActionPreference = 'Stop'"
+          '\n\n'
+          r"$var_label = ''"
+          '\n\ntry {\n',
+        ),
+      );
+      expect(code, contains(r"    $var_label = '你好'" '\n'));
+      expect(code, contains(r'    Write-Host $var_label' '\n'));
+      expect(
+        RegExp(r"^\$var_label = ''$", multiLine: true).allMatches(code).length,
+        1,
+      );
+    });
+
+    test('初始化块按名称字典序（与发射序无关）', () {
+      final ScriptCompileResult result = _compile(
+        _variableDictionaryOrderGraph(),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(
+        result.code,
+        contains(
+          r"$ErrorActionPreference = 'Stop'"
+          '\n\n'
+          r'$var_alpha = 0'
+          '\n'
+          r"$var_mid = ''"
+          '\n'
+          r'$var_zeta = 0'
+          '\n\ntry {\n',
+        ),
+      );
+    });
+
+    test('仅 get 无 set：初始化块仍注入（get 引用不为 null）', () {
+      final ScriptCompileResult result = _compile(_variableGetOnlyGraph());
+      expect(result.hasErrors, isFalse);
+      final String code = result.code!;
+      expect(code, contains(r'$var_total = 0' '\n\ntry {\n'));
+      expect(
+        RegExp(r'^\$var_total = 0$', multiLine: true).allMatches(code).length,
+        1,
+      );
+      expect(
+        code,
+        contains(
+          '(Convert.ToString('
+          r'$var_total'
+          ', [Globalization.CultureInfo]::InvariantCulture))',
+        ),
+      );
+    });
+
+    test(r'零变量图不含 $var_（零变化守护）', () {
+      final ScriptCompileResult result = _compile(
+        _linearLogGraph(message: '开始构建'),
+      );
+      expect(result.hasErrors, isFalse);
+      expect(result.code, isNot(contains(r'$var_')));
+    });
+
+    test('while 累加器 TC 范例：初始化 + 条件重估 + 循环赋值 full golden', () {
+      final ScriptCompileResult result = _compile(_whileAccumulatorGraph());
+      expect(result.hasErrors, isFalse);
+      expect(result.code, whileAccumulatorGolden);
     });
   });
 }

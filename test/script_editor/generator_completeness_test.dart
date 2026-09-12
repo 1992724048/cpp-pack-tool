@@ -284,8 +284,8 @@ void main() {
       );
       expect(
         NodeRegistry.all.length,
-        greaterThanOrEqualTo(42),
-        reason: '注册表类型数量异常缩减（当前 42 类），护栏失效',
+        greaterThanOrEqualTo(46),
+        reason: '注册表类型数量异常缩减（当前 46 类），护栏失效',
       );
     });
   });

@@ -84,6 +84,7 @@ class PowerShell5Generator implements ScriptCodeGenerator {
       registerPrelude: _registerPrelude,
     );
     body.indent(emitter.emitEntryChain);
+    emitter.registerVariablesPrelude();
 
     final CodeWriter prefix = CodeWriter();
     prefix.writeln(
@@ -137,6 +138,7 @@ class _PowerShellEmitter {
   final _GraphIndex _index;
   final PreludeRegistrar registerPrelude;
   final Map<String, String> _itemVariableByNodeId = <String, String>{};
+  final Map<String, ScriptDataType> _variableKinds = <String, ScriptDataType>{};
   int _itemCounter = 0;
   int _processCounter = 0;
 
@@ -146,6 +148,24 @@ class _PowerShellEmitter {
       return; // 校验保证恰好一个入口；此处仅防御
     }
     _emitChain(_index.execTarget(entry.id, defaultExecPinId));
+  }
+
+  /// 组装 prelude 前调用：把发射期登记的变量（名称去重）按名称字典序
+  /// 生成初始化块（number → `0`、string → `''`）；无变量不注册（零变化守护）。
+  void registerVariablesPrelude() {
+    if (_variableKinds.isEmpty) {
+      return;
+    }
+    final List<String> names = _variableKinds.keys.toList()..sort();
+    final String content = names
+        .map((String name) {
+          final String initial = _variableKinds[name] == ScriptDataType.number
+              ? '0'
+              : "''";
+          return '\$var_$name = $initial';
+        })
+        .join('\n');
+    registerPrelude('vars', content: content);
   }
 
   void _emitChain(String? startNodeId) {
@@ -197,6 +217,10 @@ class _PowerShellEmitter {
         _emitAesTransform(node, mode: 'Decrypt');
       case 'crypto.signFile':
         _emitSignFile(node);
+      case 'variable.setNumber':
+        _emitVariableSet(node, dataType: ScriptDataType.number);
+      case 'variable.setString':
+        _emitVariableSet(node, dataType: ScriptDataType.string);
       case 'process.run':
         _emitProcessRun(node);
       case 'flow.branch':
@@ -333,6 +357,32 @@ class _PowerShellEmitter {
     }
     final String passwordEnv = _textParam(node, 'passwordEnv');
     return passwordEnv.isEmpty ? null : '\$env:$passwordEnv';
+  }
+
+  /// 变量写入（exec 语句）：`$var_<name> = <value 表达式>`；名称直接取
+  /// 参数文本（正则与同名同类型校验由校验器负责），发射期登记用于初始化。
+  void _emitVariableSet(
+    ScriptNodeModel node, {
+    required ScriptDataType dataType,
+  }) {
+    _registerVariable(node, dataType);
+    writer.writeln(
+      '\$var_${_textParam(node, 'name')} = ${_expression(node, 'value')}',
+    );
+  }
+
+  /// 变量读取表达式：`$var_<name>`；仅 get 无 set 时由初始化块保证非 $null。
+  String _variableReadExpression(
+    ScriptNodeModel node,
+    ScriptDataType dataType,
+  ) {
+    _registerVariable(node, dataType);
+    return '\$var_${_textParam(node, 'name')}';
+  }
+
+  /// 登记变量（名称去重；首见变体决定初始化值，同名同类型由校验器保证）。
+  void _registerVariable(ScriptNodeModel node, ScriptDataType dataType) {
+    _variableKinds.putIfAbsent(_textParam(node, 'name'), () => dataType);
   }
 
   String _textParam(ScriptNodeModel node, String key) {
@@ -494,6 +544,10 @@ class _PowerShellEmitter {
             '[IO.File]::ReadAllBytes(${_expression(node, 'path')})))';
       case 'crypto.fileHash':
         return _fileHashExpression(node);
+      case 'variable.getNumber':
+        return _variableReadExpression(node, ScriptDataType.number);
+      case 'variable.getString':
+        return _variableReadExpression(node, ScriptDataType.string);
       default:
         // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的表达式生成尚未实现');
