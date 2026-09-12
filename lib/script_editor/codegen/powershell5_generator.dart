@@ -1,11 +1,13 @@
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/code_writer.dart';
+import 'package:cpp_nuget_pack/script_editor/codegen/prelude.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
 import 'package:cpp_nuget_pack/script_editor/msbuild_macros.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
+import 'package:flutter/foundation.dart';
 
 const String _packageRootEnvExpression = r'$env:CNP_PackageRoot';
 
@@ -16,7 +18,12 @@ String numberLiteral(num value) {
   return value.isNegative ? '($text)' : text;
 }
 
+/// prelude 片段注册回调（键 → 片段文本；`content` 缺省时取 [preludeLibrary]）。
+typedef PreludeRegistrar = void Function(String key, {String? content});
+
 class PowerShell5Generator implements ScriptCodeGenerator {
+  final Map<String, String> _registeredPrelude = <String, String>{};
+
   @override
   String get fileExtension => 'ps1';
 
@@ -25,31 +32,93 @@ class PowerShell5Generator implements ScriptCodeGenerator {
     ScriptProjectModel project, {
     required String packName,
   }) {
+    // 注册表为编译期状态：同一实例可能被重复使用（如 ScriptPackaging 的默认生成器）。
+    _registeredPrelude.clear();
+    return _compileProject(project, packName: packName);
+  }
+
+  /// 测试入口：编译前经 [preludeCollector] 调用真实注册 API 预注册片段
+  /// （生产路径由节点发射按需注册，M4.2 T5–T7 接入）。
+  @visibleForTesting
+  ScriptCompileResult compileWithPrelude(
+    ScriptProjectModel project, {
+    required String packName,
+    required void Function(PreludeRegistrar register) preludeCollector,
+  }) {
+    _registeredPrelude.clear();
+    preludeCollector(_registerPrelude);
+    return _compileProject(project, packName: packName);
+  }
+
+  /// 注册 prelude 片段（幂等：同键仅首次生效；`content` 覆盖
+  /// [preludeLibrary]，供 crc32 与变量初始化等动态内容使用）。
+  void _registerPrelude(String key, {String? content}) {
+    if (_registeredPrelude.containsKey(key)) {
+      return;
+    }
+    final String? block = content ?? preludeLibrary[key];
+    if (block == null) {
+      throw ArgumentError.value(key, 'key', '未知的 prelude 片段键');
+    }
+    _registeredPrelude[key] = block
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n');
+  }
+
+  ScriptCompileResult _compileProject(
+    ScriptProjectModel project, {
+    required String packName,
+  }) {
     final List<ScriptDiagnostic> diagnostics = GraphValidator.validate(project);
     if (diagnostics.any((ScriptDiagnostic diagnostic) => diagnostic.isError)) {
       return ScriptCompileResult(code: null, diagnostics: diagnostics);
     }
 
-    final CodeWriter writer = CodeWriter();
+    final CodeWriter body = CodeWriter();
     final _PowerShellEmitter emitter = _PowerShellEmitter(
       project: project,
-      writer: writer,
+      writer: body,
     );
-    writer.writeln(
+    body.indent(emitter.emitEntryChain);
+
+    final CodeWriter prefix = CodeWriter();
+    prefix.writeln(
       '# 由 cpp_nuget_pack 生成 — $packName / ${project.name}。请使用节点编辑器修改，勿手工编辑本文件。',
     );
-    writer.writeln(r"$ErrorActionPreference = 'Stop'");
-    writer.writeln('try {');
-    writer.indent(emitter.emitEntryChain);
-    writer.writeln('} catch {');
-    writer.indent(() {
-      writer.writeln(
+    prefix.writeln(r"$ErrorActionPreference = 'Stop'");
+    _writePrelude(prefix);
+    prefix.writeln('try {');
+
+    final CodeWriter suffix = CodeWriter();
+    suffix.writeln('} catch {');
+    suffix.indent(() {
+      suffix.writeln(
         r'Write-Host "脚本执行失败: $($_.Exception.Message)" -ForegroundColor Red',
       );
-      writer.writeln('exit 1');
+      suffix.writeln('exit 1');
     });
-    writer.writeln('}');
-    return ScriptCompileResult(code: '\uFEFF$writer', diagnostics: diagnostics);
+    suffix.writeln('}');
+
+    return ScriptCompileResult(
+      code: '\uFEFF${prefix.toString()}${body.toString()}${suffix.toString()}',
+      diagnostics: diagnostics,
+    );
+  }
+
+  /// 按 [preludeOrder] 输出已注册片段：列 0、片段间与前后各空一行（LF）。
+  void _writePrelude(CodeWriter writer) {
+    final List<String> fragments = <String>[
+      for (final String key in preludeOrder)
+        if (_registeredPrelude.containsKey(key)) _registeredPrelude[key]!,
+    ];
+    if (fragments.isEmpty) {
+      return;
+    }
+    writer.writeln();
+    for (final String line in fragments.join('\n\n').split('\n')) {
+      writer.writeln(line);
+    }
+    writer.writeln();
   }
 }
 
@@ -261,9 +330,9 @@ class _PowerShellEmitter {
       case 'value.boolean':
         return _param(node, 'value') == true ? r'$true' : r'$false';
       case 'value.number':
-        // 数值参数校验（T6）落地前，手改 YAML 可能给出非 num 值；防御性回退 0。
+        // 数值参数校验已阻断生成，此处防直接调用：非 num 或非有限值回退 0。
         final Object? value = _param(node, 'value');
-        return numberLiteral(value is num ? value : 0);
+        return numberLiteral(value is num && value.isFinite ? value : 0);
       case 'file.list':
         return _fileListExpression(node);
       case 'file.exists':

@@ -1,6 +1,7 @@
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/code_writer.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/powershell5_generator.dart';
+import 'package:cpp_nuget_pack/script_editor/codegen/prelude.dart';
 import 'package:cpp_nuget_pack/script_editor/codegen/script_code_generator.dart';
 import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
@@ -1065,6 +1066,34 @@ void main() {
         isTrue,
       );
     });
+
+    test('防御收紧：非有限值被校验阻断生成（生成器侧回退 0 为纵深防御）', () {
+      final ScriptProjectModel project = _project(
+        <ScriptNodeModel>[
+          _node('n1', 'flow.entry'),
+          _node(
+            'n2',
+            'value.number',
+            params: <String, Object?>{'value': double.infinity},
+          ),
+          _node('n3', 'log.message'),
+        ],
+        edges: <ScriptEdgeModel>[
+          _edge('n1', 'out', 'n3', 'exec'),
+          _edge('n2', 'result', 'n3', 'message'),
+        ],
+      );
+      final ScriptCompileResult result = _compile(project);
+      expect(result.hasErrors, isTrue);
+      expect(result.code, isNull);
+      expect(
+        result.diagnostics.any(
+          (ScriptDiagnostic diagnostic) =>
+              diagnostic.isError && diagnostic.message.contains('数值'),
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('字符串与路径节点发射', () {
@@ -1387,6 +1416,153 @@ void main() {
         result.diagnostics.map((ScriptDiagnostic d) => d.message),
         expected.map((ScriptDiagnostic d) => d.message),
       );
+    });
+  });
+
+  group('prelude 机制（M4.2 T2）', () {
+    const String m41LinearGolden =
+        '\uFEFF'
+        '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'
+        r"$ErrorActionPreference = 'Stop'"
+        '\n'
+        'try {\n'
+        "    Write-Host '开始构建'\n"
+        '} catch {\n'
+        r'    Write-Host "脚本执行失败: $($_.Exception.Message)" -ForegroundColor Red'
+        '\n'
+        '    exit 1\n'
+        '}\n';
+
+    test('零变化守护：无 prelude 时骨架与 M4.1 golden 逐字节一致', () {
+      final ScriptCompileResult result = _compile(
+        _linearLogGraph(message: '开始构建'),
+      );
+      expect(result.code, m41LinearGolden);
+    });
+
+    test('零变化守护：空收集器路径同样不注入任何片段', () {
+      final ScriptCompileResult result = PowerShell5Generator()
+          .compileWithPrelude(
+            _linearLogGraph(message: '开始构建'),
+            packName: 'demo',
+            preludeCollector: (PreludeRegistrar register) {},
+          );
+      expect(result.code, m41LinearGolden);
+    });
+
+    test('注入位置：片段位于 Stop 之后、try { 之前，片段前后各空一行', () {
+      final ScriptCompileResult result = PowerShell5Generator()
+          .compileWithPrelude(
+            _linearLogGraph(message: '开始构建'),
+            packName: 'demo',
+            preludeCollector: (PreludeRegistrar register) {
+              register('ConvertFrom-CnpHex');
+            },
+          );
+      final String code = result.code!;
+      expect(result.hasErrors, isFalse);
+      expect(
+        code,
+        contains(
+          r"$ErrorActionPreference = 'Stop'"
+          '\n\n'
+          'function ConvertFrom-CnpHex {\n',
+        ),
+      );
+      expect(code, contains('}\n\ntry {\n'));
+      final int stopIndex = code.indexOf(r"$ErrorActionPreference = 'Stop'");
+      final int functionIndex = code.indexOf('function ConvertFrom-CnpHex {');
+      final int tryIndex = code.indexOf('\n\ntry {\n');
+      expect(stopIndex, lessThan(functionIndex));
+      expect(functionIndex, lessThan(tryIndex));
+      expect(code, contains("    Write-Host '开始构建'\n"));
+    });
+
+    test('幂等：同键重复注册只注入一次', () {
+      final ScriptCompileResult result = PowerShell5Generator()
+          .compileWithPrelude(
+            _linearLogGraph(message: '开始构建'),
+            packName: 'demo',
+            preludeCollector: (PreludeRegistrar register) {
+              register('ConvertFrom-CnpHex');
+              register('ConvertFrom-CnpHex');
+              register('Get-CnpFileHash');
+              register('Get-CnpFileHash');
+            },
+          );
+      final String code = result.code!;
+      expect(
+        RegExp(r'function ConvertFrom-CnpHex \{').allMatches(code).length,
+        1,
+      );
+      expect(RegExp(r'function Get-CnpFileHash \{').allMatches(code).length, 1);
+    });
+
+    test('顺序：按 preludeOrder 输出（注册逆序 + crc32/vars 动态键）', () {
+      final ScriptCompileResult result = PowerShell5Generator()
+          .compileWithPrelude(
+            _linearLogGraph(message: '开始构建'),
+            packName: 'demo',
+            preludeCollector: (PreludeRegistrar register) {
+              register('vars', content: r'$var_count = 0');
+              register('crc32', content: crc32Prelude);
+              register('Invoke-CnpSignFile');
+              register('Get-CnpFileHash');
+              register('ConvertFrom-CnpHex');
+            },
+          );
+      final String code = result.code!;
+      final int hexIndex = code.indexOf('function ConvertFrom-CnpHex {');
+      final int hashIndex = code.indexOf('function Get-CnpFileHash {');
+      final int signIndex = code.indexOf('function Invoke-CnpSignFile {');
+      final int crc32Index = code.indexOf('PSTypeName');
+      final int varsIndex = code.indexOf(r'$var_count = 0');
+      expect(hexIndex, greaterThan(0));
+      expect(hashIndex, greaterThan(hexIndex));
+      expect(signIndex, greaterThan(hashIndex));
+      expect(crc32Index, greaterThan(signIndex));
+      expect(varsIndex, greaterThan(crc32Index));
+    });
+
+    test('crc32 动态块：content 覆盖注入且含 PSTypeName 守卫', () {
+      final ScriptCompileResult result = PowerShell5Generator()
+          .compileWithPrelude(
+            _linearLogGraph(message: '开始构建'),
+            packName: 'demo',
+            preludeCollector: (PreludeRegistrar register) {
+              register('crc32', content: crc32Prelude);
+            },
+          );
+      final String code = result.code!;
+      expect(code, contains('PSTypeName'));
+      expect(code, contains('Add-Type -TypeDefinition'));
+      expect(code, contains('public static class CnpCrc32'));
+      expect(code.indexOf('PSTypeName'), lessThan(code.indexOf('\n\ntry {\n')));
+    });
+
+    test('未知键且无 content → ArgumentError（vars 内容由 M4.3 提供）', () {
+      expect(
+        () => PowerShell5Generator().compileWithPrelude(
+          _linearLogGraph(message: '开始构建'),
+          packName: 'demo',
+          preludeCollector: (PreludeRegistrar register) => register('vars'),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('content 含 CRLF 时归一化为 LF（片段行尾口径）', () {
+      final ScriptCompileResult result = PowerShell5Generator()
+          .compileWithPrelude(
+            _linearLogGraph(message: '开始构建'),
+            packName: 'demo',
+            preludeCollector: (PreludeRegistrar register) {
+              register('vars', content: r'$var_a = 0' '\r\n' r'$var_b = 0');
+            },
+          );
+      final String code = result.code!;
+      expect(code, isNot(contains('\r')));
+      expect(code, contains(r'$var_a = 0' '\n' r'$var_b = 0'));
     });
   });
 }
