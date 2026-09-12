@@ -244,8 +244,14 @@ class ScriptPackaging {
     return null;
   }
 
-  static String _commentText(String name) =>
-      _escapeXml(name).replaceAll('--', '- -');
+  // replaceAll 为非重叠单趟替换，连续 '-' 会残留 '--'（非法 XML 注释），循环消除
+  static String _commentText(String name) {
+    String text = _escapeXml(name);
+    while (text.contains('--')) {
+      text = text.replaceAll('--', '- -');
+    }
+    return text;
+  }
 
   static String _escapeXml(String value) => value
       .replaceAll('&', '&amp;')

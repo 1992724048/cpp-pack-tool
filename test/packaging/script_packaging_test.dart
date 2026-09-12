@@ -398,6 +398,18 @@ void main() {
       expect(result.targetsFragment, isNot(contains('-- <C>')));
     });
 
+    test('脚本名含 3 个连续 "-" 时注释不残留 --', () {
+      final PackModel pack = _pack()
+        ..scripts = <ScriptProjectModel>[_script('script_1', 'A---B')];
+      final ScriptPackagingResult result = ScriptPackaging(
+        generator: _FakeGenerator(),
+      ).build(pack, hasRuntimeBinaries: false);
+
+      expect(result.targetsFragment, contains('<!-- 脚本：A- - -B -->'));
+      expect(result.targetsFragment, isNot(contains('A- --B')));
+      expect(result.targetsFragment, isNot(contains('A---B')));
+    });
+
     test('默认生成器（PowerShell5Generator）编译有效图并生成 BOM 代码条目', () {
       final PackModel pack = _pack()
         ..scripts = <ScriptProjectModel>[_validGraph()];
