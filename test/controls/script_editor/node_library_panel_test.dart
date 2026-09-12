@@ -58,17 +58,25 @@ void main() {
     testWidgets('搜索框与分组按声明序渲染、默认全部展开', (WidgetTester tester) async {
       await _pumpPanel(tester);
 
-      final TextBox searchBox = tester.widget<TextBox>(
-        find.byKey(const Key('nodeLibrarySearch')),
+      final Finder searchBoxFinder = find.byKey(
+        const Key('nodeLibrarySearch'),
       );
+      final TextBox searchBox = tester.widget<TextBox>(searchBoxFinder);
       expect(searchBox.placeholder, '搜索节点');
-      final Icon prefix = searchBox.prefix! as Icon;
-      expect(prefix.icon, FluentIcons.search);
-      expect(prefix.size, 14);
-      expect(
-        tester.getSize(find.byKey(const Key('nodeLibrarySearch'))).height,
-        32,
+
+      // prefix 间距（M4.1 定稿）：图标左缘距框左缘 8、图标右内边距 6（§4.1）
+      final Finder searchIcon = find.descendant(
+        of: searchBoxFinder,
+        matching: find.byIcon(FluentIcons.search),
       );
+      final Rect iconRect = tester.getRect(searchIcon);
+      final Rect boxRect = tester.getRect(searchBoxFinder);
+      expect(iconRect.left - boxRect.left, closeTo(8, 0.01));
+      final Icon prefixIcon = tester.widget<Icon>(searchIcon);
+      expect(prefixIcon.size, 14);
+      final Padding prefix = searchBox.prefix! as Padding;
+      expect(prefix.padding, const EdgeInsets.only(left: 8, right: 6));
+      expect(tester.getSize(searchBoxFinder).height, 32);
 
       // 顶部可见的分组头自上而下 = 声明序；分组头高 28
       final List<double> visibleTops = <double>[
@@ -100,7 +108,7 @@ void main() {
         expect(find.byKey(Key('nodeLibraryItem_$typeKey')), findsOneWidget);
       }
 
-      // 滚到底：全部 8 组头与 25 个条目均已构建（默认全展开；列表懒加载）
+      // 滚到底：全部 8 组头与 26 个条目均已构建（默认全展开；列表懒加载）
       final ScrollableState scrollable = tester.state<ScrollableState>(
         find.descendant(
           of: find.byType(Scrollbar),

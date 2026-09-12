@@ -64,7 +64,10 @@ class _NodeLibraryPanelState extends State<NodeLibraryPanel> {
               key: const Key('nodeLibrarySearch'),
               controller: _searchController,
               placeholder: '搜索节点',
-              prefix: const Icon(FluentIcons.search, size: 14),
+              prefix: const Padding(
+                padding: EdgeInsets.only(left: 8, right: 6),
+                child: Icon(FluentIcons.search, size: 14),
+              ),
               onChanged: (String value) => setState(() => _query = value),
             ),
           ),
