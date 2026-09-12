@@ -197,7 +197,7 @@ void main() {
   });
 
   group('公共标签 map', () {
-    test('逐 map 锁定键序与显示文本', () {
+    test('逐 map 锁定键值映射与显示文本', () {
       expect(logLevelLabels, <String, String>{
         'info': '信息',
         'warn': '警告',

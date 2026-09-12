@@ -323,6 +323,71 @@ ScriptProjectModel _nodeFamiliesFixture() {
   );
 }
 
+/// M4.3 变量系统夹具：数值变量累加（set → while 条件重估 → 循环内 set）
+/// + 文本变量写入/读回，触发顶部 `vars` 初始化块（count → 0、status → ''）。
+ScriptProjectModel _variablesFixture() {
+  return _project(
+    <ScriptNodeModel>[
+      _node('n1', 'flow.entry'),
+      _node('n2', 'value.number', params: <String, Object?>{'value': 0}),
+      _node(
+        'n3',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node(
+        'n4',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n5', 'value.number', params: <String, Object?>{'value': 5}),
+      _node('n6', 'logic.compareNumber'),
+      _node('n7', 'flow.while'),
+      _node(
+        'n8',
+        'variable.getNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n9', 'value.number', params: <String, Object?>{'value': 1}),
+      _node('n10', 'math.arithmetic'),
+      _node(
+        'n11',
+        'variable.setNumber',
+        params: <String, Object?>{'name': 'count'},
+      ),
+      _node('n12', 'value.text', params: <String, Object?>{'value': '完成'}),
+      _node(
+        'n13',
+        'variable.setString',
+        params: <String, Object?>{'name': 'status'},
+      ),
+      _node(
+        'n14',
+        'variable.getString',
+        params: <String, Object?>{'name': 'status'},
+      ),
+      _node('n15', 'log.message'),
+    ],
+    edges: <ScriptEdgeModel>[
+      _edge('n1', 'out', 'n3', 'exec'),
+      _edge('n2', 'result', 'n3', 'value'),
+      _edge('n3', 'out', 'n7', 'exec'),
+      _edge('n4', 'result', 'n6', 'a'),
+      _edge('n5', 'result', 'n6', 'b'),
+      _edge('n6', 'result', 'n7', 'condition'),
+      _edge('n7', 'body', 'n11', 'exec'),
+      _edge('n8', 'result', 'n10', 'a'),
+      _edge('n9', 'result', 'n10', 'b'),
+      _edge('n10', 'result', 'n11', 'value'),
+      _edge('n7', 'completed', 'n13', 'exec'),
+      _edge('n12', 'result', 'n13', 'value'),
+      _edge('n13', 'out', 'n15', 'exec'),
+      _edge('n14', 'result', 'n15', 'message'),
+    ],
+    name: '变量夹具',
+  );
+}
+
 String _diagnosticMessages(ScriptCompileResult result) {
   return result.diagnostics
       .map((ScriptDiagnostic diagnostic) => diagnostic.message)
@@ -346,7 +411,7 @@ void main() {
   });
 
   group('PowerShell 5.1 语法解析（仅 Windows）', () {
-    test('四张代表图生成的脚本均通过 Parser::ParseFile', () {
+    test('五张代表图生成的脚本均通过 Parser::ParseFile', () {
       final Directory tempDir = Directory.systemTemp.createTempSync(
         'cnp_ps_syntax_',
       );
@@ -365,6 +430,7 @@ void main() {
             'nested_control_flow': _nestedControlFlowFixture(),
             'string_and_process': _stringAndProcessFixture(),
             'node_families': _nodeFamiliesFixture(),
+            'variables': _variablesFixture(),
           };
 
       for (final MapEntry<String, ScriptProjectModel> fixture
