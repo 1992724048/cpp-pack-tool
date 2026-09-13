@@ -1136,6 +1136,98 @@ void main() {
       _expectNoResidue(toolsRoot, 'python');
     });
   });
+
+  group('下载进度', () {
+    test('内建 HTTP 下载按块回调：首事件 0 字节、total 已知、末事件为完整大小', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final Uint8List payload = _zip(<ArchiveFile>[
+        ArchiveFile.string('tool/nasm.exe', 'MZ'),
+      ]);
+      final Uri url = await _serveOnce(payload);
+      final List<ToolDownloadProgress> progress = <ToolDownloadProgress>[];
+      final ToolProvisioner provisioner = ToolProvisioner(toolsRoot: toolsRoot);
+
+      final ProvisionedTool tool = await provisioner.ensureTool(
+        name: 'nasm',
+        url: url.toString(),
+        onDownloadProgress: progress.add,
+      );
+
+      expect(
+        File(joinPath(tool.directory, 'nasm.exe')).readAsStringSync(),
+        'MZ',
+      );
+      expect(progress, isNotEmpty);
+      expect(progress.first.name, 'nasm');
+      expect(progress.first.receivedBytes, 0);
+      expect(progress.first.totalBytes, payload.length);
+      expect(progress.first.bytesPerSecond, 0);
+      expect(progress.last.receivedBytes, payload.length);
+      expect(progress.last.totalBytes, payload.length);
+      expect(progress.last.bytesPerSecond, greaterThanOrEqualTo(0));
+    });
+
+    test('contentLength 未知（分块响应）时 total 为 -1', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final Uint8List payload = _zip(<ArchiveFile>[
+        ArchiveFile.string('ninja.exe', 'MZ'),
+      ]);
+      final Uri url = await _serveOnce(payload, contentLength: false);
+      final List<ToolDownloadProgress> progress = <ToolDownloadProgress>[];
+      final ToolProvisioner provisioner = ToolProvisioner(toolsRoot: toolsRoot);
+
+      await provisioner.ensureTool(
+        name: 'ninja',
+        url: url.toString(),
+        onDownloadProgress: progress.add,
+      );
+
+      expect(progress, isNotEmpty);
+      expect(progress.first.totalBytes, -1);
+      expect(progress.last.totalBytes, -1);
+      expect(progress.last.receivedBytes, payload.length);
+    });
+
+    test('注入自定义 fetch 时不回调下载进度', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      const String url = 'https://example.com/nasm-win.zip';
+      final ToolProvisioner provisioner = ToolProvisioner(
+        toolsRoot: toolsRoot,
+        fetch: _fetchStub(<Uri>[], (_) async {
+          return _zip(<ArchiveFile>[ArchiveFile.string('nasm.exe', 'MZ')]);
+        }),
+      );
+      int progressCalls = 0;
+
+      await provisioner.ensureTool(
+        name: 'nasm',
+        url: url,
+        onDownloadProgress: (ToolDownloadProgress progress) => progressCalls++,
+      );
+
+      expect(progressCalls, 0);
+    });
+  });
+}
+
+/// 启动只服务一次响应体的本地 HTTP 服务；[contentLength] 为 false 时使用分块传输。
+Future<Uri> _serveOnce(Uint8List payload, {bool contentLength = true}) async {
+  final HttpServer server = await HttpServer.bind(
+    InternetAddress.loopbackIPv4,
+    0,
+  );
+  addTearDown(() => server.close(force: true));
+  server.listen((HttpRequest request) async {
+    if (contentLength) {
+      request.response.headers.contentLength = payload.length;
+    }
+    request.response.add(payload);
+    await request.response.close();
+  });
+  return Uri.parse('http://${server.address.address}:${server.port}/tool.zip');
 }
 
 Uint8List _zip(List<ArchiveFile> files) {

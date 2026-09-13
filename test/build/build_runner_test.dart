@@ -203,6 +203,7 @@ void main() {
       expect(clone.executable, 'git');
       expect(clone.arguments, <String>[
         'clone',
+        '--progress',
         'https://github.com/foo/bar.git',
         targetPath,
       ]);
@@ -211,7 +212,7 @@ void main() {
 
       final _ProcessCall python = calls[1];
       expect(python.executable, 'python');
-      expect(python.arguments, <String>['build.py']);
+      expect(python.arguments, <String>['-u', 'build.py']);
       expect(python.workingDirectory, sourcePath);
       expect(python.environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
@@ -240,7 +241,7 @@ void main() {
 
       expect(calls, hasLength(2));
       expect(calls[0].executable, 'git');
-      expect(calls[0].arguments, <String>['pull', '--ff-only']);
+      expect(calls[0].arguments, <String>['pull', '--ff-only', '--progress']);
       expect(calls[0].workingDirectory, targetPath);
       expect(calls[0].environment, <String, String>{
         'GIT_TERMINAL_PROMPT': '0',
@@ -384,7 +385,7 @@ void main() {
 
       final _ProcessCall python = calls.single;
       expect(python.executable, 'python');
-      expect(python.arguments, <String>['build.py']);
+      expect(python.arguments, <String>['-u', 'build.py']);
       expect(python.workingDirectory, sourcePath);
       expect(python.environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
@@ -482,7 +483,7 @@ void main() {
       expect(calls, hasLength(3));
       expect(calls[1].executable, 'python');
       expect(calls[2].executable, 'py');
-      expect(calls[2].arguments, <String>['-3', 'build.py']);
+      expect(calls[2].arguments, <String>['-3', '-u', 'build.py']);
       expect(calls[2].workingDirectory, sourcePath);
       expect(calls[2].environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
@@ -688,7 +689,7 @@ void main() {
   });
 
   group('流式输出', () {
-    test('注入流式执行器且回调非空时逐行转发 stdout/stderr 并转发环境', () async {
+    test('注入流式执行器且回调非空时 git 与 python 逐行转发并转发环境', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
@@ -706,23 +707,48 @@ void main() {
         _pack(sourcePath: sourcePath),
         (_) {},
         processRunner: _runner(calls, (_) async => _success()),
-        streamRunner: _streamingRunner(
-          (_StreamCall call) async =>
-              _fakeProcess(stdout: 'line1\nline2\n', stderr: 'warn1\n'),
-        ),
+        streamRunner: _streamingRunner((_StreamCall call) async {
+          if (call.executable == 'git') {
+            return _fakeProcess(
+              stdout:
+                  'Receiving objects:  12% (1/8)\r'
+                  'Receiving objects:  34% (3/8)\r',
+            );
+          }
+          return _fakeProcess(stdout: 'line1\nline2\n', stderr: 'warn1\n');
+        }),
         onOutput: lines.add,
         cacheRoot: cacheRoot,
         environment: injected,
       );
 
-      expect(lines, <String>['line1', 'line2', 'warn1']);
-      expect(calls, hasLength(1));
-      expect(calls.single.executable, 'git');
+      expect(lines, <String>[
+        'Receiving objects:  12% (1/8)',
+        'Receiving objects:  34% (3/8)',
+        'line1',
+        'line2',
+        'warn1',
+      ]);
+      expect(calls, isEmpty, reason: '注入流式执行器时 git 与 python 均走流式');
 
-      expect(_streamCalls, hasLength(1));
-      final _StreamCall stream = _streamCalls.single;
+      expect(_streamCalls, hasLength(2));
+      final _StreamCall git = _streamCalls.first;
+      expect(git.executable, 'git');
+      expect(git.arguments, <String>[
+        'clone',
+        '--progress',
+        'https://github.com/foo/bar.git',
+        targetPath,
+      ]);
+      expect(git.workingDirectory, isNull);
+      expect(git.environment, <String, String>{
+        ...injected,
+        'GIT_TERMINAL_PROMPT': '0',
+      });
+
+      final _StreamCall stream = _streamCalls.last;
       expect(stream.executable, 'python');
-      expect(stream.arguments, <String>['build.py']);
+      expect(stream.arguments, <String>['-u', 'build.py']);
       expect(stream.workingDirectory, sourcePath);
       expect(stream.environment, <String, String>{
         ...injected,
@@ -745,13 +771,16 @@ void main() {
           _pack(sourcePath: sourcePath),
           (_) {},
           processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
-          streamRunner: _streamingRunner(
-            (_StreamCall call) async => _fakeProcess(
+          streamRunner: _streamingRunner((_StreamCall call) async {
+            if (call.executable == 'git') {
+              return _fakeProcess(stdout: 'clone ok\n');
+            }
+            return _fakeProcess(
               stdout: '$stdout\n',
               stderr: 'err-line\n',
               exitCode: 3,
-            ),
-          ),
+            );
+          }),
           onOutput: lines.add,
           cacheRoot: joinPath(root.path, 'cache'),
         ),
@@ -771,7 +800,11 @@ void main() {
         ),
       );
 
-      expect(lines, hasLength(26), reason: '25 行 stdout + 1 行 stderr 都经回调转发');
+      expect(
+        lines,
+        hasLength(27),
+        reason: '1 行 clone 输出 + 25 行 stdout + 1 行 stderr 都经回调转发',
+      );
     });
 
     test('未提供流式执行器时 onOutput 静默降级为一次性捕获', () async {
@@ -807,18 +840,102 @@ void main() {
           if (call.executable == 'python') {
             throw ProcessException('python', <String>['build.py'], 'not found');
           }
-          return _fakeProcess(stdout: 'fallback done\n');
+          return _fakeProcess(
+            stdout: call.executable == 'git' ? 'clone ok\n' : 'fallback done\n',
+          );
         }),
         onOutput: lines.add,
         cacheRoot: cacheRoot,
       );
 
-      expect(lines, <String>['fallback done']);
+      expect(lines, <String>['clone ok', 'fallback done']);
       expect(_streamCalls.map((_StreamCall call) => call.executable), <String>[
+        'git',
         'python',
         'py',
       ]);
-      expect(_streamCalls.last.arguments, <String>['-3', 'build.py']);
+      expect(_streamCalls.last.arguments, <String>['-3', '-u', 'build.py']);
+    });
+
+    test('流式 pull：--progress 逐行转发且失败异常携带 \\r 分隔后的尾部', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
+      final List<String> lines = <String>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          (_) {},
+          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+          streamRunner: _streamingRunner((_StreamCall call) async {
+            expect(call.executable, 'git');
+            return _fakeProcess(
+              stdout: 'remote: Total 8 (delta 0)\r',
+              stderr:
+                  'Receiving objects:  50% (4/8)\r'
+                  'fatal: unable to access repository\n',
+              exitCode: 1,
+            );
+          }),
+          onOutput: lines.add,
+          cacheRoot: cacheRoot,
+        ),
+        throwsA(
+          _buildException(
+            '拉取源码失败（退出码 1）',
+            outputTail: allOf(
+              contains('Receiving objects:  50% (4/8)'),
+              contains('fatal: unable to access repository'),
+            ),
+          ),
+        ),
+      );
+
+      expect(_streamCalls, hasLength(1));
+      expect(_streamCalls.single.arguments, <String>[
+        'pull',
+        '--ff-only',
+        '--progress',
+      ]);
+      expect(lines, <String>[
+        'remote: Total 8 (delta 0)',
+        'Receiving objects:  50% (4/8)',
+        'fatal: unable to access repository',
+      ]);
+    });
+
+    test('runPackBuildStreaming 默认流式转发 git 与 python 输出', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n');
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<String> lines = <String>[];
+
+      await runPackBuildStreaming(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(
+          <_ProcessCall>[],
+          (_) async => fail('不应调用收集式执行器'),
+        ),
+        streamRunner: _streamingRunner(
+          (_StreamCall call) async => _fakeProcess(stdout: 'streamed\n'),
+        ),
+        onOutput: lines.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(lines, <String>['streamed', 'streamed']);
+      expect(_streamCalls.map((_StreamCall call) => call.executable), <String>[
+        'git',
+        'python',
+      ]);
+      expect(_streamCalls.last.arguments, <String>['-u', 'build.py']);
     });
   });
 

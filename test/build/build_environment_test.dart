@@ -611,6 +611,45 @@ void main() {
       expect(base, <String, String>{'FOO': '1'});
     });
 
+    test('下载进度回调透传到各供给调用', () async {
+      final Directory root = _tempDirectory();
+      final _FakeProvisioner provisioner = _FakeProvisioner(
+        _cmakeNinja(),
+        toolResults: <String, ProvisionedTool>{
+          'perl': ProvisionedTool(
+            name: 'perl',
+            directory: r'C:\tools\perl',
+            pathEntries: <String>[r'C:\tools\perl\bin'],
+          ),
+        },
+      );
+      void progress(ToolDownloadProgress value) {}
+
+      await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: provisioner,
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        tools: const <BuildScriptTool>[
+          BuildScriptTool(name: 'perl', url: 'https://example.com/perl.zip'),
+        ],
+        onDownloadProgress: progress,
+        detect: () async => <DetectedCompiler>[_compiler()],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(provisioner.cmakeProgress, same(progress));
+      expect(provisioner.pythonProgress, same(progress));
+      expect(provisioner.toolProgress, <ToolDownloadProgressCallback?>[
+        progress,
+      ]);
+    });
+
     test('注入受控 TMP/TEMP：检测子进程、捕获入参与最终环境一致且不改 base', () async {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'tools');
@@ -769,11 +808,13 @@ void main() {
       );
       final List<CompilerKind> captured = <CompilerKind>[];
       final List<_ProcessCall> processCalls = <_ProcessCall>[];
+      void progress(ToolDownloadProgress value) {}
 
       final BuildEnvironment result = await prepareBuildEnvironment(
         provisioner: provisioner,
         toolsRoot: toolsRoot,
         baseEnvironment: <String, String>{'Path': r'C:\Windows'},
+        onDownloadProgress: progress,
         detect: () async => <DetectedCompiler>[],
         runner: _runner(processCalls, (_ProcessCall call) async {
           if (call.executable == executable) {
@@ -790,6 +831,7 @@ void main() {
       );
 
       expect(provisioner.ensureClangLlvmCalls, 1);
+      expect(provisioner.clangProgress, same(progress));
       expect(provisioner.ensureCmakeNinjaCalls, 1);
       expect(captured, <CompilerKind>[CompilerKind.clangCl]);
       expect(result.compiler.kind, CompilerKind.clangCl);
@@ -1365,14 +1407,21 @@ class _FakeProvisioner implements ToolProvisioner {
   int ensurePythonCalls = 0;
   int ensureClangLlvmCalls = 0;
   final List<_ToolCall> ensureToolCalls = <_ToolCall>[];
+  ToolDownloadProgressCallback? cmakeProgress;
+  ToolDownloadProgressCallback? pythonProgress;
+  ToolDownloadProgressCallback? clangProgress;
+  final List<ToolDownloadProgressCallback?> toolProgress =
+      <ToolDownloadProgressCallback?>[];
 
   @override
   Future<ProvisionedTool> ensureTool({
     required String name,
     required String url,
     String? binSubdir,
+    ToolDownloadProgressCallback? onDownloadProgress,
   }) async {
     ensureToolCalls.add((name: name, url: url, binSubdir: binSubdir));
+    toolProgress.add(onDownloadProgress);
     final Object? error = toolError;
     if (error != null) {
       throw error;
@@ -1385,20 +1434,29 @@ class _FakeProvisioner implements ToolProvisioner {
   }
 
   @override
-  Future<CmakeNinja> ensureCmakeNinja() async {
+  Future<CmakeNinja> ensureCmakeNinja({
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) async {
     ensureCmakeNinjaCalls++;
+    cmakeProgress = onDownloadProgress;
     return result;
   }
 
   @override
-  Future<ProvisionedPython> ensurePython() async {
+  Future<ProvisionedPython> ensurePython({
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) async {
     ensurePythonCalls++;
+    pythonProgress = onDownloadProgress;
     return pythonResult;
   }
 
   @override
-  Future<ProvisionedTool> ensureClangLlvm() async {
+  Future<ProvisionedTool> ensureClangLlvm({
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) async {
     ensureClangLlvmCalls++;
+    clangProgress = onDownloadProgress;
     final ProvisionedTool? tool = clangResult;
     if (tool != null) {
       return tool;

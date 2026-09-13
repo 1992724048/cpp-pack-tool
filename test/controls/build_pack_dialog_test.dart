@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -23,7 +24,10 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare: (PackModel pack) => prepareGate.future,
+      prepare: (
+        PackModel pack, {
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) => prepareGate.future,
       build:
           (
             PackModel pack,
@@ -226,9 +230,13 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare: (PackModel pack) async => throw const BuildPreparationException(
-        '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
-      ),
+      prepare:
+          (
+            PackModel pack, {
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) async => throw const BuildPreparationException(
+            '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
+          ),
       build:
           (
             PackModel pack,
@@ -264,7 +272,10 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare: (PackModel pack) async => prepared,
+      prepare: (
+        PackModel pack, {
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => prepared,
       build:
           (
             PackModel pack,
@@ -361,7 +372,7 @@ void main() {
     expect(_outputLine(tester, '普通输出'), UCColors.flavor.text);
   });
 
-  testWidgets('失败时输出尾部进入面板且不残留流式行', (tester) async {
+  testWidgets('失败时保留流式输出并补充尾部', (tester) async {
     await _pumpDialog(
       tester,
       build:
@@ -395,9 +406,188 @@ void main() {
     );
     expect(
       find.textContaining('ERROR: 即将失败', findRichText: true),
-      findsNothing,
+      findsOneWidget,
     );
     expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('失败时已在面板中的输出行不重复补充', (tester) async {
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onOutput?.call('line one');
+            onOutput?.call('line two');
+            throw const PackBuildException(
+              '构建失败（退出码 1）',
+              outputTail: 'line one\nline two\nline three',
+            );
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.textContaining('line one', findRichText: true), findsOneWidget);
+    expect(find.textContaining('line two', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('line three', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('准备环境阶段展示工具下载进度与瞬时速度', (tester) async {
+    final Completer<BuildEnvironment> prepareGate =
+        Completer<BuildEnvironment>();
+    ToolDownloadProgressCallback? progressCallback;
+
+    await _pumpDialog(
+      tester,
+      prepare:
+          (PackModel pack, {ToolDownloadProgressCallback? onDownloadProgress}) {
+            progressCallback = onDownloadProgress;
+            return prepareGate.future;
+          },
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+
+    expect(find.text('正在准备构建环境…'), findsOneWidget);
+    expect(find.byKey(const Key('buildDownloadProgress')), findsNothing);
+    expect(progressCallback, isNotNull);
+
+    progressCallback!(
+      const ToolDownloadProgress(
+        name: 'cmake',
+        receivedBytes: 0,
+        totalBytes: 4 * 1024 * 1024,
+        bytesPerSecond: 0,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('正在下载 cmake：0%（0 B / 4.0 MB）'), findsOneWidget);
+
+    progressCallback!(
+      const ToolDownloadProgress(
+        name: 'cmake',
+        receivedBytes: 2 * 1024 * 1024,
+        totalBytes: 4 * 1024 * 1024,
+        bytesPerSecond: 1024 * 1024,
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.text('正在下载 cmake：50%（2.0 MB / 4.0 MB），1.0 MB/s'),
+      findsOneWidget,
+    );
+
+    progressCallback!(
+      const ToolDownloadProgress(
+        name: 'ninja',
+        receivedBytes: 512,
+        totalBytes: -1,
+        bytesPerSecond: 0,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('正在下载 ninja：512 B'), findsOneWidget);
+
+    prepareGate.complete(_environment());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('buildDownloadProgress')), findsNothing);
+  });
+
+  testWidgets('预构建包阶段：正在下载 → 正在分类 → 正在重新映射 → 完成', (tester) async {
+    final Completer<void> downloadGate = Completer<void>();
+    final Completer<void> classifyGate = Completer<void>();
+    final Completer<void> buildGate = Completer<void>();
+    final Completer<List<FileModel>> scanCompleter =
+        Completer<List<FileModel>>();
+    final Completer<void> applyCompleter = Completer<void>();
+
+    await _pumpDialog(
+      tester,
+      sourceNone: true,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onStage(PackBuildStage.downloading);
+            await downloadGate.future;
+            onStage(PackBuildStage.building);
+            onOutput?.call(
+              '[openvino] progress 42.0% (88000000/208000000 bytes)',
+            );
+            await classifyGate.future;
+            onOutput?.call('[cnp_build_support] classify: C:\\src -> C:\\out');
+            await buildGate.future;
+          },
+      scanFiles: (_) => scanCompleter.future,
+      onApply: (PackModel pack) => applyCompleter.future,
+    );
+
+    expect(find.text('正在下载…'), findsOneWidget);
+    expect(find.text('正在准备构建环境…'), findsNothing);
+    expect(find.text('正在下载源码…'), findsNothing);
+
+    downloadGate.complete();
+    await tester.pump();
+    expect(find.text('正在下载…（42%）'), findsOneWidget);
+    expect(find.text('正在执行构建…'), findsNothing);
+
+    classifyGate.complete();
+    await tester.pump();
+    expect(find.text('正在分类…'), findsOneWidget);
+
+    buildGate.complete();
+    await tester.pump();
+    expect(find.text('正在重新映射…'), findsOneWidget);
+
+    scanCompleter.complete(const <FileModel>[]);
+    await tester.pump();
+    applyCompleter.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('构建完成'), findsOneWidget);
+  });
+
+  test('extractProgressPercent 通用提取 progress 百分比', () {
+    expect(extractProgressPercent('[openvino] progress 42.0% (1/2 bytes)'), 42);
+    expect(extractProgressPercent('progress: 7%'), 7);
+    expect(extractProgressPercent('Receiving objects: 45% (9/20)'), isNull);
+    expect(extractProgressPercent('progress 120%'), isNull);
+    expect(extractProgressPercent('无进度行'), isNull);
+  });
+
+  test('isClassifyStartLine 匹配分类标记前缀', () {
+    expect(
+      isClassifyStartLine('[cnp_build_support] classify: C:\\src -> C:\\out'),
+      isTrue,
+    );
+    expect(isClassifyStartLine('  [cnp_build_support] classify: x'), isTrue);
+    expect(
+      isClassifyStartLine('[cnp_build_support] cmake_configure: x'),
+      isFalse,
+    );
   });
 
   testWidgets('构建回调的仓库版本写入应用包', (tester) async {
@@ -503,10 +693,11 @@ Button _closeButton(WidgetTester tester) =>
 Future<void> _pumpDialog(
   WidgetTester tester, {
   required PackBuildRunner build,
-  Future<BuildEnvironment> Function(PackModel pack)? prepare,
+  BuildPackPrepare? prepare,
   required Future<List<FileModel>> Function(String sourcePath) scanFiles,
   required Future<void> Function(PackModel pack) onApply,
   PackModel? pack,
+  bool sourceNone = false,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -521,8 +712,14 @@ Future<void> _pumpDialog(
               context: context,
               builder: (_) => BuildPackDialog(
                 pack: pack ?? _pack(),
+                sourceNone: sourceNone,
                 build: build,
-                prepare: prepare ?? (PackModel pack) async => _environment(),
+                prepare:
+                    prepare ??
+                    (
+                      PackModel pack, {
+                      ToolDownloadProgressCallback? onDownloadProgress,
+                    }) async => _environment(),
                 scanFiles: scanFiles,
                 onApply: onApply,
               ),

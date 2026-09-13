@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -14,10 +15,53 @@ enum _BuildStage {
   preparing,
   downloading,
   building,
+
+  /// 预构建配方（`# source: none`）的产物分类阶段（见 [classifyStartMarkerPrefix]）。
+  classifying,
   remapping,
   completed,
   failed,
 }
+
+/// 构建环境准备函数：`onDownloadProgress` 为工具下载进度回调（可为 null 不显示）。
+typedef BuildPackPrepare = Future<BuildEnvironment> Function(
+  PackModel pack, {
+  ToolDownloadProgressCallback? onDownloadProgress,
+});
+
+/// `cnp_build_support.classify_tree` 的开始标记前缀（见 SKILL.md「分类标记」）；
+/// 预构建配方据此把阶段从「正在下载」切换到「正在分类」。
+const String classifyStartMarkerPrefix = '[cnp_build_support] classify:';
+
+final RegExp _classifyStartPattern = RegExp(
+  '^${RegExp.escape(classifyStartMarkerPrefix)}',
+);
+
+/// 构建脚本进度行的百分比提取：匹配 `... progress 42.0% ...` 形态（不依赖
+/// 具体库名）；不可解析返回 null。
+final RegExp _progressPercentPattern = RegExp(
+  r'progress[^0-9%]*([0-9]{1,3}(?:\.[0-9]+)?)\s*%',
+  caseSensitive: false,
+);
+
+bool isClassifyStartLine(String line) =>
+    _classifyStartPattern.hasMatch(line.trim());
+
+int? extractProgressPercent(String line) {
+  final RegExpMatch? match = _progressPercentPattern.firstMatch(line);
+  if (match == null) {
+    return null;
+  }
+  final double? value = double.tryParse(match.group(1)!);
+  if (value == null || value < 0 || value > 100) {
+    return null;
+  }
+  return value.round();
+}
+
+/// 触发下载进度重绘的最小字节差：更小的更新被跳过，降低 setState 频率；
+/// 首个事件（新工具）与完成事件不受此限制。
+const int _progressMinDeltaBytes = 256 * 1024;
 
 /// 输出面板保留的最大行数（超出后丢弃最早的行）。
 const int _maxOutputLineCount = 2000;
@@ -86,6 +130,7 @@ class BuildPackDialog extends StatefulWidget {
   const BuildPackDialog({
     super.key,
     required this.pack,
+    this.sourceNone = false,
     this.build = runPackBuild,
     required this.prepare,
     required this.scanFiles,
@@ -93,8 +138,13 @@ class BuildPackDialog extends StatefulWidget {
   });
 
   final PackModel pack;
+
+  /// 预构建配方（`# source: none`）：隐藏「准备环境/下载源码/执行构建」文案，
+  /// 改为 正在下载 → 正在分类（`classify_tree` 开始标记）→ 重新映射。
+  final bool sourceNone;
+
   final PackBuildRunner build;
-  final Future<BuildEnvironment> Function(PackModel pack) prepare;
+  final BuildPackPrepare prepare;
   final Future<List<FileModel>> Function(String sourcePath) scanFiles;
   final Future<void> Function(PackModel pack) onApply;
 
@@ -121,6 +171,12 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   int _removedCount = 0;
   String? _sourceVersion;
 
+  /// 工具下载进度（准备环境阶段）；离开准备阶段时清空。
+  ToolDownloadProgress? _downloadProgress;
+
+  /// 构建脚本输出的下载百分比（`progress NN%` 行；预构建配方阶段文案使用）。
+  int? _buildProgressPercent;
+
   @override
   void initState() {
     super.initState();
@@ -136,7 +192,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   Future<void> _prepare() async {
     final BuildEnvironment environment;
     try {
-      environment = await widget.prepare(widget.pack);
+      environment = await widget.prepare(
+        widget.pack,
+        onDownloadProgress: _onDownloadProgress,
+      );
     } catch (error) {
       _showFailure(error);
       return;
@@ -209,6 +268,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       return;
     }
     setState(() {
+      _downloadProgress = null;
       _stage = switch (stage) {
         PackBuildStage.downloading => _BuildStage.downloading,
         PackBuildStage.building => _BuildStage.building,
@@ -220,13 +280,41 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     _sourceVersion = version;
   }
 
+  void _onDownloadProgress(ToolDownloadProgress progress) {
+    if (!mounted) {
+      return;
+    }
+    final ToolDownloadProgress? current = _downloadProgress;
+    final bool isNewTool = current?.name != progress.name;
+    final int deltaBytes = current == null
+        ? 0
+        : progress.receivedBytes - current.receivedBytes;
+    final bool isComplete =
+        progress.totalBytes > 0 &&
+        progress.receivedBytes >= progress.totalBytes;
+    if (!isNewTool && !isComplete && deltaBytes < _progressMinDeltaBytes) {
+      return;
+    }
+    setState(() => _downloadProgress = progress);
+  }
+
   void _onBuildOutput(String line) {
     if (!mounted) {
       return;
     }
+    final int? percent = widget.sourceNone
+        ? extractProgressPercent(line)
+        : null;
+    final bool classify = widget.sourceNone && isClassifyStartLine(line);
     setState(() {
       _outputLines.add(line);
       _trimOutputLines();
+      if (percent != null) {
+        _buildProgressPercent = percent;
+      }
+      if (classify) {
+        _stage = _BuildStage.classifying;
+      }
     });
     _scrollOutputToBottom();
   }
@@ -246,6 +334,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     });
   }
 
+  /// 展示失败：保留已流式积累的输出行并补充 [outputTail]（已在面板中的行不重复）；
+  /// 无任何输出时仅显示 tail。
   void _showFailure(Object error, {String? outputTail}) {
     if (!mounted) {
       return;
@@ -253,9 +343,14 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     setState(() {
       _stage = _BuildStage.failed;
       _error = error;
-      _outputLines.clear();
+      _downloadProgress = null;
       if (outputTail != null && outputTail.isNotEmpty) {
-        _outputLines.addAll(outputTail.split('\n'));
+        final Set<String> existing = _outputLines.toSet();
+        for (final String line in outputTail.split('\n')) {
+          if (existing.add(line)) {
+            _outputLines.add(line);
+          }
+        }
         _trimOutputLines();
       }
     });
@@ -330,6 +425,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _stage == _BuildStage.preparing ||
       _stage == _BuildStage.downloading ||
       _stage == _BuildStage.building ||
+      _stage == _BuildStage.classifying ||
       _stage == _BuildStage.remapping;
 
   Widget _buildOutputPanel() {
@@ -399,29 +495,72 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     ];
   }
 
+  /// 预构建配方的下载阶段文案（附构建脚本上报的百分比，若有）。
+  String get _sourceNoneDownloadText {
+    final int? percent = _buildProgressPercent;
+    return percent == null ? '正在下载…' : '正在下载…（$percent%）';
+  }
+
+  String get _preparingText =>
+      widget.sourceNone ? _sourceNoneDownloadText : '正在准备构建环境…';
+
+  String get _downloadingText =>
+      widget.sourceNone ? _sourceNoneDownloadText : '正在下载源码…';
+
+  String get _buildingText =>
+      widget.sourceNone ? _sourceNoneDownloadText : '正在执行构建…';
+
   Widget _buildStatus() {
     switch (_stage) {
       case _BuildStage.preparing:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在准备构建环境…')],
-        );
+        return _buildProgressStatus(_preparingText, showDownloadProgress: true);
       case _BuildStage.downloading:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在下载源码…')],
-        );
+        return _buildProgressStatus(_downloadingText);
       case _BuildStage.building:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在执行构建…')],
-        );
+        return _buildProgressStatus(_buildingText);
+      case _BuildStage.classifying:
+        return _buildProgressStatus('正在分类…');
       case _BuildStage.remapping:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在重新映射…')],
-        );
+        return _buildProgressStatus('正在重新映射…');
       case _BuildStage.failed:
         return _buildFailure();
       case _BuildStage.completed:
         return _buildResult();
     }
+  }
+
+  Widget _buildProgressStatus(
+    String label, {
+    bool showDownloadProgress = false,
+  }) {
+    final ToolDownloadProgress? progress = _downloadProgress;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [ProgressRing(), const SizedBox(width: 12), Text(label)]),
+        if (showDownloadProgress && progress != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _downloadProgressText(progress),
+            key: const Key('buildDownloadProgress'),
+            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _downloadProgressText(ToolDownloadProgress progress) {
+    final String amount = progress.totalBytes > 0
+        ? '${(progress.receivedBytes * 100 / progress.totalBytes).round()}%'
+              '（${formatBytes(progress.receivedBytes)} / '
+              '${formatBytes(progress.totalBytes)}）'
+        : formatBytes(progress.receivedBytes);
+    final String speed = progress.bytesPerSecond > 0
+        ? '，${formatBytes(progress.bytesPerSecond.round())}/s'
+        : '';
+    return '正在下载 ${progress.name}：$amount$speed';
   }
 
   Widget _buildFailure() {

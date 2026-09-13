@@ -5,6 +5,7 @@ import 'package:cpp_nuget_pack/app_info.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
@@ -174,6 +175,7 @@ void main() {
             required List<String> compilerPriority,
             required List<DetectedCompiler> cachedCompilers,
             required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
           }) async {
             receivedPriority = compilerPriority;
             receivedCache = cachedCompilers;
@@ -866,11 +868,13 @@ void main() {
       scanFiles: (_) async => <FileModel>[
         FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
       ],
+      loadBuildHeader: (PackModel pack) async => null,
       prepareBuildEnv: (
         PackModel pack, {
         required List<String> compilerPriority,
         required List<DetectedCompiler> cachedCompilers,
         required CompilerDetectionCallback onCompilersDetected,
+        ToolDownloadProgressCallback? onDownloadProgress,
       }) async => prepared,
       buildPack:
           (
@@ -915,6 +919,105 @@ void main() {
     expect(store.packs.single.files, hasLength(1));
     expect(store.packs.single.files.single.path, 'new/new.h');
     expect(store.packs.single.sourceVersion, 'v9.9.9');
+  });
+
+  testWidgets('默认构建接线使用流式构建执行器', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      FluentApp(
+        home: MainLayout(
+          pickDirectory: () async => null,
+          scanFiles: (_) async => <FileModel>[],
+          store: _FakePackStore(),
+          detectCompilers: _noCompilers,
+          loadRemoteTags: _noRemoteTags,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final MainLayout layout = tester.widget<MainLayout>(
+      find.byType(MainLayout),
+    );
+    expect(
+      layout.buildPack,
+      runPackBuildStreaming,
+      reason: '生产默认应经 Process.start 流式转发构建输出',
+    );
+  });
+
+  testWidgets('构建对话框透传 sourceNone 与下载进度回调', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    final Completer<BuildEnvironment> prepareGate =
+        Completer<BuildEnvironment>();
+    ToolDownloadProgressCallback? receivedProgress;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://github.com/openvinotoolkit/openvino.git',
+        sourceNone: true,
+      ),
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) {
+            receivedProgress = onDownloadProgress;
+            return prepareGate.future;
+          },
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('正在下载…'), findsOneWidget);
+    expect(find.text('正在准备构建环境…'), findsNothing);
+    expect(receivedProgress, isNotNull);
+
+    receivedProgress!(
+      const ToolDownloadProgress(
+        name: 'cmake',
+        receivedBytes: 0,
+        totalBytes: 1024,
+        bytesPerSecond: 0,
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildDownloadProgress')), findsOneWidget);
+
+    prepareGate.complete(_buildEnvironment());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
   });
 
   testWidgets('无包时打包按钮禁用', (tester) async {

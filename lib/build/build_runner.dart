@@ -60,12 +60,14 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
 /// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
-/// [onOutput] 非空时构建进程走流式捕获：stdout/stderr 逐行转发（不去重、按流
-/// 顺序），同时汇聚完整输出用于失败诊断；为 null 时保持一次性捕获（无流式）。
+/// [onOutput] 非空时逐行转发子进程输出（git 源码拉取与 python 构建进程），
+/// 同时汇聚完整输出用于失败诊断；git 调用恒追加 `--progress` 以强制输出进度。
+/// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
+/// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
+/// `Process.start`，测试注入替代实现）。
 /// [onSourceVersion] 非空时在源码就绪后查询仓库版本（`git describe --tags
 /// --abbrev=0`，失败回退 `git rev-parse --short HEAD`）并回调；查询失败静默
 /// 跳过，`# source: none` 包不查询。为 null 时不产生任何额外 git 调用。
-/// [streamRunner] 供测试注入 `Process.start` 的替代实现。
 Future<void> runPackBuild(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
@@ -107,9 +109,22 @@ Future<void> runPackBuild(
   } else {
     await target.parent.create(recursive: true);
     if (await _hasGitDirectory(target)) {
-      await _pullRepository(processRunner, target, environment);
+      await _pullRepository(
+        processRunner,
+        streamRunner,
+        target,
+        environment,
+        onOutput,
+      );
     } else {
-      await _cloneRepository(processRunner, target, header.repo, environment);
+      await _cloneRepository(
+        processRunner,
+        streamRunner,
+        target,
+        header.repo,
+        environment,
+        onOutput,
+      );
     }
     if (onSourceVersion != null) {
       final String? version = await _querySourceVersion(
@@ -135,6 +150,31 @@ Future<void> runPackBuild(
   );
 }
 
+/// 生产构建入口：[runPackBuild] 的流式变体，默认以 `Process.start` 逐行转发
+/// git 与 python 子进程输出（UI 实时显示）；其余参数口径与 [runPackBuild]
+/// 完全一致。测试可经 [streamRunner] 注入替代执行器。
+Future<void> runPackBuildStreaming(
+  PackModel pack,
+  void Function(PackBuildStage) onStage, {
+  PackProcessRunner processRunner = Process.run,
+  PackStreamingProcessRunner streamRunner = Process.start,
+  void Function(String line)? onOutput,
+  void Function(String version)? onSourceVersion,
+  String cacheRoot = 'cache',
+  Map<String, String>? environment,
+}) {
+  return runPackBuild(
+    pack,
+    onStage,
+    processRunner: processRunner,
+    streamRunner: streamRunner,
+    onOutput: onOutput,
+    onSourceVersion: onSourceVersion,
+    cacheRoot: cacheRoot,
+    environment: environment,
+  );
+}
+
 Future<bool> _hasGitDirectory(Directory target) async {
   final FileSystemEntityType type = await FileSystemEntity.type(
     '${target.path}/.git',
@@ -144,14 +184,18 @@ Future<bool> _hasGitDirectory(Directory target) async {
 
 Future<void> _pullRepository(
   PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
   Directory target,
   Map<String, String>? environment,
+  void Function(String line)? onOutput,
 ) async {
   final ProcessResult result = await _runGit(
     processRunner,
-    const <String>['pull', '--ff-only'],
+    streamRunner,
+    const <String>['pull', '--ff-only', '--progress'],
     workingDirectory: target.path,
     environment: environment,
+    onOutput: onOutput,
   );
   if (result.exitCode != 0) {
     throw PackBuildException(
@@ -163,16 +207,20 @@ Future<void> _pullRepository(
 
 Future<void> _cloneRepository(
   PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
   Directory target,
   String repository,
   Map<String, String>? environment,
+  void Function(String line)? onOutput,
 ) async {
   await _deleteResidual(target.path);
-  final ProcessResult result = await _runGit(processRunner, <String>[
-    'clone',
-    repository,
-    target.path,
-  ], environment: environment);
+  final ProcessResult result = await _runGit(
+    processRunner,
+    streamRunner,
+    <String>['clone', '--progress', repository, target.path],
+    environment: environment,
+    onOutput: onOutput,
+  );
   if (result.exitCode == 0) {
     return;
   }
@@ -185,18 +233,31 @@ Future<void> _cloneRepository(
 
 Future<ProcessResult> _runGit(
   PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
   List<String> arguments, {
   String? workingDirectory,
   Map<String, String>? environment,
+  void Function(String line)? onOutput,
 }) {
+  final Map<String, String> gitEnvironment = <String, String>{
+    ...?environment,
+    _gitPromptEnvironmentKey: '0',
+  };
+  if (streamRunner != null) {
+    return _runStreamingProcess(
+      streamRunner,
+      'git',
+      arguments,
+      workingDirectory,
+      gitEnvironment,
+      onOutput,
+    );
+  }
   return processRunner(
     'git',
     arguments,
     workingDirectory: workingDirectory,
-    environment: <String, String>{
-      ...?environment,
-      _gitPromptEnvironmentKey: '0',
-    },
+    environment: gitEnvironment,
   );
 }
 
@@ -221,6 +282,7 @@ Future<String?> _describeTag(
   try {
     final ProcessResult result = await _runGit(
       processRunner,
+      null,
       const <String>['describe', '--tags', '--abbrev=0'],
       workingDirectory: target.path,
       environment: environment,
@@ -243,6 +305,7 @@ Future<String?> _shortHead(
   try {
     final ProcessResult result = await _runGit(
       processRunner,
+      null,
       const <String>['rev-parse', '--short', 'HEAD'],
       workingDirectory: target.path,
       environment: environment,
@@ -330,7 +393,8 @@ Future<ProcessResult> _runPython(
   }
 }
 
-/// Python 启动命令：首选 `python <script>`，回退 `py -3 <script>`。
+/// Python 启动命令：首选 `python -u <script>`，回退 `py -3 -u <script>`；
+/// `-u` 关闭 stdout/stderr 缓冲，保证输出经流式管道即时到达。
 class _PythonLauncher {
   const _PythonLauncher(this.scriptPath);
 
@@ -338,11 +402,11 @@ class _PythonLauncher {
 
   String get executable => 'python';
 
-  List<String> get arguments => <String>[scriptPath];
+  List<String> get arguments => <String>['-u', scriptPath];
 
   String get fallbackExecutable => 'py';
 
-  List<String> get fallbackArguments => <String>['-3', scriptPath];
+  List<String> get fallbackArguments => <String>['-3', '-u', scriptPath];
 }
 
 Future<ProcessResult> _runStreamingPython(
@@ -415,7 +479,7 @@ Future<ProcessResult> _runStreamingProcess(
   PackStreamingProcessRunner streamRunner,
   String executable,
   List<String> arguments,
-  String workingDirectory,
+  String? workingDirectory,
   Map<String, String> environment,
   void Function(String line)? onOutput,
 ) async {
@@ -465,7 +529,7 @@ String _withTrailingNewline(List<String> lines) =>
 
 String? _outputTail(ProcessResult result) {
   final List<String> lines = '${result.stdout}\n${result.stderr}'.split(
-    RegExp(r'\r?\n'),
+    RegExp(r'\r\n|\r|\n'),
   );
   while (lines.isNotEmpty && lines.last.trim().isEmpty) {
     lines.removeLast();

@@ -10,6 +10,34 @@ import 'package:cpp_nuget_pack/util/format.dart';
 /// 工具包下载器：返回 zip 字节，失败时抛异常。
 typedef ToolFetcher = Future<Uint8List> Function(Uri uri);
 
+/// 工具下载进度快照。
+class ToolDownloadProgress {
+  const ToolDownloadProgress({
+    required this.name,
+    required this.receivedBytes,
+    required this.totalBytes,
+    required this.bytesPerSecond,
+  });
+
+  /// 工具名（已按目录安全规则清洗，与 `tools/<name>/` 一致）。
+  final String name;
+
+  /// 已下载字节数；首个进度事件恒为 0。
+  final int receivedBytes;
+
+  /// 响应 `contentLength`；-1 表示长度未知（分块传输等）。
+  final int totalBytes;
+
+  /// 与上一进度事件之间的瞬时速度（bytes/s）；无法计算时为 0。
+  final double bytesPerSecond;
+}
+
+/// 工具下载进度回调（仅 [ToolFetcher] 缺省 HTTP 下载路径触发；
+/// 注入自定义 [ToolFetcher] 时不会收到进度事件）。
+typedef ToolDownloadProgressCallback = void Function(
+  ToolDownloadProgress progress,
+);
+
 /// CMake 官方便携版下载地址（解析最新版失败时的兜底；2026-09-13 核验可达）。
 const String cmakeDownloadUrl =
     'https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip';
@@ -170,14 +198,16 @@ class ToolProvisioner {
   }) : assert(replaceAttempts >= 1),
        assert(replaceRetryDelay >= Duration.zero),
        _toolsRoot = Directory(toolsRoot).absolute.path,
-       _fetch = fetch ?? _fetchBytesOverHttp,
+       _customFetch = fetch,
        _runner = runner ?? Process.run,
        _environment = environment ?? Platform.environment,
        _replaceAttempts = replaceAttempts,
        _replaceRetryDelay = replaceRetryDelay;
 
   final String _toolsRoot;
-  final ToolFetcher _fetch;
+
+  /// 自定义下载器；null 时走内建 HTTP 下载（可上报 [ToolDownloadProgress]）。
+  final ToolFetcher? _customFetch;
   final PackProcessRunner _runner;
   final Map<String, String> _environment;
   final int _replaceAttempts;
@@ -185,11 +215,13 @@ class ToolProvisioner {
 
   /// 确保 [name] 工具就绪：来源标记匹配 [url] 时直接复用，否则重新下载替换。
   ///
-  /// [binSubdir] 为需额外加入 PATH 的工具内子目录（以 `/` 分隔，如 `perl/bin`）。
+  /// [binSubdir] 为需额外加入 PATH 的工具内子目录（以 `/` 分隔，如 `perl/bin`）；
+  /// [onDownloadProgress] 非空时按块上报下载进度（复用缓存不下载时不触发）。
   Future<ProvisionedTool> ensureTool({
     required String name,
     required String url,
     String? binSubdir,
+    ToolDownloadProgressCallback? onDownloadProgress,
   }) async {
     final String safeName = _sanitizeToolName(name);
     final List<String>? subSegments = _validatedSubdir(safeName, binSubdir);
@@ -199,7 +231,7 @@ class ToolProvisioner {
       return _describeTool(safeName, toolPath, subSegments);
     }
 
-    final Uint8List bytes = await _download(safeName, url);
+    final Uint8List bytes = await _download(safeName, url, onDownloadProgress);
     final Archive archive = _decodeArchive(safeName, url, bytes);
 
     final Directory tempRoot = Directory(
@@ -219,7 +251,11 @@ class ToolProvisioner {
 
   /// 确保 CMake（≥ 3.25）与 Ninja 可用：优先本机 PATH 与
   /// `%ProgramFiles%\CMake\bin`，否则解析最新稳定版并下载到 `tools/`。
-  Future<CmakeNinja> ensureCmakeNinja() async {
+  ///
+  /// [onDownloadProgress] 同 [ensureTool]。
+  Future<CmakeNinja> ensureCmakeNinja({
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) async {
     final List<String> pathEntries = <String>[];
     String? cmake = await _probeCmake('cmake');
     final String? fallback = _programFilesCmakePath();
@@ -231,6 +267,7 @@ class ToolProvisioner {
         name: 'cmake',
         installedMarkerPattern: _cmakeSourceUrlPattern,
         resolveUrl: _resolveCmakeDownloadUrl,
+        onDownloadProgress: onDownloadProgress,
       );
       cmake = joinPath(tool.directory, 'bin/cmake.exe');
       pathEntries.addAll(tool.pathEntries);
@@ -245,6 +282,7 @@ class ToolProvisioner {
         name: 'ninja',
         installedMarkerPattern: _ninjaSourceUrlPattern,
         resolveUrl: _resolveNinjaDownloadUrl,
+        onDownloadProgress: onDownloadProgress,
       );
       ninja = joinPath(tool.directory, 'ninja.exe');
       pathEntries.addAll(tool.pathEntries);
@@ -263,11 +301,14 @@ class ToolProvisioner {
   /// 供编译器检测全部落空时兜底；解析失败回退 [clangLlvmFallbackVersion]
   /// 对应地址。LLVM 发行版不含 MSVC 标准库头与链接库，clang-cl 仍需
   /// MSVC/SDK 提供编译与链接环境，故该工具不携带环境脚本。
-  Future<ProvisionedTool> ensureClangLlvm() {
+  Future<ProvisionedTool> ensureClangLlvm({
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) {
     return _ensureReleaseTool(
       name: 'clang',
       installedMarkerPattern: _clangSourceUrlPattern,
       resolveUrl: _resolveClangDownloadUrl,
+      onDownloadProgress: onDownloadProgress,
     );
   }
 
@@ -279,7 +320,9 @@ class ToolProvisioner {
   /// 解析真实解释器目录用于 PATH 注入，保证构建子进程的 `python` 解析到
   /// 可用解释器。版本解析失败回退 [pythonFallbackVersion]，下载/解压失败
   /// 抛 [BuildPreparationException]。
-  Future<ProvisionedPython> ensurePython() async {
+  Future<ProvisionedPython> ensurePython({
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) async {
     if (await _usablePython('python', const <String>['--version'])) {
       return const ProvisionedPython(
         executable: 'python',
@@ -298,6 +341,7 @@ class ToolProvisioner {
     final ProvisionedTool tool = await ensureTool(
       name: 'python',
       url: pythonEmbedUrlForVersion(version),
+      onDownloadProgress: onDownloadProgress,
     );
     return ProvisionedPython(
       executable: joinPath(tool.directory, 'python.exe'),
@@ -313,6 +357,7 @@ class ToolProvisioner {
     required String name,
     required RegExp installedMarkerPattern,
     required Future<String> Function() resolveUrl,
+    ToolDownloadProgressCallback? onDownloadProgress,
   }) async {
     final String safeName = _sanitizeToolName(name);
     final String toolPath = joinPath(_toolsRoot, safeName);
@@ -322,7 +367,11 @@ class ToolProvisioner {
     if (recorded != null && installedMarkerPattern.hasMatch(recorded)) {
       return _describeTool(safeName, toolPath, null);
     }
-    return ensureTool(name: safeName, url: await resolveUrl());
+    return ensureTool(
+      name: safeName,
+      url: await resolveUrl(),
+      onDownloadProgress: onDownloadProgress,
+    );
   }
 
   Future<String?> _readMarkerUrl(File marker) async {
@@ -370,9 +419,8 @@ class ToolProvisioner {
     required RegExp assetPattern,
   }) async {
     try {
-      final Uint8List bytes = await _fetch(
-        Uri.parse(apiUrl),
-      ).timeout(_releaseLookupTimeout);
+      final Uint8List bytes = await _fetchBytes(Uri.parse(apiUrl))
+          .timeout(_releaseLookupTimeout);
       final Object? decoded = jsonDecode(
         utf8.decode(bytes, allowMalformed: true),
       );
@@ -399,9 +447,35 @@ class ToolProvisioner {
     return null;
   }
 
-  Future<Uint8List> _download(String name, String url) async {
+  /// 下载 [url]：自定义 [ToolFetcher] 优先（不上报进度）；否则走内建 HTTP
+  /// 下载并按块回调 [onDownloadProgress]。
+  Future<Uint8List> _fetchBytes(
+    Uri uri, {
+    String? toolName,
+    ToolDownloadProgressCallback? onDownloadProgress,
+  }) {
+    final ToolFetcher? customFetch = _customFetch;
+    if (customFetch != null) {
+      return customFetch(uri);
+    }
+    return _fetchBytesOverHttp(
+      uri,
+      toolName: toolName,
+      onDownloadProgress: onDownloadProgress,
+    );
+  }
+
+  Future<Uint8List> _download(
+    String name,
+    String url,
+    ToolDownloadProgressCallback? onDownloadProgress,
+  ) async {
     try {
-      return await _fetch(Uri.parse(url));
+      return await _fetchBytes(
+        Uri.parse(url),
+        toolName: name,
+        onDownloadProgress: onDownloadProgress,
+      );
     } on BuildPreparationException {
       rethrow;
     } catch (error) {
@@ -537,7 +611,7 @@ class ToolProvisioner {
   /// 目录）；列表不可用（离线/页面改版）时回退 [pythonFallbackVersion]。
   Future<String> _resolvePythonVersion() async {
     try {
-      final Uint8List bytes = await _fetch(Uri.parse(pythonFtpIndexUrl));
+      final Uint8List bytes = await _fetchBytes(Uri.parse(pythonFtpIndexUrl));
       final List<String> candidates = _stablePythonVersions(
         utf8.decode(bytes, allowMalformed: true),
       ).take(_pythonVersionProbeLimit).toList();
@@ -554,7 +628,7 @@ class ToolProvisioner {
 
   Future<bool> _hasEmbeddablePackage(String version) async {
     try {
-      final Uint8List bytes = await _fetch(
+      final Uint8List bytes = await _fetchBytes(
         Uri.parse('$pythonFtpIndexUrl$version/'),
       );
       return utf8
@@ -754,7 +828,13 @@ int _compareVersionParts(List<int> left, List<int> right) {
   return 0;
 }
 
-Future<Uint8List> _fetchBytesOverHttp(Uri uri) async {
+/// 内建 HTTP 下载：整包读入内存；[onDownloadProgress] 非空时按块上报进度
+/// （首个事件为 0 字节，其后每个响应块一个事件，速度为块间瞬时速度）。
+Future<Uint8List> _fetchBytesOverHttp(
+  Uri uri, {
+  String? toolName,
+  ToolDownloadProgressCallback? onDownloadProgress,
+}) async {
   final HttpClient client = HttpClient();
   try {
     final HttpClientRequest request = await client.getUrl(uri);
@@ -762,9 +842,42 @@ Future<Uint8List> _fetchBytesOverHttp(Uri uri) async {
     if (response.statusCode != HttpStatus.ok) {
       throw BuildPreparationException('下载失败（HTTP ${response.statusCode}）：$uri');
     }
+    final int totalBytes = response.contentLength;
     final BytesBuilder builder = BytesBuilder(copy: false);
+    if (onDownloadProgress != null) {
+      onDownloadProgress(
+        ToolDownloadProgress(
+          name: toolName ?? '',
+          receivedBytes: 0,
+          totalBytes: totalBytes,
+          bytesPerSecond: 0,
+        ),
+      );
+    }
+    final Stopwatch stopwatch = Stopwatch()..start();
+    int lastBytes = 0;
+    int lastMicroseconds = 0;
     await for (final List<int> chunk in response) {
       builder.add(chunk);
+      if (onDownloadProgress == null) {
+        continue;
+      }
+      final int elapsedMicroseconds = stopwatch.elapsedMicroseconds;
+      final int deltaMicroseconds = elapsedMicroseconds - lastMicroseconds;
+      final int deltaBytes = builder.length - lastBytes;
+      final double bytesPerSecond = deltaMicroseconds <= 0
+          ? 0
+          : deltaBytes * Duration.microsecondsPerSecond / deltaMicroseconds;
+      lastBytes = builder.length;
+      lastMicroseconds = elapsedMicroseconds;
+      onDownloadProgress(
+        ToolDownloadProgress(
+          name: toolName ?? '',
+          receivedBytes: builder.length,
+          totalBytes: totalBytes,
+          bytesPerSecond: bytesPerSecond,
+        ),
+      );
     }
     return builder.takeBytes();
   } finally {

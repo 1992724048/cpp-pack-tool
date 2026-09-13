@@ -129,6 +129,7 @@ List<String> _relativeFiles(String root) {
 /// cmake_configure 命令装配、优化参数注入与缺 CNP_CMAKE 报错：monkeypatch
 /// subprocess.run 捕获命令，不真实执行 cmake。
 const String _cmakeDriver = r'''
+import io
 import os
 
 import cnp_build_support
@@ -150,16 +151,21 @@ except Exception as error:
     print('empty=unexpected:' + type(error).__name__)
 
 captured = []
+current = {'output': '', 'returncode': 0}
 
 
-class FakeCompleted(object):
-    returncode = 0
-    stdout = ''
+class FakeProcess(object):
+    def __init__(self, output, returncode):
+        self.stdout = io.StringIO(output)
+        self._returncode = returncode
+
+    def wait(self):
+        return self._returncode
 
 
-def fake_run(command, **kwargs):
+def fake_popen(command, **kwargs):
     captured.append(list(command))
-    return FakeCompleted()
+    return FakeProcess(current['output'], current['returncode'])
 
 
 def option(command, name):
@@ -170,9 +176,9 @@ def option(command, name):
     return 'none'
 
 
-original_run = cnp_build_support.subprocess.run
+original_popen = cnp_build_support.subprocess.Popen
 original_which = cnp_build_support.shutil.which
-cnp_build_support.subprocess.run = fake_run
+cnp_build_support.subprocess.Popen = fake_popen
 cnp_build_support.shutil.which = lambda name: (
     'C:/llvm/lld-link.exe' if name == 'lld-link' else None)
 try:
@@ -231,7 +237,7 @@ try:
          '-DCMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=OFF'])
     preset_release = list(captured[-1])
 finally:
-    cnp_build_support.subprocess.run = original_run
+    cnp_build_support.subprocess.Popen = original_popen
     cnp_build_support.shutil.which = original_which
 
 print('icx_avx2_c=%s' % option(icx_release, 'CMAKE_C_FLAGS'))
@@ -274,29 +280,29 @@ print('minimal_make_program=%s' % any(
     item.startswith('-DCMAKE_MAKE_PROGRAM=') for item in minimal))
 
 
-class FailingCompleted(object):
-    returncode = 3
-    stdout = 'boom-line-1\nboom-line-2\nboom-tail'
-
-
-cnp_build_support.subprocess.run = lambda command, **kwargs: FailingCompleted()
+current['output'] = 'boom-line-1\nboom-line-2\nboom-tail\n'
+current['returncode'] = 3
+cnp_build_support.subprocess.Popen = fake_popen
 try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build')
 except RuntimeError as error:
     print('nonzero=RuntimeError')
     print('nonzero_has_tail=%s' % ('boom-tail' in str(error)))
     print('nonzero_has_code=%s' % ('退出码 3' in str(error)))
+    print('nonzero_has_lines=%s' % ('boom-line-1' in str(error)))
 except Exception as error:
     print('nonzero=unexpected:' + type(error).__name__)
 finally:
-    cnp_build_support.subprocess.run = original_run
+    current['output'] = ''
+    current['returncode'] = 0
+    cnp_build_support.subprocess.Popen = original_popen
 
 
 def failing_start(command, **kwargs):
     raise OSError('simulated spawn failure')
 
 
-cnp_build_support.subprocess.run = failing_start
+cnp_build_support.subprocess.Popen = failing_start
 try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build')
 except RuntimeError as error:
@@ -304,11 +310,14 @@ except RuntimeError as error:
 except Exception as error:
     print('spawn=unexpected:' + type(error).__name__)
 finally:
-    cnp_build_support.subprocess.run = original_run
+    cnp_build_support.subprocess.Popen = original_popen
 ''';
 
-/// cmake_build：缺省并行到 CPU 逻辑核数、显式 jobs 与 0 禁用。
+/// cmake_build：缺省并行到 CPU 逻辑核数、显式 jobs 与 0 禁用；`_run_process`
+/// 逐行实时打印子进程输出并返回 CompletedProcess 形状结果。
 const String _cmakeBuildDriver = r'''
+import builtins
+import io
 import os
 
 import cnp_build_support
@@ -317,27 +326,49 @@ os.environ['CNP_CMAKE'] = 'C:/tools/cmake/bin/cmake.exe'
 captured = []
 
 
-class FakeCompleted(object):
-    returncode = 0
-    stdout = ''
+class FakeProcess(object):
+    def __init__(self, output, returncode):
+        self.stdout = io.StringIO(output)
+        self._returncode = returncode
+
+    def wait(self):
+        return self._returncode
 
 
-def fake_run(command, **kwargs):
+def fake_popen(command, **kwargs):
     captured.append(list(command))
-    return FakeCompleted()
+    return FakeProcess('stream-a\nstream-b\n', 0)
 
 
-original_run = cnp_build_support.subprocess.run
-cnp_build_support.subprocess.run = fake_run
+captured_prints = []
+original_print = builtins.print
+
+
+def capturing_print(*args, **kwargs):
+    captured_prints.append(' '.join(str(arg) for arg in args))
+
+
+original_popen = cnp_build_support.subprocess.Popen
+cnp_build_support.subprocess.Popen = fake_popen
 try:
-    cnp_build_support.cmake_build('C:/build', 'Release')
+    default_result = cnp_build_support.cmake_build('C:/build', 'Release')
     default_command = list(captured[-1])
     cnp_build_support.cmake_build('C:/build', 'Release', jobs=2)
     explicit_command = list(captured[-1])
     cnp_build_support.cmake_build('C:/build', 'Release', jobs=0)
     zero_command = list(captured[-1])
 finally:
-    cnp_build_support.subprocess.run = original_run
+    cnp_build_support.subprocess.Popen = original_popen
+
+cnp_build_support.subprocess.Popen = fake_popen
+builtins.print = capturing_print
+try:
+    cnp_build_support.cmake_build('C:/build', 'Release')
+    evidence_line = captured_prints[0]
+    streamed_lines = captured_prints[1:3]
+finally:
+    builtins.print = original_print
+    cnp_build_support.subprocess.Popen = original_popen
 
 
 def parallel_value(command):
@@ -349,6 +380,10 @@ def parallel_value(command):
 print('default_parallel=%s' % parallel_value(default_command))
 print('explicit_parallel=%s' % parallel_value(explicit_command))
 print('zero_parallel=%s' % parallel_value(zero_command))
+print('streamed_order=%s' % '|'.join(streamed_lines))
+print('captured_evidence=%s' % evidence_line)
+print('completed_returncode=%d' % default_result.returncode)
+print('completed_stdout=%s' % default_result.stdout.replace('\n', '|'))
 ''';
 
 /// stage_headers：目录内容镜像（不含目录名层、滤除非头文件）+ 显式文件复制。
@@ -655,6 +690,7 @@ void main() {
       expect(stdout, contains('nonzero=RuntimeError'));
       expect(stdout, contains('nonzero_has_tail=True'));
       expect(stdout, contains('nonzero_has_code=True'));
+      expect(stdout, contains('nonzero_has_lines=True'));
       expect(stdout, contains('spawn=RuntimeError'));
     }, skip: _skipReason);
 
@@ -677,6 +713,16 @@ void main() {
         stdout,
         contains('[cnp_build_support] cmake_build: config=Release parallel='),
       );
+      expect(stdout, contains('streamed_order=stream-a|stream-b'));
+      expect(
+        stdout,
+        contains(
+          'captured_evidence='
+          '[cnp_build_support] cmake_build: config=Release parallel=',
+        ),
+      );
+      expect(stdout, contains('completed_returncode=0'));
+      expect(stdout, contains('completed_stdout=stream-a|stream-b'));
     }, skip: _skipReason);
 
     test('stage_headers：文件与目录内容镜像（不含目录名层）', () async {
@@ -826,6 +872,15 @@ void main() {
         contains(
           'include=3 lib=2 bin=3 debug_lib=1 debug_bin=1 license=1',
         ),
+      );
+      expect(
+        result.stdout.toString(),
+        contains('[cnp_build_support] classify: '),
+      );
+      expect(
+        result.stdout.toString(),
+        contains(' -> '),
+        reason: '开始标记应包含 <root> -> <out> 形态',
       );
 
       final String out = _join(_join(tempDir.path, 'root'), 'out');

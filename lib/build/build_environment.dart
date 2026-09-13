@@ -183,9 +183,11 @@ BuildEnvironment assembleBuildEnvironment({
 /// 与最终 [BuildEnvironment.environment] 注入子进程；[cachedCompilers] 为上次
 /// 检测的持久化结果（见 `SettingsModel.detectedCompilers`，设置页与构建共用），
 /// 条目经 [isCompilerUsable] 校验后才参与选择；[onCompilersDetected] 在缓存
-/// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[detect]/[capture]
-/// 为测试注入点，不传缓存与回调时行为与不启用缓存完全一致。无可用编译器且
-/// clang/LLVM 兜底失败、或任一环节失败时抛 [BuildPreparationException]。
+/// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[onDownloadProgress]
+/// 透传到各供给调用（CMake/Ninja/Python/声明工具/兜底 clang），供 UI 展示
+/// 下载进度；[detect]/[capture] 为测试注入点，不传缓存与回调时行为与不启用
+/// 缓存完全一致。无可用编译器且 clang/LLVM 兜底失败、或任一环节失败时抛
+/// [BuildPreparationException]。
 Future<BuildEnvironment> prepareBuildEnvironment({
   List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
   PackProcessRunner runner = Process.run,
@@ -197,6 +199,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   String? supportModule,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
+  ToolDownloadProgressCallback? onDownloadProgress,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
@@ -223,6 +226,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     toolsRoot: toolsRoot,
     baseEnvironment: childBase,
     priority: priority,
+    onDownloadProgress: onDownloadProgress,
   );
 
   final ToolchainEnvironmentCapture captureEnvironment =
@@ -240,14 +244,19 @@ Future<BuildEnvironment> prepareBuildEnvironment({
         runner: runner,
         environment: captured,
       );
-  final CmakeNinja cmakeNinja = await toolProvisioner.ensureCmakeNinja();
-  final ProvisionedPython python = await toolProvisioner.ensurePython();
+  final CmakeNinja cmakeNinja = await toolProvisioner.ensureCmakeNinja(
+    onDownloadProgress: onDownloadProgress,
+  );
+  final ProvisionedPython python = await toolProvisioner.ensurePython(
+    onDownloadProgress: onDownloadProgress,
+  );
 
   final List<String> toolPathEntries = <String>[];
   for (final BuildScriptTool tool in tools) {
     final ProvisionedTool provisioned = await _ensureDeclaredTool(
       toolProvisioner,
       tool,
+      onDownloadProgress,
     );
     toolPathEntries.addAll(provisioned.pathEntries);
   }
@@ -335,6 +344,7 @@ Future<DetectedCompiler> _provisionFallbackCompiler({
   required String toolsRoot,
   required Map<String, String> baseEnvironment,
   required List<String> priority,
+  ToolDownloadProgressCallback? onDownloadProgress,
 }) async {
   final ToolProvisioner toolProvisioner =
       provisioner ??
@@ -345,7 +355,9 @@ Future<DetectedCompiler> _provisionFallbackCompiler({
       );
   final ProvisionedTool clang;
   try {
-    clang = await toolProvisioner.ensureClangLlvm();
+    clang = await toolProvisioner.ensureClangLlvm(
+      onDownloadProgress: onDownloadProgress,
+    );
   } on BuildPreparationException catch (error) {
     throw BuildPreparationException(
       '${_noCompilerMessage(priority)}；clang/LLVM 最后手段失败：${error.message}',
@@ -371,12 +383,14 @@ Future<DetectedCompiler> _provisionFallbackCompiler({
 Future<ProvisionedTool> _ensureDeclaredTool(
   ToolProvisioner provisioner,
   BuildScriptTool tool,
+  ToolDownloadProgressCallback? onDownloadProgress,
 ) async {
   try {
     return await provisioner.ensureTool(
       name: tool.name,
       url: tool.url,
       binSubdir: tool.binSubdir,
+      onDownloadProgress: onDownloadProgress,
     );
   } on BuildPreparationException {
     rethrow;
@@ -399,7 +413,8 @@ Future<void> _releaseSupportModule(String toolsRoot, String content) async {
 /// CMake/Ninja/Python → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
 ///
 /// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
-/// [BuildPreparationException]。其余参数透传 [prepareBuildEnvironment]。
+/// [BuildPreparationException]。其余参数（含 [onDownloadProgress]）透传
+/// [prepareBuildEnvironment]。
 Future<BuildEnvironment> preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> priority,
@@ -411,6 +426,7 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
   Future<String> Function()? loadSupportModule,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
+  ToolDownloadProgressCallback? onDownloadProgress,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
@@ -437,6 +453,7 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
     supportModule: supportModule,
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
+    onDownloadProgress: onDownloadProgress,
     detect: detect,
     capture: capture,
   );

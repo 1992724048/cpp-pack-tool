@@ -20,7 +20,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 2. 检测编译器（ICX > clang-cl > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
 3. `git clone` / `git pull --ff-only` 源码到 `cache/build/<清洗包ID>/`（声明 `# source: none` 时跳过，仅创建该目录）；
 4. 以**包源目录为工作目录**运行 `python build.py`（Python 缺失时工具自动下载最小版到 `tools/python`；`python` 优先、`py -3` 兜底），并注入「环境变量」一节的变量；
-5. 退出码 0 = 成功，非 0 = 失败（工具会显示输出尾部）；成功后自动扫描并重新映射产物。
+5. 脚本输出经管道逐行实时显示在构建对话框（`python -u` 无缓冲；git 拉取同样流式）；退出码 0 = 成功，非 0 = 失败（工具保留已显示输出并附输出尾部）；成功后自动扫描并重新映射产物。
 
 ## 契约总览（build.py 头部）
 
@@ -76,8 +76,13 @@ from cnp_build_support import (
 | `stage_headers(paths, out)` | 头文件 → `<out>/include/`。传目录时镜像其内容（保留子结构）；传文件时复制单个文件。 |
 | `stage_binaries(build_dir, out, config="Release")` | 递归收集 `.lib/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重。 |
 | `stage_license(source_root, out)` | 识别源码根目录的许可证（LICENSE/LICENCE/COPYING/UNLICENSE/NOTICE 及变体）→ 复制到 `<out>/` 根。 |
-| `classify_tree(root, out, exclude=())` | 预构建归档场景：把解压后的产物树分类到 `include/`、`release/lib|bin/`、`debug/lib|bin/` 分层。 |
+| `classify_tree(root, out, exclude=())` | 预构建归档场景：把解压后的产物树分类到 `include/`、`release/lib|bin/`、`debug/lib|bin/` 分层。调用开始时打印开始标记 `[cnp_build_support] classify: <root> -> <out>`（见「分类标记与进度」）。 |
 | `summary(out)` | 打印并返回产物统计（各分类计数、文件数与字节数），建议作为构建收尾证据。 |
+
+### 分类标记与进度
+
+- **分类开始标记**：`classify_tree` 每次调用开始时打印 `[cnp_build_support] classify: <root> -> <out>`。构建对话框对 `# source: none` 配方据此把阶段显示从「正在下载」切换为「正在分类」；不要删除或改动该行前缀。
+- **下载进度（可选）**：脚本自行下载大文件时建议按 `... progress <NN>% ...` 形态输出进度行（如 `[openvino] progress 42.0% (…)`），工具会提取百分比显示在「正在下载」阶段——通用匹配、不依赖库名；不输出也能正常构建。
 
 ## 构建约定
 

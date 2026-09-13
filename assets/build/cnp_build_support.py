@@ -157,12 +157,14 @@ def cmake_configure(
             " ".join(avx2_flags) if avx2_flags else "-",
             " ".join(optimization_flags) if optimization_flags else "-",
             ipo_state,
-        )
+        ),
+        flush=True,
     )
     if ipo_reason:
         print(
             "[cnp_build_support] cmake_configure: "
-            "ipo=off reason=%s" % ipo_reason
+            "ipo=off reason=%s" % ipo_reason,
+            flush=True,
         )
     command.extend(extra)
     return _run_process(command, "cmake 配置")
@@ -184,7 +186,8 @@ def cmake_build(build_dir, config="Release", jobs=None):
         command.extend(("--parallel", str(parallel)))
     print(
         "[cnp_build_support] cmake_build: config=%s parallel=%s"
-        % (config, parallel if parallel is not None else "-")
+        % (config, parallel if parallel is not None else "-"),
+        flush=True,
     )
     return _run_process(command, "cmake 构建")
 
@@ -301,12 +304,19 @@ def classify_tree(root, out, exclude=()):
 
     计数键：include / lib / bin / debug_lib / debug_bin / license（lib/bin 指
     release 分层）。
+
+    调用开始时打印开始标记 `[cnp_build_support] classify: <root> -> <out>`
+    （工具据此把构建阶段从「正在下载」切换为「正在分类」，见 SKILL.md）。
     """
     root = os.path.abspath(os.fspath(root))
     out = os.path.abspath(os.fspath(out))
     if not os.path.isdir(root):
         raise FileNotFoundError("目录不存在：%s" % root)
     excludes = _normalize_excludes(exclude)
+    print(
+        "[cnp_build_support] classify: %s -> %s" % (root, out),
+        flush=True,
+    )
     counts = {
         "include": 0,
         "lib": 0,
@@ -429,7 +439,8 @@ def summary(out):
             result["other"],
             result["files"],
             result["bytes"],
-        )
+        ),
+        flush=True,
     )
     return result
 
@@ -532,26 +543,40 @@ def _environment_flag(name):
 
 
 def _run_process(command, label):
+    """运行子进程并逐行实时打印输出（stderr 合并进 stdout、UTF-8 容错）。
+
+    返回 `subprocess.CompletedProcess` 形状的结果（`stdout` 为完整合并输出）；
+    无法启动或非零退出抛 RuntimeError（后者携带输出末尾 [_OUTPUT_TAIL_LINES] 行）。
+    """
+    command = [str(part) for part in command]
     try:
-        result = subprocess.run(
-            [str(part) for part in command],
+        process = subprocess.Popen(
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             encoding="utf-8",
             errors="replace",
+            bufsize=1,
         )
     except OSError as error:
         raise RuntimeError(
             "%s 无法启动（%s）：%s" % (label, error, command[0])
         ) from error
-    if result.returncode != 0:
-        output = result.stdout or ""
-        tail = "\n".join(output.splitlines()[-_OUTPUT_TAIL_LINES:])
+    lines = []
+    stream = process.stdout
+    if stream is not None:
+        for raw_line in stream:
+            line = raw_line.rstrip("\r\n")
+            lines.append(line)
+            print(line, flush=True)
+    returncode = process.wait()
+    if returncode != 0:
+        tail = "\n".join(lines[-_OUTPUT_TAIL_LINES:])
         raise RuntimeError(
             "%s 失败（退出码 %d）：%s\n%s"
-            % (label, result.returncode, " ".join(str(part) for part in command), tail)
+            % (label, returncode, " ".join(command), tail)
         )
-    return result
+    return subprocess.CompletedProcess(command, returncode, "\n".join(lines), None)
 
 
 def _is_header_name(name):

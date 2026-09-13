@@ -4,6 +4,7 @@ import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
@@ -110,12 +111,14 @@ Future<void> _noopSaveSettings(SettingsModel settings) async {}
 
 /// 构建环境准备函数：由 MainLayout 注入设置中的编译器优先级与检测缓存，
 /// 缓存缺失/失效并完成重检时经 [onCompilersDetected] 回调新检测结果
-/// （MainLayout 把它写回配置）；测试注入以绕过真实检测与工具供给。
+/// （MainLayout 把它写回配置）；[onDownloadProgress] 为工具下载进度回调
+/// （对话框传入）；测试注入以绕过真实检测与工具供给。
 typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   PackModel pack, {
   required List<String> compilerPriority,
   required List<toolchain.DetectedCompiler> cachedCompilers,
   required CompilerDetectionCallback onCompilersDetected,
+  ToolDownloadProgressCallback? onDownloadProgress,
 });
 
 /// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块。
@@ -124,12 +127,14 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
   required List<String> compilerPriority,
   required List<toolchain.DetectedCompiler> cachedCompilers,
   required CompilerDetectionCallback onCompilersDetected,
+  ToolDownloadProgressCallback? onDownloadProgress,
 }) {
   return preparePackBuildEnvironment(
     pack,
     priority: compilerPriority,
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
+    onDownloadProgress: onDownloadProgress,
     loadSupportModule: () =>
         rootBundle.loadString('assets/build/cnp_build_support.py'),
   );
@@ -145,7 +150,7 @@ class MainLayout extends StatefulWidget {
     this.onSaveSettings = _noopSaveSettings,
     this.exportPackage = exportNuGetPackage,
     this.exportCmakePackage = cmake_exporter.exportCmakePackage,
-    this.buildPack = runPackBuild,
+    this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
@@ -583,21 +588,41 @@ class _MainLayoutState extends State<MainLayout> {
   Future<void> _buildPack(PackModel pack) async {
     final PackBuildEnvironmentPreparer prepare =
         widget.prepareBuildEnv ?? _preparePackBuildEnvironment;
+    final bool sourceNone = await _loadSourceNone(pack);
+    if (!mounted) {
+      return;
+    }
     await showDialog<void>(
       context: context,
       builder: (_) => BuildPackDialog(
         pack: pack,
+        sourceNone: sourceNone,
         build: widget.buildPack,
-        prepare: (PackModel pack) => prepare(
-          pack,
-          compilerPriority: widget.settings.compilerPriority,
-          cachedCompilers: widget.settings.detectedCompilers,
-          onCompilersDetected: _persistDetectedCompilers,
-        ),
+        prepare:
+            (
+              PackModel pack, {
+              ToolDownloadProgressCallback? onDownloadProgress,
+            }) => prepare(
+              pack,
+              compilerPriority: widget.settings.compilerPriority,
+              cachedCompilers: widget.settings.detectedCompilers,
+              onCompilersDetected: _persistDetectedCompilers,
+              onDownloadProgress: onDownloadProgress,
+            ),
         scanFiles: widget.scanFiles,
         onApply: _applyRemap,
       ),
     );
+  }
+
+  /// build.py 是否声明 `# source: none`（预构建配方）；读取失败按否处理。
+  Future<bool> _loadSourceNone(PackModel pack) async {
+    try {
+      final BuildScriptHeader? header = await widget.loadBuildHeader(pack);
+      return header?.sourceNone ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 把构建准备阶段的新检测结果写回配置（经 [MainLayout.onSaveSettings]）。
