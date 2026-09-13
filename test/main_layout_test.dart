@@ -112,6 +112,101 @@ void main() {
     expect(find.text('已保存'), findsOneWidget);
   });
 
+  testWidgets('设置页无缓存时自动检测并经保存链写回', (tester) async {
+    SettingsModel? saved;
+
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+      ],
+      onSaveSettings: (SettingsModel settings) async => saved = settings,
+    );
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.text('2026.1.1'), findsOneWidget);
+    expect(saved, isNotNull);
+    expect(saved!.detectedCompilers, hasLength(1));
+    expect(saved!.detectedCompilers.single.kind, CompilerKind.icx);
+    expect(saved!.detectedCompilers.single.version, '2026.1.1');
+  });
+
+  testWidgets('构建准备透传缓存并经保存链写回新检测结果', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    SettingsModel? saved;
+    List<String>? receivedPriority;
+    List<DetectedCompiler>? receivedCache;
+    final BuildEnvironment prepared = _buildEnvironment();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'build.py', path: 'build.py', size: 10),
+      ],
+      onSaveSettings: (SettingsModel settings) async => saved = settings,
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+          }) async {
+            receivedPriority = compilerPriority;
+            receivedCache = cachedCompilers;
+            onCompilersDetected(<DetectedCompiler>[
+              _compiler(CompilerKind.icx, '2026.2.0'),
+            ]);
+            return prepared;
+          },
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(receivedPriority, <String>['icx']);
+    expect(receivedCache?.single.version, '2026.1.0');
+    expect(saved, isNotNull);
+    expect(saved!.compilerPriority, <String>['icx']);
+    expect(saved!.detectedCompilers.single.version, '2026.2.0');
+  });
+
   testWidgets('footer 设置页铺满内容区域并带页面背景表面', (tester) async {
     await _pumpMainLayout(
       tester,
@@ -664,9 +759,7 @@ void main() {
           'demo',
           '1.0.0',
           sourcePath: r'C:\libs\demo',
-          files: <FileModel>[
-            FileModel(name: 'old.h', path: 'old.h', size: 64),
-          ],
+          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
         ),
         _pack('libfoo', '2.5.0'),
       ],
@@ -773,7 +866,12 @@ void main() {
       scanFiles: (_) async => <FileModel>[
         FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
       ],
-      prepareBuildEnv: (PackModel pack) async => prepared,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+      }) async => prepared,
       buildPack:
           (
             PackModel pack,
@@ -1706,14 +1804,11 @@ void main() {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
-            'demo',
-            '1.0.0',
-            sourcePath: r'C:\libs\demo',
-            files: <FileModel>[
-              FileModel(name: 'old.h', path: 'old.h', size: 64),
-            ],
-          )
-          ..sourceVersion = 'v1.0.0',
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
+        )..sourceVersion = 'v1.0.0',
       ],
     );
     final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
@@ -1920,19 +2015,17 @@ void main() {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
-            'alpha',
-            '1.0.0',
-            sourcePath: r'C:\libs\alpha',
-            files: _buildPyFiles(),
-          )
-          ..sourceVersion = 'v1.0.0',
+          'alpha',
+          '1.0.0',
+          sourcePath: r'C:\libs\alpha',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v1.0.0',
         _pack(
-            'beta',
-            '1.0.0',
-            sourcePath: r'C:\libs\beta',
-            files: _buildPyFiles(),
-          )
-          ..sourceVersion = 'v2.0.0',
+          'beta',
+          '1.0.0',
+          sourcePath: r'C:\libs\beta',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v2.0.0',
         _pack('gamma', '1.0.0'),
       ],
     );
@@ -1967,12 +2060,11 @@ void main() {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
-            'demo',
-            '1.0.0',
-            sourcePath: r'C:\libs\demo',
-            files: _buildPyFiles(),
-          )
-          ..sourceVersion = 'v1.0.0',
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v1.0.0',
       ],
     );
 
@@ -1996,12 +2088,11 @@ void main() {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
-            'demo',
-            '1.0.0',
-            sourcePath: r'C:\libs\demo',
-            files: _buildPyFiles(),
-          )
-          ..sourceVersion = 'v1.0.0',
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v1.0.0',
       ],
     );
 
@@ -2039,7 +2130,7 @@ Future<void> _pumpMainLayout(
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportCmakePackage,
   PackBuildRunner? buildPack,
-  Future<BuildEnvironment> Function(PackModel pack)? prepareBuildEnv,
+  PackBuildEnvironmentPreparer? prepareBuildEnv,
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,

@@ -21,6 +21,93 @@ void main() {
     });
   });
 
+  group('compilerKindFromId', () {
+    test('解析稳定标识（大小写不敏感、容忍空白），未知返回 null', () {
+      expect(compilerKindFromId('icx'), CompilerKind.icx);
+      expect(compilerKindFromId(' clang-cl '), CompilerKind.clangCl);
+      expect(compilerKindFromId('MSVC'), CompilerKind.msvc);
+      expect(compilerKindFromId('gcc'), isNull);
+      expect(compilerKindFromId(''), isNull);
+    });
+  });
+
+  group('isCompilerUsable', () {
+    test('可执行文件与环境脚本均存在时可用', () {
+      final Directory root = _tempDirectory();
+      final String executable = joinPath(root.path, 'cl.exe');
+      _createFile(executable);
+      final String script = joinPath(root.path, 'vcvars64.bat');
+      _createFile(script);
+
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.msvc,
+            version: '14.44.35207',
+            executablePath: executable,
+            environmentScript: script,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.clangCl,
+            version: '23.1.1',
+            executablePath: executable,
+            environmentScript: null,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('可执行文件缺失或声明脚本缺失时不可用', () {
+      final Directory root = _tempDirectory();
+      final String missing = joinPath(root.path, 'missing.exe');
+      final String script = joinPath(root.path, 'setvars.bat');
+      _createFile(script);
+
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.msvc,
+            version: '14.44.35207',
+            executablePath: missing,
+            environmentScript: null,
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.icx,
+            version: '2026.1.0',
+            executablePath: missing,
+            environmentScript: script,
+          ),
+        ),
+        isFalse,
+      );
+
+      final String executable = joinPath(root.path, 'icx-cl.exe');
+      _createFile(executable);
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.icx,
+            version: '2026.1.0',
+            executablePath: executable,
+            environmentScript: joinPath(root.path, 'missing/setvars.bat'),
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('compilerKindLabel', () {
     test('返回各编译器的显示名', () {
       expect(compilerKindLabel(CompilerKind.icx), 'ICX');
@@ -518,7 +605,9 @@ void main() {
           <_ProcessCall>[],
           (_) async => _result('Compiler 2026.1.0\n'),
         ),
-        environment: <String, String>{'ProgramFiles': joinPath(root.path, 'pf')},
+        environment: <String, String>{
+          'ProgramFiles': joinPath(root.path, 'pf'),
+        },
         llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
         vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
       );

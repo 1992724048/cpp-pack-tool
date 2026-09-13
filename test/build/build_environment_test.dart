@@ -163,6 +163,95 @@ void main() {
     });
   });
 
+  group('withControlledTempEnvironment', () {
+    test('注入受控 TMP/TEMP、复制 ProgramFiles 且不修改 base', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final Map<String, String> base = <String, String>{
+        'tmp': r'C:\hostile-tmp',
+        'TEMP': r'C:\hostile-temp',
+        'PROGRAMFILES(X86)': r'C:\pf86',
+        'KEEP': '1',
+      };
+
+      final Map<String, String> result = await withControlledTempEnvironment(
+        base,
+        toolsRoot: toolsRoot,
+      );
+
+      final String expectedTemp = joinPath(
+        Directory(toolsRoot).absolute.path,
+        '.tmp/build',
+      ).replaceAll('/', r'\');
+      expect(result['TMP'], expectedTemp);
+      expect(result['TEMP'], expectedTemp);
+      expect(result['ProgramFiles(x86)'], r'C:\pf86');
+      expect(result['KEEP'], '1');
+      expect(Directory(expectedTemp).existsSync(), isTrue);
+      expect(
+        result.keys.where((String key) => key.toLowerCase() == 'tmp').toList(),
+        <String>['TMP'],
+      );
+      expect(
+        result.keys.where((String key) => key.toLowerCase() == 'temp').toList(),
+        <String>['TEMP'],
+      );
+      expect(base['tmp'], r'C:\hostile-tmp');
+      expect(base['TEMP'], r'C:\hostile-temp');
+      expect(base.containsKey('TMP'), isFalse);
+    });
+  });
+
+  group('detectCompilersWithControlledTemp', () {
+    test('默认检测以受控 TMP/TEMP 调用探测子进程', () async {
+      final Directory root = _tempDirectory();
+      final String toolsRoot = joinPath(root.path, 'tools');
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final List<DetectedCompiler> compilers =
+          await detectCompilersWithControlledTemp(
+            toolsRoot: toolsRoot,
+            baseEnvironment: <String, String>{
+              'ONEAPI_ROOT': oneApiRoot,
+              'TMP': r'C:\hostile-tmp',
+            },
+            runner: _runner(
+              calls,
+              (_) async => ProcessResult(0, 0, 'Compiler 2026.1.0\n', ''),
+            ),
+          );
+
+      final String expectedTemp = joinPath(
+        Directory(toolsRoot).absolute.path,
+        '.tmp/build',
+      ).replaceAll('/', r'\');
+      expect(compilers.single.kind, CompilerKind.icx);
+      expect(compilers.single.version, '2026.1.0');
+      expect(calls.single.environment?['TMP'], expectedTemp);
+      expect(calls.single.environment?['TEMP'], expectedTemp);
+    });
+
+    test('注入检测函数时直接采用其结果', () async {
+      final Directory root = _tempDirectory();
+      final List<DetectedCompiler> injected = <DetectedCompiler>[_compiler()];
+
+      final List<DetectedCompiler> compilers =
+          await detectCompilersWithControlledTemp(
+            toolsRoot: joinPath(root.path, 'tools'),
+            baseEnvironment: <String, String>{},
+            detect: () async => injected,
+            runner: _runner(
+              <_ProcessCall>[],
+              (_) async => throw StateError('不应执行进程'),
+            ),
+          );
+
+      expect(compilers, same(injected));
+    });
+  });
+
   group('assembleBuildEnvironment', () {
     test('前置工具目录与编译器附加目录并保留 PATH 原值与键名', () {
       final DetectedCompiler compiler = _compiler(
@@ -328,6 +417,156 @@ void main() {
   });
 
   group('prepareBuildEnvironment', () {
+    test('缓存有效时直接选择缓存编译器且不触发检测', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler cached = _cachedCompiler(root);
+      int detectCalls = 0;
+      final List<List<DetectedCompiler>> reported = <List<DetectedCompiler>>[];
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        cachedCompilers: <DetectedCompiler>[cached],
+        onCompilersDetected: reported.add,
+        detect: () async {
+          detectCalls++;
+          return const <DetectedCompiler>[];
+        },
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(detectCalls, 0);
+      expect(reported, isEmpty);
+      expect(result.compiler, same(cached));
+      expect(result.environment['CNP_COMPILER_KIND'], 'msvc');
+    });
+
+    test('缓存可执行文件缺失时重检并回调新结果', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler stale = _compiler(
+        executablePath: joinPath(root.path, 'missing/cl.exe'),
+      );
+      final DetectedCompiler fresh = _cachedCompiler(root);
+      int detectCalls = 0;
+      final List<List<DetectedCompiler>> reported = <List<DetectedCompiler>>[];
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        cachedCompilers: <DetectedCompiler>[stale],
+        onCompilersDetected: reported.add,
+        detect: () async {
+          detectCalls++;
+          return <DetectedCompiler>[fresh];
+        },
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(detectCalls, 1);
+      expect(reported, hasLength(1));
+      expect(reported.single.single, same(fresh));
+      expect(result.compiler, same(fresh));
+    });
+
+    test('缓存环境脚本缺失时视为失效并重检', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler cached = _cachedCompiler(root);
+      final DetectedCompiler stale = DetectedCompiler(
+        kind: cached.kind,
+        version: cached.version,
+        executablePath: cached.executablePath,
+        environmentScript: joinPath(root.path, 'missing/vcvars64.bat'),
+      );
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        cachedCompilers: <DetectedCompiler>[stale],
+        detect: () async => <DetectedCompiler>[cached],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(result.compiler, same(cached));
+    });
+
+    test('缓存有效但均不匹配优先级时重检', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler cached = _cachedCompiler(root);
+      final DetectedCompiler icx = _compiler(
+        kind: CompilerKind.icx,
+        version: '2026.1.0',
+        executablePath: joinPath(root.path, 'icx-cl.exe'),
+      );
+      int detectCalls = 0;
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['icx'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        cachedCompilers: <DetectedCompiler>[cached],
+        detect: () async {
+          detectCalls++;
+          return <DetectedCompiler>[icx];
+        },
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(detectCalls, 1);
+      expect(result.compiler, same(icx));
+    });
+
+    test('无缓存时保持原行为：检测并经回调上报新结果', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler detectedCompiler = _compiler();
+      final List<List<DetectedCompiler>> reported = <List<DetectedCompiler>>[];
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{},
+        onCompilersDetected: reported.add,
+        detect: () async => <DetectedCompiler>[detectedCompiler],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(reported, hasLength(1));
+      expect(reported.single.single, same(detectedCompiler));
+      expect(result.compiler, same(detectedCompiler));
+    });
+
     test('按优先级选择编译器并透传捕获环境与供给工具', () async {
       final Directory root = _tempDirectory();
       final DetectedCompiler msvc = _compiler();
@@ -503,10 +742,7 @@ void main() {
           isA<BuildPreparationException>().having(
             (BuildPreparationException error) => error.message,
             'message',
-            allOf(
-              contains('未检测到可用编译器'),
-              contains('clang/LLVM 最后手段失败'),
-            ),
+            allOf(contains('未检测到可用编译器'), contains('clang/LLVM 最后手段失败')),
           ),
         ),
       );
@@ -644,9 +880,7 @@ void main() {
     test('声明工具按序供给并将工具目录汇入 PATH 的 cmake 之后', () async {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'tools');
-      final Map<String, String> base = <String, String>{
-        'Path': r'C:\Windows',
-      };
+      final Map<String, String> base = <String, String>{'Path': r'C:\Windows'};
       final _FakeProvisioner provisioner = _FakeProvisioner(
         _cmakeNinja(
           cmakeExecutable: r'C:\tools\cmake\bin\cmake.exe',
@@ -698,10 +932,16 @@ void main() {
       expect(provisioner.ensureCmakeNinjaCalls, 1);
       expect(provisioner.ensureToolCalls, hasLength(2));
       expect(provisioner.ensureToolCalls[0].name, 'perl');
-      expect(provisioner.ensureToolCalls[0].url, 'https://example.com/perl.zip');
+      expect(
+        provisioner.ensureToolCalls[0].url,
+        'https://example.com/perl.zip',
+      );
       expect(provisioner.ensureToolCalls[0].binSubdir, 'perl/bin');
       expect(provisioner.ensureToolCalls[1].name, 'nasm');
-      expect(provisioner.ensureToolCalls[1].url, 'https://example.com/nasm.zip');
+      expect(
+        provisioner.ensureToolCalls[1].url,
+        'https://example.com/nasm.zip',
+      );
       expect(provisioner.ensureToolCalls[1].binSubdir, isNull);
       expect(
         result.environment['Path'],
@@ -934,10 +1174,7 @@ void main() {
       expect(provisioner.ensurePythonCalls, 1);
       expect(provisioner.ensureToolCalls.single.name, 'perl');
       expect(provisioner.ensureToolCalls.single.binSubdir, 'perl/bin');
-      expect(
-        result.environment['Path'],
-        r'C:\tools\python;C:\tools\perl\bin',
-      );
+      expect(result.environment['Path'], r'C:\tools\python;C:\tools\perl\bin');
       expect(result.environment['CNP_OPTION_TBB'], 'on');
       expect(result.environment['CNP_OPTION_MPI'], 'off');
       expect(result.environment.containsKey('CNP_OPTION_UNKNOWN'), isFalse);
@@ -1050,6 +1287,28 @@ DetectedCompiler _compiler({
     executablePath: executablePath,
     environmentScript: environmentScript,
     extraPathEntries: extraPathEntries,
+  );
+}
+
+/// 在 [root] 下落盘可执行文件的可用缓存条目（跨会话复用的有效性判据）。
+DetectedCompiler _cachedCompiler(
+  Directory root, {
+  CompilerKind kind = CompilerKind.msvc,
+  String? environmentScript,
+}) {
+  final String executable = joinPath(root.path, '${compilerKindId(kind)}.exe');
+  _createFile(executable);
+  final String? script = environmentScript == null
+      ? null
+      : joinPath(root.path, 'Build/$environmentScript');
+  if (script != null) {
+    _createFile(script);
+  }
+  return DetectedCompiler(
+    kind: kind,
+    version: '14.44.35207',
+    executablePath: executable,
+    environmentScript: script,
   );
 }
 

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
+import 'package:cpp_nuget_pack/models/compiler_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -384,6 +385,52 @@ void main() {
       expect(settings.themeMode, ThemeModeSetting.system);
       expect(settings.darkFlavor, 'mocha');
       expect(settings.accent, 'teal');
+    });
+
+    test('检测缓存随设置往返并写入 YAML', () async {
+      const SettingsModel settings = SettingsModel(
+        compilerPriority: <String>['icx', 'msvc'],
+        detectedCompilers: <DetectedCompiler>[
+          DetectedCompiler(
+            kind: CompilerKind.icx,
+            version: '2026.1.0',
+            executablePath: r'D:\oneAPI\compiler\2026.1\bin\icx-cl.exe',
+            environmentScript: r'D:\oneAPI\setvars.bat',
+          ),
+        ],
+      );
+
+      await store.saveSettings(settings);
+
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, contains('detectedCompilers'));
+      expect(yaml, contains('kind: icx'));
+
+      final SettingsModel loaded = await store.loadSettings();
+      expect(loaded.compilerPriority, <String>['icx', 'msvc']);
+      expect(loaded.detectedCompilers, hasLength(1));
+      expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
+      expect(loaded.detectedCompilers.single.version, '2026.1.0');
+      expect(
+        loaded.detectedCompilers.single.environmentScript,
+        r'D:\oneAPI\setvars.bat',
+      );
+    });
+
+    test('损坏的检测缓存条目被跳过而不影响其余设置', () async {
+      File('${tempDir.path}/config.yaml').createSync(recursive: true);
+      File('${tempDir.path}/config.yaml').writeAsStringSync(
+        'version: 1\naccent: mauve\ndetectedCompilers:\n'
+        '  - kind: gcc\n    version: 13\n    executablePath: /usr/bin/gcc\n'
+        '  - kind: msvc\n    version: 14.44.35207\n    executablePath: C:\\\\VC\\\\cl.exe\n',
+      );
+
+      final SettingsModel settings = await store.loadSettings();
+
+      expect(settings.accent, 'mauve');
+      expect(settings.detectedCompilers, hasLength(1));
+      expect(settings.detectedCompilers.single.kind, CompilerKind.msvc);
     });
   });
 

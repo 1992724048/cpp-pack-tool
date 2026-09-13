@@ -1,49 +1,10 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/models/compiler_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
-/// 编译器类型；设置页优先级与 `CNP_COMPILER_KIND` 使用 [compilerKindId] 的标识。
-enum CompilerKind { icx, clangCl, msvc }
-
-/// 编译器在设置页与 `CNP_COMPILER_KIND` 中使用的稳定标识。
-String compilerKindId(CompilerKind kind) => switch (kind) {
-  CompilerKind.icx => 'icx',
-  CompilerKind.clangCl => 'clang-cl',
-  CompilerKind.msvc => 'msvc',
-};
-
-/// 编译器在构建对话框与设置页中展示的名称。
-String compilerKindLabel(CompilerKind kind) => switch (kind) {
-  CompilerKind.icx => 'ICX',
-  CompilerKind.clangCl => 'clang-cl',
-  CompilerKind.msvc => 'MSVC',
-};
-
-/// 检测到的编译器实例。
-class DetectedCompiler {
-  const DetectedCompiler({
-    required this.kind,
-    required this.version,
-    required this.executablePath,
-    required this.environmentScript,
-    this.extraPathEntries = const <String>[],
-  });
-
-  final CompilerKind kind;
-
-  /// 版本号，如 `2026.1.1` / `23.1.1` / `14.44.35207`。
-  final String version;
-
-  /// 编译器驱动全路径。
-  final String executablePath;
-
-  /// 初始化环境的脚本（`setvars.bat` / `vcvars64.bat`）；无需则为 null。
-  final String? environmentScript;
-
-  /// 需要补入 PATH 的目录（如 LLVM bin）。
-  final List<String> extraPathEntries;
-}
+export 'package:cpp_nuget_pack/models/compiler_model.dart';
 
 final RegExp _icxVersionPattern = RegExp(r'Compiler\s+(\d+\.\d+\.\d+)');
 final RegExp _clangVersionPattern = RegExp(r'clang version (\d+\.\d+\.\d+)');
@@ -259,6 +220,24 @@ DetectedCompiler? selectCompiler(
     }
   }
   return null;
+}
+
+/// 缓存条目是否仍可用：可执行文件存在，且声明了环境脚本时脚本也存在。
+///
+/// 探测路径在命中时已确认可执行文件存在，但缓存要跨会话复用；安装被移除/升级
+/// 换路径后旧条目必须判失效，交由重检刷新，而不是把失效路径写进子进程环境。
+bool isCompilerUsable(DetectedCompiler compiler) {
+  if (compiler.executablePath.isEmpty) {
+    return false;
+  }
+  if (!File(compiler.executablePath).existsSync()) {
+    return false;
+  }
+  final String? script = compiler.environmentScript;
+  if (script != null && script.isNotEmpty && !File(script).existsSync()) {
+    return false;
+  }
+  return true;
 }
 
 String? _findIcxExecutable(String oneApiRoot) {

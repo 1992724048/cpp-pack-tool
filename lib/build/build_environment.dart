@@ -60,12 +60,39 @@ Future<Map<String, String>> captureToolchainEnvironment(
 /// 编译器检测函数；默认 [detectCompilers]，仅测试注入替代实现。
 typedef CompilerDetector = Future<List<DetectedCompiler>> Function();
 
+/// 新编译器检测结果回调：缓存缺失或失效并完成重检时触发，供调用方写回配置。
+typedef CompilerDetectionCallback = void Function(
+  List<DetectedCompiler> compilers,
+);
+
 /// 编译器环境捕获函数；默认 [captureToolchainEnvironment]，仅测试注入替代实现。
 typedef ToolchainEnvironmentCapture = Future<Map<String, String>> Function(
   DetectedCompiler compiler, {
   PackProcessRunner runner,
   Map<String, String>? baseEnvironment,
 });
+
+/// 在受控 `TMP`/`TEMP`（[withControlledTempEnvironment]）下检测编译器。
+///
+/// 设置页与构建共用此入口，避免宿主 `TMP`/`TEMP` 不可用时探测失败（如 ICX 的
+/// `error #10026`）；[detect] 为测试注入点，缺省经 [detectCompilers] 以受控
+/// 环境探测。
+Future<List<DetectedCompiler>> detectCompilersWithControlledTemp({
+  PackProcessRunner runner = Process.run,
+  String toolsRoot = 'tools',
+  Map<String, String>? baseEnvironment,
+  CompilerDetector? detect,
+}) async {
+  final Map<String, String> base = baseEnvironment ?? Platform.environment;
+  final Map<String, String> childBase = await withControlledTempEnvironment(
+    base,
+    toolsRoot: toolsRoot,
+  );
+  if (detect != null) {
+    return detect();
+  }
+  return detectCompilers(runner: runner, environment: childBase);
+}
 
 /// 构建子进程环境与工具信息。
 class BuildEnvironment {
@@ -145,16 +172,20 @@ BuildEnvironment assembleBuildEnvironment({
 
 /// 准备构建环境：先创建受控构建临时目录（`<toolsRoot>/.tmp/build`）并把
 /// `TMP`/`TEMP` 注入 base 副本（宿主临时目录不可用时 ICX 等编译器的探测与构建
-/// 会失败）→ 检测编译器 → 按 [priority] 选择（全部落空时下载 clang/LLVM 到
-/// `tools/clang/` 兜底）→ 捕获编译器环境 → 供给 CMake/Ninja、Python（本机
-/// 优先，缺失下载 embeddable 版）与 [tools] 声明的工具 → 释放 [supportModule]
-/// → 装配 `PATH`、`CNP_*` 与选项变量。
+/// 会失败）→ 复用 [cachedCompilers] 中有效且匹配 [priority] 的编译器，缓存
+/// 缺失/失效时按 [priority] 检测（全部落空时下载 clang/LLVM 到 `tools/clang/`
+/// 兜底）→ 捕获编译器环境 → 供给 CMake/Ninja、Python（本机优先，缺失下载
+/// embeddable 版）与 [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、
+/// `CNP_*` 与选项变量。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统）；受控 `TMP`/`TEMP` 写入其副本并随编译器检测、环境捕获
-/// 与最终 [BuildEnvironment.environment] 注入子进程；[detect]/[capture] 为测试
-/// 注入点。无可用编译器且 clang/LLVM 兜底失败、或任一环节失败时抛
-/// [BuildPreparationException]。
+/// 与最终 [BuildEnvironment.environment] 注入子进程；[cachedCompilers] 为上次
+/// 检测的持久化结果（见 `SettingsModel.detectedCompilers`，设置页与构建共用），
+/// 条目经 [isCompilerUsable] 校验后才参与选择；[onCompilersDetected] 在缓存
+/// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[detect]/[capture]
+/// 为测试注入点，不传缓存与回调时行为与不启用缓存完全一致。无可用编译器且
+/// clang/LLVM 兜底失败、或任一环节失败时抛 [BuildPreparationException]。
 Future<BuildEnvironment> prepareBuildEnvironment({
   List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
   PackProcessRunner runner = Process.run,
@@ -164,17 +195,28 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   List<BuildScriptTool> tools = const <BuildScriptTool>[],
   Map<String, String> options = const <String, String>{},
   String? supportModule,
+  List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
+  CompilerDetectionCallback? onCompilersDetected,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
   final Map<String, String> base = baseEnvironment ?? Platform.environment;
-  final Map<String, String> childBase = await _withControlledTempEnvironment(
+  final Map<String, String> childBase = await withControlledTempEnvironment(
     base,
-    toolsRoot,
+    toolsRoot: toolsRoot,
   );
-  final CompilerDetector detector =
-      detect ?? (() => detectCompilers(runner: runner, environment: childBase));
-  DetectedCompiler? compiler = selectCompiler(await detector(), priority);
+  DetectedCompiler? compiler = selectCompiler(
+    _usableCachedCompilers(cachedCompilers),
+    priority,
+  );
+  if (compiler == null) {
+    final CompilerDetector detector =
+        detect ??
+        (() => detectCompilers(runner: runner, environment: childBase));
+    final List<DetectedCompiler> detected = await detector();
+    onCompilersDetected?.call(detected);
+    compiler = selectCompiler(detected, priority);
+  }
   compiler ??= await _provisionFallbackCompiler(
     provisioner: provisioner,
     runner: runner,
@@ -224,19 +266,30 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   );
 }
 
+/// 过滤出仍可继续使用的缓存条目（可执行文件与环境脚本仍在，经
+/// [isCompilerUsable] 校验）。
+List<DetectedCompiler> _usableCachedCompilers(
+  List<DetectedCompiler> cachedCompilers,
+) {
+  return <DetectedCompiler>[
+    for (final DetectedCompiler compiler in cachedCompilers)
+      if (isCompilerUsable(compiler)) compiler,
+  ];
+}
+
 /// 创建受控构建临时目录并把它写入 base 副本的 `TMP`/`TEMP`（大小写不敏感替换
 /// 已有键，键统一为规范大写）。
 ///
 /// 宿主 `TMP`/`TEMP` 不可用时编译器探测与构建会失败（如 ICX 的
-/// `error #10026: error generating temporary file`），统一改用
+/// `error #10026: error generating temporary file`），设置页检测与构建统一改用
 /// `<toolsRoot>/.tmp/build`。`Platform.environment` 的键迭代为全大写、副本的
 /// 精确键查找会落空，故同时把默认查找键复制为规范拼写。返回新 map，不修改
 /// [base]；目录创建失败抛 [BuildPreparationException]（toolsRoot 不可写时后续
 /// 供给/构建同样无法进行）。
-Future<Map<String, String>> _withControlledTempEnvironment(
-  Map<String, String> base,
-  String toolsRoot,
-) async {
+Future<Map<String, String>> withControlledTempEnvironment(
+  Map<String, String> base, {
+  String toolsRoot = 'tools',
+}) async {
   final String tempPath = Directory(
     joinPath(Directory(toolsRoot).absolute.path, _controlledTempRelativePath),
   ).absolute.path.replaceAll('/', r'\');
@@ -335,9 +388,8 @@ Future<ProvisionedTool> _ensureDeclaredTool(
 Future<void> _releaseSupportModule(String toolsRoot, String content) async {
   try {
     await Directory(toolsRoot).create(recursive: true);
-    await File(
-      joinPath(toolsRoot, _supportModuleFileName),
-    ).writeAsString(content);
+    await File(joinPath(toolsRoot, _supportModuleFileName))
+        .writeAsString(content);
   } on FileSystemException catch (error) {
     throw BuildPreparationException('释放构建辅助模块失败：$error');
   }
@@ -357,6 +409,8 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
   Map<String, String>? baseEnvironment,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader,
   Future<String> Function()? loadSupportModule,
+  List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
+  CompilerDetectionCallback? onCompilersDetected,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
@@ -381,6 +435,8 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
       pack.buildOptions,
     ),
     supportModule: supportModule,
+    cachedCompilers: cachedCompilers,
+    onCompilersDetected: onCompilersDetected,
     detect: detect,
     capture: capture,
   );

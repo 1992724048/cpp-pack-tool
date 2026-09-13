@@ -108,6 +108,33 @@ class _PackToolState extends State<PackTool> {
 
 Future<void> _noopSaveSettings(SettingsModel settings) async {}
 
+/// 构建环境准备函数：由 MainLayout 注入设置中的编译器优先级与检测缓存，
+/// 缓存缺失/失效并完成重检时经 [onCompilersDetected] 回调新检测结果
+/// （MainLayout 把它写回配置）；测试注入以绕过真实检测与工具供给。
+typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
+  PackModel pack, {
+  required List<String> compilerPriority,
+  required List<toolchain.DetectedCompiler> cachedCompilers,
+  required CompilerDetectionCallback onCompilersDetected,
+});
+
+/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块。
+Future<BuildEnvironment> _preparePackBuildEnvironment(
+  PackModel pack, {
+  required List<String> compilerPriority,
+  required List<toolchain.DetectedCompiler> cachedCompilers,
+  required CompilerDetectionCallback onCompilersDetected,
+}) {
+  return preparePackBuildEnvironment(
+    pack,
+    priority: compilerPriority,
+    cachedCompilers: cachedCompilers,
+    onCompilersDetected: onCompilersDetected,
+    loadSupportModule: () =>
+        rootBundle.loadString('assets/build/cnp_build_support.py'),
+  );
+}
+
 class MainLayout extends StatefulWidget {
   const MainLayout({
     super.key,
@@ -120,7 +147,7 @@ class MainLayout extends StatefulWidget {
     this.exportCmakePackage = cmake_exporter.exportCmakePackage,
     this.buildPack = runPackBuild,
     this.prepareBuildEnv,
-    this.detectCompilers = toolchain.detectCompilers,
+    this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
     this.loadRemoteTags = listRemoteTags,
     this.now = DateTime.now,
@@ -142,7 +169,7 @@ class MainLayout extends StatefulWidget {
   )
   exportCmakePackage;
   final PackBuildRunner buildPack;
-  final Future<BuildEnvironment> Function(PackModel pack)? prepareBuildEnv;
+  final PackBuildEnvironmentPreparer? prepareBuildEnv;
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
 
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
@@ -172,7 +199,8 @@ class _MainLayoutState extends State<MainLayout> {
   final Map<String, String> _resolvedHeaderKeys = <String, String>{};
 
   /// 仓库地址 → 远端最新 tag 查询 Future（去重同一仓库的并发查询）。
-  final Map<String, Future<String?>> _latestTagQueries = <String, Future<String?>>{};
+  final Map<String, Future<String?>> _latestTagQueries =
+      <String, Future<String?>>{};
 
   /// 仓库地址 → 已完成的远端最新 tag；查询失败/无可用 tag 时为 null。
   final Map<String, String?> _latestTags = <String, String?>{};
@@ -553,24 +581,53 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _buildPack(PackModel pack) async {
-    final Future<BuildEnvironment> Function(PackModel pack) prepare =
-        widget.prepareBuildEnv ??
-        (PackModel pack) => preparePackBuildEnvironment(
-          pack,
-          priority: widget.settings.compilerPriority,
-          loadSupportModule: () =>
-              rootBundle.loadString('assets/build/cnp_build_support.py'),
-        );
+    final PackBuildEnvironmentPreparer prepare =
+        widget.prepareBuildEnv ?? _preparePackBuildEnvironment;
     await showDialog<void>(
       context: context,
       builder: (_) => BuildPackDialog(
         pack: pack,
         build: widget.buildPack,
-        prepare: prepare,
+        prepare: (PackModel pack) => prepare(
+          pack,
+          compilerPriority: widget.settings.compilerPriority,
+          cachedCompilers: widget.settings.detectedCompilers,
+          onCompilersDetected: _persistDetectedCompilers,
+        ),
         scanFiles: widget.scanFiles,
         onApply: _applyRemap,
       ),
     );
+  }
+
+  /// 把构建准备阶段的新检测结果写回配置（经 [MainLayout.onSaveSettings]）。
+  void _persistDetectedCompilers(List<toolchain.DetectedCompiler> compilers) {
+    final SettingsModel current = widget.settings;
+    final SettingsModel next = SettingsModel(
+      outputDirectory: current.outputDirectory,
+      themeMode: current.themeMode,
+      darkFlavor: current.darkFlavor,
+      accent: current.accent,
+      compilerPriority: current.compilerPriority,
+      detectedCompilers: compilers,
+    );
+    unawaited(_saveDetectedCompilers(next));
+  }
+
+  Future<void> _saveDetectedCompilers(SettingsModel settings) async {
+    try {
+      await widget.onSaveSettings(settings);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '保存编译器检测结果失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   Future<void> _packSelectedPack() async {

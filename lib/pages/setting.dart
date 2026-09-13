@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
@@ -16,7 +17,7 @@ class Setting extends StatefulWidget {
     required this.settings,
     required this.onSave,
     this.pickDirectory = getDirectoryPath,
-    this.detectCompilers = toolchain.detectCompilers,
+    this.detectCompilers = detectCompilersWithControlledTemp,
     this.pickSaveFile = _pickSkillSaveLocation,
     this.loadSkillTemplate = _loadSkillTemplateAsset,
   });
@@ -47,14 +48,21 @@ class _SettingState extends State<Setting> {
   @override
   void initState() {
     super.initState();
-    _detectCompilers(showLoading: false);
+    final List<toolchain.DetectedCompiler> cached =
+        widget.settings.detectedCompilers;
+    if (cached.isEmpty) {
+      _detectCompilers(showLoading: false);
+    } else {
+      _detected = cached;
+      _detecting = false;
+    }
   }
 
   Future<void> _detectCompilers({required bool showLoading}) async {
     if (showLoading) {
       setState(() => _detecting = true);
     }
-    List<toolchain.DetectedCompiler> detected;
+    List<toolchain.DetectedCompiler>? detected;
     try {
       detected = await widget.detectCompilers();
     } catch (error) {
@@ -66,18 +74,24 @@ class _SettingState extends State<Setting> {
           duration: const Duration(seconds: 5),
         );
       }
-      detected = const <toolchain.DetectedCompiler>[];
     }
     if (!mounted) {
       return;
     }
+    final List<toolchain.DetectedCompiler>? result = detected;
+    if (result == null) {
+      // 检测失败保留原显示与缓存，不写回空结果。
+      setState(() => _detecting = false);
+      return;
+    }
     setState(() {
-      _detected = detected;
+      _detected = result;
       _detecting = false;
     });
+    await _apply(_detectedSettings(result), showSavedToast: false);
   }
 
-  Future<void> _apply(SettingsModel next) async {
+  Future<void> _apply(SettingsModel next, {bool showSavedToast = true}) async {
     try {
       await widget.onSave(next);
     } catch (error) {
@@ -92,7 +106,7 @@ class _SettingState extends State<Setting> {
       );
       return;
     }
-    if (!mounted) {
+    if (!mounted || !showSavedToast) {
       return;
     }
     showFloatingToast(context, '已保存');
@@ -106,6 +120,7 @@ class _SettingState extends State<Setting> {
       darkFlavor: current.darkFlavor,
       accent: current.accent,
       compilerPriority: current.compilerPriority,
+      detectedCompilers: current.detectedCompilers,
     );
   }
 
@@ -121,6 +136,7 @@ class _SettingState extends State<Setting> {
       darkFlavor: darkFlavor ?? current.darkFlavor,
       accent: accent ?? current.accent,
       compilerPriority: current.compilerPriority,
+      detectedCompilers: current.detectedCompilers,
     );
   }
 
@@ -132,6 +148,19 @@ class _SettingState extends State<Setting> {
       darkFlavor: current.darkFlavor,
       accent: current.accent,
       compilerPriority: compilerPriority,
+      detectedCompilers: current.detectedCompilers,
+    );
+  }
+
+  SettingsModel _detectedSettings(List<toolchain.DetectedCompiler> detected) {
+    final SettingsModel current = widget.settings;
+    return SettingsModel(
+      outputDirectory: current.outputDirectory,
+      themeMode: current.themeMode,
+      darkFlavor: current.darkFlavor,
+      accent: current.accent,
+      compilerPriority: current.compilerPriority,
+      detectedCompilers: detected,
     );
   }
 

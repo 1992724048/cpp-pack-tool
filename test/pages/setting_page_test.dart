@@ -115,6 +115,13 @@ void main() {
     SettingsModel? saved;
     await _pumpSetting(
       tester,
+      // 有检测缓存，页面打开时不自动检测写回，便于隔离目录取消行为。
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
       pickDirectory: () async => null,
       onSave: (SettingsModel next) async {
         saved = next;
@@ -295,15 +302,129 @@ void main() {
     expect(find.text('2026.1.1'), findsNothing);
   });
 
+  testWidgets('有缓存时直接显示缓存版本且不触发检测', (tester) async {
+    int calls = 0;
+
+    await _pumpSetting(
+      tester,
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      onSave: (_) async {},
+      detectCompilers: () async {
+        calls++;
+        return const <DetectedCompiler>[];
+      },
+    );
+
+    expect(calls, 0);
+    expect(find.text('2026.1.0'), findsOneWidget);
+    expect(find.text('未检测到'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('无缓存时自动检测并写回设置（不提示已保存）', (tester) async {
+    SettingsModel? saved;
+
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(compilerPriority: <String>['icx']),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+      ],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('2026.1.1'), findsOneWidget);
+    expect(saved, isNotNull);
+    expect(saved!.compilerPriority, <String>['icx']);
+    expect(saved!.detectedCompilers, hasLength(1));
+    expect(saved!.detectedCompilers.single.kind, CompilerKind.icx);
+    expect(saved!.detectedCompilers.single.version, '2026.1.1');
+    expect(find.text('已保存'), findsNothing);
+  });
+
+  testWidgets('重新检测更新显示并写回缓存', (tester) async {
+    SettingsModel? saved;
+    int calls = 0;
+
+    await _pumpSetting(
+      tester,
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+      detectCompilers: () async {
+        calls++;
+        return <DetectedCompiler>[_compiler(CompilerKind.icx, '2026.2.0')];
+      },
+    );
+
+    expect(calls, 0);
+    expect(find.text('2026.1.0'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('settingCompilerRefreshButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(calls, 1);
+    expect(find.text('2026.2.0'), findsOneWidget);
+    expect(find.text('2026.1.0'), findsNothing);
+    expect(saved, isNotNull);
+    expect(saved!.detectedCompilers.single.version, '2026.2.0');
+    expect(saved!.compilerPriority, <String>['icx']);
+  });
+
+  testWidgets('重新检测失败时保留缓存显示且不写回', (tester) async {
+    SettingsModel? saved;
+    int calls = 0;
+
+    await _pumpSetting(
+      tester,
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+      detectCompilers: () async {
+        calls++;
+        throw Exception('探测失败');
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('settingCompilerRefreshButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(calls, 1);
+    expect(find.text('2026.1.0'), findsOneWidget);
+    expect(find.textContaining('编译器检测失败'), findsOneWidget);
+    expect(saved, isNull);
+  });
+
   testWidgets('渲染 SKILL.md 分区与生成按钮', (tester) async {
     await _pumpSetting(tester, onSave: (_) async {});
 
     expect(find.text('SKILL.md'), findsOneWidget);
     expect(find.text('生成 SKILL.md…'), findsOneWidget);
-    expect(
-      find.byKey(const Key('settingGenerateSkillButton')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('settingGenerateSkillButton')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
