@@ -75,7 +75,7 @@ from cnp_build_support import (
 | `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：双配置（`CMAKE_BUILD_TYPE`）+ 运行时库（Release `/MD`、Debug `/MDd`），自动附加 `CMAKE_MAKE_PROGRAM` 与 `CMAKE_C(XX)_COMPILER`；按编译器注入 AVX2（全配置）与 Release 最高优化 / IPO，**不注入语言标准参数**；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可对单个库退化 LTO。 |
 | `cmake_build(build_dir, config="Release", jobs=None)` | `cmake --build` 构建（Ninja 单配置）；`jobs` 缺省为 CPU 逻辑核数（`--parallel`），显式传 0/负值禁用并行。 |
 | `stage_headers(paths, out)` | 头文件 → `<out>/include/`。传目录时镜像其内容（保留子结构）；传文件时复制单个文件。 |
-| `stage_binaries(build_dir, out, config="Release")` | 递归收集 `.lib/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重。 |
+| `stage_binaries(build_dir, out, config="Release", reset=False)` | 递归收集 `.lib/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重（去重残留形如 `_build-*`）。`reset=True` 先递归删除本配置段再 staging，杜绝陈旧文件与去重改名跨构建累积；默认 `False` 保持「只增量补入」旧语义。 |
 | `stage_license(source_root, out)` | 识别源码根目录的许可证（LICENSE/LICENCE/COPYING/UNLICENSE/NOTICE 及变体）→ 复制到 `<out>/` 根。 |
 | `classify_tree(root, out, exclude=())` | 预构建归档场景：把解压后的产物树分类到 `include/`、`release/lib|bin/`、`debug/lib|bin/` 分层。调用开始时打印开始标记 `[cnp_build_support] classify: <root> -> <out>`（见「分类标记与进度」）。 |
 | `summary(out)` | 打印并返回产物统计（各分类计数、文件数与字节数），建议作为构建收尾证据。 |
@@ -88,7 +88,7 @@ from cnp_build_support import (
 ## 构建约定
 
 - **架构**：只构建 x64（工具侧环境已按 x64 准备）。
-- **双配置**：一次构建同时产出 Release 与 Debug（各自独立 build 目录）；运行时库与构建类型由辅助模块固定，不要重复指定。
+- **双配置**：一次构建同时产出 Release 与 Debug（各自独立 build 目录）；运行时库与构建类型由辅助模块固定，不要重复指定。**staging 用 `stage_binaries(..., reset=True)` 重置本配置段**——同名不同内容会按父目录后缀去重改名（`_build-*`），不重置会跨构建永久累积。
 - **生成器**：统一 CMake + Ninja（单配置），不要使用 Visual Studio 生成器。
 - **产物布局（release/debug 分层）**：`include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`。**库类产物禁止落 `BUILD_OUT` 根**（`lib/`、`bin/`）——打包侧按 `release`/`debug` 路径段识别构建类型，根目录产物会被判为“不限配置”（ALL），消费者无法按配置取库。
 - **优化参数（辅助模块自动注入，配方不要重复指定）**：
@@ -143,7 +143,7 @@ def build_config(config):
         extra_args=["-DCMAKE_POLICY_VERSION_MINIMUM=3.5"],  # 老工程按需
     )
     cmake_build(build_dir, config=config)
-    stage_binaries(build_dir, BUILD_OUT, config=config)
+    stage_binaries(build_dir, BUILD_OUT, config=config, reset=True)
 
 
 def main():
@@ -208,7 +208,7 @@ BUILD_OUT = os.environ["BUILD_OUT"]
 - [ ] `python build.py` 以退出码表达结果：0 = 成功，非 0 = 失败。
 - [ ] Release 与 Debug 双配置产物均已分类到 `BUILD_OUT` 的 `include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`；输出根无 `lib/`、`bin/` 残留。
 - [ ] 未在 `build.py` 中重复注入 AVX2 / 最高优化 / IPO / 语言标准参数（由辅助模块负责；确需覆盖时用 `extra_args` 同名变量或 `CNP_NO_IPO`）。
-- [ ] 头文件走 `stage_headers`；库与动态库走 `stage_binaries`；许可证（若有）走 `stage_license` 落 `BUILD_OUT` 根。
+- [ ] 头文件走 `stage_headers`；库与动态库走 `stage_binaries`（`reset=True` 重置本配置段）；许可证（若有）走 `stage_license` 落 `BUILD_OUT` 根。
 - [ ] 路径全部由 `SRC_PATH` / `BUILD_OUT` 派生（或 `os.path.join` 拼接），无硬编码本机路径。
 - [ ] 未修改系统环境，未依赖本机预装软件；缺失工具在头部用 `# tool` 声明。
 - [ ] 中间构建目录位于 `SRC_PATH` 下，`BUILD_OUT` 无临时 / 中间文件残留。

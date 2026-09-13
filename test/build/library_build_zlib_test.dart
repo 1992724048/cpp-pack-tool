@@ -201,6 +201,13 @@ void main() {
       );
       final String licensePath = joinPath(packDir.path, 'LICENSE');
 
+      final List<String> releaseTree = _relativeFiles(
+        joinPath(packDir.path, 'release'),
+      );
+      final List<String> debugTree = _relativeFiles(
+        joinPath(packDir.path, 'debug'),
+      );
+
       print(
         '[evidence] include/zlib.h=${File(joinPath(includeDir, 'zlib.h')).existsSync()}',
       );
@@ -213,6 +220,8 @@ void main() {
       print('[evidence] debug.dll=$debugBins');
       print('[evidence] LICENSE=${File(licensePath).existsSync()}');
       print('[evidence] artifacts=${_relativeFiles(packDir.path)}');
+      print('[evidence] release.tree=$releaseTree');
+      print('[evidence] debug.tree=$debugTree');
 
       expect(
         File(joinPath(includeDir, 'zlib.h')).existsSync(),
@@ -259,6 +268,41 @@ void main() {
         File(licensePath).existsSync(),
         isTrue,
         reason: 'zlib 源根 LICENSE 应经 stage_license 落 BUILD_OUT 根',
+      );
+
+      // 纯度守卫：release 段只允许 Release 产物，杜绝 Debug 混入与去重改名残留。
+      expect(
+        releaseLibs,
+        <String>['libz.lib', 'libzs.lib'],
+        reason: 'release/lib 精确集合：仅 Release 静态库（libzs）与导入库（libz）',
+      );
+      expect(
+        releaseBins,
+        <String>['libz.dll'],
+        reason: 'release/bin 精确集合：仅 Release 动态库',
+      );
+      expect(
+        releaseTree.where(
+          (String path) => path.toLowerCase().endsWith('.pdb'),
+        ),
+        isEmpty,
+        reason: 'release 段不得含 .pdb（调试符号属 Debug 配置）',
+      );
+      for (final String marker in <String>['libzd', 'libzsd', '_build-']) {
+        expect(
+          releaseTree.where(
+            (String path) => baseName(path).toLowerCase().contains(marker),
+          ),
+          isEmpty,
+          reason: 'release 段不得含 "$marker"（Debug 混入或去重改名残留）',
+        );
+      }
+      expect(
+        debugTree.where(
+          (String path) => baseName(path).toLowerCase().contains('_build-'),
+        ),
+        isEmpty,
+        reason: 'debug 段不得含去重改名残留',
       );
 
       total.stop();

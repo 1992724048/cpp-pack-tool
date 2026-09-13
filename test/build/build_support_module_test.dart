@@ -450,6 +450,68 @@ print('debug_copied=%d debug_lib=%d debug_bin=%d debug_skipped=%d' % (
     debug['copied'], debug['lib'], debug['bin'], debug['skipped']))
 ''';
 
+/// stage_binaries reset：段重置（残留消失、另一段保留）、默认旧语义与双跑不累积。
+const String _binariesResetDriver = r'''
+import os
+
+from cnp_build_support import stage_binaries
+
+work = os.getcwd()
+build = os.path.join(work, 'build')
+out = os.path.join(work, 'out')
+
+
+def write(root, relative, text):
+    path = os.path.join(root, *relative.split('/'))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+def tree(root):
+    files = []
+    for current, _, names in os.walk(root):
+        for name in names:
+            path = os.path.relpath(os.path.join(current, name), root)
+            files.append(path.replace('\\', '/'))
+    return sorted(files)
+
+
+write(build, 'fresh/libz.lib', 'fresh-lib')
+write(build, 'fresh/libz.dll', 'fresh-dll')
+
+# 预置残留：旧产物、去重改名残留、混入的 debug 产物；另一配置段与 include 应受保护。
+write(out, 'release/lib/stale.lib', 'stale-lib')
+write(out, 'release/lib/libz_build-release.lib', 'dedup-residue')
+write(out, 'release/bin/libzd.dll', 'debug-residue')
+write(out, 'debug/bin/libzd.dll', 'debug-keep')
+write(out, 'include/zlib.h', 'header-keep')
+
+default_result = stage_binaries(build, out, 'Release')
+print('default_counts=%d/%d/%d' % (
+    default_result['copied'], default_result['lib'], default_result['bin']))
+print('default_release=%s' % '|'.join(tree(os.path.join(out, 'release'))))
+
+reset_result = stage_binaries(build, out, 'Release', reset=True)
+print('reset_counts=%d/%d/%d' % (
+    reset_result['copied'], reset_result['lib'], reset_result['bin']))
+print('reset_release=%s' % '|'.join(tree(os.path.join(out, 'release'))))
+print('reset_debug=%s' % '|'.join(tree(os.path.join(out, 'debug'))))
+print('reset_include=%s' % '|'.join(tree(os.path.join(out, 'include'))))
+
+# 双跑累积：再次重置 staging 后集合不变。
+stage_binaries(build, out, 'Release', reset=True)
+print('rerun_release=%s' % '|'.join(tree(os.path.join(out, 'release'))))
+
+# 构建目录缺失：报错且不触碰既有输出（reset 在校验之后）。
+try:
+    stage_binaries(os.path.join(work, 'missing'), out, 'Release', reset=True)
+    print('missing=no-error')
+except FileNotFoundError:
+    print('missing=FileNotFoundError')
+print('missing_release=%s' % '|'.join(tree(os.path.join(out, 'release'))))
+''';
+
 /// stage_license：核心名优先级、同级字典序与「仅根目录」。
 const String _licenseDriver = r'''
 import os
@@ -590,7 +652,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "3"'));
+      expect(source, contains('VERSION = "4"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -811,6 +873,69 @@ void main() {
       expect(
         _readText(_join(_join(_join(outDebug, 'debug'), 'lib'), 'foo.lib')),
         'foo-a',
+      );
+    }, skip: _skipReason);
+
+    test('stage_binaries reset：残留消失、另一段保留且双跑不累积', () async {
+      final Directory tempDir = _createTempDir('cnp_support_binaries_reset_');
+      final File driver = _writeDriver(tempDir, _binariesResetDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'binaries_reset');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      // 默认参数：旧语义不变，既有残留与增量产物共存。
+      expect(stdout, contains('default_counts=2/1/1'));
+      expect(
+        stdout,
+        contains(
+          'default_release=bin/libz.dll|bin/libzd.dll|lib/libz.lib|'
+          'lib/libz_build-release.lib|lib/stale.lib',
+        ),
+        reason: '无 reset 时既有文件必须原样保留（向后兼容）',
+      );
+      // reset：本配置段只剩本次 staging 产物，另一段与 include 不受影响。
+      expect(stdout, contains('reset_counts=2/1/1'));
+      expect(
+        stdout,
+        contains('reset_release=bin/libz.dll|lib/libz.lib'),
+        reason: 'reset 后陈旧文件与 _build-* 去重残留应消失',
+      );
+      expect(stdout, contains('reset_debug=bin/libzd.dll'));
+      expect(stdout, contains('reset_include=zlib.h'));
+      // 双跑：重置后重复 staging 不产生累积。
+      expect(stdout, contains('rerun_release=bin/libz.dll|lib/libz.lib'));
+      // 构建目录缺失：报错且不触碰既有输出。
+      expect(stdout, contains('missing=FileNotFoundError'));
+      expect(
+        stdout,
+        contains('missing_release=bin/libz.dll|lib/libz.lib'),
+      );
+
+      final String out = _join(tempDir.path, 'out');
+      expect(
+        File(
+          _join(_join(_join(out, 'release'), 'lib'), 'stale.lib'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        File(
+          _join(_join(_join(out, 'release'), 'lib'), 'libz_build-release.lib'),
+        ).existsSync(),
+        isFalse,
+      );
+      expect(
+        _readText(_join(_join(_join(out, 'release'), 'lib'), 'libz.lib')),
+        'fresh-lib',
+      );
+      expect(
+        _readText(_join(_join(_join(out, 'debug'), 'bin'), 'libzd.dll')),
+        'debug-keep',
       );
     }, skip: _skipReason);
 

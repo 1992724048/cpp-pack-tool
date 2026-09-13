@@ -8,7 +8,7 @@
     cmake_configure(SRC_PATH, BUILD_DIR, config='Release')
     cmake_build(BUILD_DIR, config='Release')
     stage_headers([SRC_PATH], BUILD_OUT)
-    stage_binaries(BUILD_DIR, BUILD_OUT, config='Release')
+    stage_binaries(BUILD_DIR, BUILD_OUT, config='Release', reset=True)
     stage_license(SRC_PATH, BUILD_OUT)
     summary(BUILD_OUT)
 
@@ -32,7 +32,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "3"
+VERSION = "4"
 
 __all__ = (
     "VERSION",
@@ -227,14 +227,19 @@ def stage_headers(paths, out):
     return copied
 
 
-def stage_binaries(build_dir, out, config="Release"):
+def stage_binaries(build_dir, out, config="Release", reset=False):
     """递归收集构建树中的 `.lib/.dll/.pdb` 并按配置分层，返回计数 dict。
 
     - Release → `<out>/release/lib/`（.lib）与 `<out>/release/bin/`（.dll/.pdb）；
     - Debug → `<out>/debug/lib/` 与 `<out>/debug/bin/`；
     - 库类产物不落 `<out>` 根（打包侧按 release/debug 路径段识别构建类型）；
     - 跳过 `CMakeFiles`、`*.dir`、`*-c` 中间目录与 `out` 自身；
-    - 同名不同内容按父目录名后缀去重（同名同内容只保留一份）。
+    - 同名不同内容按父目录名后缀去重（同名同内容只保留一份）；
+    - `reset=True` 时先递归删除本配置段（`<out>/release` 或 `<out>/debug`）再
+      staging，只清本配置段、不动另一配置与其他目录，杜绝同名去重改名
+      （`_build-*`）与陈旧文件跨构建累积；默认 `reset=False` 保持旧语义
+      （只增量补入、不改动既有文件）。重置发生在 `build_dir` 校验之后——
+      构建目录缺失时直接报错、不触碰输出。
 
     返回 `{"copied": n, "lib": n, "bin": n, "skipped": n}`；`lib`/`bin` 为实际
     落点计数（Release 时对应 release/lib、release/bin；Debug 时对应 debug/*）。
@@ -245,8 +250,11 @@ def stage_binaries(build_dir, out, config="Release"):
         raise FileNotFoundError("构建目录不存在：%s" % build_dir)
     is_debug = str(config).lower() == "debug"
     segment = "debug" if is_debug else "release"
-    lib_dir = os.path.join(out, segment, "lib")
-    bin_dir = os.path.join(out, segment, "bin")
+    segment_dir = os.path.join(out, segment)
+    if reset:
+        _reset_stage_segment(segment_dir)
+    lib_dir = os.path.join(segment_dir, "lib")
+    bin_dir = os.path.join(segment_dir, "bin")
 
     candidates = []
     for current, directory_names, file_names in os.walk(build_dir):
@@ -691,6 +699,18 @@ def _deduplicated_name(destination_dir, desired_name, source):
         candidate = "%s_%s%d%s" % (stem, suffix, counter, extension)
         counter += 1
     return candidate
+
+
+def _reset_stage_segment(segment_dir):
+    """递归删除单个配置段目录；不存在视为已清空，删除失败抛 RuntimeError。"""
+    if not os.path.isdir(segment_dir):
+        return
+    try:
+        shutil.rmtree(segment_dir)
+    except OSError as error:
+        raise RuntimeError(
+            "重置输出段失败（%s）：%s" % (segment_dir, error)
+        ) from error
 
 
 def _stage_file(source, destination_dir, desired_name):

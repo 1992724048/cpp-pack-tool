@@ -2,6 +2,8 @@
 #
 # zlib 配方：x64 + MD/MDd 双配置，Ninja 与编译器由工具环境注入。
 # 同次构建产出共享库（libz.dll + 导入库）与静态库（libzs.lib），关闭测试可执行文件。
+# 逐配置独立 build 目录，并在 staging 前重置本配置段（reset=True），
+# 杜绝跨配置扫描与同名去重改名（_build-*）残留。
 #
 # 契约：SRC_PATH / BUILD_OUT 由工具注入；产物分类走 cnp_build_support。
 
@@ -31,7 +33,7 @@ def build_config(config):
     build_dir = os.path.join(SRC_PATH, "build-" + config.lower())
     cmake_configure(SRC_PATH, build_dir, config=config, extra_args=CMAKE_ARGS)
     cmake_build(build_dir, config=config)
-    stage_binaries(build_dir, BUILD_OUT, config=config)
+    stage_binaries(build_dir, BUILD_OUT, config=config, reset=True)
     return build_dir
 
 
