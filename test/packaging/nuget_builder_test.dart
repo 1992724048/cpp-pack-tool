@@ -69,13 +69,18 @@ void main() {
       );
     });
 
-    test('同名判定大小写不敏感且保留源目录实际大小写', () async {
+    test('首段与命名空间大小写不敏感匹配时不叠加且结果沿文件路径大小写', () async {
       final PackModel pack = _pack(sourcePath: r'D:\libs\OpenVINO')
         ..files = <FileModel>[
           FileModel(
             name: 'openvino.h',
             path: 'include/openvino/openvino.h',
             size: 10,
+          ),
+          FileModel(
+            name: 'extra.h',
+            path: 'include/OPENVINO/extra.h',
+            size: 20,
           ),
         ];
 
@@ -84,6 +89,10 @@ void main() {
       expect(
         _packagePathOf(plan, 'include/openvino/openvino.h'),
         'build/native/include/openvino/openvino.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/OPENVINO/extra.h'),
+        'build/native/include/OPENVINO/extra.h',
       );
     });
 
