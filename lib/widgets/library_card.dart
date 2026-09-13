@@ -21,10 +21,10 @@ class LibraryItem extends PaneItem {
              Row(
                mainAxisSize: MainAxisSize.min,
                children: [
+                 if (badge != null) ...[badge, const SizedBox(width: 4)],
                  version != null
                      ? Tag(text: version, fontSize: 10)
                      : const SizedBox(width: 8),
-                 if (badge != null) ...[const SizedBox(width: 4), badge],
                ],
              ),
            ],

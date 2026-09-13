@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:cpp_nuget_pack/util/format.dart';
+
 sealed class PackageEntrySource {
   const PackageEntrySource();
 
@@ -97,4 +99,37 @@ int comparePackagePaths(String first, String second) {
     return insensitive;
   }
   return first.compareTo(second);
+}
+
+/// 头文件顶层命名空间目录：源目录名，缺失或为空时回退包名。
+String includeNamespaceOf(String? sourcePath, String packageName) {
+  final String folder = sourcePath == null || sourcePath.isEmpty
+      ? ''
+      : baseName(sourcePath);
+  return folder.isEmpty ? packageName : folder;
+}
+
+/// 头文件剥离开头 `include/` 并在命名空间目录下的包内相对路径。
+///
+/// 剩余路径首段已与命名空间同名（大小写不敏感）时不再叠加，避免
+/// `include/gtest/gtest.h` 映射为 `gtest/gtest/gtest.h` 这类重复层；
+/// 平铺文件与异名目录维持前置命名空间。
+String includePackageRelativePath(String path, String namespace) {
+  final String relative = _stripLeadingInclude(path);
+  final int separator = relative.indexOf('/');
+  if (separator > 0 &&
+      relative.substring(0, separator).toLowerCase() ==
+          namespace.toLowerCase()) {
+    return relative;
+  }
+  return '$namespace/$relative';
+}
+
+String _stripLeadingInclude(String path) {
+  const String prefix = 'include/';
+  if (path.length > prefix.length &&
+      path.substring(0, prefix.length).toLowerCase() == prefix) {
+    return path.substring(prefix.length);
+  }
+  return path;
 }

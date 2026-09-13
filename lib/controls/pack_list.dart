@@ -32,7 +32,7 @@ class PackList {
         LibraryItem(
           icon: _iconFor(pack),
           title: pack.name,
-          version: pack.version,
+          version: pack.sourceVersion ?? pack.version,
           badge: _badgeFor(pack, repoBadgeFor?.call(pack)),
           body: PackManage(
             pack: pack,

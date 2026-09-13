@@ -2,6 +2,7 @@ import 'package:cpp_nuget_pack/controls/pack_list.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
+import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -81,14 +82,56 @@ void main() {
     expect(find.byKey(const Key('repoUpdateBadge_demo')), findsOneWidget);
     expect(find.byKey(const Key('repoBadge_demo')), findsNothing);
   });
+
+  testWidgets('仓库徽标位于版本标签左侧', (tester) async {
+    await _pumpItems(
+      tester,
+      _items(<PackModel>[_pack()], repoBadgeFor: (_) => RepoBadge.git),
+    );
+
+    final Finder versionTag = _versionTag('1.0.0');
+    expect(versionTag, findsOneWidget);
+
+    final double badgeX = tester
+        .getTopLeft(find.byKey(const Key('repoBadge_demo')))
+        .dx;
+    final double versionX = tester.getTopLeft(versionTag).dx;
+
+    expect(badgeX, lessThan(versionX));
+  });
+
+  testWidgets('有构建版本时版本标签优先显示 sourceVersion', (tester) async {
+    await _pumpItems(
+      tester,
+      _items(<PackModel>[_pack(sourceVersion: 'v1.2.3')]),
+    );
+
+    expect(_versionTag('v1.2.3'), findsOneWidget);
+    expect(_versionTag('1.0.0'), findsNothing);
+  });
+
+  testWidgets('无构建版本时版本标签回退显示手填版本', (tester) async {
+    await _pumpItems(tester, _items(<PackModel>[_pack()]));
+
+    expect(_versionTag('1.0.0'), findsOneWidget);
+  });
 }
 
-PackModel _pack({String? iconPath, String? sourcePath}) => PackModel(
+Finder _versionTag(String text) => find.byWidgetPredicate(
+  (Widget widget) => widget is Tag && widget.text == text,
+);
+
+PackModel _pack({
+  String? iconPath,
+  String? sourcePath,
+  String? sourceVersion,
+}) => PackModel(
   name: 'demo',
   version: '1.0.0',
   author: 'tester',
   iconPath: iconPath,
   sourcePath: sourcePath,
+  sourceVersion: sourceVersion,
 );
 
 LibraryItem _firstItem(PackModel pack) =>

@@ -48,6 +48,70 @@ void main() {
       expect(_packagePathOf(plan, 'plain.h'), 'include/mylib/plain.h');
     });
 
+    test('剥离 include 后首段与命名空间同名时不重复叠加', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\gtest')
+        ..files = <FileModel>[
+          FileModel(name: 'gtest.h', path: 'include/gtest/gtest.h', size: 10),
+          FileModel(
+            name: 'gtest-port.h',
+            path: 'include/gtest/internal/gtest-port.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/gtest/gtest.h'),
+        'include/gtest/gtest.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/gtest/internal/gtest-port.h'),
+        'include/gtest/internal/gtest-port.h',
+      );
+    });
+
+    test('同名判定大小写不敏感且保留源目录实际大小写', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\OpenVINO')
+        ..files = <FileModel>[
+          FileModel(
+            name: 'openvino.h',
+            path: 'include/openvino/openvino.h',
+            size: 10,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/openvino/openvino.h'),
+        'include/openvino/openvino.h',
+      );
+    });
+
+    test('异名首段与平铺文件仍叠加命名空间', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mimalloc')
+        ..files = <FileModel>[
+          FileModel(name: 'mimalloc.h', path: 'include/mimalloc.h', size: 10),
+          FileModel(
+            name: 'foo.h',
+            path: 'include/mimalloc-internal/foo.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/mimalloc.h'),
+        'include/mimalloc/mimalloc.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/mimalloc-internal/foo.h'),
+        'include/mimalloc/mimalloc-internal/foo.h',
+      );
+    });
+
     test('源目录缺失或 basename 为空时命名空间回退为包名', () async {
       final PackModel noSource = _pack(name: 'pkg')
         ..files = <FileModel>[

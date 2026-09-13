@@ -26,7 +26,7 @@
 
 | 内容 | 包内路径 | 说明 |
 | ---- | -------- | ---- |
-| 头文件 / 模块 | `build/native/include/<源目录名>/...` | 剥离开头 `include/` 后再套一层源目录名作命名空间，消费者可写 `#include <源目录名/foo.h>` 防冲突；源目录缺失时回退包名 |
+| 头文件 / 模块 | `build/native/include/<源目录名>/...` | 剥离开头 `include/` 后再套一层源目录名作命名空间（源目录已自带同名目录时不再叠加，避免重复层），消费者可写 `#include <源目录名/foo.h>` 防冲突；源目录缺失时回退包名 |
 | lib / dll / pdb | `build/native/lib/...` | 剥离开头 `lib/`、`bin/` |
 | 其余文件 | `build/native/files/...` | 保留原相对路径，全部入包（含 `.exe` 等可执行二进制，导出时提示随包分发） |
 | 包清单 | `<包ID>.nuspec` | 许可证用 SPDX 表达式；依赖组 `native0.0`；恒定声明包图标 |
@@ -71,7 +71,7 @@ target_link_libraries(app PRIVATE <包名>::<包名>)
 
 | 内容 | 包内路径 | 说明 |
 | ---- | -------- | ---- |
-| 头文件 / 模块 | `include/<源目录名>/...` | 与 NuGet 产物相同的命名空间策略，`#include <源目录名/foo.h>` |
+| 头文件 / 模块 | `include/<源目录名>/...` | 与 NuGet 产物相同的命名空间策略（源目录已自带同名目录时不再叠加），`#include <源目录名/foo.h>` |
 | lib / dll / pdb | `lib/...` | 剥离开头 `lib/`、`bin/`，保留 Release/Debug 子目录结构 |
 | 其余文件 | `files/...` | 保留原相对路径 |
 | CMake 配置 | `lib/cmake/<包名>/` | `Config.cmake`、`Targets.cmake`（`<包名>::<包名>` INTERFACE IMPORTED 目标、`.lib` 按 Debug/Release 分组条件链接）与 `ConfigVersion.cmake`（版本为数字点分时生成） |
