@@ -144,12 +144,27 @@ def download_archive(url):
 
 
 def ensure_unpacked(archive):
-    """解压归档到 SRC_PATH/unpacked；写 .complete 标记供二次运行复用。"""
+    """解压归档到 SRC_PATH/unpacked；完成标记记录归档名，二次运行按名复用。
+
+    标记与归档身份绑定：官方版本升级后归档文件名变化，旧解压树被丢弃重解压，
+    避免复用陈旧产物；同名归档（本地已是最新）直接复用。
+    """
     unpacked = os.path.join(SRC_PATH, "unpacked")
     complete = os.path.join(unpacked, ".complete")
+    archive_name = os.path.basename(archive)
     if os.path.isfile(complete):
-        print("[openvino] reuse unpacked tree: %s" % unpacked)
-        return unpacked
+        try:
+            with open(complete, "r", encoding="utf-8") as handle:
+                completed_archive = handle.read().strip()
+        except OSError:
+            completed_archive = ""
+        if completed_archive == archive_name:
+            print("[openvino] reuse unpacked tree: %s" % unpacked)
+            return unpacked
+        print(
+            "[openvino] stale unpacked tree (archive %s -> %s), re-extracting"
+            % (completed_archive or "<none>", archive_name)
+        )
     if os.path.isdir(unpacked):
         shutil.rmtree(unpacked)
     print("[openvino] extracting: %s" % archive)
@@ -157,8 +172,8 @@ def ensure_unpacked(archive):
     os.makedirs(unpacked, exist_ok=True)
     with zipfile.ZipFile(archive) as package:
         package.extractall(unpacked)
-    with open(complete, "w", encoding="utf-8") as handle:
-        handle.write("ok\n")
+    with open(complete, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(archive_name + "\n")
     print("[openvino] extracted: elapsed=%.1fs" % (time.time() - started))
     return unpacked
 

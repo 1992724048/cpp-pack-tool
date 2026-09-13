@@ -18,7 +18,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 
 1. 解析库源码根目录的 `build.py`（文件名大小写不敏感；根级 `build.py` 不随包分发）；
 2. 检测编译器（ICX > clang-cl > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
-3. `git clone` / `git pull --ff-only` 源码到 `cache/build/<清洗包ID>/`（声明 `# source: none` 时跳过，仅创建该目录）；
+3. 准备源码：无缓存时 `git clone` 到 `cache/build/<清洗包ID>/`；已有缓存时原位硬重置（`git fetch` → `reset --hard` 上游 → `clean -ffdx`），声明 `# source: none` 时跳过 git 仅创建该目录（缓存目录**不清理**，脚本下载/解压内容跨构建复用）；
 4. 以**包源目录为工作目录**运行 `python build.py`（Python 缺失时工具自动下载最小版到 `tools/python`；`python` 优先、`py -3` 兜底），并注入「环境变量」一节的变量；
 5. 脚本输出经管道逐行实时显示在构建对话框（`python -u` 无缓冲；git 拉取同样流式）；退出码 0 = 成功，非 0 = 失败（工具保留已显示输出并附输出尾部）；成功后自动扫描并重新映射产物。
 
@@ -43,8 +43,8 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 
 | 变量 | 说明 |
 | --- | --- |
-| `SRC_PATH` | 拉取的源码目录（`cache/build/<清洗包ID>/`）；声明 `# source: none` 时为空的工作缓存目录（仍会创建），由脚本自行下载 / 解压填充。 |
-| `BUILD_OUT` | 包源目录：分类后的最终产物写入这里（会随包入包）。 |
+| `SRC_PATH` | 补拉的源码目录（`cache/build/<清洗包ID>/`）；声明 `# source: none` 时为持久工作缓存目录（仍会创建），由脚本自行下载 / 解压填充，**跨构建保留**。 |
+| `BUILD_OUT` | 包源目录：分类后的最终产物写入这里（会随包入包）。**每次构建前会被清空**，仅保留根级 `build.py`（大小写不敏感）、`icon.*`、`pre.bat`/`post.bat` 与许可证类文件（`LICENSE`/`LICENCE`/`COPYING`/`UNLICENSE`/`NOTICE` 及 `-`/`.` 变体，含 `TBB-LICENSE` 类前缀变体）；不要把需要跨构建的中间产物放这里。 |
 | `CNP_CMAKE` | cmake 可执行文件路径（`cmake_configure` / `cmake_build` 必需）。 |
 | `CNP_NINJA` | ninja 可执行文件路径（自动作为 `CMAKE_MAKE_PROGRAM`）。 |
 | `CNP_C_COMPILER` / `CNP_CXX_COMPILER` | 本机选中的 C / C++ 编译器全路径。 |
@@ -104,6 +104,7 @@ from cnp_build_support import (
   - **多线程**：`cmake_build` 缺省 `--parallel` 到 CPU 逻辑核数，无需手动传 `jobs`。
 - **许可证**：经 `stage_license` 落到 `BUILD_OUT` 根，打包器会自动识别并生成部署目标。
 - **工作目录**：中间构建目录放在 `SRC_PATH` 下（如 `SRC_PATH/build-release`）；`BUILD_OUT` 下的一切都会入包，不要残留临时文件。
+- **构建前清理（BUILD_OUT）**：工具在源码就绪后、执行 `build.py` 前清空 `BUILD_OUT` 中除白名单外的一切（递归删除文件与目录），保证产物不带上次构建残留。白名单：根级 `build.py`（大小写不敏感）、`icon.*`、`pre.bat`/`post.bat`、许可证类文件（`LICENSE`/`LICENCE`/`COPYING`/`UNLICENSE`/`NOTICE` 及 `-`/`.` 变体与 `TBB-LICENSE` 类前缀变体）。需要跨构建保留的中间产物必须放 `SRC_PATH`（源码构建会被 `git clean -ffdx` 清掉、预构建缓存则完整保留），不要放 `BUILD_OUT`。
 - **环境**：工具与编译器环境已注入子进程；脚本不得修改系统环境（PATH、注册表），也不要依赖本机预装软件（缺失工具用 `# tool` 声明）。
 
 ## 完整骨架示例
@@ -193,7 +194,8 @@ BUILD_OUT = os.environ["BUILD_OUT"]
 
 预构建配方约定：
 
-- **缓存必须放 `SRC_PATH` 下**：归档与解压树都落 `SRC_PATH`（存在即复用），保证二次构建不重复大下载；`BUILD_OUT` 只放最终产物。
+- **缓存必须放 `SRC_PATH` 下**：归档与解压树都落 `SRC_PATH`（存在即复用），保证二次构建不重复大下载；`SRC_PATH` 对 `# source: none` **跨构建持久保留**（工具不清理），`BUILD_OUT` 则每次构建前清空且只放最终产物。
+- **缓存防陈旧**：复用解压树等缓存时，把缓存身份绑到归档/版本标识（如解压完成标记记录归档文件名），归档升级后丢弃旧缓存重解压，避免复用陈旧产物；本地已有同名最新归档时直接复用，不重复下载。
 - **无关目录不进包**：只分类头文件 / 库 / 动态库所在子树，或用 `classify_tree` 的 `exclude` 排除 `docs`/`samples` 等；文档与示例可执行文件不入包。
 - **选项门控**：如「是否随包分发第三方运行时」（`# option: tbb = off | on`），经 `os.environ.get("CNP_OPTION_TBB")` 读取；默认值与两条路径都要可复现。
 - **许可证**：归档把许可证放在非根目录时（如 `docs/licensing/LICENSE`），用 `stage_license(<许可证目录>, BUILD_OUT)` 显式落 `BUILD_OUT` 根。

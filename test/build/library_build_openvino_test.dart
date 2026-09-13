@@ -46,6 +46,54 @@ Future<String> _loadSupportModule() async {
   }
 }
 
+/// 解压标记绑定的驱动脚本（无需联网）：造小归档 → 调 ensure_unpacked，
+/// 覆盖首次解压、同名复用与归档换名后重解压。
+const String _unpackMarkerDriverPath =
+    'test/build/library_recipes/openvino/unpack_marker_driver.py';
+
+List<String>? _probePython() {
+  for (final List<String> candidate in <List<String>>[
+    <String>['python'],
+    <String>['py', '-3'],
+  ]) {
+    try {
+      final ProcessResult result = Process.runSync(candidate.first, <String>[
+        ...candidate.sublist(1),
+        '--version',
+      ]);
+      if (result.exitCode == 0) {
+        return candidate;
+      }
+    } on ProcessException {
+      // 当前候选不可用，继续探测下一个。
+    }
+  }
+  return null;
+}
+
+/// 在临时目录驱动一次 `ensure_unpacked`（配方副本 + 辅助模块 + 驱动脚本），
+/// 返回进程结果。
+ProcessResult _runUnpackMarkerDriver() {
+  final List<String> python = _probePython()!;
+  final Directory temp = _createTempDir('cnp_openvino_marks_');
+  File(
+    joinPath(temp.path, 'build.py'),
+  ).writeAsStringSync(File(_recipePath).readAsStringSync(), flush: true);
+  File(joinPath(temp.path, 'cnp_build_support.py')).writeAsStringSync(
+    File('assets/build/cnp_build_support.py').readAsStringSync(),
+    flush: true,
+  );
+  File(joinPath(temp.path, 'driver.py')).writeAsStringSync(
+    File(_unpackMarkerDriverPath).readAsStringSync(),
+    flush: true,
+  );
+  return Process.runSync(
+    python.first,
+    <String>[...python.sublist(1), 'driver.py'],
+    workingDirectory: temp.path,
+  );
+}
+
 /// 进程执行器包装：转发 `Process.run`、记录调用并打印命令/退出码/耗时；
 /// 构建脚本的 stdout/stderr（含 cnp_build_support 证据行）全量输出并留档。
 PackProcessRunner _teeRunner(
@@ -179,6 +227,26 @@ Future<void> _runRecipe({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final String? gateReason = _gateReason();
+  final List<String>? python = _probePython();
+
+  test(
+    '解压标记绑定归档：同名复用、归档换名后重解压（无需联网）',
+    () {
+      final ProcessResult result = _runUnpackMarkerDriver();
+      print('[evidence] marker stdout=${result.stdout.toString().trim()}');
+      print('[evidence] marker stderr=${result.stderr.toString().trim()}');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(stdout, contains('reuse unpacked tree'));
+      expect(stdout, contains('stale unpacked tree'));
+      expect(stdout, contains('re-extracting'));
+    },
+    skip: python == null ? '未检测到可用的 Python（python / py -3 均不可用）' : null,
+  );
 
   test(
     'OpenVINO 预构建真机：source:none 下载分类 + tbb off/on 两路径',
@@ -382,6 +450,15 @@ void main() {
         buildOutputs[1],
         contains('reuse unpacked tree'),
         reason: '第二次运行应复用已解压树',
+      );
+      final File marker = File(
+        joinPath(cacheRoot.path, 'build/openvino/unpacked/.complete'),
+      );
+      expect(
+        marker.existsSync() &&
+            marker.readAsStringSync().trim() == baseName(archives.single.path),
+        isTrue,
+        reason: '解压标记应绑定归档文件名（版本升级后触发重解压）',
       );
       expect(onTbb, isNotEmpty, reason: 'tbb=on 时应保留自带 TBB 文件');
       expect(

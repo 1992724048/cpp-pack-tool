@@ -220,7 +220,7 @@ void main() {
       });
     });
 
-    test('.git 存在时执行 git pull --ff-only 且保留目录内容', () async {
+    test('已有 .git 时原位硬重置：fetch → reset @{u} → clean -ffdx 且保留 .git', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
@@ -239,14 +239,72 @@ void main() {
         cacheRoot: cacheRoot,
       );
 
-      expect(calls, hasLength(2));
-      expect(calls[0].executable, 'git');
-      expect(calls[0].arguments, <String>['pull', '--ff-only', '--progress']);
-      expect(calls[0].workingDirectory, targetPath);
-      expect(calls[0].environment, <String, String>{
+      final List<_ProcessCall> gitCalls = calls
+          .where((_ProcessCall call) => call.executable == 'git')
+          .toList();
+      expect(gitCalls, hasLength(3));
+      expect(gitCalls[0].arguments, <String>['fetch', '--progress']);
+      expect(gitCalls[0].workingDirectory, targetPath);
+      expect(gitCalls[0].environment, <String, String>{
         'GIT_TERMINAL_PROMPT': '0',
       });
-      expect(File(joinPath(targetPath, 'keep.txt')).existsSync(), isTrue);
+      expect(gitCalls[1].arguments, <String>['reset', '--hard', '@{u}']);
+      expect(gitCalls[1].workingDirectory, targetPath);
+      expect(gitCalls[2].arguments, <String>['clean', '-ffdx']);
+      expect(gitCalls[2].workingDirectory, targetPath);
+      expect(calls[3].executable, 'python');
+      expect(
+        Directory(joinPath(targetPath, '.git')).existsSync(),
+        isTrue,
+        reason: '硬重置保留 .git 仓库目录',
+      );
+      expect(
+        File(joinPath(targetPath, 'keep.txt')).existsSync(),
+        isTrue,
+        reason: '桩 git 不清文件：该断言只锁命令序列，真实清理由 git 自身完成',
+      );
+    });
+
+    test('无上游引用时 reset 回退到 FETCH_HEAD', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (call) async {
+          if (call.arguments.length >= 3 &&
+              call.arguments[0] == 'reset' &&
+              call.arguments[2] == '@{u}') {
+            return ProcessResult(1, 128, '', 'fatal: no upstream configured\n');
+          }
+          return _success();
+        }),
+        cacheRoot: cacheRoot,
+      );
+
+      final List<_ProcessCall> resets = calls
+          .where(
+            (_ProcessCall call) =>
+                call.arguments.isNotEmpty && call.arguments.first == 'reset',
+          )
+          .toList();
+      expect(resets, hasLength(2));
+      expect(resets[1].arguments, <String>['reset', '--hard', 'FETCH_HEAD']);
+      expect(
+        calls.where(
+          (_ProcessCall call) =>
+              call.arguments.isNotEmpty && call.arguments.first == 'clean',
+        ),
+        hasLength(1),
+      );
     });
 
     test('目标目录存在但不是 git 仓库时先清理再克隆', () async {
@@ -316,12 +374,13 @@ void main() {
       expect(Directory(targetPath).existsSync(), isFalse);
     });
 
-    test('拉取失败时抛出异常且不执行构建', () async {
+    test('拉取失败时抛出异常、不清理源目录且不执行构建', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
         '# https://github.com/foo/bar.git\n',
       );
+      File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
       Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
@@ -348,6 +407,170 @@ void main() {
 
       expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
       expect(calls, hasLength(1));
+      expect(
+        File(joinPath(sourcePath, 'stale.txt')).existsSync(),
+        isTrue,
+        reason: '拉取失败不得触碰包源目录',
+      );
+    });
+
+    test('clean 失败同样按拉取失败报错且不执行构建', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<PackBuildStage> stages = <PackBuildStage>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          stages.add,
+          processRunner: _runner(calls, (call) async {
+            if (call.arguments.isNotEmpty && call.arguments.first == 'clean') {
+              return ProcessResult(1, 1, '', 'fatal: cannot clean\n');
+            }
+            return _success();
+          }),
+          cacheRoot: cacheRoot,
+        ),
+        throwsA(
+          _buildException(
+            '拉取源码失败（退出码 1）',
+            outputTail: contains('cannot clean'),
+          ),
+        ),
+      );
+
+      expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
+      expect(
+        File(joinPath(sourcePath, 'build.py')).existsSync(),
+        isTrue,
+        reason: 'git 失败时不进入源目录清理',
+      );
+    });
+  });
+
+  group('构建前清理', () {
+    test('清理先于 build.py 执行：白名单保留、其余文件删除', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
+      Directory(joinPath(sourcePath, 'build-release')).createSync(
+        recursive: true,
+      );
+      File(
+        joinPath(sourcePath, 'build-release/CMakeCache.txt'),
+      ).writeAsStringSync('x');
+      final Set<String> visibleAtBuild = <String>{};
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (call) async {
+          if (call.executable == 'python') {
+            visibleAtBuild.addAll(
+              Directory(sourcePath)
+                  .listSync()
+                  .map((FileSystemEntity entity) => baseName(entity.path)),
+            );
+          }
+          return _success();
+        }),
+        cacheRoot: joinPath(root.path, 'cache'),
+      );
+
+      expect(calls, hasLength(2));
+      expect(
+        visibleAtBuild,
+        containsAll(<String>['build.py', 'icon.png', 'LICENSE']),
+      );
+      expect(visibleAtBuild, isNot(contains('stale.txt')));
+      expect(visibleAtBuild, isNot(contains('build-release')));
+    });
+
+    test('清理失败时抛错且不执行构建脚本', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final File locked = File(joinPath(sourcePath, 'locked.dat'))
+        ..writeAsStringSync('busy');
+      final RandomAccessFile handle = locked.openSync(mode: FileMode.append);
+      addTearDown(handle.closeSync);
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<PackBuildStage> stages = <PackBuildStage>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          stages.add,
+          processRunner: _runner(calls, (_) async => _success()),
+          cacheRoot: joinPath(root.path, 'cache'),
+        ),
+        throwsA(
+          isA<PackBuildException>().having(
+            (PackBuildException error) => error.message,
+            'message',
+            contains('清理构建输出目录失败'),
+          ),
+        ),
+      );
+
+      expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
+      expect(
+        calls.where((_ProcessCall call) => call.executable == 'python'),
+        isEmpty,
+        reason: '清理失败不得执行构建脚本',
+      );
+    });
+
+    test('相对 cacheRoot 解析为稳定的绝对缓存目录', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String scriptPath = joinPath(sourcePath, 'build.py');
+      final String scriptBackup = File(scriptPath).readAsStringSync();
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      Future<void> runOnce() async {
+        final String previous = Directory.current.path;
+        Directory.current = root.path;
+        try {
+          await runPackBuild(
+            _pack(sourcePath: sourcePath),
+            (_) {},
+            processRunner: _runner(calls, (_) async => _success()),
+            cacheRoot: 'cache',
+          );
+        } finally {
+          Directory.current = previous;
+        }
+        File(scriptPath).writeAsStringSync(scriptBackup);
+      }
+
+      await runOnce();
+      await runOnce();
+
+      final String resolved =
+          calls.last.environment!['SRC_PATH'] ?? '';
+      expect(
+        resolved.replaceAll('/', r'\'),
+        joinPath(root.path, 'cache/build/demo').replaceAll('/', r'\'),
+        reason: '相对 cacheRoot 以工作目录为基准解析为同一绝对路径',
+      );
+      expect(calls, hasLength(4), reason: '两次构建各含 git + python');
     });
   });
 
@@ -405,10 +628,15 @@ void main() {
         '# https://github.com/openvinotoolkit/openvino.git\n'
         '# source: none\n',
       );
+      File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(targetPath).createSync(recursive: true);
-      File(joinPath(targetPath, 'downloads.zip')).writeAsStringSync('cached');
+      File(
+        joinPath(targetPath, 'downloads/openvino.zip'),
+      ).createSync(recursive: true);
+      File(
+        joinPath(targetPath, 'unpacked/.complete'),
+      ).createSync(recursive: true);
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await runPackBuild(
@@ -420,7 +648,26 @@ void main() {
 
       expect(calls, hasLength(1));
       expect(calls.single.executable, 'python');
-      expect(File(joinPath(targetPath, 'downloads.zip')).existsSync(), isTrue);
+      expect(
+        File(joinPath(targetPath, 'downloads/openvino.zip')).existsSync(),
+        isTrue,
+        reason: 'source: none 缓存目录（downloads）不得清理',
+      );
+      expect(
+        File(joinPath(targetPath, 'unpacked/.complete')).existsSync(),
+        isTrue,
+        reason: 'source: none 缓存目录（unpacked）不得清理',
+      );
+      expect(
+        File(joinPath(sourcePath, 'stale.txt')).existsSync(),
+        isFalse,
+        reason: 'BUILD_OUT 照常清理',
+      );
+      expect(
+        File(joinPath(sourcePath, 'build.py')).existsSync(),
+        isTrue,
+        reason: '白名单保留',
+      );
     });
 
     test('source: none 时注入环境仍透传到构建进程', () async {
@@ -857,7 +1104,7 @@ void main() {
       expect(_streamCalls.last.arguments, <String>['-3', '-u', 'build.py']);
     });
 
-    test('流式 pull：--progress 逐行转发且失败异常携带 \\r 分隔后的尾部', () async {
+    test('流式 fetch：--progress 逐行转发且失败异常携带 \\r 分隔后的尾部', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
@@ -898,11 +1145,7 @@ void main() {
       );
 
       expect(_streamCalls, hasLength(1));
-      expect(_streamCalls.single.arguments, <String>[
-        'pull',
-        '--ff-only',
-        '--progress',
-      ]);
+      expect(_streamCalls.single.arguments, <String>['fetch', '--progress']);
       expect(lines, <String>[
         'remote: Total 8 (delta 0)',
         'Receiving objects:  50% (4/8)',
@@ -1147,10 +1390,13 @@ Directory _tempDirectory() {
   return directory;
 }
 
+/// 源目录骨架：`build.py` 写入指定内容，另附白名单图标 / 许可证供清理用例断言。
 String _createSource(Directory root, String scriptContent) {
   final String sourcePath = joinPath(root.path, 'src');
   Directory(sourcePath).createSync(recursive: true);
   File(joinPath(sourcePath, 'build.py')).writeAsStringSync(scriptContent);
+  File(joinPath(sourcePath, 'icon.png')).writeAsStringSync('png');
+  File(joinPath(sourcePath, 'LICENSE')).writeAsStringSync('license');
   return sourcePath;
 }
 

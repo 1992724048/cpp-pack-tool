@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/build/build_cleanup.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -54,14 +55,20 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// 拉取源码并执行包内 `build.py`。
 ///
 /// 流程：解析 `build.py` 头部（仓库地址 + 可选 `# source: none`）→ 目标目录
-/// （`<cacheRoot>/build/<清洗包ID>`）克隆或拉取（声明 `# source: none` 时跳过
-/// git，仅创建目录作为 `SRC_PATH` 工作区）→ 以 `SRC_PATH`（目标目录）与
-/// `BUILD_OUT`（包源目录）环境变量运行 `python build.py`。
+/// （`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，保证同一
+/// 工作目录下缓存稳定命中）克隆；已有 `.git` 时原位硬重置（`fetch --progress`
+/// → `reset --hard` 上游跟踪分支（取不到回退 `FETCH_HEAD`）→ `clean -ffdx`，
+/// 保留 `.git`、清掉上次构建的中间产物）→ 清空包源目录中白名单外的一切
+/// （见 `cleanupBuildOutput`）→ 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`
+/// （包源目录）环境变量运行 `python build.py`。
+///
+/// 声明 `# source: none`（预构建配方）时跳过 git：仅创建目标目录作为
+/// `SRC_PATH` 工作区（缓存目录不清理，脚本缓存跨构建复用），但仍清空包源目录。
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
 /// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
 /// [onOutput] 非空时逐行转发子进程输出（git 源码拉取与 python 构建进程），
-/// 同时汇聚完整输出用于失败诊断；git 调用恒追加 `--progress` 以强制输出进度。
+/// 同时汇聚完整输出用于失败诊断；clone / fetch 追加 `--progress` 以强制输出进度。
 /// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
 /// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
 /// `Process.start`，测试注入替代实现）。
@@ -100,11 +107,15 @@ Future<void> runPackBuild(
 
   onStage(PackBuildStage.downloading);
   final Directory target = Directory(
-    joinPath(cacheRoot, 'build/${PackStore.sanitizeFileName(pack.name)}'),
+    joinPath(
+      Directory(cacheRoot).absolute.path,
+      'build/${PackStore.sanitizeFileName(pack.name)}',
+    ),
   );
   if (header.sourceNone) {
     // 预构建配方（`# source: none`）：跳过 git 源码拉取；缓存目录仍会创建并
-    // 作为 `SRC_PATH` 注入，供脚本自行下载/解压（二次构建复用其中缓存）。
+    // 作为 `SRC_PATH` 注入，供脚本自行下载/解压（二次构建复用其中缓存；
+    // 与源码克隆缓存不同，预构建缓存不随构建清空）。
     await target.create(recursive: true);
   } else {
     await target.parent.create(recursive: true);
@@ -137,6 +148,10 @@ Future<void> runPackBuild(
       }
     }
   }
+
+  // 源码（或预构建工作区）就绪后、执行脚本前清空包源目录，保证产物不带
+  // 上一次构建的残留；下载/拉取失败时不触碰源目录。
+  await cleanupBuildOutput(sourcePath);
 
   onStage(PackBuildStage.building);
   await _runBuildScript(
@@ -182,6 +197,12 @@ Future<bool> _hasGitDirectory(Directory target) async {
   return type != FileSystemEntityType.notFound;
 }
 
+/// 已有仓库的原位硬重置：`fetch` 拉到最新 → `reset --hard` 到上游跟踪分支
+/// （无上游时回退 `FETCH_HEAD`）→ `clean -ffdx` 清掉上次构建的中间产物
+/// （含 ignored 文件），保留 `.git` 与仓库配置。
+///
+/// 任一步非零退出抛 [PackBuildException]（文案与输出尾部口径与克隆失败一致）；
+/// 此时不执行包源目录清理与构建脚本。
 Future<void> _pullRepository(
   PackProcessRunner processRunner,
   PackStreamingProcessRunner? streamRunner,
@@ -189,14 +210,65 @@ Future<void> _pullRepository(
   Map<String, String>? environment,
   void Function(String line)? onOutput,
 ) async {
-  final ProcessResult result = await _runGit(
+  final ProcessResult fetch = await _runGit(
     processRunner,
     streamRunner,
-    const <String>['pull', '--ff-only', '--progress'],
+    const <String>['fetch', '--progress'],
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
   );
+  _requirePullStep(fetch);
+  final ProcessResult reset = await _resetHard(
+    processRunner,
+    streamRunner,
+    target,
+    environment,
+    onOutput,
+  );
+  _requirePullStep(reset);
+  final ProcessResult clean = await _runGit(
+    processRunner,
+    streamRunner,
+    const <String>['clean', '-ffdx'],
+    workingDirectory: target.path,
+    environment: environment,
+    onOutput: onOutput,
+  );
+  _requirePullStep(clean);
+}
+
+/// `reset --hard` 到当前分支的上游（`@{u}`）；仓库无上游配置时报错，回退
+/// `FETCH_HEAD`（fetch 刚拉取的分支提交）。
+Future<ProcessResult> _resetHard(
+  PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
+  Directory target,
+  Map<String, String>? environment,
+  void Function(String line)? onOutput,
+) async {
+  final ProcessResult upstream = await _runGit(
+    processRunner,
+    streamRunner,
+    const <String>['reset', '--hard', '@{u}'],
+    workingDirectory: target.path,
+    environment: environment,
+    onOutput: onOutput,
+  );
+  if (upstream.exitCode == 0) {
+    return upstream;
+  }
+  return _runGit(
+    processRunner,
+    streamRunner,
+    const <String>['reset', '--hard', 'FETCH_HEAD'],
+    workingDirectory: target.path,
+    environment: environment,
+    onOutput: onOutput,
+  );
+}
+
+void _requirePullStep(ProcessResult result) {
   if (result.exitCode != 0) {
     throw PackBuildException(
       '拉取源码失败（退出码 ${result.exitCode}）',
