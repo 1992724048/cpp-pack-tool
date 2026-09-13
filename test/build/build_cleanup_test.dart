@@ -1,13 +1,12 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_cleanup.dart';
-import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('白名单识别', () {
-    test('保留 build.py（大小写不敏感）、icon.*、pre/post.bat 与许可证类文件', () {
+    test('保留 build.py（大小写不敏感）、icon.*、pre/post.bat、.git 与许可证类文件', () {
       for (final String name in <String>[
         'build.py',
         'BUILD.PY',
@@ -16,6 +15,8 @@ void main() {
         'ICON.ico',
         'pre.bat',
         'post.bat',
+        '.git',
+        '.GIT',
         'LICENSE',
         'license',
         'LICENCE',
@@ -33,7 +34,7 @@ void main() {
       }
     });
 
-    test('不保留普通文件与近似名（下划线不算分隔符）', () {
+    test('不保留普通文件与近似名（下划线不算分隔符、.git* 需精确匹配）', () {
       for (final String name in <String>[
         'stale.txt',
         'BUILD.DEP',
@@ -41,6 +42,8 @@ void main() {
         'pre.bat.old',
         'license_checker.py',
         'ICON',
+        '.gitignore',
+        '.gitmodules',
       ]) {
         expect(
           isPreservedEntryName(name),
@@ -66,6 +69,9 @@ void main() {
       _writeFile(sourcePath, 'build-release/CMakeCache.txt', 'x');
       _writeFile(sourcePath, 'nested/deep/out.obj', 'obj');
       _writeFile(sourcePath, 'bin/old.dll', 'dll');
+      _writeFile(sourcePath, '.git/config', 'git');
+      _writeFile(sourcePath, '.git/objects/aa/blob', 'blob');
+      _writeFile(sourcePath, '.gitignore', 'ignored');
 
       await cleanupBuildOutput(sourcePath);
 
@@ -83,6 +89,21 @@ void main() {
           reason: '$name 应保留',
         );
       }
+      expect(
+        File(joinPath(sourcePath, '.git/config')).existsSync(),
+        isTrue,
+        reason: '根级 .git 目录应保留（用户把源目录当工作仓库时防灾难性删除）',
+      );
+      expect(
+        File(joinPath(sourcePath, '.git/objects/aa/blob')).existsSync(),
+        isTrue,
+        reason: '.git 目录内容应整体保留',
+      );
+      expect(
+        File(joinPath(sourcePath, '.gitignore')).existsSync(),
+        isFalse,
+        reason: '.git* 近似名不保留（仅精确 .git）',
+      );
 
       expect(File(joinPath(sourcePath, 'stale.txt')).existsSync(), isFalse);
       expect(
@@ -149,8 +170,8 @@ void main() {
       await expectLater(
         cleanupBuildOutput(sourcePath),
         throwsA(
-          isA<PackBuildException>().having(
-            (PackBuildException error) => error.message,
+          isA<BuildCleanupException>().having(
+            (BuildCleanupException error) => error.message,
             'message',
             allOf(contains('清理构建输出目录失败'), contains('locked.dat')),
           ),

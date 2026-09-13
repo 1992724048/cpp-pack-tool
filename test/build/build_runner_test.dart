@@ -31,9 +31,20 @@ class _FakeProcess implements Process {
   _FakeProcess({
     required String stdout,
     required String stderr,
+    int exitCode = 0,
+  }) : this.raw(
+         stdoutBytes: utf8.encode(stdout),
+         stderrBytes: utf8.encode(stderr),
+         exitCode: exitCode,
+       );
+
+  /// 直接指定原始字节的变体，用于覆盖非 UTF-8 输出（如中文 Windows 的 GBK）。
+  _FakeProcess.raw({
+    required List<int> stdoutBytes,
+    required List<int> stderrBytes,
     this._exitCode = 0,
-  }) : stdout = _FakeStream(stdout),
-       stderr = _FakeStream(stderr);
+  }) : stdout = _FakeStream(stdoutBytes),
+       stderr = _FakeStream(stderrBytes);
 
   @override
   final int pid = 1;
@@ -54,9 +65,9 @@ class _FakeProcess implements Process {
 }
 
 class _FakeStream extends Stream<List<int>> {
-  _FakeStream(this.text);
+  _FakeStream(this.bytes);
 
-  final String text;
+  final List<int> bytes;
 
   @override
   StreamSubscription<List<int>> listen(
@@ -65,7 +76,7 @@ class _FakeStream extends Stream<List<int>> {
     void Function()? onDone,
     bool? cancelOnError,
   }) {
-    return Stream<List<int>>.value(utf8.encode(text)).listen(
+    return Stream<List<int>>.value(bytes).listen(
       onData,
       onError: onError,
       onDone: onDone,
@@ -76,6 +87,7 @@ class _FakeStream extends Stream<List<int>> {
 
 void main() {
   setUp(_streamCalls.clear);
+  final Object? pythonSkipReason = _pythonSkipReason();
 
   group('前置校验', () {
     test('缺少源目录信息时抛错且不执行进程', () async {
@@ -217,6 +229,7 @@ void main() {
       expect(python.environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
 
@@ -613,6 +626,7 @@ void main() {
       expect(python.environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
       expect(
         Directory(targetPath).existsSync(),
@@ -698,6 +712,7 @@ void main() {
         ...injected,
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
   });
@@ -735,6 +750,7 @@ void main() {
       expect(calls[2].environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
 
@@ -837,6 +853,7 @@ void main() {
         ...injected,
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
 
@@ -864,6 +881,7 @@ void main() {
       expect(calls[1].environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
 
@@ -886,6 +904,7 @@ void main() {
           'GIT_TERMINAL_PROMPT': '1',
           'SRC_PATH': r'D:\bogus',
           'BUILD_OUT': r'D:\bogus',
+          'PYTHONIOENCODING': 'gbk',
         },
       );
 
@@ -894,11 +913,13 @@ void main() {
         'GIT_TERMINAL_PROMPT': '0',
         'SRC_PATH': r'D:\bogus',
         'BUILD_OUT': r'D:\bogus',
+        'PYTHONIOENCODING': 'gbk',
       });
       expect(calls[1].environment, <String, String>{
         'GIT_TERMINAL_PROMPT': '1',
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
 
@@ -931,6 +952,7 @@ void main() {
         ...injected,
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
   });
@@ -1001,6 +1023,7 @@ void main() {
         ...injected,
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
       });
     });
 
@@ -1179,6 +1202,85 @@ void main() {
         'python',
       ]);
       expect(_streamCalls.last.arguments, <String>['-u', 'build.py']);
+    });
+
+    test('无效 UTF-8 字节（GBK 中文）经流式收集不抛异常且不丢行', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n# source: none\n');
+      final List<String> lines = <String>[];
+      // GBK 编码的「中文」+ 合法 UTF-8 行：0xD6/0xD0/0xCE/0xC4 不构成合法 UTF-8。
+      final List<int> stdoutBytes = <int>[
+        0xD6, 0xD0, 0xCE, 0xC4, 0x0A,
+        ...utf8.encode('line-after-invalid\n'),
+      ];
+      final List<int> stderrBytes = <int>[
+        ...utf8.encode('错误: '),
+        0xBA, 0xF3, 0x0A,
+        ...utf8.encode('tail-line\n'),
+      ];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+        streamRunner: _streamingRunner(
+          (_StreamCall call) async => _FakeProcess.raw(
+            stdoutBytes: stdoutBytes,
+            stderrBytes: stderrBytes,
+          ),
+        ),
+        onOutput: lines.add,
+        cacheRoot: joinPath(root.path, 'cache'),
+      );
+
+      expect(lines, hasLength(4), reason: '无效字节行按替换字符保留，行数不丢');
+      expect(
+        lines[0],
+        contains('\uFFFD'),
+        reason: '无效字节解码为替换字符而非抛 FormatException',
+      );
+      expect(lines[1], 'line-after-invalid');
+      expect(lines[2], contains('错误: '));
+      expect(lines[3], 'tail-line');
+    });
+
+    test('失败输出尾部含无效 UTF-8 字节时不抛异常且保留可读行', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# url\n# source: none\n');
+      final List<String> lines = <String>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          (_) {},
+          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+          streamRunner: _streamingRunner(
+            (_StreamCall call) async => _FakeProcess.raw(
+              stdoutBytes: <int>[
+                ...utf8.encode('readable-line\n'),
+                0xD6, 0xD0, 0xCE, 0xC4, 0x0A,
+                ...utf8.encode('中文错误：编译失败\n'),
+              ],
+              stderrBytes: <int>[],
+              exitCode: 3,
+            ),
+          ),
+          onOutput: lines.add,
+          cacheRoot: joinPath(root.path, 'cache'),
+        ),
+        throwsA(
+          _buildException(
+            '构建失败（退出码 3）',
+            outputTail: allOf(
+              contains('readable-line'),
+              contains('中文错误：编译失败'),
+              contains('\uFFFD'),
+            ),
+          ),
+        ),
+      );
+
+      expect(lines, hasLength(3), reason: '无效字节行不丢失（替换字符保留行位）');
     });
   });
 
@@ -1364,6 +1466,73 @@ void main() {
       expect(calls[1].executable, 'python');
     });
   });
+
+  group('真实进程流式编码（仅 Windows + Python）', () {
+    test('中文 stdout/stderr 经生产流式路径按 UTF-8 解码且无替换字符', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://example.com/foo/bar.git\n'
+        '# source: none\n'
+        "import sys\n"
+        "print('中文输出：构建开始')\n"
+        "print('中文错误：诊断信息', file=sys.stderr)\n",
+      );
+      final List<String> lines = <String>[];
+
+      await runPackBuildStreaming(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        cacheRoot: joinPath(root.path, 'cache'),
+        onOutput: lines.add,
+      );
+
+      // ignore: avoid_print
+      print('[evidence] pythonLines=$lines');
+      expect(lines, contains('中文输出：构建开始'));
+      expect(lines, contains('中文错误：诊断信息'));
+      expect(
+        lines.where((String line) => line.contains('\uFFFD')),
+        isEmpty,
+        reason: 'PYTHONIOENCODING=utf-8 + 容错解码后不应出现替换字符',
+      );
+    }, skip: pythonSkipReason);
+
+    test('中文失败诊断经生产流式路径保留到异常输出尾部', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://example.com/foo/bar.git\n'
+        '# source: none\n'
+        "import sys\n"
+        "print('开始构建')\n"
+        "print('中文错误：编译失败', file=sys.stderr)\n"
+        "sys.exit(3)\n",
+      );
+      final List<String> lines = <String>[];
+
+      await expectLater(
+        runPackBuildStreaming(
+          _pack(sourcePath: sourcePath),
+          (_) {},
+          cacheRoot: joinPath(root.path, 'cache'),
+          onOutput: lines.add,
+        ),
+        throwsA(
+          _buildException(
+            '构建失败（退出码 3）',
+            outputTail: allOf(
+              contains('开始构建'),
+              contains('中文错误：编译失败'),
+              isNot(contains('\uFFFD')),
+            ),
+          ),
+        ),
+      );
+
+      expect(lines, contains('中文错误：编译失败'));
+    }, skip: pythonSkipReason);
+  });
 }
 
 PackModel _pack({String? sourcePath, List<FileModel>? files}) {
@@ -1388,6 +1557,31 @@ Directory _tempDirectory() {
     }
   });
   return directory;
+}
+
+/// 真实进程测试的跳过原因（与 build_support_module_test 口径一致）：
+/// 非 Windows 或无可用 Python（`python` / `py -3`）时返回文案，否则 null。
+Object? _pythonSkipReason() {
+  if (!Platform.isWindows) {
+    return '仅 Windows 平台执行（依赖真实 Python 进程）';
+  }
+  for (final List<String> candidate in <List<String>>[
+    <String>['python'],
+    <String>['py', '-3'],
+  ]) {
+    try {
+      final ProcessResult result = Process.runSync(candidate.first, <String>[
+        ...candidate.sublist(1),
+        '--version',
+      ]);
+      if (result.exitCode == 0) {
+        return null;
+      }
+    } on ProcessException {
+      // 当前候选不可用，继续探测下一个。
+    }
+  }
+  return '未检测到可用的 Python（python / py -3 均不可用）';
 }
 
 /// 源目录骨架：`build.py` 写入指定内容，另附白名单图标 / 许可证供清理用例断言。

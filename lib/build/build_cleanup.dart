@@ -1,7 +1,17 @@
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+
+/// 清理构建输出目录失败异常（面向用户的错误文案）；由构建入口包装为
+/// `PackBuildException` 后进入对话框，避免清理模块反向依赖构建执行模块。
+class BuildCleanupException implements Exception {
+  const BuildCleanupException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 /// 许可证类文件名识别（大小写不敏感）：`LICENSE` / `LICENSE-MIT` /
 /// `COPYING.LESSER` / `NOTICE.md` / 前缀变体（如 `TBB-LICENSE`）。
@@ -11,17 +21,24 @@ final RegExp _licenseNamePattern = RegExp(
 
 const String _iconFilePrefix = 'icon.';
 
-const Set<String> _reservedFileNames = <String>{'build.py', 'pre.bat', 'post.bat'};
+const Set<String> _reservedEntryNames = <String>{
+  'build.py',
+  'pre.bat',
+  'post.bat',
+  '.git',
+};
 
 /// 是否保留在包源目录根（清空白名单）：
 ///
 /// - `build.py`（大小写不敏感）：构建脚本本体，由工具侧固定读取；
 /// - `icon.*`：包图标（任意名称前缀为 `icon.` 的文件）；
 /// - `pre.bat` / `post.bat`：注册为系统编译命令的钩子脚本；
+/// - `.git`（精确名，大小写不敏感）：用户把源目录当工作仓库时保留，
+///   防灾难性删除（打包扫描本就跳过隐藏目录）；
 /// - 许可证类文件（[isLicenseLikeFileName]）。
 bool isPreservedEntryName(String name) {
   final String lowered = name.toLowerCase();
-  return _reservedFileNames.contains(lowered) ||
+  return _reservedEntryNames.contains(lowered) ||
       lowered.startsWith(_iconFilePrefix) ||
       isLicenseLikeFileName(name);
 }
@@ -47,7 +64,7 @@ bool isLicenseLikeFileName(String name) {
 /// 使每次构建的产物从干净状态开始；目录内容递归删除。
 ///
 /// 根不存在时静默返回（由后续构建脚本创建输出）；删除失败（文件被占用等）
-/// 抛 [PackBuildException]，错误文案列出全部失败路径。
+/// 抛 [BuildCleanupException]，错误文案列出全部失败路径。
 Future<void> cleanupBuildOutput(String sourcePath) async {
   final Directory root = Directory(sourcePath);
   if (!await root.exists()) {
@@ -57,7 +74,7 @@ Future<void> cleanupBuildOutput(String sourcePath) async {
   try {
     entries = await root.list(followLinks: false).toList();
   } on FileSystemException catch (error) {
-    throw PackBuildException('清理构建输出目录失败：$sourcePath（$error）');
+    throw BuildCleanupException('清理构建输出目录失败：$sourcePath（$error）');
   }
   final List<String> failed = <String>[];
   for (final FileSystemEntity entity in entries) {
@@ -73,7 +90,7 @@ Future<void> cleanupBuildOutput(String sourcePath) async {
     final String detail = failed
         .map((String path) => '  ${baseName(path)}')
         .join('\n');
-    throw PackBuildException(
+    throw BuildCleanupException(
       '清理构建输出目录失败（${failed.length} 项无法删除，可能被占用）：\n$detail',
     );
   }

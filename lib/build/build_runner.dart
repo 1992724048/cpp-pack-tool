@@ -66,7 +66,10 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// `SRC_PATH` 工作区（缓存目录不清理，脚本缓存跨构建复用），但仍清空包源目录。
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
-/// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT` 同名的键恒以本函数计算的值为准。
+/// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT`/`PYTHONIOENCODING`
+/// 同名的键恒以本函数计算的值为准。python 子进程固定注入
+/// `PYTHONIOENCODING=utf-8`，保证管道中的 stdout/stderr 恒为 UTF-8
+/// （中文 Windows 下默认按 GBK 编码，会与流式解码口径不一致）。
 /// [onOutput] 非空时逐行转发子进程输出（git 源码拉取与 python 构建进程），
 /// 同时汇聚完整输出用于失败诊断；clone / fetch 追加 `--progress` 以强制输出进度。
 /// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
@@ -151,7 +154,11 @@ Future<void> runPackBuild(
 
   // 源码（或预构建工作区）就绪后、执行脚本前清空包源目录，保证产物不带
   // 上一次构建的残留；下载/拉取失败时不触碰源目录。
-  await cleanupBuildOutput(sourcePath);
+  try {
+    await cleanupBuildOutput(sourcePath);
+  } on BuildCleanupException catch (error) {
+    throw PackBuildException(error.message);
+  }
 
   onStage(PackBuildStage.building);
   await _runBuildScript(
@@ -442,6 +449,7 @@ Future<ProcessResult> _runPython(
     ...?environment,
     'SRC_PATH': target.absolute.path,
     'BUILD_OUT': Directory(sourcePath).absolute.path,
+    'PYTHONIOENCODING': 'utf-8',
   };
   final _PythonLauncher launcher = _PythonLauncher(scriptPath);
   if (streamRunner != null) {
@@ -583,13 +591,18 @@ Future<ProcessResult> _runStreamingProcess(
   );
 }
 
+/// 逐行收集单流输出：无效 UTF-8 字节按替换字符（U+FFFD）容错解码，不抛
+/// 异常、不丢行——本地化工具输出（GBK 中文、非 ASCII 路径）不得让整次
+/// 构建误判失败或掩盖失败诊断。
 Future<void> _collectProcessLines(
   Stream<List<int>> stream,
   List<String> lines,
   void Function(String line)? onOutput,
 ) async {
   await for (final String line
-      in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      in stream
+          .transform(const Utf8Decoder(allowMalformed: true))
+          .transform(const LineSplitter())) {
     lines.add(line);
     onOutput?.call(line);
   }
