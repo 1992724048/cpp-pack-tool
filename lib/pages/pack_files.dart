@@ -56,6 +56,7 @@ class _PackFilesState extends State<PackFiles> {
 
   BuildScriptHeader? _header;
   bool _savingOption = false;
+  bool _optionsExpanded = true;
   int _headerLoadId = 0;
   String? _latestVersion;
   bool _latestLoaded = false;
@@ -344,6 +345,9 @@ class _PackFilesState extends State<PackFiles> {
   }
 
   Widget _buildToolbar() {
+    final List<BuildScriptOption> options = widget.onSave == null
+        ? const <BuildScriptOption>[]
+        : (_header?.options ?? const <BuildScriptOption>[]);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
@@ -353,11 +357,47 @@ class _PackFilesState extends State<PackFiles> {
             onPressed: () => widget.onBuildPack!(widget.pack),
             child: const Text('构建'),
           ),
-          if (widget.onSave != null)
-            for (final BuildScriptOption option
-                in _header?.options ?? const <BuildScriptOption>[])
-              _buildOptionField(option),
+          if (options.isNotEmpty) ...[
+            _buildOptionsToggle(),
+            if (_optionsExpanded)
+              Expanded(
+                child: SingleChildScrollView(
+                  key: const Key('buildOptionsScroll'),
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: <Widget>[
+                      for (final BuildScriptOption option in options)
+                        _buildOptionField(option),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildOptionsToggle() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: SizedBox(
+        width: 28,
+        height: 28,
+        child: Tooltip(
+          message: _optionsExpanded ? '收起构建选项' : '展开构建选项',
+          child: IconButton(
+            key: const Key('buildOptionsToggle'),
+            icon: Icon(
+              _optionsExpanded
+                  ? FluentIcons.chevron_down
+                  : FluentIcons.chevron_up,
+              size: 14,
+            ),
+            onPressed: () =>
+                setState(() => _optionsExpanded = !_optionsExpanded),
+          ),
+        ),
       ),
     );
   }

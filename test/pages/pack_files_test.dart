@@ -762,6 +762,100 @@ void main() {
     expect(find.byKey(const Key('buildOption_target')), findsOneWidget);
   });
 
+  testWidgets('构建选项默认展开且可折叠与展开', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildOptionsToggle')), findsOneWidget);
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('buildOptionsToggle')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+    expect(find.byKey(const Key('buildOptionsToggle')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('buildOptionsToggle')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('未声明选项或不提供保存回调时不显示折叠开关', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+  });
+
+  testWidgets('大量构建选项不溢出且可横向滚动', (tester) async {
+    final List<BuildScriptOption> options = <BuildScriptOption>[
+      for (int index = 0; index < 10; index++)
+        BuildScriptOption(
+          name: 'opt$index',
+          values: const <String>['off', 'on'],
+        ),
+    ];
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(options: options),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('buildOption_opt9')), findsOneWidget);
+
+    final ScrollableState scrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const Key('buildOptionsScroll')),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.right,
+        ),
+      ),
+    );
+    expect(scrollable.position.maxScrollExtent, greaterThan(0));
+  });
+
   testWidgets('有仓库时显示当前与最新版本', (tester) async {
     final Completer<String?> latest = Completer<String?>();
     final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
