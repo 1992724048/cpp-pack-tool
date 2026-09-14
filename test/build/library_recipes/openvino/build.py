@@ -203,7 +203,11 @@ def stage_runtime(package_root):
 
 
 def stage_tbb(package_root):
-    """tbb=on：完整保留自带 oneTBB（含 TBB-LICENSE）。"""
+    """tbb=on：完整保留自带 oneTBB（含 TBB-LICENSE）。
+
+    Debug 变体与 Release 同目录存放（`tbb12_debug.dll/.lib` 等），经
+    `debug_name_suffix` 按文件名后缀归入 `debug/` 分层。
+    """
     tbb_root = os.path.join(package_root, "runtime", "3rdparty", "tbb")
     if not os.path.isdir(tbb_root):
         raise FileNotFoundError("TBB 目录不存在（归档布局可能已变化）：%s" % tbb_root)
@@ -212,7 +216,7 @@ def stage_tbb(package_root):
         subtree = os.path.join(tbb_root, name)
         if not os.path.isdir(subtree):
             continue
-        counts = classify_tree(subtree, BUILD_OUT)
+        counts = classify_tree(subtree, BUILD_OUT, debug_name_suffix="_debug")
         staged += sum(
             counts[key] for key in ("include", "lib", "bin", "debug_lib", "debug_bin")
         )

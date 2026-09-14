@@ -422,12 +422,22 @@ void main() {
         joinPath(packOn.path, 'release/bin'),
         '.dll',
       ).where((String path) => baseName(path).toLowerCase().startsWith('tbb')).toList();
+      final List<String> onTbbDebugDlls = _relativeFilesWithExtension(
+        joinPath(packOn.path, 'debug/bin'),
+        '.dll',
+      ).where((String path) => baseName(path).toLowerCase().startsWith('tbb')).toList();
+      final List<String> onTbbDebugLibs = _relativeFilesWithExtension(
+        joinPath(packOn.path, 'debug/lib'),
+        '.lib',
+      ).where((String path) => baseName(path).toLowerCase().startsWith('tbb')).toList();
 
       print(
         '[evidence] on.tbbFiles(count=${onTbb.length})='
         '${onTbb.where((String path) => path.contains('.')).take(10).toList()}…',
       );
       print('[evidence] on.tbbDlls=$onTbbDlls');
+      print('[evidence] on.tbbDebugDlls=$onTbbDebugDlls');
+      print('[evidence] on.tbbDebugLibs=$onTbbDebugLibs');
       print(
         '[evidence] on.tbbHeader='
         '${File(joinPath(packOn.path, 'include/tbb/tbb.h')).existsSync()} '
@@ -475,6 +485,44 @@ void main() {
         File(joinPath(packOn.path, 'release/lib/tbb12.lib')).existsSync(),
         isTrue,
         reason: 'TBB 导入库应入 release/lib/（Release 分层）',
+      );
+      // Debug 变体（同目录 `_debug` 文件名后缀）应归 debug 分层而非 release。
+      expect(
+        onTbbDebugDlls,
+        isNotEmpty,
+        reason: 'TBB Debug 动态库（tbb12_debug.dll 等）应入 debug/bin/',
+      );
+      expect(
+        onTbbDebugDlls.any(
+          (String path) => baseName(path).toLowerCase() == 'tbb12_debug.dll',
+        ),
+        isTrue,
+        reason: 'debug/bin 应含 tbb12_debug.dll',
+      );
+      expect(
+        onTbbDebugLibs.any(
+          (String path) => baseName(path).toLowerCase() == 'tbb12_debug.lib',
+        ),
+        isTrue,
+        reason: 'debug/lib 应含 tbb12_debug.lib',
+      );
+      expect(
+        onTbbDlls.any((String path) => path.toLowerCase().contains('_debug')),
+        isFalse,
+        reason: 'release/bin 不得残留 TBB Debug 变体',
+      );
+      final List<String> onReleaseDebugLibs = _relativeFilesWithExtension(
+        joinPath(packOn.path, 'release/lib'),
+        '.lib',
+      ).where(
+        (String path) =>
+            baseName(path).toLowerCase().startsWith('tbb') &&
+            path.toLowerCase().contains('_debug'),
+      ).toList();
+      expect(
+        onReleaseDebugLibs,
+        isEmpty,
+        reason: 'release/lib 不得残留 TBB Debug 变体',
       );
       expect(
         Directory(joinPath(packOn.path, 'lib')).existsSync(),

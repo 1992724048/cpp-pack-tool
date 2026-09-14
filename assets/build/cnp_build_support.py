@@ -32,7 +32,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "4"
+VERSION = "5"
 
 __all__ = (
     "VERSION",
@@ -69,11 +69,12 @@ _AVX2_FLAGS = {
     "msvc": ("/arch:AVX2",),
 }
 
-# Release 最高优化（各编译器上限）。
+# Release 最高优化（各编译器上限；/Ob2 /Oi /Ot 内联与内建、/GF 字符串池、
+# /Gy 函数级链接，clang-cl / icx 已实证接受）。
 _RELEASE_OPTIMIZATION_FLAGS = {
-    "icx": ("/O3",),
-    "clang-cl": ("-O3",),
-    "msvc": ("/O2",),
+    "icx": ("/O3", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
+    "clang-cl": ("-O3", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
+    "msvc": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
 }
 
 # NDEBUG 定义前缀按编译器习惯书写（cl / icx-cl 兼容 `-D`，此处保留 MSVC 风格）。
@@ -99,8 +100,9 @@ def cmake_configure(
 
     - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang-cl / msvc →
       `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS`）；
-    - Release 最高优化：icx `/O3`、clang-cl `-O3`、msvc `/O2`，并保留 `NDEBUG`
-      （写入 `CMAKE_C_FLAGS_RELEASE` / `CMAKE_CXX_FLAGS_RELEASE`）；
+    - Release 最高优化：icx `/O3`、clang-cl `-O3`、msvc `/O2`，并追加
+      `/Ob2 /Oi /Ot /GF /Gy`，保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` /
+      `CMAKE_CXX_FLAGS_RELEASE`）；
     - Release 启用 CMake IPO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`）：
       msvc `/GL`+`/LTCG`、icx `-Qipo`；clang-cl 需 PATH 中可解析 `lld-link`，
       缺失时自动退化；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可显式关闭
@@ -301,12 +303,17 @@ def stage_license(source_root, out):
     return destination
 
 
-def classify_tree(root, out, exclude=()):
+def classify_tree(root, out, exclude=(), debug_name_suffix="_debug"):
     """把预构建产物树分类到 release/debug 分层布局，返回各类计数 dict。
 
     - 头文件 → `<out>/include/`（保留相对结构）；
     - `.lib/.a` → `<out>/release/lib/`，`.dll/.pdb/.exe` → `<out>/release/bin/`；
-    - 相对路径中任一段小写为 `debug` 时分别落 `<out>/debug/lib`、`<out>/debug/bin`；
+    - Debug 判定（两者为「或」关系）：
+      ① 相对路径中任一段小写为 `debug`；
+      ② 文件名 stem 以 `debug_name_suffix` 结尾（大小写不敏感，缺省 `_debug`）——
+         适用于同目录存放 Release/Debug 变体的预构建树（如 TBB 的
+         `tbb12.dll` 与 `tbb12_debug.dll`）；
+      判为 Debug 时分别落 `<out>/debug/lib`、`<out>/debug/bin`；
     - `root` **根部**的许可证名文件 → `<out>/` 根（保留原文件名）；
     - 跳过 `.git`、`exclude` 命中项（相对路径或名称）与 `out` 自身；其余文件跳过。
 
@@ -321,6 +328,7 @@ def classify_tree(root, out, exclude=()):
     if not os.path.isdir(root):
         raise FileNotFoundError("目录不存在：%s" % root)
     excludes = _normalize_excludes(exclude)
+    suffix = str(debug_name_suffix).lower()
     print(
         "[cnp_build_support] classify: %s -> %s" % (root, out),
         flush=True,
@@ -354,7 +362,9 @@ def classify_tree(root, out, exclude=()):
             if _is_within(source, out):
                 continue
             extension = os.path.splitext(file_name)[1].lower()
-            is_debug = "debug" in lowered_segments
+            is_debug = "debug" in lowered_segments or _has_debug_suffix(
+                relative, suffix
+            )
             if extension in HEADER_EXTENSIONS:
                 destination_dir = os.path.join(
                     out, "include", os.path.dirname(relative)
@@ -589,6 +599,18 @@ def _run_process(command, label):
 
 def _is_header_name(name):
     return os.path.splitext(name)[1].lower() in HEADER_EXTENSIONS
+
+
+def _has_debug_suffix(relative_path, suffix):
+    """路径最后一段的 stem 是否以 `suffix` 结尾（大小写不敏感；空后缀不命中）。
+
+    [relative_path] 传相对路径（含目录段）或仅文件名均可——判定只看最后一段，
+    `bin/tbb12_debug.dll` 与 `tbb12_debug.dll` 命中，`tbb12d.dll` 不命中。
+    """
+    if not suffix:
+        return False
+    stem = os.path.splitext(os.path.basename(relative_path))[0].lower()
+    return stem.endswith(suffix)
 
 
 def _is_license_name(name):

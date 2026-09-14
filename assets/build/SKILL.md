@@ -77,7 +77,7 @@ from cnp_build_support import (
 | `stage_headers(paths, out)` | 头文件 → `<out>/include/`。传目录时镜像其内容（保留子结构）；传文件时复制单个文件。 |
 | `stage_binaries(build_dir, out, config="Release", reset=False)` | 递归收集 `.lib/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重（去重残留形如 `_build-*`）。`reset=True` 先递归删除本配置段再 staging，杜绝陈旧文件与去重改名跨构建累积；默认 `False` 保持「只增量补入」旧语义。 |
 | `stage_license(source_root, out)` | 识别源码根目录的许可证（LICENSE/LICENCE/COPYING/UNLICENSE/NOTICE 及变体）→ 复制到 `<out>/` 根。 |
-| `classify_tree(root, out, exclude=())` | 预构建归档场景：把解压后的产物树分类到 `include/`、`release/lib|bin/`、`debug/lib|bin/` 分层。调用开始时打印开始标记 `[cnp_build_support] classify: <root> -> <out>`（见「分类标记与进度」）。 |
+| `classify_tree(root, out, exclude=(), debug_name_suffix="_debug")` | 预构建归档场景：把解压后的产物树分类到 `include/`、`release/lib|bin/`、`debug/lib|bin/` 分层。Debug 判定为「或」关系：相对路径中有 `debug` 目录段，或**文件名 stem 以 `debug_name_suffix` 结尾**（大小写不敏感，缺省 `_debug`；适用于 Release/Debug 变体同目录发布的归档，如 `tbb12.dll` / `tbb12_debug.dll`）。调用开始时打印开始标记 `[cnp_build_support] classify: <root> -> <out>`（见「分类标记与进度」）。 |
 | `summary(out)` | 打印并返回产物统计（各分类计数、文件数与字节数），建议作为构建收尾证据。 |
 
 ### 分类标记与进度
@@ -95,9 +95,9 @@ from cnp_build_support import (
 
   | 编译器 | AVX2（全配置） | Release 优化 | LTO/IPO（仅 Release） |
   | --- | --- | --- | --- |
-  | ICX | `/QxCORE-AVX2 /QaxCORE-AVX2` | `/O3` | CMake IPO（`-Qipo`） |
-  | clang-cl | `/arch:AVX2` | `-O3` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
-  | MSVC | `/arch:AVX2` | `/O2` | CMake IPO（`/GL` + `/LTCG`） |
+  | ICX | `/QxCORE-AVX2 /QaxCORE-AVX2` | `/O3 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-Qipo`） |
+  | clang-cl | `/arch:AVX2` | `-O3 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
+  | MSVC | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`/GL` + `/LTCG`） |
 
   - Debug 不注入任何优化参数（保留调试信息，优先保证调试用途），AVX2 仍保留；
   - **语言标准不动原则**：辅助模块与配方都不得注入 `/std:`、`-std=` 等语言标准参数，保持库工程原有设定；

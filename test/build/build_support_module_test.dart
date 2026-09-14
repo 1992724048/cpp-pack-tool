@@ -597,6 +597,46 @@ print('include=%d lib=%d bin=%d debug_lib=%d debug_bin=%d license=%d' % (
     counts['debug_lib'], counts['debug_bin'], counts['license']))
 ''';
 
+/// classify_tree 的 `_debug` 文件名后缀：同目录 Release/Debug 变体归入 debug 分层。
+const String _classifyDebugSuffixDriver = r'''
+import os
+
+from cnp_build_support import classify_tree
+
+work = os.getcwd()
+root = os.path.join(work, 'root')
+
+
+def write(relative, text):
+    path = os.path.join(root, *relative.split('/'))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as handle:
+        handle.write(text)
+
+
+write('bin/tbb12.dll', 'd-release')
+write('bin/tbb12_debug.dll', 'd-debug')
+write('bin/tbbmalloc.dll', 'd-malloc-release')
+write('bin/tbbmalloc_debug.dll', 'd-malloc-debug')
+write('lib/tbb12.lib', 'l-release')
+write('lib/tbb12_debug.lib', 'l-debug')
+write('lib/tbb12d.lib', 'l-d-suffix-unmatched')
+write('sub/tbb12_debug.pdb', 'p-debug')
+write('sub/helper.dll', 'd-no-marker')
+
+out = os.path.join(root, 'out')
+counts = classify_tree(root, out, debug_name_suffix='_debug')
+print('suffix lib=%d bin=%d debug_lib=%d debug_bin=%d' % (
+    counts['lib'], counts['bin'], counts['debug_lib'], counts['debug_bin']))
+
+# 缺省参数：`_debug` 后缀规则同样默认生效（省略与显式传参计数一致）。
+default_out = os.path.join(work, 'out_default')
+default_counts = classify_tree(root, default_out)
+print('default lib=%d bin=%d debug_lib=%d debug_bin=%d' % (
+    default_counts['lib'], default_counts['bin'],
+    default_counts['debug_lib'], default_counts['debug_bin']))
+''';
+
 /// summary：分类统计输出（证据行）与返回 dict 口径。
 const String _summaryDriver = r'''
 import os
@@ -652,7 +692,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "4"'));
+      expect(source, contains('VERSION = "5"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -705,22 +745,28 @@ void main() {
       );
       expect(stdout, contains('extra=-DEXTRA=1'));
       expect(stdout, contains('minimal_make_program=False'));
-      // icx：AVX2 + O3 + NDEBUG + IPO。
+      // icx：AVX2 + /O3 /Ob2 /Oi /Ot /GF /Gy + NDEBUG + IPO。
       expect(stdout, contains('icx_avx2_c=/QxCORE-AVX2 /QaxCORE-AVX2'));
       expect(stdout, contains('icx_avx2_cxx=/QxCORE-AVX2 /QaxCORE-AVX2'));
-      expect(stdout, contains('icx_opt=/O3 /DNDEBUG'));
-      expect(stdout, contains('icx_opt_cxx=/O3 /DNDEBUG'));
+      expect(stdout, contains('icx_opt=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
+      expect(stdout, contains('icx_opt_cxx=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
       expect(stdout, contains('icx_ipo=ON'));
       // 非法种类标识时回退按编译器路径推断（icx-cl.exe → icx）。
       expect(stdout, contains('inferred_avx2=/QxCORE-AVX2 /QaxCORE-AVX2'));
-      expect(stdout, contains('inferred_opt=/O3 /DNDEBUG'));
-      // clang-cl：/arch:AVX2 + -O3 + lld 可解析时 IPO。
+      expect(stdout, contains('inferred_opt=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
+      // clang-cl：/arch:AVX2 + -O3 /Ob2 /Oi /Ot /GF /Gy + lld 可解析时 IPO。
       expect(stdout, contains('clang_avx2_c=/arch:AVX2'));
-      expect(stdout, contains('clang_opt_cxx=-O3 -DNDEBUG'));
+      expect(
+        stdout,
+        contains('clang_opt_cxx=-O3 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'),
+      );
       expect(stdout, contains('clang_ipo=ON'));
-      // msvc：/O2 + IPO。
-      expect(stdout, contains('msvc_opt=/O2 /DNDEBUG'));
-      expect(stdout, contains('msvc_opt_cxx=/O2 /DNDEBUG'));
+      // msvc：/O2 /Ob2 /Oi /Ot /GF /Gy + IPO。
+      expect(stdout, contains('msvc_opt=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
+      expect(
+        stdout,
+        contains('msvc_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'),
+      );
       expect(stdout, contains('msvc_ipo=ON'));
       // Debug 不注入优化与 IPO；AVX2 保留。
       expect(stdout, contains('debug_avx2=/arch:AVX2'));
@@ -739,14 +785,18 @@ void main() {
       expect(stdout, contains('ipo=off reason=unknown-compiler'));
       // 配方自带同名变量时保持其取值，模块不重复注入。
       expect(stdout, contains('preset_opt_cxx=/O1'));
-      expect(stdout, contains('preset_opt_c=/O2 /DNDEBUG'));
+      expect(
+        stdout,
+        contains('preset_opt_c=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'),
+      );
       expect(stdout, contains('preset_ipo=OFF'));
       // 证据行。
       expect(
         stdout,
         contains(
           '[cnp_build_support] cmake_configure: config=Release compiler=icx '
-          'avx2=/QxCORE-AVX2 /QaxCORE-AVX2 optimization=/O3 ipo=on',
+          'avx2=/QxCORE-AVX2 /QaxCORE-AVX2 '
+          'optimization=/O3 /Ob2 /Oi /Ot /GF /Gy ipo=on',
         ),
       );
       expect(stdout, contains('nonzero=RuntimeError'));
@@ -1042,6 +1092,59 @@ void main() {
       expect(
         File(_join(_join(_join(out, 'include'), 'sub'), 'NOTICE')).existsSync(),
         isFalse,
+      );
+    }, skip: _skipReason);
+
+    test('classify_tree：_debug 文件名后缀归入 debug 分层（缺省语义不变）', () async {
+      final Directory tempDir = _createTempDir('cnp_support_classify_suffix_');
+      final File driver = _writeDriver(tempDir, _classifyDebugSuffixDriver);
+      _installModule(tempDir, await _loadModuleSource());
+
+      final ProcessResult result = _runDriver(driver, 'classify_suffix');
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      // 后缀规则与目录段规则为「或」：tbb12_debug / tbbmalloc_debug 文件名后缀 → debug；
+      // tbb12.d / tbbmalloc / helper → release（目录段规则由既有用例锁定）。
+      expect(stdout, contains('suffix lib=2 bin=3 debug_lib=1 debug_bin=3'));
+      expect(
+        stdout,
+        contains('default lib=2 bin=3 debug_lib=1 debug_bin=3'),
+        reason: '缺省参数（`_debug`）与显式传参口径一致',
+      );
+
+      final String out = _join(_join(tempDir.path, 'root'), 'out');
+      expect(_relativeFiles(out), <String>[
+        'debug/bin/tbb12_debug.dll',
+        'debug/bin/tbb12_debug.pdb',
+        'debug/bin/tbbmalloc_debug.dll',
+        'debug/lib/tbb12_debug.lib',
+        'release/bin/helper.dll',
+        'release/bin/tbb12.dll',
+        'release/bin/tbbmalloc.dll',
+        'release/lib/tbb12.lib',
+        'release/lib/tbb12d.lib',
+      ]);
+      expect(
+        _readText(_join(_join(out, 'debug/bin'), 'tbb12_debug.dll')),
+        'd-debug',
+      );
+      expect(
+        _readText(_join(_join(out, 'release/bin'), 'tbb12.dll')),
+        'd-release',
+      );
+      expect(
+        File(_join(_join(out, 'release/bin'), 'tbb12_debug.dll')).existsSync(),
+        isFalse,
+        reason: 'Debug 变体不得落 release 分层',
+      );
+      expect(
+        File(_join(_join(out, 'debug/lib'), 'tbb12d.lib')).existsSync(),
+        isFalse,
+        reason: '`d` 后缀不在后缀规则内，仍归 release',
       );
     }, skip: _skipReason);
 
