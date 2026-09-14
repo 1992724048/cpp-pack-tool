@@ -9,6 +9,7 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -235,7 +236,7 @@ void main() {
             PackModel pack, {
             ToolDownloadProgressCallback? onDownloadProgress,
           }) async => throw const BuildPreparationException(
-            '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
+            '未检测到可用编译器（优先级：icx > clang > msvc）',
           ),
       build:
           (
@@ -254,7 +255,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(
-      find.text('构建失败：未检测到可用编译器（优先级：icx > clang-cl > msvc）'),
+      find.text('构建失败：未检测到可用编译器（优先级：icx > clang > msvc）'),
       findsOneWidget,
     );
     expect(find.byKey(const Key('buildCompilerLabel')), findsNothing);
@@ -443,6 +444,151 @@ void main() {
     );
   });
 
+  testWidgets('输出区共享横向滚动且鼠标可拖拽', (tester) async {
+    final String lineA = 'first-${'a' * 160}';
+    final String lineB = 'second-${'b' * 160}';
+
+    await _pumpDialog(
+      tester,
+      build: _emitLines(<String>[lineA, lineB]),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Scrollbar scrollbar = tester.widget<Scrollbar>(
+      find.byKey(const Key('buildOutputHorizontalScrollbar')),
+    );
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.scrollbarOrientation, ScrollbarOrientation.bottom);
+
+    final ScrollableState horizontal = _horizontalOutputScrollable(tester);
+    expect(horizontal.position.pixels, 0);
+    expect(horizontal.position.maxScrollExtent, greaterThan(0));
+
+    final Finder findA = find.textContaining(lineA, findRichText: true);
+    final Finder findB = find.textContaining(lineB, findRichText: true);
+    final double lineABefore = tester.getTopLeft(findA).dx;
+    final double lineBBefore = tester.getTopLeft(findB).dx;
+
+    final Rect panel = tester.getRect(
+      find.byKey(const Key('buildOutputPanel')),
+    );
+    await tester.dragFrom(
+      Offset(panel.left + 80, panel.top + 80),
+      const Offset(-150, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+
+    expect(horizontal.position.pixels, greaterThan(0));
+    final double lineAShift = lineABefore - tester.getTopLeft(findA).dx;
+    final double lineBShift = lineBBefore - tester.getTopLeft(findB).dx;
+    expect(lineAShift, greaterThan(0));
+    expect(lineBShift, closeTo(lineAShift, 0.5));
+
+    await tester.pump(const Duration(milliseconds: 800));
+  });
+
+  testWidgets('日志过滤大小写不敏感且清空恢复', (tester) async {
+    const List<String> lines = <String>[
+      'INFO: 开始构建',
+      'WARNING: 未启用 LTO',
+      'error: 编译失败',
+      '普通输出',
+    ];
+
+    await _pumpDialog(
+      tester,
+      build: _emitLines(lines),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildOutputFilter')), findsOneWidget);
+    expect(find.byKey(const Key('buildOutputFilterClear')), findsNothing);
+
+    await tester.enterText(find.byKey(const Key('buildOutputFilter')), 'ERROR');
+    await tester.pump();
+
+    expect(
+      find.textContaining('error: 编译失败', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.textContaining('普通输出', findRichText: true), findsNothing);
+    expect(find.textContaining('INFO: 开始构建', findRichText: true), findsNothing);
+    expect(_outputLine(tester, 'error: 编译失败'), UCColors.flavor.red);
+
+    await tester.tap(find.byKey(const Key('buildOutputFilterClear')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    for (final String line in lines) {
+      expect(
+        find.textContaining(line, findRichText: true),
+        findsOneWidget,
+        reason: '清空过滤后应恢复显示：$line',
+      );
+    }
+    expect(find.byKey(const Key('buildOutputFilterClear')), findsNothing);
+  });
+
+  testWidgets('日志过滤无匹配时显示无匹配行提示', (tester) async {
+    await _pumpDialog(
+      tester,
+      build: _emitLines(const <String>['INFO: 开始构建', '普通输出']),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.enterText(find.byKey(const Key('buildOutputFilter')), '没有的内容');
+    await tester.pump();
+
+    expect(find.text('无匹配行'), findsOneWidget);
+    expect(find.text('等待输出…'), findsNothing);
+    expect(find.textContaining('普通输出', findRichText: true), findsNothing);
+  });
+
+  testWidgets('无输出时过滤输入保持等待占位', (tester) async {
+    final Completer<void> buildGate = Completer<void>();
+
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onStage(PackBuildStage.building);
+            await buildGate.future;
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('等待输出…'), findsOneWidget);
+
+    await tester.enterText(find.byKey(const Key('buildOutputFilter')), 'error');
+    await tester.pump();
+
+    expect(find.text('等待输出…'), findsOneWidget);
+    expect(find.text('无匹配行'), findsNothing);
+
+    buildGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
   testWidgets('准备环境阶段展示工具下载进度与瞬时速度', (tester) async {
     final Completer<BuildEnvironment> prepareGate =
         Completer<BuildEnvironment>();
@@ -595,15 +741,16 @@ void main() {
 
     await _pumpDialog(
       tester,
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-      }) async {
-        onSourceVersion?.call('v3.1.4');
-      },
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onSourceVersion?.call('v3.1.4');
+          },
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {
         applied = pack;
@@ -689,6 +836,32 @@ PackModel _pack({String? sourcePath = r'C:\libs\demo'}) {
 
 Button _closeButton(WidgetTester tester) =>
     tester.widget<Button>(find.byKey(const Key('buildCloseButton')));
+
+PackBuildRunner _emitLines(List<String> lines) {
+  return (
+    PackModel pack,
+    void Function(PackBuildStage) onStage, {
+    Map<String, String>? environment,
+    void Function(String line)? onOutput,
+    void Function(String version)? onSourceVersion,
+  }) async {
+    for (final String line in lines) {
+      onOutput?.call(line);
+    }
+  };
+}
+
+ScrollableState _horizontalOutputScrollable(WidgetTester tester) {
+  return tester.state<ScrollableState>(
+    find.ancestor(
+      of: find.byKey(const Key('buildOutputContent')),
+      matching: find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.right,
+      ),
+    ),
+  );
+}
 
 Future<void> _pumpDialog(
   WidgetTester tester, {

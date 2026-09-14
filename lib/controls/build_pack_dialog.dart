@@ -10,6 +10,7 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 
 enum _BuildStage {
   preparing,
@@ -66,7 +67,7 @@ const int _progressMinDeltaBytes = 256 * 1024;
 /// 输出面板保留的最大行数（超出后丢弃最早的行）。
 const int _maxOutputLineCount = 2000;
 
-const double _outputPanelHeight = 300;
+const double _outputPanelHeight = 340;
 const double _statusColumnWidth = 240;
 
 const String _errorKeyword = 'ERROR';
@@ -161,6 +162,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   );
 
   final ScrollController _outputScroller = ScrollController();
+  final ScrollController _outputHorizontalScroller = ScrollController();
+  final TextEditingController _outputFilterController = TextEditingController();
+  String _outputFilter = '';
 
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
@@ -186,6 +190,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   @override
   void dispose() {
     _outputScroller.dispose();
+    _outputHorizontalScroller.dispose();
+    _outputFilterController.dispose();
     super.dispose();
   }
 
@@ -440,25 +446,112 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         border: Border.all(color: theme.resources.cardStrokeColorDefault),
       ),
       padding: const EdgeInsets.all(12),
-      child: _outputLines.isEmpty
-          ? Center(
-              child: Text(
-                '等待输出…',
-                style: _outputTextStyle.copyWith(
-                  color: UCColors.flavor.subtext0,
-                ),
-              ),
-            )
-          : SingleChildScrollView(
-              controller: _outputScroller,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  for (final String line in _outputLines)
-                    _buildOutputLine(line),
-                ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SizedBox(height: 32, child: _buildOutputFilter()),
+          const SizedBox(height: 8),
+          Expanded(child: _buildOutputContent()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutputFilter() {
+    return TextBox(
+      key: const Key('buildOutputFilter'),
+      controller: _outputFilterController,
+      placeholder: '过滤日志…',
+      prefix: const Padding(
+        padding: EdgeInsets.only(left: 8, right: 6),
+        child: Icon(FluentIcons.search, size: 14),
+      ),
+      suffix: _outputFilter.isEmpty
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: IconButton(
+                key: const Key('buildOutputFilterClear'),
+                icon: const Icon(FluentIcons.clear, size: 12),
+                onPressed: _clearOutputFilter,
               ),
             ),
+      onChanged: (String value) => setState(() => _outputFilter = value),
+    );
+  }
+
+  void _clearOutputFilter() {
+    _outputFilterController.clear();
+    setState(() => _outputFilter = '');
+  }
+
+  /// 过滤只影响显示，不改变 [_outputLines] 原始行列表。
+  List<String> get _visibleOutputLines {
+    final String query = _outputFilter.toLowerCase();
+    if (query.isEmpty) {
+      return _outputLines;
+    }
+    return <String>[
+      for (final String line in _outputLines)
+        if (line.toLowerCase().contains(query)) line,
+    ];
+  }
+
+  Widget _buildOutputContent() {
+    if (_outputLines.isEmpty) {
+      return _buildOutputPlaceholder('等待输出…');
+    }
+    final List<String> lines = _visibleOutputLines;
+    if (lines.isEmpty) {
+      return _buildOutputPlaceholder('无匹配行');
+    }
+    return _withMouseDrag(
+      Scrollbar(
+        key: const Key('buildOutputHorizontalScrollbar'),
+        controller: _outputHorizontalScroller,
+        scrollbarOrientation: ScrollbarOrientation.bottom,
+        notificationPredicate: (ScrollNotification notification) =>
+            notification.metrics.axis == Axis.horizontal,
+        child: SingleChildScrollView(
+          controller: _outputScroller,
+          padding: const EdgeInsets.only(bottom: 12),
+          child: SingleChildScrollView(
+            controller: _outputHorizontalScroller,
+            scrollDirection: Axis.horizontal,
+            child: Column(
+              key: const Key('buildOutputContent'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (final String line in lines) _buildOutputLine(line),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOutputPlaceholder(String message) {
+    return Center(
+      child: Text(
+        message,
+        style: _outputTextStyle.copyWith(color: UCColors.flavor.subtext0),
+      ),
+    );
+  }
+
+  /// 桌面默认 dragDevices 不含鼠标（内容不可拖拽平移），此处补充，
+  /// 与横向 Scrollbar 拖拽一起保证鼠标用户的横向滚动可达。
+  Widget _withMouseDrag(Widget child) {
+    final ScrollBehavior behavior = ScrollConfiguration.of(context);
+    return ScrollConfiguration(
+      behavior: behavior.copyWith(
+        dragDevices: <PointerDeviceKind>{
+          ...behavior.dragDevices,
+          PointerDeviceKind.mouse,
+        },
+      ),
+      child: child,
     );
   }
 
@@ -471,13 +564,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     final TextStyle textStyle = _outputTextStyle.copyWith(
       color: UCColors.flavor.text,
     );
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: RichText(
-        text: TextSpan(
-          style: textStyle,
-          children: _splitOutputLine(line, keywordStyle),
-        ),
+    return RichText(
+      text: TextSpan(
+        style: textStyle,
+        children: _splitOutputLine(line, keywordStyle),
       ),
     );
   }
