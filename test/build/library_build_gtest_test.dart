@@ -170,13 +170,16 @@ void main() {
       print('[evidence] env.toolsDir=${env.toolsDir}');
       print('[evidence] packDir=${packDir.path}');
 
+      final List<String> sourceVersions = <String>[];
       await runPackBuild(
         pack,
         (PackBuildStage stage) => print('[evidence] stage=$stage'),
         processRunner: _teeProcessRunner,
         cacheRoot: cacheRoot.path,
         environment: env.environment,
+        onSourceVersion: sourceVersions.add,
       );
+      print('[evidence] sourceVersion=$sourceVersions');
 
       final String includeRoot = joinPath(packDir.path, 'include');
       final String srcRoot = joinPath(packDir.path, 'src');
@@ -292,6 +295,12 @@ void main() {
         license,
         isTrue,
         reason: 'googletest 源根 LICENSE 应经 stage_license 落 BUILD_OUT 根',
+      );
+      expect(
+        sourceVersions,
+        <String>['v1.18.0'],
+        reason: '源码版本应取自动检出的最新稳定 tag（gtest 最新发布 v1.18.0，'
+            '此前 main 不可达 tag 导致恒记录 v1.14.0）',
       );
       expect(
         Directory(joinPath(packDir.path, 'lib')).existsSync(),
