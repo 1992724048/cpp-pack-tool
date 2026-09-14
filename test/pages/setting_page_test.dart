@@ -527,10 +527,12 @@ void main() {
 
   testWidgets('SKILL.md 模板 asset 可载入且含 frontmatter', (tester) async {
     final String source = await rootBundle.loadString('assets/build/SKILL.md');
+    // CI 检出可能因 git autocrlf 将文本资产转为 CRLF（本机为 LF），统一行尾后再断言。
+    final String normalizedSource = source.replaceAll('\r\n', '\n');
 
-    expect(source, startsWith('---\n'));
-    expect(source, contains('name: generating-build-py'));
-    expect(source, contains('description: Use when'));
+    expect(normalizedSource, startsWith('---\n'));
+    expect(normalizedSource, contains('name: generating-build-py'));
+    expect(normalizedSource, contains('description: Use when'));
   });
 
   testWidgets('宽松约束下铺满可用区域且带页面背景表面', (tester) async {
