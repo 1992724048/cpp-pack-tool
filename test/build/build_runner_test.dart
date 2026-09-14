@@ -464,7 +464,7 @@ void main() {
       expect(calls.last.executable, 'python');
     });
 
-    test('检出 tag 失败时提示并继续构建、不上抛异常', () async {
+    test('检出 tag 失败时提示并继续构建、版本回退 describe', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
@@ -473,6 +473,7 @@ void main() {
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
+      final List<String> versions = <String>[];
 
       await runPackBuild(
         _pack(sourcePath: sourcePath),
@@ -489,9 +490,13 @@ void main() {
               "error: pathspec 'v9.9.9' did not match any file(s) known to git\n",
             );
           }
+          if (call.arguments.first == 'describe') {
+            return ProcessResult(1, 0, 'v9.9.8\n', '');
+          }
           return _success();
         }),
         onOutput: lines.add,
+        onSourceVersion: versions.add,
         cacheRoot: cacheRoot,
       );
 
@@ -504,6 +509,45 @@ void main() {
         isTrue,
         reason: '检出失败应提示用户但继续构建',
       );
+      expect(
+        versions,
+        <String>['v9.9.8'],
+        reason: '检出失败不得记录 tag v9.9.9（与实建源码不符），版本回退 describe',
+      );
+    });
+
+    test('检出 tag 失败且无可用 describe 时版本回退短哈希', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<String> versions = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(<_ProcessCall>[], (call) async {
+          if (_isLsRemote(call)) {
+            return _lsRemoteResult(<String>['v9.9.9']);
+          }
+          if (call.arguments.isNotEmpty && call.arguments.first == 'checkout') {
+            return ProcessResult(1, 1, '', 'error: pathspec\n');
+          }
+          if (call.arguments.first == 'describe') {
+            return ProcessResult(1, 128, '', 'fatal: no names found\n');
+          }
+          if (call.arguments.first == 'rev-parse') {
+            return ProcessResult(1, 0, 'abc1234\n', '');
+          }
+          return _success();
+        }),
+        onSourceVersion: versions.add,
+        cacheRoot: cacheRoot,
+      );
+
+      expect(versions, <String>['abc1234']);
     });
 
     test('无上游且 origin/HEAD 可得时 reset 回退远端默认分支', () async {

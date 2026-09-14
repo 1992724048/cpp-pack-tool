@@ -61,7 +61,8 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// → `reset --hard` 上游跟踪分支（无上游回退远端默认分支，绝不盲用
 /// `FETCH_HEAD`）→ `clean -ffdx`，保留 `.git`、清掉上次构建的中间产物）→
 /// 源码版本对齐（解析最新稳定 tag → `checkout --force` 该 tag；无可用 tag
-/// 或检出失败时保持默认分支行为，见 [resolveLatestStableTag]）→ 清空包源
+/// 或检出失败时保持默认分支行为，且版本记录回退 `describe → 短哈希`，
+/// 见 [resolveLatestStableTag]）→ 清空包源
 /// 目录中白名单外的一切（见 [cleanupBuildOutput]）→ 以 `SRC_PATH`（目标目录）
 /// 与 `BUILD_OUT`（包源目录）环境变量运行 `python build.py`。
 ///
@@ -78,9 +79,10 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
 /// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
 /// `Process.start`，测试注入替代实现）。
-/// [onSourceVersion] 非空时在源码就绪后回调源码版本：优先使用刚解析并检出的
-/// 最新稳定 tag，未检出时回退 `git describe --tags --abbrev=0`（仍失败回退
-/// `git rev-parse --short HEAD`）；查询失败静默跳过，`# source: none` 包不查询。
+/// [onSourceVersion] 非空时在源码就绪后回调源码版本：优先使用刚成功检出的
+/// 最新稳定 tag（检出失败不记录该 tag，避免与实建源码不符），回退
+/// `git describe --tags --abbrev=0`（仍失败回退 `git rev-parse --short HEAD`）；
+/// 查询失败静默跳过，`# source: none` 包不查询。
 /// 为 null 时不产生任何额外 git 调用（源码对齐仍照常执行）。
 Future<void> runPackBuild(
   PackModel pack,
@@ -388,7 +390,8 @@ void _requirePullStep(ProcessResult result) {
 /// - 检出失败（如 tag 在远端被删除、本地缺少对象）时打印提示并保持当前
 ///   分支状态继续构建——源码版本对齐是尽力而为，不应让整次构建失败。
 ///
-/// 返回解析出的 tag（供版本记录复用，与检出是否成功无关）；未解析出返回 null。
+/// 返回仅当检出成功时为该 tag；未解析出或检出失败返回 null（调用方版本记录
+/// 回退 `describe → 短哈希`，避免记录与实建源码不符的 tag）。
 Future<String?> _alignSourceVersion(
   PackProcessRunner processRunner,
   PackStreamingProcessRunner? streamRunner,
@@ -414,6 +417,7 @@ Future<String?> _alignSourceVersion(
   );
   if (checkout.exitCode != 0) {
     onOutput?.call('警告：检出最新稳定 tag $tag 失败，保持默认分支继续构建');
+    return null;
   }
   return tag;
 }
@@ -505,9 +509,9 @@ Future<ProcessResult> _runGit(
   );
 }
 
-/// 查询仓库版本：优先使用刚检出/解析出的 [stableTag]（与「最新版本」显示
-/// 口径一致）；未提供时回退 `git describe --tags --abbrev=0`，仍失败回退短哈希，
-/// 均失败返回 null。
+/// 查询仓库版本：优先使用 [stableTag]（刚成功检出的最新稳定 tag，与「最新版本」
+/// 显示口径一致）；未提供（未解析出或检出失败）时回退
+/// `git describe --tags --abbrev=0`，仍失败回退短哈希，均失败返回 null。
 Future<String?> _querySourceVersion(
   PackProcessRunner processRunner,
   Directory target,

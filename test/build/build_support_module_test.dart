@@ -754,11 +754,11 @@ void main() {
       // 非法种类标识时回退按编译器路径推断（icx-cl.exe → icx）。
       expect(stdout, contains('inferred_avx2=/QxCORE-AVX2 /QaxCORE-AVX2'));
       expect(stdout, contains('inferred_opt=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
-      // clang-cl：/arch:AVX2 + -O3 /Ob2 /Oi /Ot /GF /Gy + lld 可解析时 IPO。
+      // clang-cl：/arch:AVX2 + /O2 /Ob2 /Oi /Ot /GF /Gy + lld 可解析时 IPO。
       expect(stdout, contains('clang_avx2_c=/arch:AVX2'));
       expect(
         stdout,
-        contains('clang_opt_cxx=-O3 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'),
+        contains('clang_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'),
       );
       expect(stdout, contains('clang_ipo=ON'));
       // msvc：/O2 /Ob2 /Oi /Ot /GF /Gy + IPO。

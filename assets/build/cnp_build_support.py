@@ -70,10 +70,12 @@ _AVX2_FLAGS = {
 }
 
 # Release 最高优化（各编译器上限；/Ob2 /Oi /Ot 内联与内建、/GF 字符串池、
-# /Gy 函数级链接，clang-cl / icx 已实证接受）。
+# /Gy 函数级链接，clang-cl / icx 已实证接受）。clang-cl 须用 MSVC 风格 `/O2`：
+# GNU 风格 `-O3` 会被驱动忽略并告警；LLVM 23 实证 `/O2`+`/Ot` 映射 cc1 `-O3`
+# （最高优化），组合净级别 `-O3`。
 _RELEASE_OPTIMIZATION_FLAGS = {
     "icx": ("/O3", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
-    "clang-cl": ("-O3", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
+    "clang-cl": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
     "msvc": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
 }
 
@@ -100,7 +102,7 @@ def cmake_configure(
 
     - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang-cl / msvc →
       `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS`）；
-    - Release 最高优化：icx `/O3`、clang-cl `-O3`、msvc `/O2`，并追加
+    - Release 最高优化：icx `/O3`、clang-cl `/O2`、msvc `/O2`，并追加
       `/Ob2 /Oi /Ot /GF /Gy`，保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` /
       `CMAKE_CXX_FLAGS_RELEASE`）；
     - Release 启用 CMake IPO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`）：

@@ -96,7 +96,7 @@ from cnp_build_support import (
   | 编译器 | AVX2（全配置） | Release 优化 | LTO/IPO（仅 Release） |
   | --- | --- | --- | --- |
   | ICX | `/QxCORE-AVX2 /QaxCORE-AVX2` | `/O3 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-Qipo`） |
-  | clang-cl | `/arch:AVX2` | `-O3 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
+  | clang-cl | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
   | MSVC | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`/GL` + `/LTCG`） |
 
   - Debug 不注入任何优化参数（保留调试信息，优先保证调试用途），AVX2 仍保留；
