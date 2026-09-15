@@ -8,6 +8,12 @@ String baseName(String path) => path.split(_pathSeparator).last;
 String joinPath(String base, String relative) =>
     '${base.replaceFirst(_trailingPathSeparators, '')}/$relative';
 
+/// 路径的父目录（`/` 与 `\` 分隔符均可）；无分隔符或仅以分隔符开头时返回原路径。
+String parentDirectory(String path) {
+  final int separator = path.lastIndexOf(_pathSeparator);
+  return separator <= 0 ? path : path.substring(0, separator);
+}
+
 String formatError(Object error) {
   if (error is ArgumentError) {
     final String? message = error.message?.toString();

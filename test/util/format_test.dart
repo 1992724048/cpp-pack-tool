@@ -32,6 +32,25 @@ void main() {
     });
   });
 
+  group('parentDirectory', () {
+    test('返回父目录（/ 与 \\ 分隔符均可）', () {
+      expect(
+        parentDirectory(r'C:\msys64\ucrt64\bin\gcc.exe'),
+        r'C:\msys64\ucrt64\bin',
+      );
+      expect(
+        parentDirectory('C:/msys64/ucrt64/bin/gcc.exe'),
+        'C:/msys64/ucrt64/bin',
+      );
+      expect(parentDirectory(r'C:\LLVM\bin/clang-cl.exe'), r'C:\LLVM\bin');
+    });
+
+    test('无分隔符时返回原路径', () {
+      expect(parentDirectory('gcc.exe'), 'gcc.exe');
+      expect(parentDirectory(''), '');
+    });
+  });
+
   group('formatError', () {
     test('FormatException 返回去前缀的消息文本', () {
       expect(

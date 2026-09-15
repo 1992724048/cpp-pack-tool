@@ -18,6 +18,7 @@ void main() {
       expect(compilerKindId(CompilerKind.icx), 'icx');
       expect(compilerKindId(CompilerKind.clangCl), 'clang-cl');
       expect(compilerKindId(CompilerKind.msvc), 'msvc');
+      expect(compilerKindId(CompilerKind.mingw), 'mingw');
     });
   });
 
@@ -26,6 +27,7 @@ void main() {
       expect(compilerKindFromId('icx'), CompilerKind.icx);
       expect(compilerKindFromId(' clang-cl '), CompilerKind.clangCl);
       expect(compilerKindFromId('MSVC'), CompilerKind.msvc);
+      expect(compilerKindFromId('MinGW'), CompilerKind.mingw);
       expect(compilerKindFromId('gcc'), isNull);
       expect(compilerKindFromId(''), isNull);
     });
@@ -114,6 +116,51 @@ void main() {
         isFalse,
       );
     });
+    test('声明的 C++ 驱动缺失时不可用（MinGW 的 gcc/g++ 分设）', () {
+      final Directory root = _tempDirectory();
+      final String executable = joinPath(root.path, 'gcc.exe');
+      _createFile(executable);
+
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.mingw,
+            version: '14.2.0（UCRT64）',
+            executablePath: executable,
+            cxxExecutablePath: joinPath(root.path, 'g++.exe'),
+            environmentScript: null,
+          ),
+        ),
+        isFalse,
+      );
+
+      final String cxxExecutable = joinPath(root.path, 'g++.exe');
+      _createFile(cxxExecutable);
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.mingw,
+            version: '14.2.0（UCRT64）',
+            executablePath: executable,
+            cxxExecutablePath: cxxExecutable,
+            environmentScript: null,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isCompilerUsable(
+          DetectedCompiler(
+            kind: CompilerKind.mingw,
+            version: '14.2.0（UCRT64）',
+            executablePath: executable,
+            environmentScript: null,
+          ),
+        ),
+        isTrue,
+        reason: '未声明 C++ 驱动时按 C 驱动回退，不额外校验',
+      );
+    });
   });
 
   group('compilerKindLabel', () {
@@ -121,6 +168,7 @@ void main() {
       expect(compilerKindLabel(CompilerKind.icx), 'ICX');
       expect(compilerKindLabel(CompilerKind.clangCl), 'clang-cl');
       expect(compilerKindLabel(CompilerKind.msvc), 'MSVC');
+      expect(compilerKindLabel(CompilerKind.mingw), 'MinGW');
     });
   });
 
@@ -555,6 +603,239 @@ void main() {
     });
   });
 
+  group('detectMingw', () {
+    test('经 -dumpmachine 判定并解析版本、C++ 驱动与附加 PATH', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+      _createFile(joinPath(binDir, 'g++.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(calls, (_ProcessCall call) async {
+          if (call.arguments.single == '-dumpmachine') {
+            return _result('x86_64-w64-mingw32\r\n');
+          }
+          return _result('14.2.0\r\n');
+        }),
+        binDir: binDir,
+        environmentTag: 'UCRT64',
+      );
+
+      expect(detected, isNotNull);
+      final DetectedCompiler compiler = detected!;
+      expect(compiler.kind, CompilerKind.mingw);
+      expect(compiler.version, '14.2.0（UCRT64）');
+      expect(compiler.executablePath, joinPath(binDir, 'gcc.exe'));
+      expect(compiler.cxxExecutablePath, joinPath(binDir, 'g++.exe'));
+      expect(compiler.cxxCompilerPath, joinPath(binDir, 'g++.exe'));
+      expect(compiler.environmentScript, isNull);
+      expect(compiler.extraPathEntries, <String>[binDir]);
+      expect(
+        calls.map((_ProcessCall call) => call.arguments.single).toList(),
+        <String>['-dumpmachine', '-dumpfullversion'],
+      );
+    });
+
+    test('版本回退链：-dumpfullversion 失败 → -dumpversion（单段）', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(calls, (_ProcessCall call) async {
+          switch (call.arguments.single) {
+            case '-dumpmachine':
+              return _result('x86_64-w64-mingw32\n');
+            case '-dumpfullversion':
+              return _result('', exitCode: 1);
+            default:
+              return _result('14\n');
+          }
+        }),
+        binDir: binDir,
+        environmentTag: 'UCRT64',
+      );
+
+      expect(detected?.version, '14（UCRT64）');
+      expect(
+        calls.map((_ProcessCall call) => call.arguments.single).toList(),
+        <String>['-dumpmachine', '-dumpfullversion', '-dumpversion'],
+      );
+    });
+
+    test('版本回退链：dump 输出不可用时取 --version 首行最后一个版本 token', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(<_ProcessCall>[], (_ProcessCall call) async {
+          switch (call.arguments.single) {
+            case '-dumpmachine':
+              return _result('x86_64-w64-mingw32\n');
+            case '-dumpfullversion':
+              return _result('  \r\n');
+            case '-dumpversion':
+              return _result('', exitCode: 1);
+            default:
+              return _result(
+                'gcc (Rev2, Built by MSYS2 project) 14.2.0\r\n'
+                'Copyright (C) 2024 Free Software Foundation, Inc. 13.9.9\r\n',
+              );
+          }
+        }),
+        binDir: binDir,
+      );
+
+      expect(
+        detected?.version,
+        '14.2.0',
+        reason: '仅取首行；第二行的版本号不参与解析，未传标注时版本为纯版本号',
+      );
+    });
+
+    test('CLANG64 的 GNU ABI clang：windows-gnu 三元组与 clang++ 映射', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/clang64/bin');
+      _createFile(joinPath(binDir, 'clang.exe'));
+      _createFile(joinPath(binDir, 'clang++.exe'));
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(<_ProcessCall>[], (_ProcessCall call) async {
+          switch (call.arguments.single) {
+            case '-dumpmachine':
+              return _result('x86_64-w64-windows-gnu\n');
+            case '-dumpfullversion':
+              return _result('', exitCode: 1);
+            default:
+              return _result('20.1.8\n');
+          }
+        }),
+        binDir: binDir,
+        cExecutableName: 'clang.exe',
+        environmentTag: 'CLANG64',
+      );
+
+      expect(detected, isNotNull);
+      expect(detected!.version, '20.1.8（CLANG64）');
+      expect(detected.cxxExecutablePath, joinPath(binDir, 'clang++.exe'));
+      expect(detected.executablePath, joinPath(binDir, 'clang.exe'));
+    });
+
+    test('MSVC 目标的 clang 被 -dumpmachine 拒绝且不再探测版本', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'LLVM/bin');
+      _createFile(joinPath(binDir, 'clang.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(calls, (_ProcessCall call) async {
+          return _result('x86_64-pc-windows-msvc\n');
+        }),
+        binDir: binDir,
+        cExecutableName: 'clang.exe',
+      );
+
+      expect(detected, isNull);
+      expect(calls, hasLength(1));
+    });
+
+    test('i686 等非 x64 三元组被拒绝', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/mingw32/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => _result('i686-w64-mingw32\n'),
+        ),
+        binDir: binDir,
+      );
+
+      expect(detected, isNull);
+    });
+
+    test('可执行文件缺失时返回 null 且不执行进程', () async {
+      final Directory root = _tempDirectory();
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(calls, (_) async => throw StateError('不应执行进程')),
+        binDir: joinPath(root.path, 'msys64/ucrt64/bin'),
+      );
+
+      expect(detected, isNull);
+      expect(calls, isEmpty);
+    });
+
+    test('-dumpmachine 无法启动时返回 null', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => throw ProcessException('gcc', <String>[], 'not found'),
+        ),
+        binDir: binDir,
+      );
+
+      expect(detected, isNull);
+    });
+
+    test('C++ 驱动缺失时 cxxExecutablePath 留空并回退 C 驱动', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      final String executable = joinPath(binDir, 'gcc.exe');
+      _createFile(executable);
+
+      final DetectedCompiler? detected = await detectMingw(
+        runner: _runner(<_ProcessCall>[], (_ProcessCall call) async {
+          if (call.arguments.single == '-dumpmachine') {
+            return _result('x86_64-w64-mingw32\n');
+          }
+          return _result('14.2.0\n');
+        }),
+        binDir: binDir,
+      );
+
+      expect(detected, isNotNull);
+      expect(detected!.cxxExecutablePath, isNull);
+      expect(detected.cxxCompilerPath, executable);
+    });
+
+    test('environment 透传给探测子进程', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+      final Map<String, String> environment = <String, String>{
+        'TMP': r'D:\tools\.tmp\build',
+        'CUSTOM': '1',
+      };
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await detectMingw(
+        runner: _runner(calls, (_ProcessCall call) async {
+          if (call.arguments.single == '-dumpmachine') {
+            return _result('x86_64-w64-mingw32\n');
+          }
+          return _result('14.2.0\n');
+        }),
+        binDir: binDir,
+        environment: environment,
+      );
+
+      expect(calls, isNotEmpty);
+      for (final _ProcessCall call in calls) {
+        expect(call.environment, same(environment));
+      }
+    });
+  });
+
   group('selectCompiler', () {
     test('按优先级返回首个可用', () {
       final DetectedCompiler icx = _compiler(CompilerKind.icx);
@@ -693,7 +974,7 @@ void main() {
       );
     });
 
-    test('从覆盖路径按 icx → clang-cl → msvc 顺序收集', () async {
+    test('从覆盖路径按 icx → clang-cl → msvc → mingw 顺序收集', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx.exe'));
@@ -713,6 +994,10 @@ void main() {
           'VC/Tools/MSVC/14.44.35207/bin/HostX64/x64/cl.exe',
         ),
       );
+      final String msys2Root = joinPath(root.path, 'msys64');
+      final String mingwBin = joinPath(msys2Root, 'ucrt64/bin');
+      _createFile(joinPath(mingwBin, 'gcc.exe'));
+      _createFile(joinPath(mingwBin, 'g++.exe'));
 
       final List<DetectedCompiler> compilers = await detectCompilers(
         runner:
@@ -728,18 +1013,210 @@ void main() {
               if (executable.endsWith('clang-cl.exe')) {
                 return _result('clang version 23.1.1\n');
               }
+              if (executable.endsWith('gcc.exe')) {
+                return arguments.single == '-dumpmachine'
+                    ? _result('x86_64-w64-mingw32\n')
+                    : _result('14.2.0\n');
+              }
               return _result('$installPath\r\n');
             },
         oneApiRoot: oneApiRoot,
         llvmBinDir: llvmBinDir,
         vswherePath: joinPath(root.path, 'vswhere.exe'),
+        msys2Root: msys2Root,
+        environment: const <String, String>{},
       );
 
       expect(
         compilers.map(
           (DetectedCompiler compiler) => compilerKindId(compiler.kind),
         ),
-        <String>['icx', 'clang-cl', 'msvc'],
+        <String>['icx', 'clang-cl', 'msvc', 'mingw'],
+      );
+      expect(compilers.last.version, '14.2.0（UCRT64）');
+      expect(
+        compilers.last.environmentScript,
+        isNull,
+        reason: 'MinGW 无环境脚本，绝不继承 MSVC 的 vcvars',
+      );
+    });
+
+    test('MinGW 固定子环境顺序：UCRT64 优先于 CLANG64 与 MINGW64', () async {
+      final Directory root = _tempDirectory();
+      final String msys2Root = joinPath(root.path, 'msys64');
+      _createFile(joinPath(msys2Root, 'ucrt64/bin/gcc.exe'));
+      _createFile(joinPath(msys2Root, 'ucrt64/bin/g++.exe'));
+      _createFile(joinPath(msys2Root, 'clang64/bin/clang.exe'));
+      _createFile(joinPath(msys2Root, 'clang64/bin/clang++.exe'));
+      _createFile(joinPath(msys2Root, 'mingw64/bin/gcc.exe'));
+      _createFile(joinPath(msys2Root, 'mingw64/bin/g++.exe'));
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner:
+            (
+              String executable,
+              List<String> arguments, {
+              String? workingDirectory,
+              Map<String, String>? environment,
+            }) async {
+              if (executable.endsWith('vswhere.exe')) {
+                throw ProcessException(executable, arguments, 'not found');
+              }
+              if (executable.endsWith('clang.exe')) {
+                return arguments.single == '-dumpmachine'
+                    ? _result('x86_64-w64-windows-gnu\n')
+                    : _result('20.1.8\n');
+              }
+              return arguments.single == '-dumpmachine'
+                  ? _result('x86_64-w64-mingw32\n')
+                  : _result('14.2.0\n');
+            },
+        oneApiRoot: joinPath(root.path, 'missing-oneapi'),
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+        msys2Root: msys2Root,
+        environment: const <String, String>{},
+      );
+
+      expect(compilers, hasLength(1));
+      expect(compilers.single.kind, CompilerKind.mingw);
+      expect(compilers.single.version, '14.2.0（UCRT64）');
+      expect(
+        compilers.single.executablePath,
+        joinPath(msys2Root, 'ucrt64/bin/gcc.exe'),
+      );
+    });
+
+    test('仅 MINGW64 可用时采用并在版本串标注已弃用', () async {
+      final Directory root = _tempDirectory();
+      final String msys2Root = joinPath(root.path, 'msys64');
+      _createFile(joinPath(msys2Root, 'mingw64/bin/gcc.exe'));
+      _createFile(joinPath(msys2Root, 'mingw64/bin/g++.exe'));
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner:
+            (
+              String executable,
+              List<String> arguments, {
+              String? workingDirectory,
+              Map<String, String>? environment,
+            }) async {
+              if (executable.endsWith('vswhere.exe')) {
+                throw ProcessException(executable, arguments, 'not found');
+              }
+              return arguments.single == '-dumpmachine'
+                  ? _result('x86_64-w64-mingw32\n')
+                  : _result('14.2.0\n');
+            },
+        oneApiRoot: joinPath(root.path, 'missing-oneapi'),
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+        msys2Root: msys2Root,
+        environment: const <String, String>{},
+      );
+
+      expect(compilers, hasLength(1));
+      expect(compilers.single.version, '14.2.0（MINGW64，已弃用）');
+      expect(
+        compilers.single.executablePath,
+        joinPath(msys2Root, 'mingw64/bin/gcc.exe'),
+      );
+    });
+
+    test('固定候选缺失时 PATH 兜底并从路径识别子环境', () async {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'custom/ucrt64/bin');
+      _createFile(joinPath(binDir, 'gcc.exe'));
+      _createFile(joinPath(binDir, 'g++.exe'));
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner:
+            (
+              String executable,
+              List<String> arguments, {
+              String? workingDirectory,
+              Map<String, String>? environment,
+            }) async {
+              if (executable.endsWith('gcc.exe')) {
+                return arguments.single == '-dumpmachine'
+                    ? _result('x86_64-w64-mingw32\n')
+                    : _result('14.2.0\n');
+              }
+              throw ProcessException(executable, arguments, 'not found');
+            },
+        oneApiRoot: joinPath(root.path, 'missing-oneapi'),
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+        msys2Root: joinPath(root.path, 'missing-msys2'),
+        environment: <String, String>{'Path': binDir},
+      );
+
+      expect(compilers, hasLength(1));
+      expect(compilers.single.version, '14.2.0（UCRT64）');
+      expect(compilers.single.executablePath, joinPath(binDir, 'gcc.exe'));
+      expect(compilers.single.cxxExecutablePath, joinPath(binDir, 'g++.exe'));
+    });
+
+    test('PATH 兜底拒绝 MSVC 目标的 clang', () async {
+      final Directory root = _tempDirectory();
+      final String llvmBin = joinPath(root.path, 'LLVM/bin');
+      _createFile(joinPath(llvmBin, 'clang.exe'));
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner:
+            (
+              String executable,
+              List<String> arguments, {
+              String? workingDirectory,
+              Map<String, String>? environment,
+            }) async {
+              if (executable.endsWith('clang.exe')) {
+                return _result('x86_64-pc-windows-msvc\n');
+              }
+              throw ProcessException(executable, arguments, 'not found');
+            },
+        oneApiRoot: joinPath(root.path, 'missing-oneapi'),
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+        msys2Root: joinPath(root.path, 'missing-msys2'),
+        environment: <String, String>{'PATH': llvmBin},
+      );
+
+      expect(compilers, isEmpty);
+    });
+
+    test('MSYS2_ROOT 覆盖默认安装根', () async {
+      final Directory root = _tempDirectory();
+      final String msys2Root = joinPath(root.path, 'custom-msys2');
+      _createFile(joinPath(msys2Root, 'ucrt64/bin/gcc.exe'));
+      _createFile(joinPath(msys2Root, 'ucrt64/bin/g++.exe'));
+
+      final List<DetectedCompiler> compilers = await detectCompilers(
+        runner:
+            (
+              String executable,
+              List<String> arguments, {
+              String? workingDirectory,
+              Map<String, String>? environment,
+            }) async {
+              if (executable.endsWith('vswhere.exe')) {
+                throw ProcessException(executable, arguments, 'not found');
+              }
+              return arguments.single == '-dumpmachine'
+                  ? _result('x86_64-w64-mingw32\n')
+                  : _result('14.2.0\n');
+            },
+        oneApiRoot: joinPath(root.path, 'missing-oneapi'),
+        llvmBinDir: joinPath(root.path, 'missing-llvm/bin'),
+        vswherePath: joinPath(root.path, 'missing-vswhere.exe'),
+        environment: <String, String>{'MSYS2_ROOT': msys2Root},
+      );
+
+      expect(compilers, hasLength(1));
+      expect(compilers.single.version, '14.2.0（UCRT64）');
+      expect(
+        compilers.single.executablePath,
+        joinPath(msys2Root, 'ucrt64/bin/gcc.exe'),
       );
     });
 
@@ -783,6 +1260,7 @@ void main() {
         oneApiRoot: oneApiRoot,
         llvmBinDir: llvmBinDir,
         vswherePath: joinPath(root.path, 'vswhere.exe'),
+        msys2Root: joinPath(root.path, 'missing-msys2'),
         environment: environment,
       );
 
