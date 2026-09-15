@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/controls/build_options.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
@@ -43,7 +44,6 @@ class _PackFilesState extends State<PackFiles> {
   static const double _treeIconSize = 18;
   // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
   static const double _treeRowContentMinHeight = 26;
-  static const double _optionFieldWidth = 120;
   static const Set<FileType> _buildLabelTypes = <FileType>{
     FileType.lib,
     FileType.dll,
@@ -354,9 +354,7 @@ class _PackFilesState extends State<PackFiles> {
   }
 
   Widget _buildToolbar() {
-    final List<BuildScriptOption> options = widget.onSave == null
-        ? const <BuildScriptOption>[]
-        : (_header?.options ?? const <BuildScriptOption>[]);
+    final String? runtimeValue = _savedRuntimeLibrary();
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
@@ -366,49 +364,34 @@ class _PackFilesState extends State<PackFiles> {
             onPressed: () => widget.onBuildPack!(widget.pack),
             child: const Text('构建'),
           ),
-          if (options.isNotEmpty) ...[
-            _buildOptionsToggle(),
-            if (_optionsExpanded)
-              Expanded(
-                child: SingleChildScrollView(
-                  key: const Key('buildOptionsScroll'),
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: <Widget>[
-                      for (final BuildScriptOption option in options)
-                        _buildOptionField(option),
-                    ],
-                  ),
-                ),
-              ),
-          ],
+          const SizedBox(width: 16),
+          Text(
+            '运行库',
+            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+          ),
+          const SizedBox(width: 8),
+          RuntimeLibrarySelector(
+            value: runtimeValue,
+            enabled: widget.onSave != null && !_savingOption,
+            onChanged: (String? value) {
+              if (value != runtimeValue) {
+                _changeBuildOption(runtimeOptionName, value);
+              }
+            },
+          ),
+          const SizedBox(width: 6),
+          const RuntimeLibraryHelpButton(),
         ],
       ),
     );
   }
 
-  Widget _buildOptionsToggle() {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: SizedBox(
-        width: 28,
-        height: 28,
-        child: Tooltip(
-          message: _optionsExpanded ? '收起构建选项' : '展开构建选项',
-          child: IconButton(
-            key: const Key('buildOptionsToggle'),
-            icon: Icon(
-              _optionsExpanded
-                  ? FluentIcons.chevron_down
-                  : FluentIcons.chevron_up,
-              size: 14,
-            ),
-            onPressed: () =>
-                setState(() => _optionsExpanded = !_optionsExpanded),
-          ),
-        ),
-      ),
+  /// 运行库保存值（`MD` / `MT` 大写归一）；缺失或非法显示「默认（跟随配方）」。
+  String? _savedRuntimeLibrary() {
+    final String? normalized = normalizeRuntimeLibrary(
+      widget.pack.buildOptions[runtimeOptionName],
     );
+    return normalized?.toUpperCase();
   }
 
   Widget _buildRepoVersionRow() {
@@ -427,56 +410,25 @@ class _PackFilesState extends State<PackFiles> {
     );
   }
 
-  Widget _buildOptionField(BuildScriptOption option) {
-    final String value =
-        widget.pack.buildOptions[option.name] ?? option.defaultValue;
-    return Padding(
-      padding: const EdgeInsets.only(left: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(option.name),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: _optionFieldWidth,
-            child: ComboBox<String>(
-              key: Key('buildOption_${option.name}'),
-              value: value,
-              onChanged: _savingOption
-                  ? null
-                  : (String? selected) {
-                      if (selected != null && selected != value) {
-                        _selectOption(option.name, selected);
-                      }
-                    },
-              items: <ComboBoxItem<String>>[
-                for (final String item in option.values)
-                  ComboBoxItem<String>(value: item, child: Text(item)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _selectOption(String name, String value) async {
+  /// 保存选项变更：全字段拷贝 → onSave → 悬浮提示；保存挂起期间全控件禁用。
+  ///
+  /// [value] 为 null 表示移除保存键（如运行库选择「默认（跟随配方）」）。
+  Future<void> _changeBuildOption(String name, String? value) async {
     final Future<bool> Function(PackModel pack)? onSave = widget.onSave;
     if (onSave == null || _savingOption) {
       return;
     }
-    _savingOption = true;
+    setState(() => _savingOption = true);
     bool saved = false;
     try {
       saved = await onSave(_withBuildOption(widget.pack, name, value));
     } catch (_) {
       saved = false;
-    } finally {
-      _savingOption = false;
     }
     if (!mounted) {
       return;
     }
+    setState(() => _savingOption = false);
     if (saved) {
       showFloatingToast(context, '已保存');
     } else {
@@ -494,6 +446,9 @@ class _PackFilesState extends State<PackFiles> {
     final bool canBuild =
         widget.onBuildPack != null &&
         findBuildScript(widget.pack.files) != null;
+    final List<BuildScriptOption> options = canBuild && widget.onSave != null
+        ? (_header?.options ?? const <BuildScriptOption>[])
+        : const <BuildScriptOption>[];
     final Color sizeColor = FluentTheme.of(context)
         .resources
         .textFillColorSecondary;
@@ -501,6 +456,16 @@ class _PackFilesState extends State<PackFiles> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (canBuild) _buildToolbar(),
+        if (options.isNotEmpty)
+          BuildOptionsPanel(
+            options: options,
+            values: widget.pack.buildOptions,
+            expanded: _optionsExpanded,
+            onToggleExpanded: () =>
+                setState(() => _optionsExpanded = !_optionsExpanded),
+            saving: _savingOption,
+            onChange: _changeBuildOption,
+          ),
         if (_header?.repo != null) _buildRepoVersionRow(),
         Expanded(
           child: widget.pack.files.isEmpty
@@ -532,7 +497,14 @@ class _DirNode {
   int fileCount = 0;
 }
 
-PackModel _withBuildOption(PackModel pack, String name, String value) {
+/// 全字段拷贝并写入选项值；[value] 为 null 时移除该保存键。
+PackModel _withBuildOption(PackModel pack, String name, String? value) {
+  final Map<String, String> options = <String, String>{...pack.buildOptions};
+  if (value == null) {
+    options.remove(name);
+  } else {
+    options[name] = value;
+  }
   return PackModel(
       name: pack.name,
       version: pack.version,
@@ -551,5 +523,5 @@ PackModel _withBuildOption(PackModel pack, String name, String value) {
     ..libraries = pack.libraries
     ..history = pack.history
     ..scripts = pack.scripts
-    ..buildOptions = <String, String>{...pack.buildOptions, name: value};
+    ..buildOptions = options;
 }

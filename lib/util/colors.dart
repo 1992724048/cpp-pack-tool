@@ -278,10 +278,10 @@ FluentThemeData buildTheme(
       bodyStyle: TextStyle(color: subtext, fontFamily: "HarmonyOS_Sans_SC"),
     ),
 
-    // 工具提示
+    // 工具提示（反色：底色正文、文字基色，latte 下对比度达标 WCAG AA）
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
-        color: flavor.overlay2,
+        color: text,
         borderRadius: BorderRadius.circular(6),
       ),
       textStyle: TextStyle(color: flavor.base, fontSize: 12),
