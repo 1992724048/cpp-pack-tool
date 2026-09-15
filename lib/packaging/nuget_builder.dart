@@ -365,9 +365,10 @@ class NuGetPackageBuilder implements PackageBuilder {
   /// 是项元数据 `%(PreBuildEvent.Command)`/`%(PostBuildEvent.Command)`
   /// （Microsoft.CppCommon.targets），晚导入的 NuGet `.targets` 属性不被消费，
   /// 消费者构建时命令静默不执行（实测）；自定义目标与 DeployPkg/CnpScripts
-  /// 同模式（实测晚导入可执行）。声明次序保持原属性组位置：post 目标早于
-  /// DeployPkg/License 目标，与旧 PostBuildEvent 事件位置有差异，但命令引用
-  /// `$(TargetPath)` 与包内脚本、不依赖部署产物，功能独立，可接受。
+  /// 同模式（实测晚导入可执行）。实测次序：post 目标早于 DeployPkg/License
+  /// 目标执行（仅实测观察，不依赖 MSBuild 对声明序的保证），与旧 PostBuildEvent
+  /// 事件位置有差异，但命令引用 `$(TargetPath)` 与包内脚本、不依赖部署产物，
+  /// 功能独立，可接受。
   static void _writeCommandGroups(StringBuffer buffer, PackModel pack) {
     final _CommandGroup commands = _CommandGroup();
     for (final CmdModel command in pack.commands) {

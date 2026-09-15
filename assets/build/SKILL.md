@@ -215,5 +215,5 @@ BUILD_OUT = os.environ["BUILD_OUT"]
 - [ ] 选项经 `os.environ.get("CNP_OPTION_<NAME>")` 读取；未声明选项不下发。
 - [ ] 预构建配方：头部声明 `# source: none`；下载 / 解压缓存位于 `SRC_PATH` 下且可复用；无关目录未进入 `BUILD_OUT`。
 - [ ] 依赖其它包时在头部声明 `# depends: <包名> [<版本范围>]`。
-- [ ] 需消费方构建前/后处理（如注入）时，在源目录根部提供 `pre.bat` / `post.bat`（以 `%~1` 为目标路径）。
+- [ ] 需消费方构建前/后处理（如注入）时，在源目录根部提供 `pre.bat` / `post.bat`（以 `%~1` 为目标路径）。`.bat` 以 cmd 原生编码落盘：优先 ANSI/MBCS（`content.encode("mbcs")`），代码页无法表示中文时退纯 ASCII 注释版本；**禁止 UTF-8 无 BOM 中文**——cmd 按系统代码页解析会出乱码命令行、报「不是内部或外部命令」（实测；做法见 mimalloc 配方 `write_post_bat`）。
 - [ ] 根级 `build.py` 不随包分发（打包器自动排除，无需手动处理）。
