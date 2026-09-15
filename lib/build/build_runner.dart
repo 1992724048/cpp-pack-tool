@@ -53,7 +53,37 @@ class PackBuildException implements Exception {
 const int _outputTailLineCount = 20;
 const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 
-/// 拉取源码并执行包内 `build.py`。
+/// 构建源码准备结果（[preparePackSource] 输出）。
+class PackSourcePreparation {
+  const PackSourcePreparation({
+    required this.sourcePath,
+    required this.scriptPath,
+    required this.target,
+  });
+
+  /// 包源目录（构建脚本工作目录，`BUILD_OUT`）。
+  final String sourcePath;
+
+  /// 构建脚本相对包源目录的路径（如 `build.py`）。
+  final String scriptPath;
+
+  /// 源码缓存工作目录（`SRC_PATH`）。
+  final Directory target;
+}
+
+/// 源码准备函数（与 [preparePackSource] 同形）：提权重试路径与测试注入替代实现。
+typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
+  PackModel pack,
+  void Function(PackBuildStage) onStage, {
+  PackProcessRunner processRunner,
+  PackStreamingProcessRunner? streamRunner,
+  void Function(String line)? onOutput,
+  void Function(String version)? onSourceVersion,
+  String cacheRoot,
+  Map<String, String>? environment,
+});
+
+/// 解析 `build.py` 头部、拉取/对齐源码并清空包源目录（构建流水线前半段）。
 ///
 /// 流程：解析 `build.py` 头部（仓库地址 + 可选 `# source: none`）→ 目标目录
 /// （`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，保证同一
@@ -63,19 +93,15 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// 源码版本对齐（解析最新稳定 tag → `checkout --force` 该 tag；无可用 tag
 /// 或检出失败时保持默认分支行为，且版本记录回退 `describe → 短哈希`，
 /// 见 [resolveLatestStableTag]）→ 清空包源
-/// 目录中白名单外的一切（见 [cleanupBuildOutput]）→ 以 `SRC_PATH`（目标目录）
-/// 与 `BUILD_OUT`（包源目录）环境变量运行 `python build.py`。
+/// 目录中白名单外的一切（见 [cleanupBuildOutput]）。
 ///
 /// 声明 `# source: none`（预构建配方）时跳过 git：仅创建目标目录作为
 /// `SRC_PATH` 工作区（缓存目录不清理，脚本缓存跨构建复用），但仍清空包源目录。
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
-/// 与 `GIT_TERMINAL_PROMPT`/`SRC_PATH`/`BUILD_OUT`/`PYTHONIOENCODING`
-/// 同名的键恒以本函数计算的值为准。python 子进程固定注入
-/// `PYTHONIOENCODING=utf-8`，保证管道中的 stdout/stderr 恒为 UTF-8
-/// （中文 Windows 下默认按 GBK 编码，会与流式解码口径不一致）。
-/// [onOutput] 非空时逐行转发子进程输出（git 源码拉取与 python 构建进程），
-/// 同时汇聚完整输出用于失败诊断；clone / fetch 追加 `--progress` 以强制输出进度。
+/// 与 `GIT_TERMINAL_PROMPT` 同名的键恒以本函数计算的值为准。
+/// [onOutput] 非空时逐行转发子进程输出（git 源码拉取），同时汇聚完整输出用于
+/// 失败诊断；clone / fetch 追加 `--progress` 以强制输出进度。
 /// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
 /// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
 /// `Process.start`，测试注入替代实现）。
@@ -84,7 +110,7 @@ const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 /// `git describe --tags --abbrev=0`（仍失败回退 `git rev-parse --short HEAD`）；
 /// 查询失败静默跳过，`# source: none` 包不查询。
 /// 为 null 时不产生任何额外 git 调用（源码对齐仍照常执行）。
-Future<void> runPackBuild(
+Future<PackSourcePreparation> preparePackSource(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   PackProcessRunner processRunner = Process.run,
@@ -181,14 +207,55 @@ Future<void> runPackBuild(
     throw PackBuildException(error.message);
   }
 
+  return PackSourcePreparation(
+    sourcePath: sourcePath,
+    scriptPath: scriptFile.path,
+    target: target,
+  );
+}
+
+/// 拉取源码并执行包内 `build.py`。
+///
+/// 覆盖整条构建流水线：[preparePackSource]（git 拉取/对齐 + 源目录清理）→
+/// 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`（包源目录）环境变量运行
+/// `python build.py`；python 子进程固定注入 `PYTHONIOENCODING=utf-8`，保证
+/// 管道中的 stdout/stderr 恒为 UTF-8（中文 Windows 下默认按 GBK 编码，会与
+/// 流式解码口径不一致）。提权重试路径（见 elevated_build.dart）复用同一
+/// 源码准备实现，仅构建脚本阶段不同，避免两条路径行为漂移。
+///
+/// 其余参数口径与 [preparePackSource] 一致：[onOutput] 逐行转发 git 与 python
+/// 输出；[streamRunner] 为 null 时保持一次性捕获，非 null 时以其为流式执行器
+/// （生产经 [runPackBuildStreaming] 注入 `Process.start`）。源码准备失败
+/// （克隆/拉取/检出/清理）抛 [PackBuildException]，构建脚本非零退出抛
+/// [PackBuildException]（携带输出尾部）。
+Future<void> runPackBuild(
+  PackModel pack,
+  void Function(PackBuildStage) onStage, {
+  PackProcessRunner processRunner = Process.run,
+  PackStreamingProcessRunner? streamRunner,
+  void Function(String line)? onOutput,
+  void Function(String version)? onSourceVersion,
+  String cacheRoot = 'cache',
+  Map<String, String>? environment,
+}) async {
+  final PackSourcePreparation source = await preparePackSource(
+    pack,
+    onStage,
+    processRunner: processRunner,
+    streamRunner: streamRunner,
+    onOutput: onOutput,
+    onSourceVersion: onSourceVersion,
+    cacheRoot: cacheRoot,
+    environment: environment,
+  );
   onStage(PackBuildStage.building);
   await _runBuildScript(
     processRunner,
     streamRunner,
     onOutput,
-    sourcePath,
-    scriptFile.path,
-    target,
+    source.sourcePath,
+    source.scriptPath,
+    source.target,
     environment,
   );
 }
@@ -357,11 +424,7 @@ Future<String?> _readRemoteHead(
   final ProcessResult result = await _runGit(
     processRunner,
     streamRunner,
-    const <String>[
-      'symbolic-ref',
-      '--quiet',
-      'refs/remotes/origin/HEAD',
-    ],
+    const <String>['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'],
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
@@ -443,10 +506,7 @@ PackProcessRunner _tagQueryRunner(
       executable,
       arguments,
       workingDirectory,
-      <String, String>{
-        ...?environment,
-        _gitPromptEnvironmentKey: '0',
-      },
+      <String, String>{...?environment, _gitPromptEnvironmentKey: '0'},
       onOutput,
     );
     return result;

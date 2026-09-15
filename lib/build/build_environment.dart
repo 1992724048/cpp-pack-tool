@@ -124,6 +124,7 @@ class BuildEnvironment {
     required this.cmakePath,
     required this.ninjaPath,
     required this.toolsDir,
+    this.python,
   });
 
   final DetectedCompiler compiler;
@@ -139,12 +140,17 @@ class BuildEnvironment {
 
   /// `tools/` 目录绝对路径。
   final String toolsDir;
+
+  /// 构建脚本使用的 Python 解释器（准备阶段解析结果）：供给版为绝对路径，
+  /// 本机命中为 `python` / `py`。提权重试据此在 launcher 中优先嵌入已解析的
+  /// 可执行文件，避免提权上下文重新解析 `PATH` 引入歧义。
+  final ProvisionedPython? python;
 }
 
 /// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
 ///
 /// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
-/// 未能归属的工具目录 → [pythonPathEntries]（Python 解释器目录） →
+/// 未能归属的工具目录 → [python] 的解释器目录（[ProvisionedPython.pathEntries]） →
 /// [toolPathEntries]（`# tool` 声明的工具） →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin、MSYS2 bin），条目大小写
 /// 不敏感去重；[options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
@@ -162,7 +168,7 @@ BuildEnvironment assembleBuildEnvironment({
   required Map<String, String> environment,
   required CmakeNinja cmakeNinja,
   required String toolsRoot,
-  List<String> pythonPathEntries = const <String>[],
+  ProvisionedPython? python,
   List<String> toolPathEntries = const <String>[],
   Map<String, String> options = const <String, String>{},
   String runtimeLibrary = defaultRuntimeLibrary,
@@ -197,7 +203,7 @@ BuildEnvironment assembleBuildEnvironment({
     child,
     _orderedToolPathEntries(
       cmakeNinja,
-      pythonPathEntries,
+      python?.pathEntries ?? const <String>[],
       toolPathEntries,
       compiler.extraPathEntries,
     ),
@@ -209,6 +215,7 @@ BuildEnvironment assembleBuildEnvironment({
     cmakePath: cmakeNinja.cmakeExecutable,
     ninjaPath: cmakeNinja.ninjaExecutable,
     toolsDir: toolsDir,
+    python: python,
   );
 }
 
@@ -313,7 +320,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     environment: captured,
     cmakeNinja: cmakeNinja,
     toolsRoot: toolsRoot,
-    pythonPathEntries: python.pathEntries,
+    python: python,
     toolPathEntries: toolPathEntries,
     options: options,
     runtimeLibrary: runtimeLibrary,
