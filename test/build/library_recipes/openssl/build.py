@@ -19,14 +19,10 @@
 # 构建方案（out-of-tree：空构建目录跑 `perl <源码>/Configure VC-WIN64A` + nmake）：
 # - 目标 VC-WIN64A（x64）；Debug 用官方 debug- 前缀目标（/Od /MDd /Zi）。
 # - 编译器按工具注入的编译器（CNP_C_COMPILER/CNP_CXX_COMPILER）选择：首选 ICX
-#   （映射为 cl 兼容驱动 icx-cl）；若 ICX 路线 Configure/nmake 失败，自动回退
-#   clang-cl（PATH 可解析时）并打印失败证据；MSVC 注入时用 cl。
-#   注：OpenSSL 的 VC-WIN64A 目标按 MSVC 旗标生成 nmake 配方，clang 路线必须用
-#   LLVM 的 cl 兼容驱动 clang-cl（R23 起工具注入 GNU clang，但同发行版 clang-cl
-#   仍在 PATH：LLVM bin 经 extraPathEntries 注入），GNU clang/clang++ 不能驱动
-#   该目标（MSVC 风格 `/Fd`/`/Fo` 等会被 GNU 驱动视为输入文件）。注入值为全路径
-#   且 oneAPI 目录含空格，nmake 无法可靠展开含空格的 $(CC)，故按可执行文件名
-#   映射为命令名（编译器目录已由工具注入 PATH：setvars.bat / LLVM bin）。
+#   （icx-cl，cl 兼容驱动）；若 ICX 路线 Configure/nmake 失败，自动回退 clang-cl
+#   （PATH 可解析时）并打印失败证据；MSVC 注入时用 cl。注入值为全路径且 oneAPI
+#   目录含空格，nmake 无法可靠展开含空格的 $(CC)，故按可执行文件名映射为命令名
+#   （编译器目录已由工具注入 PATH：setvars.bat / LLVM bin）。
 # - 收窄范围：no-makedepend（免二次依赖扫描）、no-docs；`nmake build_libs` 只出
 #   libcrypto/libssl（含导入库与 DLL），不出 apps/tests 可执行文件。
 # - 头文件：源码 include/openssl 的静态头 + 构建树 include/openssl 的生成头
@@ -114,8 +110,7 @@ def compiler_route():
     """返回 (路线标签, Configure CC/CXX 变量)：首选工具注入的 ICX。
 
     注入的编译器全路径无法直接交给 nmake（oneAPI 路径含空格），映射为注入
-    PATH 中的命令名；注入 clang（GNU）时同样映射为 cl 兼容驱动 clang-cl——
-    VC-WIN64A 目标的 MSVC 旗标只能由 cl 兼容驱动消化；识别不出时按 MSVC cl 处理。
+    PATH 中的命令名；识别不出时按 MSVC cl 处理。
     """
     name = injected_compiler_name()
     if name.startswith("icx"):
@@ -126,7 +121,7 @@ def compiler_route():
 
 
 def fallback_route(failed_label):
-    """ICX 路线失败时的回退路线（clang-cl 兼容驱动，需 PATH 可解析）；其余路线无回退。"""
+    """ICX 路线失败时的回退路线（clang-cl，需 PATH 可解析）；其余路线无回退。"""
     if failed_label != "icx" or shutil.which("clang-cl") is None:
         return None
     return "clang-cl", ["CC=clang-cl", "CXX=clang-cl"]

@@ -299,9 +299,9 @@ void main() {
   group('assembleBuildEnvironment', () {
     test('前置工具目录与编译器附加目录并保留 PATH 原值与键名', () {
       final DetectedCompiler compiler = _compiler(
-        kind: CompilerKind.clang,
+        kind: CompilerKind.clangCl,
         version: '23.1.1',
-        executablePath: r'C:\LLVM\bin\clang.exe',
+        executablePath: r'C:\LLVM\bin\clang-cl.exe',
         extraPathEntries: <String>[r'C:\LLVM\bin'],
       );
       final CmakeNinja cmakeNinja = _cmakeNinja(
@@ -337,46 +337,9 @@ void main() {
       );
       expect(result.environment['CNP_C_COMPILER'], compiler.executablePath);
       expect(result.environment['CNP_CXX_COMPILER'], compiler.executablePath);
-      expect(result.environment['CNP_COMPILER_KIND'], 'clang');
+      expect(result.environment['CNP_COMPILER_KIND'], 'clang-cl');
       expect(base['Path'], r'C:\Windows;C:\Windows\System32');
       expect(base.containsKey('CNP_CMAKE'), isFalse);
-    });
-
-    test('clang（GNU）CXX 取同目录 clang++.exe，缺失时退回 clang.exe', () {
-      final Directory root = _tempDirectory();
-      final String binDir = joinPath(root.path, 'LLVM/bin');
-      final String clang = joinPath(binDir, 'clang.exe');
-      final String clangxx = joinPath(binDir, 'clang++.exe');
-      _createFile(clang);
-      _createFile(clangxx);
-
-      final BuildEnvironment withCxx = assembleBuildEnvironment(
-        compiler: _compiler(
-          kind: CompilerKind.clang,
-          executablePath: clang,
-          extraPathEntries: <String>[binDir],
-        ),
-        environment: <String, String>{},
-        cmakeNinja: _cmakeNinja(),
-        toolsRoot: 'tools',
-      );
-      final BuildEnvironment withoutCxx = assembleBuildEnvironment(
-        compiler: _compiler(
-          kind: CompilerKind.clang,
-          executablePath: joinPath(root.path, 'solo/clang.exe'),
-          extraPathEntries: const <String>[],
-        ),
-        environment: <String, String>{},
-        cmakeNinja: _cmakeNinja(),
-        toolsRoot: 'tools',
-      );
-
-      expect(withCxx.environment['CNP_C_COMPILER'], clang);
-      expect(withCxx.environment['CNP_CXX_COMPILER'], clangxx);
-      expect(
-        withoutCxx.environment['CNP_CXX_COMPILER'],
-        joinPath(root.path, 'solo/clang.exe'),
-      );
     });
 
     test('ninja 目录前置到 cmake 目录之前', () {
@@ -651,10 +614,10 @@ void main() {
     test('按优先级选择编译器并透传捕获环境与供给工具', () async {
       final Directory root = _tempDirectory();
       final DetectedCompiler msvc = _compiler();
-      final DetectedCompiler clang = _compiler(
-        kind: CompilerKind.clang,
+      final DetectedCompiler clangCl = _compiler(
+        kind: CompilerKind.clangCl,
         version: '23.1.1',
-        executablePath: r'C:\LLVM\bin\clang.exe',
+        executablePath: r'C:\LLVM\bin\clang-cl.exe',
         extraPathEntries: <String>[r'C:\LLVM\bin'],
       );
       final CmakeNinja cmakeNinja = _cmakeNinja(
@@ -665,7 +628,7 @@ void main() {
       final List<CompilerKind> captured = <CompilerKind>[];
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        priority: <String>['clang', 'msvc'],
+        priority: <String>['clang-cl', 'msvc'],
         runner: _runner(
           <_ProcessCall>[],
           (_) async => throw StateError('不应执行进程'),
@@ -673,7 +636,7 @@ void main() {
         provisioner: provisioner,
         toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: base,
-        detect: () async => <DetectedCompiler>[msvc, clang],
+        detect: () async => <DetectedCompiler>[msvc, clangCl],
         capture: _captureStub(captured, (
           DetectedCompiler compiler,
           Map<String, String> baseEnvironment,
@@ -682,12 +645,12 @@ void main() {
         }),
       );
 
-      expect(result.compiler, same(clang));
-      expect(captured, <CompilerKind>[CompilerKind.clang]);
+      expect(result.compiler, same(clangCl));
+      expect(captured, <CompilerKind>[CompilerKind.clangCl]);
       expect(provisioner.ensureCmakeNinjaCalls, 1);
       expect(result.environment['FOO'], '1');
       expect(result.environment['CAPTURED'], 'yes');
-      expect(result.environment['CNP_COMPILER_KIND'], 'clang');
+      expect(result.environment['CNP_COMPILER_KIND'], 'clang-cl');
       expect(result.environment['CNP_CMAKE'], cmakeNinja.cmakeExecutable);
       expect(base, <String, String>{'FOO': '1'});
     });
@@ -870,15 +833,13 @@ void main() {
       expect(provisioner.ensureCmakeNinjaCalls, 0);
     });
 
-    test('无可用编译器时供给 clang/LLVM 并以 GNU clang 组装', () async {
+    test('无可用编译器时供给 clang/LLVM 并以 clang-cl 组装', () async {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'tools');
       final String clangDir = joinPath(toolsRoot, 'clang');
       final String clangBin = joinPath(clangDir, 'bin');
-      final String executable = joinPath(clangBin, 'clang.exe');
-      final String cxxExecutable = joinPath(clangBin, 'clang++.exe');
+      final String executable = joinPath(clangBin, 'clang-cl.exe');
       _createFile(executable);
-      _createFile(cxxExecutable);
       final _FakeProvisioner provisioner = _FakeProvisioner(
         _cmakeNinja(),
         clangResult: ProvisionedTool(
@@ -914,15 +875,15 @@ void main() {
       expect(provisioner.ensureClangLlvmCalls, 1);
       expect(provisioner.clangProgress, same(progress));
       expect(provisioner.ensureCmakeNinjaCalls, 1);
-      expect(captured, <CompilerKind>[CompilerKind.clang]);
-      expect(result.compiler.kind, CompilerKind.clang);
+      expect(captured, <CompilerKind>[CompilerKind.clangCl]);
+      expect(result.compiler.kind, CompilerKind.clangCl);
       expect(result.compiler.version, '23.1.1');
       expect(result.compiler.executablePath, executable);
       expect(result.compiler.environmentScript, isNull);
       expect(result.compiler.extraPathEntries, <String>[clangBin]);
-      expect(result.environment['CNP_COMPILER_KIND'], 'clang');
+      expect(result.environment['CNP_COMPILER_KIND'], 'clang-cl');
       expect(result.environment['CNP_C_COMPILER'], executable);
-      expect(result.environment['CNP_CXX_COMPILER'], cxxExecutable);
+      expect(result.environment['CNP_CXX_COMPILER'], executable);
       expect(result.environment['Path'], '$clangBin;C:\\Windows');
     });
 

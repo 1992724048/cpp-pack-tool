@@ -236,7 +236,7 @@ void main() {
             PackModel pack, {
             ToolDownloadProgressCallback? onDownloadProgress,
           }) async => throw const BuildPreparationException(
-            '未检测到可用编译器（优先级：icx > clang > msvc）',
+            '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
           ),
       build:
           (
@@ -254,7 +254,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('构建失败：未检测到可用编译器（优先级：icx > clang > msvc）'), findsOneWidget);
+    expect(
+      find.text('构建失败：未检测到可用编译器（优先级：icx > clang-cl > msvc）'),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('buildCompilerLabel')), findsNothing);
     expect(buildCount, 0);
     expect(find.byType(ProgressRing), findsNothing);

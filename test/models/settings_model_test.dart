@@ -10,7 +10,7 @@ void main() {
     expect(settings.themeMode, ThemeModeSetting.system);
     expect(settings.darkFlavor, 'mocha');
     expect(settings.accent, 'teal');
-    expect(settings.compilerPriority, <String>['icx', 'clang', 'msvc']);
+    expect(settings.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
     expect(settings.detectedCompilers, isEmpty);
   });
 
@@ -21,7 +21,7 @@ void main() {
     expect(map['themeMode'], 'system');
     expect(map['darkFlavor'], 'mocha');
     expect(map['accent'], 'teal');
-    expect(map['compilerPriority'], <String>['icx', 'clang', 'msvc']);
+    expect(map['compilerPriority'], <String>['icx', 'clang-cl', 'msvc']);
   });
 
   test('往返保留全部字段', () {
@@ -63,7 +63,7 @@ void main() {
     expect(loaded.darkFlavor, 'mocha');
     expect(loaded.accent, 'teal');
     expect(loaded.outputDirectory, isNull);
-    expect(loaded.compilerPriority, <String>['icx', 'clang', 'msvc']);
+    expect(loaded.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
   });
 
   test('编译器优先级容错：非列表、空列表回退默认，非法项过滤', () {
@@ -77,24 +77,24 @@ void main() {
       'compilerPriority': <Object?>['msvc', 42, '', '  ', 'icx'],
     });
 
-    expect(nonList.compilerPriority, <String>['icx', 'clang', 'msvc']);
-    expect(empty.compilerPriority, <String>['icx', 'clang', 'msvc']);
+    expect(nonList.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(empty.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
     expect(filtered.compilerPriority, <String>['msvc', 'icx']);
   });
 
-  test('优先级 R23 迁移：旧 clang-cl 改写为 clang 并按首见去重', () {
+  test('优先级 R23 回退迁移：GNU clang 标识改写为 clang-cl 并按首见去重', () {
     final SettingsModel legacy = SettingsModel.fromMap(<String, Object?>{
-      'compilerPriority': <Object?>['icx', 'clang-cl', 'msvc'],
+      'compilerPriority': <Object?>['icx', 'clang', 'msvc'],
     });
     final SettingsModel mixed = SettingsModel.fromMap(<String, Object?>{
-      'compilerPriority': <Object?>['clang-cl', 'clang', 'icx'],
+      'compilerPriority': <Object?>['clang', 'clang-cl', 'icx'],
     });
 
-    expect(legacy.compilerPriority, <String>['icx', 'clang', 'msvc']);
+    expect(legacy.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
     expect(mixed.compilerPriority, <String>[
-      'clang',
+      'clang-cl',
       'icx',
-    ], reason: '旧标识迁移后与既有 clang 视为同项，只保留首个');
+    ], reason: 'R23 的 GNU clang 标识迁移后与既有 clang-cl 视为同项，只保留首个');
   });
 
   test('空字符串输出目录视为未设置', () {
@@ -178,9 +178,9 @@ void main() {
         <String, Object?>{'kind': 'icx', 'version': '', 'executablePath': 'x'},
         <String, Object?>{'kind': 'icx', 'version': '2026.1.0'},
         <String, Object?>{
-          'kind': 'clang',
+          'kind': 'clang-cl',
           'version': '23.1.1',
-          'executablePath': r'C:\LLVM\bin\clang.exe',
+          'executablePath': r'C:\LLVM\bin\clang-cl.exe',
           'environmentScript': 42,
           'extraPathEntries': <Object?>[r'C:\LLVM\bin', 7, '', '  '],
         },
@@ -188,7 +188,7 @@ void main() {
     });
 
     expect(loaded.detectedCompilers, hasLength(1));
-    expect(loaded.detectedCompilers.single.kind, CompilerKind.clang);
+    expect(loaded.detectedCompilers.single.kind, CompilerKind.clangCl);
     expect(loaded.detectedCompilers.single.version, '23.1.1');
     expect(loaded.detectedCompilers.single.environmentScript, isNull);
     expect(loaded.detectedCompilers.single.extraPathEntries, <String>[
@@ -196,13 +196,13 @@ void main() {
     ]);
   });
 
-  test('检测缓存 R23 迁移：含旧 clang-cl 条目时整表作废（强制重检）', () {
+  test('检测缓存 R23 回退迁移：含 GNU clang 条目时整表作废（强制重检）', () {
     final SettingsModel legacyOnly = SettingsModel.fromMap(<String, Object?>{
       'detectedCompilers': <Object?>[
         <String, Object?>{
-          'kind': 'clang-cl',
+          'kind': 'clang',
           'version': '23.1.1',
-          'executablePath': r'C:\LLVM\bin\clang-cl.exe',
+          'executablePath': r'C:\LLVM\bin\clang.exe',
         },
       ],
     });
@@ -214,9 +214,9 @@ void main() {
           'executablePath': r'C:\VS\cl.exe',
         },
         <String, Object?>{
-          'kind': 'clang-cl',
+          'kind': 'clang',
           'version': '23.1.1',
-          'executablePath': r'C:\LLVM\bin\clang-cl.exe',
+          'executablePath': r'C:\LLVM\bin\clang.exe',
         },
       ],
     });
@@ -224,13 +224,29 @@ void main() {
     expect(
       legacyOnly.detectedCompilers,
       isEmpty,
-      reason: '旧驱动条目不可复用，整表作废交设置页/构建重检',
+      reason: 'R23 的 GNU 驱动条目不可复用，整表作废交设置页/构建重检',
     );
     expect(
       mixed.detectedCompilers,
       isEmpty,
-      reason: '仅丢弃旧条目会让 clang 无缓存可匹配而回落 msvc，必须整表作废',
+      reason: '仅丢弃旧条目会让 clang-cl 无缓存可匹配而回落 msvc，必须整表作废',
     );
+  });
+
+  test('检测缓存保留 clang-cl 条目（R23 回退后为当前驱动，不触发作废）', () {
+    final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
+      'detectedCompilers': <Object?>[
+        <String, Object?>{
+          'kind': 'clang-cl',
+          'version': '23.1.1',
+          'executablePath': r'C:\LLVM\bin\clang-cl.exe',
+        },
+      ],
+    });
+
+    expect(loaded.detectedCompilers, hasLength(1));
+    expect(loaded.detectedCompilers.single.kind, CompilerKind.clangCl);
+    expect(loaded.detectedCompilers.single.version, '23.1.1');
   });
 
   test('检测缓存与编译器优先级互不影响', () {

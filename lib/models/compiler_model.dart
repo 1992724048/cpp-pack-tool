@@ -1,10 +1,10 @@
 /// 编译器类型；设置页优先级与 `CNP_COMPILER_KIND` 使用 [compilerKindId] 的标识。
-enum CompilerKind { icx, clang, msvc }
+enum CompilerKind { icx, clangCl, msvc }
 
 /// 编译器在设置页与 `CNP_COMPILER_KIND` 中使用的稳定标识。
 String compilerKindId(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'icx',
-  CompilerKind.clang => 'clang',
+  CompilerKind.clangCl => 'clang-cl',
   CompilerKind.msvc => 'msvc',
 };
 
@@ -19,21 +19,23 @@ CompilerKind? compilerKindFromId(String id) {
   return null;
 }
 
-/// R23 之前的 clang 驱动标识：旧版用 `clang-cl.exe`（MSVC 兼容驱动）作为
-/// `CNP_COMPILER_KIND`，现代 GNU 驱动（`clang.exe`）改用 `clang`。
+/// R23 曾短暂使用的 clang 驱动标识：该版本把 clang 系驱动换成 GNU `clang.exe`
+/// （CXX 取 `clang++.exe`）并作为 `CNP_COMPILER_KIND`；现恢复 MSVC 兼容驱动
+/// clang-cl（`clang-cl.exe`），标识 `clang-cl`。
 ///
-/// 仅供配置迁移识别：旧缓存条目指向 clang-cl.exe 驱动，与 GNU 驱动语义不同
-/// （旗标体系不兼容），读回时必须丢弃并重检，不得映射为 [CompilerKind.clang]。
-const String legacyClangClKindId = 'clang-cl';
+/// 仅供配置迁移识别：R23 缓存条目指向 GNU 驱动，与 clang-cl 旗标体系不兼容
+/// （`-mavx2`/`-O3` 等 GNU 风参数会被 clang-cl 拒绝），读回时必须丢弃并重检，
+/// 不得映射为 [CompilerKind.clangCl]。
+const String legacyGnuClangKindId = 'clang';
 
-/// 标识是否为 R23 之前的旧版 clang 驱动（大小写不敏感、容忍首尾空白）。
+/// 标识是否为 R23 的 GNU clang 驱动（大小写不敏感、容忍首尾空白）。
 bool isLegacyCompilerKindId(String id) =>
-    id.trim().toLowerCase() == legacyClangClKindId;
+    id.trim().toLowerCase() == legacyGnuClangKindId;
 
 /// 编译器在构建对话框与设置页中展示的名称。
 String compilerKindLabel(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'ICX',
-  CompilerKind.clang => 'clang',
+  CompilerKind.clangCl => 'clang-cl',
   CompilerKind.msvc => 'MSVC',
 };
 

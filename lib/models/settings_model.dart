@@ -3,7 +3,11 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 
 enum ThemeModeSetting { system, dark, light }
 
-const List<String> _defaultCompilerPriority = <String>['icx', 'clang', 'msvc'];
+const List<String> _defaultCompilerPriority = <String>[
+  'icx',
+  'clang-cl',
+  'msvc',
+];
 
 class SettingsModel {
   const SettingsModel({
@@ -20,7 +24,7 @@ class SettingsModel {
   final String darkFlavor;
   final String accent;
 
-  /// 编译器优先级（`icx` / `clang` / `msvc`，自高到低）。
+  /// 编译器优先级（`icx` / `clang-cl` / `msvc`，自高到低）。
   final List<String> compilerPriority;
 
   /// 上次编译器检测结果缓存；空表示无缓存（设置页与构建据此重检）。
@@ -68,15 +72,16 @@ Map<String, Object?> _detectedCompilerToMap(DetectedCompiler compiler) {
 
 /// 缓存列表容错：非列表或损坏条目视为无缓存/跳过，不抛异常。
 ///
-/// R23 迁移：旧版缓存含 `clang-cl` 条目时整表作废（返回空 = 无缓存），由设置页
-/// 与构建触发一次重检。旧条目指向 clang-cl.exe 驱动、与 GNU clang 旗标体系
-/// 不兼容，不能复用；若仅丢弃该条目而保留其余缓存，优先级中 `clang` 将无条目
-/// 可匹配而回落到 `msvc`——整表作废可保证首次选择仍按用户优先级重检。
+/// R23 回退迁移：缓存含 GNU clang（`kind: clang`）条目时整表作废（返回空 = 无缓存），
+/// 由设置页与构建触发一次重检。R23 条目指向 `clang.exe` GNU 驱动、与恢复后的
+/// clang-cl 旗标体系不兼容，不能复用；若仅丢弃该条目而保留其余缓存，优先级中
+/// `clang-cl` 将无条目可匹配而回落到 `msvc`——整表作废可保证首次选择仍按用户
+/// 优先级重检。
 List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   if (value is! List) {
     return const <DetectedCompiler>[];
   }
-  if (value.any(_isLegacyClangClEntry)) {
+  if (value.any(_isLegacyGnuClangEntry)) {
     return const <DetectedCompiler>[];
   }
   final List<DetectedCompiler> compilers = <DetectedCompiler>[];
@@ -89,7 +94,7 @@ List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   return compilers;
 }
 
-bool _isLegacyClangClEntry(Object? value) {
+bool _isLegacyGnuClangEntry(Object? value) {
   if (value is! Map) {
     return false;
   }
@@ -136,8 +141,8 @@ List<String> _stringList(Object? value) {
   ];
 }
 
-/// 优先级读回：R23 迁移把旧 `clang-cl` 标识改写为 `clang`（按首见顺序去重），
-/// 否则升级后优先级会跳过 clang 条目直接回落 `msvc`。
+/// 优先级读回：R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见
+/// 顺序去重），否则升级后优先级会跳过 clang-cl 条目直接回落 `msvc`。
 List<String> _compilerPriorityFrom(Object? value) {
   if (value is! List) {
     return _defaultCompilerPriority;
@@ -148,7 +153,7 @@ List<String> _compilerPriorityFrom(Object? value) {
     if (item is! String || item.trim().isEmpty) {
       continue;
     }
-    final String id = isLegacyCompilerKindId(item) ? 'clang' : item.trim();
+    final String id = isLegacyCompilerKindId(item) ? 'clang-cl' : item.trim();
     if (seen.add(id)) {
       entries.add(id);
     }

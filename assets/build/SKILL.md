@@ -17,7 +17,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 ## 运行方式（工具侧）
 
 1. 解析库源码根目录的 `build.py`（文件名大小写不敏感；根级 `build.py` 不随包分发）；
-2. 检测编译器（ICX > clang > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
+2. 检测编译器（ICX > clang-cl > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
 3. 准备源码：无缓存时 `git clone` 到 `cache/build/<清洗包ID>/`；已有缓存时原位硬重置（`git fetch` → `reset --hard` 上游 → `clean -ffdx`），声明 `# source: none` 时跳过 git 仅创建该目录（缓存目录**不清理**，脚本下载/解压内容跨构建复用）；
 4. 以**包源目录为工作目录**运行 `python build.py`（Python 缺失时工具自动下载最小版到 `tools/python`；`python` 优先、`py -3` 兜底），并注入「环境变量」一节的变量；
 5. 脚本输出经管道逐行实时显示在构建对话框（`python -u` 无缓冲；git 拉取同样流式）；退出码 0 = 成功，非 0 = 失败（工具保留已显示输出并附输出尾部）；成功后自动扫描并重新映射产物。
@@ -47,8 +47,8 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | `BUILD_OUT` | 包源目录：分类后的最终产物写入这里（会随包入包）。**源码就绪后、执行 `build.py` 前会被清空**（git 拉取失败时不清理），仅保留根级 `build.py`（大小写不敏感）、`icon.*`、`pre.bat`/`post.bat`、根级 `.git` 与许可证类文件（`LICENSE`/`LICENCE`/`COPYING`/`UNLICENSE`/`NOTICE` 及 `-`/`.` 变体，含 `TBB-LICENSE` 类前缀变体；多段前缀如 `third-party-LICENSE` 不保护）；不要把需要跨构建的中间产物放这里。 |
 | `CNP_CMAKE` | cmake 可执行文件路径（`cmake_configure` / `cmake_build` 必需）。 |
 | `CNP_NINJA` | ninja 可执行文件路径（自动作为 `CMAKE_MAKE_PROGRAM`）。 |
-| `CNP_C_COMPILER` / `CNP_CXX_COMPILER` | 本机选中的 C / C++ 编译器全路径；clang 时 CXX 为同目录 `clang++.exe`（缺失时退回 `clang.exe`）。 |
-| `CNP_COMPILER_KIND` | 编译器种类：`msvc` / `clang`（GNU 驱动）/ `icx`；`clang-cl` 仅作为种类推断兜底（配方自选 cl 兼容驱动时）。 |
+| `CNP_C_COMPILER` / `CNP_CXX_COMPILER` | 本机选中的 C / C++ 编译器全路径。 |
+| `CNP_COMPILER_KIND` | 编译器种类：`msvc` / `clang-cl` / `icx`。 |
 | `CNP_TOOLS_DIR` | `tools/` 绝对路径（`# tool` 下载的工具都在这里）。 |
 | `CNP_OPTION_<NAME>` | `# option` 声明的选项当前值（名称大写）。 |
 | `PYTHONPATH` | 已前置 `tools/`，脚本可直接 `import cnp_build_support`。 |
@@ -96,8 +96,7 @@ from cnp_build_support import (
   | 编译器 | AVX2（全配置） | Release 优化 | LTO/IPO（仅 Release） |
   | --- | --- | --- | --- |
   | ICX | `/QxCORE-AVX2 /QaxCORE-AVX2` | `/O3 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-Qipo`） |
-  | clang（GNU 驱动） | `-mavx2` | `-O3 -ffunction-sections -fdata-sections` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化；显式 `-fuse-ld=lld-link`） |
-  | clang-cl（cl 兼容驱动） | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
+  | clang-cl | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
   | MSVC | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`/GL` + `/LTCG`） |
 
   - Debug 不注入任何优化参数（保留调试信息，优先保证调试用途），AVX2 仍保留；

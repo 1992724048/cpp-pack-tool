@@ -32,7 +32,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "6"
+VERSION = "5"
 
 __all__ = (
     "VERSION",
@@ -60,13 +60,11 @@ _OUTPUT_TAIL_LINES = 20
 _INTERMEDIATE_DIR_SUFFIXES = (".dir", "-c")
 
 # 编译器种类标识与 lib/build/toolchain.dart 的 CNP_COMPILER_KIND 对应。
-# clang（GNU 驱动，R23 起注入）与 clang-cl（MSVC 兼容驱动）旗标体系不同，分别列示。
-_COMPILER_KINDS = ("icx", "clang", "clang-cl", "msvc")
+_COMPILER_KINDS = ("icx", "clang-cl", "msvc")
 
 # AVX2 向量化（全部配置）。
 _AVX2_FLAGS = {
     "icx": ("/QxCORE-AVX2", "/QaxCORE-AVX2"),
-    "clang": ("-mavx2",),
     "clang-cl": ("/arch:AVX2",),
     "msvc": ("/arch:AVX2",),
 }
@@ -74,32 +72,20 @@ _AVX2_FLAGS = {
 # Release 最高优化（各编译器上限；/Ob2 /Oi /Ot 内联与内建、/GF 字符串池、
 # /Gy 函数级链接，clang-cl / icx 已实证接受）。clang-cl 须用 MSVC 风格 `/O2`：
 # GNU 风格 `-O3` 会被驱动忽略并告警；LLVM 23 实证 `/O2`+`/Ot` 映射 cc1 `-O3`
-# （最高优化），组合净级别 `-O3`。clang（GNU）用 `-O3` 与 GNU 段旗标——与
-# clang-cl 的 `/O2 /Ob2 /Oi /Ot /GF /Gy` 同级，勿降级为 `-O2`。
+# （最高优化），组合净级别 `-O3`。
 _RELEASE_OPTIMIZATION_FLAGS = {
     "icx": ("/O3", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
-    "clang": ("-O3", "-ffunction-sections", "-fdata-sections"),
     "clang-cl": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
     "msvc": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
 }
 
 # NDEBUG 定义前缀按编译器习惯书写（cl / icx-cl 兼容 `-D`，此处保留 MSVC 风格）。
-_DEFINE_FLAG_PREFIX = {"icx": "/D", "clang": "-D", "clang-cl": "-D", "msvc": "/D"}
+_DEFINE_FLAG_PREFIX = {"icx": "/D", "clang-cl": "-D", "msvc": "/D"}
 
-# CMake IPO（Release）：msvc → /GL + /LTCG；icx → -Qipo；clang / clang-cl →
-# -flto=thin（需 PATH 中可解析 lld-link，缺失时自动退化）。
+# CMake IPO（Release）：msvc → /GL + /LTCG；icx → -Qipo；clang-cl → -flto=thin。
 _IPO_CMAKE_VARIABLE = "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE"
 _IPO_LINKER_PROBE = "lld-link"
 _DISABLE_IPO_ENV = "CNP_NO_IPO"
-
-# GNU clang：显式 `-fuse-ld=lld-link`。LLVM 23 在 Windows 默认即用 lld-link，
-# 但该默认随版本漂移（R23 调研结论）；显式固定链接器避免升级后行为突变。
-_CLANG_LINKER_FLAG = "-fuse-ld=lld-link"
-_LINKER_FLAG_VARIABLES = (
-    "CMAKE_EXE_LINKER_FLAGS",
-    "CMAKE_SHARED_LINKER_FLAGS",
-    "CMAKE_MODULE_LINKER_FLAGS",
-)
 
 
 def cmake_configure(
@@ -114,16 +100,13 @@ def cmake_configure(
     优化参数按编译器种类（`CNP_COMPILER_KIND`，回退从编译器路径推断）注入，
     **不注入任何语言标准（std/c++ 标准）参数**：
 
-    - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang → `-mavx2`；
-      clang-cl / msvc → `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` /
-      `CMAKE_CXX_FLAGS`）；
-    - Release 最高优化：icx `/O3`、clang `-O3 -ffunction-sections
-      -fdata-sections`、clang-cl / msvc `/O2` + `/Ob2 /Oi /Ot /GF /Gy`，
-      保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` / `CMAKE_CXX_FLAGS_RELEASE`）；
-    - GNU clang 追加 `-fuse-ld=lld-link` 到 CMake 链接旗标变量（lld-link 缺失
-      时跳过，交给驱动默认）；
+    - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang-cl / msvc →
+      `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS`）；
+    - Release 最高优化：icx `/O3`、clang-cl `/O2`、msvc `/O2`，并追加
+      `/Ob2 /Oi /Ot /GF /Gy`，保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` /
+      `CMAKE_CXX_FLAGS_RELEASE`）；
     - Release 启用 CMake IPO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`）：
-      msvc `/GL`+`/LTCG`、icx `-Qipo`；clang / clang-cl 需可解析 `lld-link`，
+      msvc `/GL`+`/LTCG`、icx `-Qipo`；clang-cl 需 PATH 中可解析 `lld-link`，
       缺失时自动退化；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可显式关闭
       （供单个库按兼容性退化）；
     - Debug 不注入任何优化参数（保留调试信息），AVX2 仍保留。
@@ -163,7 +146,6 @@ def cmake_configure(
     command.extend(
         _optimization_arguments(avx2_flags, optimization_flags, kind, provided)
     )
-    command.extend(_clang_linker_arguments(kind, provided))
 
     ipo_state, ipo_reason = _resolve_ipo_state(
         kind, config, enable_ipo, provided
@@ -498,11 +480,9 @@ def _optional_environment_path(name):
 
 
 def _compiler_kind():
-    """编译器种类：`CNP_COMPILER_KIND`（msvc/clang/clang-cl/icx），回退从编译器路径推断。
+    """编译器种类：`CNP_COMPILER_KIND`（msvc/clang-cl/icx），回退从编译器路径推断。
 
-    两者都识别不出时返回 None（调用方不注入优化参数）。路径推断按可执行名区分：
-    `clang++`/`clang`（GNU 驱动）→ clang；`clang-cl` → clang-cl（MSVC 兼容驱动，
-    旗标体系不同，勿混用）。
+    两者都识别不出时返回 None（调用方不注入优化参数）。
     """
     kind = os.environ.get("CNP_COMPILER_KIND", "").strip().lower()
     if kind in _COMPILER_KINDS:
@@ -511,10 +491,8 @@ def _compiler_kind():
         executable = os.path.basename(os.environ.get(name, "").strip()).lower()
         if executable.startswith("icx"):
             return "icx"
-        if executable in ("clang-cl", "clang-cl.exe"):
-            return "clang-cl"
         if executable.startswith("clang"):
-            return "clang"
+            return "clang-cl"
         if executable in ("cl", "cl.exe"):
             return "msvc"
     return None
@@ -551,48 +529,13 @@ def _optimization_arguments(avx2_flags, optimization_flags, kind, provided):
     return arguments
 
 
-def _clang_linker_arguments(kind, provided):
-    """GNU clang 的显式链接器参数；非 clang 种类或 lld-link 不可用时返回空表。
-
-    LLVM 23 在 Windows 默认即用 lld-link，但该默认随版本漂移（R23 调研结论），
-    显式 `-fuse-ld=lld-link` 固定链接器；配方已提供相应链接旗标变量时不重复注入。
-    """
-    if kind != "clang" or not _lld_link_available():
-        return []
-    return [
-        "-D%s=%s" % (variable, _CLANG_LINKER_FLAG)
-        for variable in _LINKER_FLAG_VARIABLES
-        if variable not in provided
-    ]
-
-
-def _lld_link_available():
-    """lld-link 是否可用：PATH 可解析，或位于注入编译器的同目录（LLVM 发行版）。
-
-    clang 驱动会在自身安装目录查找 `lld-link.exe`，仅用 `shutil.which` 会漏判
-    “编译器目录未在 PATH 但同目录自带 lld-link”的常见情形（工具注入的 LLVM 满足
-    PATH 注入，但配方自配编译器路径时未必）。
-    """
-    if shutil.which(_IPO_LINKER_PROBE) is not None:
-        return True
-    for name in ("CNP_CXX_COMPILER", "CNP_C_COMPILER"):
-        executable = os.environ.get(name, "").strip()
-        if not executable:
-            continue
-        candidate = os.path.join(os.path.dirname(executable), "lld-link.exe")
-        if os.path.isfile(candidate):
-            return True
-    return False
-
-
 def _resolve_ipo_state(kind, config, enable_ipo, provided):
     """判定 Release IPO 状态：("on"/"off"/"preset", 退化原因或 None)。
 
     - 非 Release 配置不启用（不算退化）；
     - 配方经 `extra_args` 自带 IPO 变量时保持其取值（"preset"）；
     - `enable_ipo=False` / 环境变量 `CNP_NO_IPO` 显式关闭；`enable_ipo=True` 强制；
-    - auto：编译器种类未知 → 退化；clang / clang-cl 无 `lld-link` → 退化（需 lld
-      链接器）。
+    - auto：编译器种类未知 → 退化；clang-cl 无 `lld-link` → 退化（需 lld 链接器）。
     """
     if str(config).lower() != "release":
         return "off", None
@@ -608,7 +551,7 @@ def _resolve_ipo_state(kind, config, enable_ipo, provided):
         return "off", "unknown-compiler"
     if kind is None:
         return "off", "unknown-compiler"
-    if kind in ("clang", "clang-cl") and not _lld_link_available():
+    if kind == "clang-cl" and shutil.which(_IPO_LINKER_PROBE) is None:
         return "off", "lld-link-missing"
     return "on", None
 

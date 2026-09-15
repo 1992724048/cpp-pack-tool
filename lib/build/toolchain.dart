@@ -48,18 +48,18 @@ Future<DetectedCompiler?> detectIcx({
   );
 }
 
-/// 检测 `<llvmBinDir>/clang.exe`（GNU 驱动）的版本。
+/// 检测 `<llvmBinDir>/clang-cl.exe`（MSVC 兼容驱动）的版本。
 ///
-/// R23 起使用 GNU 驱动（`clang`/`clang++`）而非 MSVC 兼容的 clang-cl：CMake+Ninja
-/// 下 `ID=Clang`、`FRONTEND_VARIANT=GNU` 已实证（构建旗标走 GNU 风，见
-/// `cnp_build_support.py`）。LLVM 发行版同时含 clang-cl.exe，仅供配方按需使用。
+/// clang-cl 是唯一的 clang 系驱动：Windows 上驱动 CMake+Ninja 时与 MSVC 旗标
+/// 体系一致（见 `cnp_build_support.py`），GNU `clang.exe`/`clang++` 驱动已被
+/// 移除（GNU 风旗标见 R23 回退记录）。
 /// [environment] 为版本探测子进程的环境；null 时继承宿主环境。
-Future<DetectedCompiler?> detectClang({
+Future<DetectedCompiler?> detectClangCl({
   PackProcessRunner runner = Process.run,
   required String llvmBinDir,
   Map<String, String>? environment,
 }) async {
-  final String executable = joinPath(llvmBinDir, 'clang.exe');
+  final String executable = joinPath(llvmBinDir, 'clang-cl.exe');
   if (!File(executable).existsSync()) {
     return null;
   }
@@ -74,7 +74,7 @@ Future<DetectedCompiler?> detectClang({
     return null;
   }
   return DetectedCompiler(
-    kind: CompilerKind.clang,
+    kind: CompilerKind.clangCl,
     version: version,
     executablePath: executable,
     environmentScript: null,
@@ -118,7 +118,7 @@ Future<DetectedCompiler?> detectMsvc({
   );
 }
 
-/// 检测本机可用编译器，顺序固定为 ICX → clang → MSVC。
+/// 检测本机可用编译器，顺序固定为 ICX → clang-cl → MSVC。
 ///
 /// 默认查找位置（`%ONEAPI_ROOT%`、`ProgramFiles(x86)`/`ProgramFiles` 下的
 /// oneAPI 与 LLVM、vswhere）从 [environment]（缺省 `Platform.environment`）
@@ -151,13 +151,13 @@ Future<List<DetectedCompiler>> detectCompilers({
 
   final String? llvmBin = llvmBinDir ?? _defaultLlvmBinDir(env);
   if (llvmBin != null) {
-    final DetectedCompiler? clang = await detectClang(
+    final DetectedCompiler? clangCl = await detectClangCl(
       runner: runner,
       llvmBinDir: llvmBin,
       environment: env,
     );
-    if (clang != null) {
-      compilers.add(clang);
+    if (clangCl != null) {
+      compilers.add(clangCl);
     }
   }
 
@@ -173,12 +173,12 @@ Future<List<DetectedCompiler>> detectCompilers({
     }
   }
 
-  return _inheritMsvcEnvironmentForClang(compilers);
+  return _inheritMsvcEnvironmentForClangCl(compilers);
 }
 
-/// MSVC 的 `vcvars64.bat` 同时提供 clang 所需的 INCLUDE/LIB；检测结果中 clang
-/// 无环境脚本且存在带非空脚本的 MSVC 条目时，clang 继承该脚本。
-List<DetectedCompiler> _inheritMsvcEnvironmentForClang(
+/// MSVC 的 `vcvars64.bat` 同时提供 clang-cl 所需的 INCLUDE/LIB；检测结果中
+/// clang-cl 无环境脚本且存在带非空脚本的 MSVC 条目时，clang-cl 继承该脚本。
+List<DetectedCompiler> _inheritMsvcEnvironmentForClangCl(
   List<DetectedCompiler> compilers,
 ) {
   String? msvcScript;
@@ -196,7 +196,7 @@ List<DetectedCompiler> _inheritMsvcEnvironmentForClang(
   }
   return <DetectedCompiler>[
     for (final DetectedCompiler compiler in compilers)
-      if (compiler.kind == CompilerKind.clang &&
+      if (compiler.kind == CompilerKind.clangCl &&
           compiler.environmentScript == null)
         DetectedCompiler(
           kind: compiler.kind,
@@ -210,7 +210,7 @@ List<DetectedCompiler> _inheritMsvcEnvironmentForClang(
   ];
 }
 
-/// 按 [priority]（id 顺序，如 `['icx', 'clang', 'msvc']`）返回首个可用编译器。
+/// 按 [priority]（id 顺序，如 `['icx', 'clang-cl', 'msvc']`）返回首个可用编译器。
 DetectedCompiler? selectCompiler(
   List<DetectedCompiler> available,
   List<String> priority,

@@ -131,20 +131,6 @@ class BuildEnvironment {
   final String toolsDir;
 }
 
-/// C++ 驱动路径：GNU clang 取同目录 `clang++.exe`（LLVM 官方发行版自带，R23
-/// 实证 CMake+Ninja 端到端可用），缺失时退回 [DetectedCompiler.executablePath]
-/// （`clang.exe` 亦可编译链接 C++，见 R23 实证）；其余编译器 C/C++ 同驱动。
-String _cxxCompilerPath(DetectedCompiler compiler) {
-  if (compiler.kind != CompilerKind.clang) {
-    return compiler.executablePath;
-  }
-  final String candidate = joinPath(
-    File(compiler.executablePath).parent.path,
-    'clang++.exe',
-  );
-  return File(candidate).existsSync() ? candidate : compiler.executablePath;
-}
-
 /// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
 ///
 /// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
@@ -168,7 +154,7 @@ BuildEnvironment assembleBuildEnvironment({
   _setEnvironmentValue(child, 'CNP_NINJA', cmakeNinja.ninjaExecutable);
   _setEnvironmentValue(child, 'CNP_TOOLS_DIR', toolsDir);
   _setEnvironmentValue(child, 'CNP_C_COMPILER', compiler.executablePath);
-  _setEnvironmentValue(child, 'CNP_CXX_COMPILER', _cxxCompilerPath(compiler));
+  _setEnvironmentValue(child, 'CNP_CXX_COMPILER', compiler.executablePath);
   _setEnvironmentValue(
     child,
     'CNP_COMPILER_KIND',
@@ -215,7 +201,7 @@ BuildEnvironment assembleBuildEnvironment({
 /// 缓存完全一致。无可用编译器且 clang/LLVM 兜底失败、或任一环节失败时抛
 /// [BuildPreparationException]。
 Future<BuildEnvironment> prepareBuildEnvironment({
-  List<String> priority = const <String>['icx', 'clang', 'msvc'],
+  List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
   PackProcessRunner runner = Process.run,
   ToolProvisioner? provisioner,
   String toolsRoot = 'tools',
@@ -408,11 +394,11 @@ void _copyEnvironmentValue(
 }
 
 /// 编译器检测全部落空时的最后手段：下载 clang/LLVM 到 `tools/clang/`，
-/// 以 [baseEnvironment] 探测 GNU clang 版本并组装编译器条目（PATH 注入其 bin
+/// 以 [baseEnvironment] 探测 clang-cl 版本并组装编译器条目（PATH 注入其 bin
 /// 目录）。
 ///
-/// LLVM 发行版不含 MSVC 标准库头与链接库，clang 仍需 MSVC/SDK 环境（由检测阶段
-/// 的 vcvars 继承链路提供），故不携带环境脚本；供给失败包装
+/// LLVM 发行版不含 MSVC 标准库头与链接库，clang-cl 仍需 MSVC/SDK 环境（由检测
+/// 阶段的 vcvars 继承链路提供），故不携带环境脚本；供给失败包装
 /// [BuildPreparationException] 保留原详情。
 Future<DetectedCompiler> _provisionFallbackCompiler({
   required ToolProvisioner? provisioner,
@@ -443,14 +429,14 @@ Future<DetectedCompiler> _provisionFallbackCompiler({
       '${_noCompilerMessage(priority)}；clang/LLVM 最后手段失败：$error',
     );
   }
-  final DetectedCompiler? compiler = await detectClang(
+  final DetectedCompiler? compiler = await detectClangCl(
     runner: runner,
     llvmBinDir: joinPath(clang.directory, 'bin'),
     environment: baseEnvironment,
   );
   if (compiler == null) {
     throw BuildPreparationException(
-      'clang/LLVM 已供给予 ${clang.directory}，但 clang 版本探测失败',
+      'clang/LLVM 已供给予 ${clang.directory}，但 clang-cl 版本探测失败',
     );
   }
   return compiler;
