@@ -1,5 +1,4 @@
 import 'package:cpp_nuget_pack/models/compiler_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 
 enum ThemeModeSetting { system, dark, light }
 
@@ -16,8 +15,6 @@ class SettingsModel {
     this.cmakeOutputDirectory,
     this.defaultAuthor = '',
     this.themeMode = ThemeModeSetting.system,
-    this.darkFlavor = 'mocha',
-    this.accent = 'teal',
     this.compilerPriority = _defaultCompilerPriority,
     this.detectedCompilers = const <DetectedCompiler>[],
   });
@@ -32,8 +29,6 @@ class SettingsModel {
   final String defaultAuthor;
 
   final ThemeModeSetting themeMode;
-  final String darkFlavor;
-  final String accent;
 
   /// 编译器优先级（`icx` / `clang-cl` / `msvc` / `mingw`，自高到低）。
   final List<String> compilerPriority;
@@ -48,8 +43,6 @@ class SettingsModel {
         'cmakeOutputDirectory': cmakeOutputDirectory,
       if (defaultAuthor.isNotEmpty) 'defaultAuthor': defaultAuthor,
       'themeMode': themeMode.name,
-      'darkFlavor': darkFlavor,
-      'accent': accent,
       'compilerPriority': <String>[...compilerPriority],
       if (detectedCompilers.isNotEmpty)
         'detectedCompilers': <Map<String, Object?>>[
@@ -65,8 +58,6 @@ class SettingsModel {
       cmakeOutputDirectory: _optionalString(map['cmakeOutputDirectory']),
       defaultAuthor: _trimmedString(map['defaultAuthor']),
       themeMode: _themeModeFrom(map['themeMode']),
-      darkFlavor: _allowedValue(map['darkFlavor'], darkFlavorNames, 'mocha'),
-      accent: _allowedValue(map['accent'], accentColorNames, 'teal'),
       compilerPriority: _compilerPriorityFrom(map['compilerPriority']),
       detectedCompilers: _detectedCompilersFrom(map['detectedCompilers']),
     );
@@ -213,11 +204,4 @@ ThemeModeSetting _themeModeFrom(Object? value) {
     }
   }
   return ThemeModeSetting.system;
-}
-
-String _allowedValue(Object? value, List<String> allowed, String fallback) {
-  if (value is String && allowed.contains(value)) {
-    return value;
-  }
-  return fallback;
 }

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/build/build_cache.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
@@ -98,12 +97,8 @@ class _PackToolState extends State<PackTool> {
         ThemeModeSetting.dark => ThemeMode.dark,
         ThemeModeSetting.light => ThemeMode.light,
       },
-      theme: buildTheme(Brightness.light, catppuccin.latte, _settings.accent),
-      darkTheme: buildTheme(
-        Brightness.dark,
-        flavorByName(_settings.darkFlavor),
-        _settings.accent,
-      ),
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
       home: MainLayout(
         store: widget.store,
         settings: _settings,
@@ -947,8 +942,6 @@ class _MainLayoutState extends State<MainLayout> {
       cmakeOutputDirectory: current.cmakeOutputDirectory,
       defaultAuthor: current.defaultAuthor,
       themeMode: current.themeMode,
-      darkFlavor: current.darkFlavor,
-      accent: current.accent,
       compilerPriority: current.compilerPriority,
       detectedCompilers: compilers,
     );

@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
@@ -164,8 +163,6 @@ class _SettingState extends State<Setting> {
       cmakeOutputDirectory: cmakeOutputDirectory,
       defaultAuthor: current.defaultAuthor,
       themeMode: current.themeMode,
-      darkFlavor: current.darkFlavor,
-      accent: current.accent,
       compilerPriority: current.compilerPriority,
       detectedCompilers: current.detectedCompilers,
     );
@@ -178,26 +175,18 @@ class _SettingState extends State<Setting> {
       cmakeOutputDirectory: current.cmakeOutputDirectory,
       defaultAuthor: defaultAuthor,
       themeMode: current.themeMode,
-      darkFlavor: current.darkFlavor,
-      accent: current.accent,
       compilerPriority: current.compilerPriority,
       detectedCompilers: current.detectedCompilers,
     );
   }
 
-  SettingsModel _themeSettings({
-    ThemeModeSetting? themeMode,
-    String? darkFlavor,
-    String? accent,
-  }) {
+  SettingsModel _themeSettings({ThemeModeSetting? themeMode}) {
     final SettingsModel current = widget.settings;
     return SettingsModel(
       outputDirectory: current.outputDirectory,
       cmakeOutputDirectory: current.cmakeOutputDirectory,
       defaultAuthor: current.defaultAuthor,
       themeMode: themeMode ?? current.themeMode,
-      darkFlavor: darkFlavor ?? current.darkFlavor,
-      accent: accent ?? current.accent,
       compilerPriority: current.compilerPriority,
       detectedCompilers: current.detectedCompilers,
     );
@@ -210,8 +199,6 @@ class _SettingState extends State<Setting> {
       cmakeOutputDirectory: current.cmakeOutputDirectory,
       defaultAuthor: current.defaultAuthor,
       themeMode: current.themeMode,
-      darkFlavor: current.darkFlavor,
-      accent: current.accent,
       compilerPriority: compilerPriority,
       detectedCompilers: current.detectedCompilers,
     );
@@ -224,8 +211,6 @@ class _SettingState extends State<Setting> {
       cmakeOutputDirectory: current.cmakeOutputDirectory,
       defaultAuthor: current.defaultAuthor,
       themeMode: current.themeMode,
-      darkFlavor: current.darkFlavor,
-      accent: current.accent,
       compilerPriority: current.compilerPriority,
       detectedCompilers: detected,
     );
@@ -352,10 +337,6 @@ class _SettingState extends State<Setting> {
                 _buildSectionTitle(context, '主题'),
                 const SizedBox(height: 12),
                 InfoLabel(label: '主题模式', child: _buildThemeModeField()),
-                const SizedBox(height: 12),
-                InfoLabel(label: '深色主题配色', child: _buildDarkFlavorField()),
-                const SizedBox(height: 12),
-                InfoLabel(label: '强调色', child: _buildAccentField()),
                 const SizedBox(height: 24),
                 _buildSectionTitle(context, '编译器'),
                 const SizedBox(height: 12),
@@ -451,61 +432,6 @@ class _SettingState extends State<Setting> {
             ComboBoxItem<ThemeModeSetting>(
               value: mode,
               child: Text(_themeModeLabels[mode]!),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDarkFlavorField() {
-    return _comboBoxFrame(
-      ComboBox<String>(
-        key: const Key('settingDarkFlavorField'),
-        value: widget.settings.darkFlavor,
-        isExpanded: true,
-        onChanged: (String? value) {
-          if (value != null && value != widget.settings.darkFlavor) {
-            _apply(_themeSettings(darkFlavor: value));
-          }
-        },
-        items: <ComboBoxItem<String>>[
-          for (final String name in darkFlavorNames)
-            ComboBoxItem<String>(value: name, child: Text(_capitalize(name))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAccentField() {
-    return _comboBoxFrame(
-      ComboBox<String>(
-        key: const Key('settingAccentField'),
-        value: widget.settings.accent,
-        isExpanded: true,
-        onChanged: (String? value) {
-          if (value != null && value != widget.settings.accent) {
-            _apply(_themeSettings(accent: value));
-          }
-        },
-        items: <ComboBoxItem<String>>[
-          for (final String name in accentColorNames)
-            ComboBoxItem<String>(
-              value: name,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: accentColorFor(UCColors.flavor, name),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(_capitalize(name)),
-                ],
-              ),
             ),
         ],
       ),
@@ -674,10 +600,3 @@ Future<String?> _pickSkillSaveLocation(String suggestedName) async {
 
 Future<String> _loadSkillTemplateAsset() =>
     rootBundle.loadString(_skillAssetPath);
-
-String _capitalize(String value) {
-  if (value.isEmpty) {
-    return value;
-  }
-  return '${value[0].toUpperCase()}${value.substring(1)}';
-}
