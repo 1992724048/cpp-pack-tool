@@ -40,6 +40,21 @@ typedef ToolDownloadProgressCallback = void Function(
   ToolDownloadProgress progress,
 );
 
+/// 工具下载进度的展示文本：
+/// `正在下载 <工具名>：<百分比>（<已下载> / <总量>）[，<速度>/s]`；
+/// 总量未知时省略百分比，速度不可计算时省略速度。
+String formatToolDownloadProgress(ToolDownloadProgress progress) {
+  final String amount = progress.totalBytes > 0
+      ? '${(progress.receivedBytes * 100 / progress.totalBytes).round()}%'
+            '（${formatBytes(progress.receivedBytes)} / '
+            '${formatBytes(progress.totalBytes)}）'
+      : formatBytes(progress.receivedBytes);
+  final String speed = progress.bytesPerSecond > 0
+      ? '，${formatBytes(progress.bytesPerSecond.round())}/s'
+      : '';
+  return '正在下载 ${progress.name}：$amount$speed';
+}
+
 /// CMake 官方便携版下载地址（解析最新版失败时的兜底；2026-09-13 核验可达）。
 const String cmakeDownloadUrl =
     'https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip';

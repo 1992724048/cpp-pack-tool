@@ -2,19 +2,20 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
+import 'package:cpp_nuget_pack/controls/build_output_panel.dart';
+import 'package:cpp_nuget_pack/controls/build_timeline.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 
 enum _BuildStage {
   preparing,
@@ -37,36 +38,6 @@ typedef BuildPackPrepare = Future<BuildEnvironment> Function(
   ToolDownloadProgressCallback? onDownloadProgress,
 });
 
-/// `cnp_build_support.classify_tree` 的开始标记前缀（见 SKILL.md「分类标记」）；
-/// 预构建配方据此把阶段从「正在下载」切换到「正在分类」。
-const String classifyStartMarkerPrefix = '[cnp_build_support] classify:';
-
-final RegExp _classifyStartPattern = RegExp(
-  '^${RegExp.escape(classifyStartMarkerPrefix)}',
-);
-
-/// 构建脚本进度行的百分比提取：匹配 `... progress 42.0% ...` 形态（不依赖
-/// 具体库名）；不可解析返回 null。
-final RegExp _progressPercentPattern = RegExp(
-  r'progress[^0-9%]*([0-9]{1,3}(?:\.[0-9]+)?)\s*%',
-  caseSensitive: false,
-);
-
-bool isClassifyStartLine(String line) =>
-    _classifyStartPattern.hasMatch(line.trim());
-
-int? extractProgressPercent(String line) {
-  final RegExpMatch? match = _progressPercentPattern.firstMatch(line);
-  if (match == null) {
-    return null;
-  }
-  final double? value = double.tryParse(match.group(1)!);
-  if (value == null || value < 0 || value > 100) {
-    return null;
-  }
-  return value.round();
-}
-
 /// 触发下载进度重绘的最小字节差：更小的更新被跳过，降低 setState 频率；
 /// 首个事件（新工具）与完成事件不受此限制。
 const int _progressMinDeltaBytes = 256 * 1024;
@@ -74,65 +45,9 @@ const int _progressMinDeltaBytes = 256 * 1024;
 /// 输出面板保留的最大行数（超出后丢弃最早的行）。
 const int _maxOutputLineCount = 2000;
 
-const double _outputPanelHeight = 340;
-const double _statusColumnWidth = 240;
-
-const String _errorKeyword = 'ERROR';
-const String _warningKeyword = 'WARNING';
-const String _infoKeyword = 'INFO';
-const List<String> _outputKeywords = <String>[
-  _errorKeyword,
-  _warningKeyword,
-  _infoKeyword,
-];
-
-/// 输出行中的关键字匹配：关键字原文与起始下标。
-typedef MatchKeyword = ({String keyword, int index});
-
-/// 构建输出行的着色（ERROR 红 / WARNING 橙 / INFO 蓝 / 其余常规色）。
-///
-/// 关键字按字界匹配（大小写不敏感），避免 `terror`/`errorHandler` 一类
-/// 片段误判；一行含多个关键字时取最靠前者。
-Color outputLineColor(String line, FluentThemeData theme) {
-  final MatchKeyword? match = findOutputKeyword(line);
-  return switch (match?.keyword) {
-    _errorKeyword => AppColors.critical(theme.brightness),
-    _warningKeyword => AppColors.caution(theme.brightness),
-    _infoKeyword => AppColors.info(theme.brightness),
-    _ => theme.resources.textFillColorPrimary,
-  };
-}
-
-/// 首个字界匹配的输出关键字（大小写不敏感），无匹配时为 null。
-MatchKeyword? findOutputKeyword(String line) {
-  final String lower = line.toLowerCase();
-  MatchKeyword? found;
-  for (final String keyword in _outputKeywords) {
-    final int index = lower.indexOf(keyword.toLowerCase());
-    if (index < 0 || (found != null && index >= found.index)) {
-      continue;
-    }
-    if (!_isKeywordBoundary(line, index, keyword.length)) {
-      continue;
-    }
-    found = (keyword: keyword, index: index);
-  }
-  return found;
-}
-
-bool _isKeywordBoundary(String line, int start, int length) {
-  final bool startOk =
-      start == 0 || !_isAsciiLetter(line.codeUnitAt(start - 1));
-  final int end = start + length;
-  final bool endOk =
-      end >= line.length || !_isAsciiLetter(line.codeUnitAt(end));
-  return startOk && endOk;
-}
-
-bool _isAsciiLetter(int codeUnit) {
-  return (codeUnit >= 0x41 && codeUnit <= 0x5A) ||
-      (codeUnit >= 0x61 && codeUnit <= 0x7A);
-}
+/// 左栏（信息 + 时间线）宽度与内容区高度（右侧输出区同高）。
+const double _statusColumnWidth = 260;
+const double _panelHeight = 360;
 
 /// 构建对话框关闭载荷：[fixReport] 为头文件引用检查报告（未执行时为 null），
 /// [failureEntry] 为失败会话的历史条目（成功完成时为 null，提权重试成功后丢弃）。
@@ -160,8 +75,8 @@ class BuildPackDialog extends StatefulWidget {
 
   final PackModel pack;
 
-  /// 预构建配方（`# source: none`）：隐藏「准备环境/下载源码/执行构建」文案，
-  /// 改为 正在下载 → 正在分类（`classify_tree` 开始标记）→ 重新映射。
+  /// 预构建配方（`# source: none`）：步骤表为 下载 → 分类（`classify_tree`
+  /// 开始标记）→ 检查头文件引用 → 重新映射 → 完成。
   final bool sourceNone;
 
   final PackBuildRunner build;
@@ -186,18 +101,6 @@ class BuildPackDialog extends StatefulWidget {
 }
 
 class _BuildPackDialogState extends State<BuildPackDialog> {
-  static const TextStyle _outputTextStyle = TextStyle(
-    fontFamily: 'Consolas',
-    fontFamilyFallback: <String>['Courier New', 'monospace'],
-    fontSize: 12,
-    height: 1.5,
-  );
-
-  final ScrollController _outputScroller = ScrollController();
-  final ScrollController _outputHorizontalScroller = ScrollController();
-  final TextEditingController _outputFilterController = TextEditingController();
-  String _outputFilter = '';
-
   /// 构建会话计时：initState 启动，成功在完成态定格、失败在首次 [_showFailure] 定格；
   /// 提权重试时继续累计（不重置），即累计流水线执行时长。
   final Stopwatch _sessionWatch = Stopwatch();
@@ -208,6 +111,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
   final List<String> _outputLines = <String>[];
+
+  /// 输出行版本号：每次追加/补齐自增，输出面板据此自动滚动到底部。
+  int _outputRevision = 0;
+
   BuildEnvironment? _environment;
   List<FileModel> _files = const <FileModel>[];
   int _addedCount = 0;
@@ -220,28 +127,53 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   /// include 引用检查结果：关闭对话框时随 [Navigator.pop] 返回给调用方展示。
   HeaderIncludeFixReport? _fixReport;
 
-  /// 当前是否处于「以管理员身份重试」流程（阶段文案据此区分）。
+  /// 当前是否处于「以管理员身份重试」流程（步骤详情据此切管理员文案）。
   bool _elevatedRetry = false;
 
-  /// 工具下载进度（准备环境阶段）；离开准备阶段时清空。
+  /// 失败所在步骤：时间线据此标红并隐藏其后步骤。
+  BuildTimelineStepId _failedStep = BuildTimelineStepId.prepare;
+
+  /// 已实际执行过的步骤：越过但未执行的步骤在时间线上显示为「跳过」。
+  final Set<BuildTimelineStepId> _visitedSteps = <BuildTimelineStepId>{};
+
+  /// 工具下载进度（准备环境步骤）；离开该步骤时清空。
   ToolDownloadProgress? _downloadProgress;
 
-  /// 构建脚本输出的下载百分比（`progress NN%` 行；预构建配方阶段文案使用）。
+  /// 构建脚本输出的下载百分比（`progress NN%` 行；预构建配方使用）。
   int? _buildProgressPercent;
 
   @override
   void initState() {
     super.initState();
+    _visitedSteps.add(_activeStep);
     _sessionWatch.start();
     _prepare();
   }
 
-  @override
-  void dispose() {
-    _outputScroller.dispose();
-    _outputHorizontalScroller.dispose();
-    _outputFilterController.dispose();
-    super.dispose();
+  /// 阶段对应的步骤 ID（预构建配方的准备/下载/构建阶段统一归「下载」步骤）。
+  BuildTimelineStepId _stepFor(_BuildStage stage) {
+    return switch (stage) {
+      _BuildStage.preparing => widget.sourceNone
+          ? BuildTimelineStepId.download
+          : BuildTimelineStepId.prepare,
+      _BuildStage.downloading => BuildTimelineStepId.download,
+      _BuildStage.building => widget.sourceNone
+          ? BuildTimelineStepId.download
+          : BuildTimelineStepId.build,
+      _BuildStage.fixingIncludes => BuildTimelineStepId.includes,
+      _BuildStage.classifying => BuildTimelineStepId.classify,
+      _BuildStage.remapping => BuildTimelineStepId.remap,
+      _BuildStage.completed => BuildTimelineStepId.done,
+      _BuildStage.failed => _failedStep,
+    };
+  }
+
+  BuildTimelineStepId get _activeStep => _stepFor(_stage);
+
+  /// 推进阶段并记录该步骤已执行（时间线据此区分「完成」与「跳过」）。
+  void _advanceTo(_BuildStage stage) {
+    _visitedSteps.add(_stepFor(stage));
+    _stage = stage;
   }
 
   Future<void> _prepare() async {
@@ -258,7 +190,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    setState(() => _environment = environment);
+    setState(() {
+      _environment = environment;
+      _downloadProgress = null;
+    });
     await _build(environment);
   }
 
@@ -294,7 +229,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
     setState(() {
       _elevatedRetry = true;
-      _stage = _BuildStage.downloading;
+      _advanceTo(_BuildStage.downloading);
       _error = null;
       _downloadProgress = null;
     });
@@ -328,7 +263,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    setState(() => _stage = _BuildStage.remapping);
+    setState(() => _advanceTo(_BuildStage.remapping));
 
     final List<FileModel> files;
     try {
@@ -368,7 +303,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       ),
     );
     if (versionSynced) {
-      updated = _withVersion(updated, syncedVersion);
+      updated = copyPackWithVersion(updated, syncedVersion);
     }
     setState(() {
       _files = files;
@@ -388,40 +323,16 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
     _sessionWatch.stop();
     setState(() {
-      _stage = _BuildStage.completed;
+      _advanceTo(_BuildStage.completed);
       _failureEntry = null;
     });
-  }
-
-  /// 全字段拷贝并替换版本号（`PackModel.version` 为 final，只能重建）。
-  PackModel _withVersion(PackModel pack, String version) {
-    return PackModel(
-        name: pack.name,
-        version: version,
-        author: pack.author,
-        description: pack.description,
-        license: pack.license,
-        iconPath: pack.iconPath,
-        sourcePath: pack.sourcePath,
-        sourceVersion: pack.sourceVersion,
-      )
-      ..files = pack.files
-      ..commands = pack.commands
-      ..dependencies = pack.dependencies
-      ..macros = pack.macros
-      ..libDirectories = pack.libDirectories
-      ..libraries = pack.libraries
-      ..history = pack.history
-      ..scripts = pack.scripts
-      ..buildOptions = pack.buildOptions
-      ..enabledFormats = pack.enabledFormats;
   }
 
   /// 构建成功、重新映射扫描前的 include 引用检查（含自动修复）。
   ///
   /// 检查失败不阻断构建成功流程：错误记入输出面板，跳过报告继续重新映射。
   Future<void> _fixIncludes(String sourcePath) async {
-    setState(() => _stage = _BuildStage.fixingIncludes);
+    setState(() => _advanceTo(_BuildStage.fixingIncludes));
     try {
       _fixReport = await widget.fixIncludes(
         sourcePath,
@@ -438,10 +349,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
     setState(() {
       _downloadProgress = null;
-      _stage = switch (stage) {
+      _advanceTo(switch (stage) {
         PackBuildStage.downloading => _BuildStage.downloading,
         PackBuildStage.building => _BuildStage.building,
-      };
+      });
     });
   }
 
@@ -478,28 +389,13 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     setState(() {
       _outputLines.add(line);
       _trimOutputLines();
+      _outputRevision++;
       if (percent != null) {
         _buildProgressPercent = percent;
       }
       if (classify) {
-        _stage = _BuildStage.classifying;
+        _advanceTo(_BuildStage.classifying);
       }
-    });
-    _scrollOutputToBottom();
-  }
-
-  void _scrollOutputToBottom({bool retried = false}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      if (!_outputScroller.hasClients) {
-        if (!retried) {
-          _scrollOutputToBottom(retried: true);
-        }
-        return;
-      }
-      _outputScroller.jumpTo(_outputScroller.position.maxScrollExtent);
     });
   }
 
@@ -516,7 +412,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       message: _buildFailureMessage(error),
     );
     setState(() {
-      _stage = _BuildStage.failed;
+      _failedStep = _activeStep;
+      _advanceTo(_BuildStage.failed);
       _error = error;
       _downloadProgress = null;
       if (outputTail != null && outputTail.isNotEmpty) {
@@ -527,9 +424,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
           }
         }
         _trimOutputLines();
+        _outputRevision++;
       }
     });
-    _scrollOutputToBottom();
   }
 
   void _trimOutputLines() {
@@ -560,42 +457,40 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     return ContentDialog(
       key: const Key('buildPackDialog'),
       title: const Text('构建'),
-      constraints: const BoxConstraints(maxWidth: 800),
+      constraints: const BoxConstraints(maxWidth: 880),
       content: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        children: <Widget>[
           SizedBox(
             width: _statusColumnWidth,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('包名：${widget.pack.name}'),
-                  const SizedBox(height: 4),
-                  Text('源目录：${widget.pack.sourcePath ?? '未知'}'),
-                  if (environment != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '编译器：${compilerKindLabel(environment.compiler.kind)} '
-                      '${environment.compiler.version}',
-                      key: const Key('buildCompilerLabel'),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  _buildStatus(),
-                ],
-              ),
+            height: _panelHeight,
+            child: BuildStatusColumn(
+              packName: widget.pack.name,
+              sourcePath: widget.pack.sourcePath ?? '未知',
+              compilerLabel: environment == null
+                  ? null
+                  : '编译器：${compilerKindLabel(environment.compiler.kind)} '
+                        '${environment.compiler.version}',
+              runtimeLabel: _runtimeLabel,
+              steps: _timelineSteps,
+              onRetryElevated: _canRetryElevated ? _retryElevated : null,
             ),
           ),
           Container(
             width: 1,
-            height: _outputPanelHeight,
+            height: _panelHeight,
             color: theme.resources.cardStrokeColorDefault,
           ),
           const SizedBox(width: 16),
-          Expanded(child: _buildOutputPanel()),
+          Expanded(
+            child: SizedBox(
+              height: _panelHeight,
+              child: BuildOutputPanel(
+                lines: _outputLines,
+                revision: _outputRevision,
+              ),
+            ),
+          ),
         ],
       ),
       actions: [
@@ -624,264 +519,51 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _stage == _BuildStage.classifying ||
       _stage == _BuildStage.remapping;
 
-  Widget _buildOutputPanel() {
-    final FluentThemeData theme = FluentTheme.of(context);
-    return Container(
-      key: const Key('buildOutputPanel'),
-      height: _outputPanelHeight,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: theme.resources.cardBackgroundFillColorSecondary,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: theme.resources.cardStrokeColorDefault),
+  /// 运行库展示（⑥）：优先取已解析构建环境的 `CNP_RUNTIME_LIBRARY`
+  /// （最终生效值：用户选择 > `# runtime:` 配方默认 > md）；准备完成前按
+  /// 用户显式选择推导；无法判定时显示「跟随配方」。
+  String get _runtimeLabel {
+    final String? resolved = normalizeRuntimeLibrary(
+      _environment?.environment[runtimeLibraryEnvName],
+    );
+    final String? userChoice = normalizeRuntimeLibrary(
+      widget.pack.buildOptions[runtimeOptionName],
+    );
+    return switch (resolved ?? userChoice) {
+      'mt' => 'MT（静态）',
+      'md' => 'MD（动态）',
+      _ => '跟随配方',
+    };
+  }
+
+  /// 时间线步骤：三模式步骤表 + 当前会话状态（失败时隐藏后续步骤）。
+  List<BuildTimelineStep> get _timelineSteps {
+    final bool failed = _stage == _BuildStage.failed;
+    return buildTimelineSteps(
+      sourceNone: widget.sourceNone,
+      activeStep: _activeStep,
+      sessionState: switch (_stage) {
+        _BuildStage.failed => BuildTimelineSessionState.failed,
+        _BuildStage.completed => BuildTimelineSessionState.completed,
+        _ => BuildTimelineSessionState.running,
+      },
+      visitedSteps: <BuildTimelineStepId>{..._visitedSteps, _activeStep},
+      activeDetails: buildActiveStepDetails(
+        step: _activeStep,
+        preparing: _stage == _BuildStage.preparing,
+        sourceNone: widget.sourceNone,
+        downloadProgress: _downloadProgress,
+        buildProgressPercent: _buildProgressPercent,
+        elevatedRetry: _elevatedRetry,
       ),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          SizedBox(height: 32, child: _buildOutputFilter()),
-          const SizedBox(height: 8),
-          Expanded(child: _buildOutputContent()),
-        ],
+      doneDetails: buildCompletionDetails(
+        fileCount: _files.length,
+        totalSize: totalFileSize(_files),
+        addedCount: _addedCount,
+        removedCount: _removedCount,
+        syncedVersion: _syncedVersion,
       ),
-    );
-  }
-
-  Widget _buildOutputFilter() {
-    return TextBox(
-      key: const Key('buildOutputFilter'),
-      controller: _outputFilterController,
-      placeholder: '过滤日志…',
-      prefix: const Padding(
-        padding: EdgeInsets.only(left: 8, right: 6),
-        child: Icon(FluentIcons.search, size: 14),
-      ),
-      suffix: _outputFilter.isEmpty
-          ? null
-          : Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: IconButton(
-                key: const Key('buildOutputFilterClear'),
-                icon: const Icon(FluentIcons.clear, size: 12),
-                onPressed: _clearOutputFilter,
-              ),
-            ),
-      onChanged: (String value) => setState(() => _outputFilter = value),
-    );
-  }
-
-  void _clearOutputFilter() {
-    _outputFilterController.clear();
-    setState(() => _outputFilter = '');
-  }
-
-  /// 过滤只影响显示，不改变 [_outputLines] 原始行列表。
-  List<String> get _visibleOutputLines {
-    final String query = _outputFilter.toLowerCase();
-    if (query.isEmpty) {
-      return _outputLines;
-    }
-    return <String>[
-      for (final String line in _outputLines)
-        if (line.toLowerCase().contains(query)) line,
-    ];
-  }
-
-  Widget _buildOutputContent() {
-    if (_outputLines.isEmpty) {
-      return _buildOutputPlaceholder('等待输出…');
-    }
-    final List<String> lines = _visibleOutputLines;
-    if (lines.isEmpty) {
-      return _buildOutputPlaceholder('无匹配行');
-    }
-    return _withMouseDrag(
-      Scrollbar(
-        key: const Key('buildOutputHorizontalScrollbar'),
-        controller: _outputHorizontalScroller,
-        scrollbarOrientation: ScrollbarOrientation.bottom,
-        notificationPredicate: (ScrollNotification notification) =>
-            notification.metrics.axis == Axis.horizontal,
-        child: SingleChildScrollView(
-          controller: _outputScroller,
-          padding: const EdgeInsets.only(bottom: 12),
-          child: SingleChildScrollView(
-            controller: _outputHorizontalScroller,
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              key: const Key('buildOutputContent'),
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                for (final String line in lines) _buildOutputLine(line),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOutputPlaceholder(String message) {
-    return Center(
-      child: Text(
-        message,
-        style: _outputTextStyle.copyWith(
-          color: FluentTheme.of(context).resources.textFillColorTertiary,
-        ),
-      ),
-    );
-  }
-
-  /// 桌面默认 dragDevices 不含鼠标（内容不可拖拽平移），此处补充，
-  /// 与横向 Scrollbar 拖拽一起保证鼠标用户的横向滚动可达。
-  Widget _withMouseDrag(Widget child) {
-    final ScrollBehavior behavior = ScrollConfiguration.of(context);
-    return ScrollConfiguration(
-      behavior: behavior.copyWith(
-        dragDevices: <PointerDeviceKind>{
-          ...behavior.dragDevices,
-          PointerDeviceKind.mouse,
-        },
-      ),
-      child: child,
-    );
-  }
-
-  Widget _buildOutputLine(String line) {
-    final FluentThemeData theme = FluentTheme.of(context);
-    final Color keywordColor = outputLineColor(line, theme);
-    final TextStyle keywordStyle = _outputTextStyle.copyWith(
-      color: keywordColor,
-      fontWeight: FontWeight.w600,
-    );
-    final TextStyle textStyle = _outputTextStyle.copyWith(
-      color: theme.resources.textFillColorPrimary,
-    );
-    return RichText(
-      text: TextSpan(
-        style: textStyle,
-        children: _splitOutputLine(line, keywordStyle),
-      ),
-    );
-  }
-
-  List<TextSpan> _splitOutputLine(String line, TextStyle keywordStyle) {
-    final MatchKeyword? match = findOutputKeyword(line);
-    if (match == null) {
-      return <TextSpan>[TextSpan(text: line)];
-    }
-    final int end = match.index + match.keyword.length;
-    return <TextSpan>[
-      if (match.index > 0) TextSpan(text: line.substring(0, match.index)),
-      TextSpan(text: line.substring(match.index, end), style: keywordStyle),
-      if (end < line.length) TextSpan(text: line.substring(end)),
-    ];
-  }
-
-  /// 预构建配方的下载阶段文案（附构建脚本上报的百分比，若有）。
-  String get _sourceNoneDownloadText {
-    final int? percent = _buildProgressPercent;
-    return percent == null ? '正在下载…' : '正在下载…（$percent%）';
-  }
-
-  String get _preparingText =>
-      widget.sourceNone ? _sourceNoneDownloadText : '正在准备构建环境…';
-
-  String get _downloadingText => widget.sourceNone
-      ? _sourceNoneDownloadText
-      : (_elevatedRetry ? '正在以管理员身份拉取源码…' : '正在下载源码…');
-
-  String get _buildingText => widget.sourceNone
-      ? _sourceNoneDownloadText
-      : (_elevatedRetry ? '正在以管理员身份执行构建…' : '正在执行构建…');
-
-  Widget _buildStatus() {
-    switch (_stage) {
-      case _BuildStage.preparing:
-        return _buildProgressStatus(_preparingText, showDownloadProgress: true);
-      case _BuildStage.downloading:
-        return _buildProgressStatus(_downloadingText);
-      case _BuildStage.building:
-        return _buildProgressStatus(_buildingText);
-      case _BuildStage.fixingIncludes:
-        return _buildProgressStatus('正在检查头文件引用…');
-      case _BuildStage.classifying:
-        return _buildProgressStatus('正在分类…');
-      case _BuildStage.remapping:
-        return _buildProgressStatus('正在重新映射…');
-      case _BuildStage.failed:
-        return _buildFailure();
-      case _BuildStage.completed:
-        return _buildResult();
-    }
-  }
-
-  Widget _buildProgressStatus(
-    String label, {
-    bool showDownloadProgress = false,
-  }) {
-    final ToolDownloadProgress? progress = _downloadProgress;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            ProgressRing(),
-            const SizedBox(width: 12),
-            Expanded(child: Text(label)),
-          ],
-        ),
-        if (showDownloadProgress && progress != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            _downloadProgressText(progress),
-            key: const Key('buildDownloadProgress'),
-            style: TextStyle(
-              fontSize: 12,
-              color: FluentTheme.of(context).resources.textFillColorTertiary,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
-  String _downloadProgressText(ToolDownloadProgress progress) {
-    final String amount = progress.totalBytes > 0
-        ? '${(progress.receivedBytes * 100 / progress.totalBytes).round()}%'
-              '（${formatBytes(progress.receivedBytes)} / '
-              '${formatBytes(progress.totalBytes)}）'
-        : formatBytes(progress.receivedBytes);
-    final String speed = progress.bytesPerSecond > 0
-        ? '，${formatBytes(progress.bytesPerSecond.round())}/s'
-        : '';
-    return '正在下载 ${progress.name}：$amount$speed';
-  }
-
-  Widget _buildFailure() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('构建失败：${formatError(_error!)}'),
-        const SizedBox(height: 8),
-        const Text('详细输出见右侧面板'),
-        if (_canRetryElevated) ...[
-          const SizedBox(height: 12),
-          const Text(
-            '检测到临时目录权限问题（可能由内存盘等原因引起），可尝试以管理员身份重试。',
-            key: Key('buildElevatedRetryHint'),
-            style: TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          Button(
-            key: const Key('buildElevatedRetryButton'),
-            onPressed: _retryElevated,
-            child: const Text('以管理员身份重试'),
-          ),
-        ],
-      ],
+      failureText: failed ? '构建失败：${formatError(_error!)}' : null,
     );
   }
 
@@ -896,34 +578,4 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   /// 失败态的全部文本（异常信息 + 输出面板行，含已补充的输出尾部）。
   String get _failureText =>
       <String>[formatError(_error!), ..._outputLines].join('\n');
-
-  Widget _buildResult() {
-    final int totalSize = totalFileSize(_files);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('构建完成'),
-        const SizedBox(height: 8),
-        Text('文件数量：${_files.length}'),
-        const SizedBox(height: 4),
-        Text('总大小：${formatBytes(totalSize)}'),
-        const SizedBox(height: 4),
-        Text('新增：$_addedCount 个文件'),
-        const SizedBox(height: 4),
-        Text('移除：$_removedCount 个文件'),
-        if (_syncedVersion != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            '已自动同步版本：$_syncedVersion',
-            key: const Key('buildSyncedVersion'),
-            style: TextStyle(
-              fontSize: 12,
-              color: FluentTheme.of(context).resources.textFillColorTertiary,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 }

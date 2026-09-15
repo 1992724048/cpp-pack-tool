@@ -912,7 +912,7 @@ void main() {
     expect(builtPack?.name, 'demo');
     expect(receivedEnvironment, same(prepared.environment));
     expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
     expect(find.text('新增：1 个文件'), findsOneWidget);
     expect(find.text('移除：2 个文件'), findsOneWidget);
     expect(stages, <PackBuildStage>[
@@ -1072,8 +1072,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('正在下载…'), findsOneWidget);
-    expect(find.text('正在准备构建环境…'), findsNothing);
+    expect(find.text('下载'), findsOneWidget);
+    expect(find.text('准备环境'), findsNothing);
     expect(receivedProgress, isNotNull);
 
     receivedProgress!(

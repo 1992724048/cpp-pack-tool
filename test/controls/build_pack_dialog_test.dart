@@ -3,10 +3,12 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart' show runtimeOptionName;
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
+import 'package:cpp_nuget_pack/controls/build_output_panel.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -58,27 +60,34 @@ void main() {
     expect(find.text('构建'), findsOneWidget);
     expect(find.text('包名：demo'), findsOneWidget);
     expect(find.text(r'源目录：C:\libs\demo'), findsOneWidget);
-    expect(find.text('正在准备构建环境…'), findsOneWidget);
+    expect(find.text('运行库：跟随配方'), findsOneWidget);
+    expect(_stepIsActive(tester, 'prepare'), isTrue);
+    expect(find.text('准备环境'), findsOneWidget);
+    expect(find.text('下载源码'), findsOneWidget);
+    expect(find.text('执行构建'), findsOneWidget);
+    expect(find.text('检查头文件引用'), findsOneWidget);
+    expect(find.text('重新映射'), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
     expect(find.byKey(const Key('buildCompilerLabel')), findsNothing);
     expect(find.byType(ProgressRing), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
     prepareGate.complete(_environment());
     await tester.pump();
-    expect(find.text('正在下载源码…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'download'), isTrue);
     expect(find.byKey(const Key('buildCompilerLabel')), findsOneWidget);
     expect(find.text('编译器：ICX 2026.1.1'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
     downloadGate.complete();
     await tester.pump();
-    expect(find.text('正在执行构建…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'build'), isTrue);
     expect(find.text('编译器：ICX 2026.1.1'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
     buildGate.complete();
     await tester.pump();
-    expect(find.text('正在重新映射…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'remap'), isTrue);
     expect(_closeButton(tester).onPressed, isNull);
 
     scanCompleter.complete(<FileModel>[
@@ -86,7 +95,7 @@ void main() {
       FileModel(name: 'logo.svg', path: 'assets/logo.svg', size: 1024),
     ]);
     await tester.pump();
-    expect(find.text('正在重新映射…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'remap'), isTrue);
     expect(applied, isNotNull);
     expect(_closeButton(tester).onPressed, isNull);
 
@@ -94,7 +103,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
+    expect(find.text('完成'), findsOneWidget);
     expect(find.text('文件数量：2'), findsOneWidget);
     expect(find.text('总大小：2.0 KB'), findsOneWidget);
     expect(find.text('新增：2 个文件'), findsOneWidget);
@@ -140,6 +150,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('构建失败：构建失败（退出码 1）'), findsOneWidget);
+    expect(_stepIsFailed(tester, 'prepare'), isTrue);
     expect(find.textContaining('boom', findRichText: true), findsOneWidget);
     expect(scanCount, 0);
     expect(find.byType(ProgressRing), findsNothing);
@@ -164,6 +175,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('构建失败：目录不存在: X'), findsOneWidget);
+    expect(_stepIsFailed(tester, 'remap'), isTrue);
+    expect(find.text('完成'), findsNothing, reason: '失败步骤之后的步骤隐藏');
     expect(find.textContaining('Invalid argument(s):'), findsNothing);
     expect(_closeButton(tester).onPressed, isNotNull);
   });
@@ -186,7 +199,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('构建失败：Exception: 写入失败'), findsOneWidget);
-    expect(find.text('构建完成'), findsNothing);
+    expect(find.text('完成'), findsNothing, reason: '失败步骤之后的步骤隐藏');
     expect(_closeButton(tester).onPressed, isNotNull);
   });
 
@@ -309,7 +322,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
 
     await tester.tap(find.byKey(const Key('buildCloseButton')));
     await tester.pump();
@@ -416,6 +429,79 @@ void main() {
 
     expect(received, same(prepared.environment));
     expect(find.text('编译器：MSVC 14.44.35207'), findsOneWidget);
+  });
+
+  testWidgets('信息区展示运行库：用户选择 MT（静态）', (tester) async {
+    await _pumpDialog(
+      tester,
+      pack: _pack()..buildOptions = <String, String>{runtimeOptionName: 'MT'},
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
+      }) async {},
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildRuntimeLabel')), findsOneWidget);
+    expect(find.text('运行库：MT（静态）'), findsOneWidget);
+  });
+
+  testWidgets('信息区展示运行库：环境解析值优先于用户选择', (tester) async {
+    await _pumpDialog(
+      tester,
+      pack: _pack()..buildOptions = <String, String>{runtimeOptionName: 'MD'},
+      prepare: (
+        PackModel pack, {
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => _environment(runtimeLibrary: 'mt'),
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
+      }) async {},
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('运行库：MT（静态）'), findsOneWidget);
+  });
+
+  testWidgets('预构建配方未经分类标记时分类步骤不显示完成', (tester) async {
+    await _pumpDialog(
+      tester,
+      sourceNone: true,
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
+      }) async {
+        onStage(PackBuildStage.downloading);
+        onStage(PackBuildStage.building);
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_stepIsDone(tester, 'classify'), isFalse, reason: '未执行分类标记');
+    expect(_stepIsDone(tester, 'download'), isTrue);
+    expect(_stepIsDone(tester, 'done'), isTrue);
   });
 
   testWidgets('无输出时显示等待占位', (tester) async {
@@ -612,8 +698,9 @@ void main() {
     final Rect panel = tester.getRect(
       find.byKey(const Key('buildOutputPanel')),
     );
+    // 横向滚动内容为文本行区域（面板顶部起第一行），鼠标自文本行起拖拽平移。
     await tester.dragFrom(
-      Offset(panel.left + 80, panel.top + 80),
+      Offset(panel.left + 80, panel.top + 20),
       const Offset(-150, 0),
       kind: PointerDeviceKind.mouse,
     );
@@ -754,7 +841,8 @@ void main() {
       onApply: (PackModel pack) async {},
     );
 
-    expect(find.text('正在准备构建环境…'), findsOneWidget);
+    expect(find.text('准备环境'), findsOneWidget);
+    expect(_stepIsActive(tester, 'prepare'), isTrue);
     expect(find.byKey(const Key('buildDownloadProgress')), findsNothing);
     expect(progressCallback, isNotNull);
 
@@ -800,7 +888,7 @@ void main() {
     expect(find.byKey(const Key('buildDownloadProgress')), findsNothing);
   });
 
-  testWidgets('预构建包阶段：正在下载 → 正在分类 → 正在重新映射 → 完成', (tester) async {
+  testWidgets('预构建包阶段：下载 → 分类 → 重新映射 → 完成', (tester) async {
     final Completer<void> downloadGate = Completer<void>();
     final Completer<void> classifyGate = Completer<void>();
     final Completer<void> buildGate = Completer<void>();
@@ -834,29 +922,29 @@ void main() {
       onApply: (PackModel pack) => applyCompleter.future,
     );
 
-    expect(find.text('正在下载…'), findsOneWidget);
-    expect(find.text('正在准备构建环境…'), findsNothing);
-    expect(find.text('正在下载源码…'), findsNothing);
+    expect(find.text('下载'), findsOneWidget);
+    expect(_stepIsActive(tester, 'download'), isTrue);
+    expect(find.text('下载源码'), findsNothing);
 
     downloadGate.complete();
     await tester.pump();
-    expect(find.text('正在下载…（42%）'), findsOneWidget);
-    expect(find.text('正在执行构建…'), findsNothing);
+    expect(find.text('已下载 42%'), findsOneWidget);
+    expect(find.text('执行构建'), findsNothing);
 
     classifyGate.complete();
     await tester.pump();
-    expect(find.text('正在分类…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'classify'), isTrue);
 
     buildGate.complete();
     await tester.pump();
-    expect(find.text('正在重新映射…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'remap'), isTrue);
 
     scanCompleter.complete(const <FileModel>[]);
     await tester.pump();
     applyCompleter.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
   });
 
   test('extractProgressPercent 通用提取 progress 百分比', () {
@@ -1142,7 +1230,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(order, <String>['build', r'fix:C:\libs\demo:demo']);
-    expect(find.text('正在检查头文件引用…'), findsOneWidget);
+    expect(_stepIsActive(tester, 'includes'), isTrue);
     expect(_closeButton(tester).onPressed, isNull);
 
     fixGate.complete(report);
@@ -1150,7 +1238,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(order, <String>['build', r'fix:C:\libs\demo:demo', 'scan', 'apply']);
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
 
     await tester.tap(find.byKey(const Key('buildCloseButton')));
     await tester.pump();
@@ -1186,7 +1274,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(scanCount, 1);
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
     expect(
       find.textContaining('头文件引用检查失败', findRichText: true),
       findsOneWidget,
@@ -1290,7 +1378,7 @@ void main() {
 
     expect(order, <String>['elevated', 'scan', 'apply']);
     expect(receivedEnvironment?.environment['CNP_COMPILER_KIND'], 'icx');
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
     expect(find.byKey(const Key('buildElevatedRetryButton')), findsNothing);
     expect(find.textContaining('管理员构建输出', findRichText: true), findsOneWidget);
   });
@@ -1334,7 +1422,7 @@ void main() {
     buildGate.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('构建完成'), findsOneWidget);
+    expect(_stepIsDone(tester, 'done'), isTrue);
   });
 
   testWidgets('提权重试被取消时显示提示并保留重试入口', (tester) async {
@@ -1448,6 +1536,36 @@ Color _outputLine(WidgetTester tester, String line) {
   );
 }
 
+Finder _timelineStep(String id) =>
+    find.byKey(Key('buildTimelineStep_$id'));
+
+bool _stepIsActive(WidgetTester tester, String id) {
+  return find
+      .descendant(of: _timelineStep(id), matching: find.byType(ProgressRing))
+      .evaluate()
+      .isNotEmpty;
+}
+
+bool _stepIsDone(WidgetTester tester, String id) {
+  return find
+      .descendant(
+        of: _timelineStep(id),
+        matching: find.byIcon(FluentIcons.check_mark),
+      )
+      .evaluate()
+      .isNotEmpty;
+}
+
+bool _stepIsFailed(WidgetTester tester, String id) {
+  return find
+      .descendant(
+        of: _timelineStep(id),
+        matching: find.byIcon(FluentIcons.error),
+      )
+      .evaluate()
+      .isNotEmpty;
+}
+
 FluentThemeData _theme(WidgetTester tester) {
   return FluentTheme.of(tester.element(find.byType(BuildPackDialog)));
 }
@@ -1455,6 +1573,7 @@ FluentThemeData _theme(WidgetTester tester) {
 BuildEnvironment _environment({
   CompilerKind kind = CompilerKind.icx,
   String version = '2026.1.1',
+  String? runtimeLibrary,
 }) {
   return BuildEnvironment(
     compiler: DetectedCompiler(
@@ -1463,9 +1582,10 @@ BuildEnvironment _environment({
       executablePath: r'C:\tools\icx-cl.exe',
       environmentScript: null,
     ),
-    environment: const <String, String>{
+    environment: <String, String>{
       'CNP_COMPILER_KIND': 'icx',
       'Path': r'C:\tools\bin',
+      'CNP_RUNTIME_LIBRARY': ?runtimeLibrary,
     },
     cmakePath: r'C:\tools\cmake\bin\cmake.exe',
     ninjaPath: r'C:\tools\ninja\ninja.exe',
