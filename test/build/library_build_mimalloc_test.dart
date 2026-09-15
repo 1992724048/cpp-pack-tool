@@ -317,9 +317,12 @@ void main() {
         isNot(<int>[0xEF, 0xBB, 0xBF]),
         reason: 'post.bat 不得带 UTF-8 BOM（cmd 会把 BOM 混入命令解析）',
       );
+      // 路径不手工加引号：Dart 会按需转义并加引号；手工引号会被反斜杠转义，
+      // cmd 将整个带引号字符串当命令名报错（实测）。旧 UTF-8 编码实测输出
+      // 「不是内部或外部命令」且退出码仍为 0（脚本尾 exit /b 0），故以输出为空为准。
       final ProcessResult postBatRun = await Process.run('cmd', <String>[
         '/c',
-        '"$postBatPath"',
+        postBatPath,
       ]);
       expect(postBatRun.exitCode, 0, reason: '无参数调用 post.bat 应静默 exit /b 0');
       expect(
