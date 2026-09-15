@@ -320,26 +320,30 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
     PackModel updated = copyPackWithFiles(widget.pack, files);
-    updated.sourceVersion = _sourceVersion ?? widget.pack.sourceVersion;
-    final String? syncedVersion = packageVersionFromTag(updated.sourceVersion);
-    bool synced = false;
-    if (syncedVersion != null && syncedVersion != updated.version) {
-      updated.history = appendHistoryEntry(
-        updated.history,
-        HistoryModel(
-          time: widget.now(),
-          type: HistoryType.versionChanged,
-          message: '版本变更：${updated.version} → $syncedVersion（构建自动同步）',
-        ),
-      );
-      updated = _withVersion(updated, syncedVersion);
-      synced = true;
+    // 仅本次构建解析出来源版本时执行同步：预构建配方（source:none）不会产出
+    // 来源版本，沿用旧记录可避免每次构建用陈旧值重复同步并追加版本变更历史。
+    String? syncedVersion;
+    if (_sourceVersion != null) {
+      updated.sourceVersion = _sourceVersion;
+      final String? versionFromTag = packageVersionFromTag(_sourceVersion);
+      if (versionFromTag != null && versionFromTag != updated.version) {
+        updated.history = appendHistoryEntry(
+          updated.history,
+          HistoryModel(
+            time: widget.now(),
+            type: HistoryType.versionChanged,
+            message: '版本变更：${updated.version} → $versionFromTag（构建自动同步）',
+          ),
+        );
+        updated = _withVersion(updated, versionFromTag);
+        syncedVersion = versionFromTag;
+      }
     }
     setState(() {
       _files = files;
       _addedCount = diff.added;
       _removedCount = diff.removed;
-      _syncedVersion = synced ? syncedVersion : null;
+      _syncedVersion = syncedVersion;
     });
 
     try {

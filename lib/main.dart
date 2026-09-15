@@ -293,13 +293,16 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  /// 占位作者批量修正：默认作者非空时逐个替换并写盘；单包失败不阻断其余。
+  /// 占位作者批量修正：默认作者非空且自身不是占位值时逐个替换并写盘；
+  /// 单包失败不阻断其余。
   Future<void> _fixPlaceholderAuthors() async {
     if (_fixingAuthors) {
       return;
     }
     final String defaultAuthor = widget.settings.defaultAuthor.trim();
-    if (defaultAuthor.isEmpty || _packs.isEmpty) {
+    if (defaultAuthor.isEmpty ||
+        isPlaceholderAuthor(defaultAuthor) ||
+        _packs.isEmpty) {
       return;
     }
     _fixingAuthors = true;
@@ -341,6 +344,15 @@ class _MainLayoutState extends State<MainLayout> {
       _fixingAuthors = false;
     }
     if (!mounted || (fixed == 0 && failed == 0)) {
+      return;
+    }
+    if (fixed > 0 && failed > 0) {
+      showFloatingToast(
+        context,
+        '已按默认作者修正 $fixed 个包的作者，$failed 个包保存失败',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
       return;
     }
     if (failed > 0) {

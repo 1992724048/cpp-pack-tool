@@ -2468,6 +2468,48 @@ void main() {
     expect(store.saveCount, 0);
   });
 
+  testWidgets('默认作者本身为占位值时跳过批量修正', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('alpha', '1.0.0', author: '无')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '未知'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.author, '无');
+    expect(store.saveCount, 0);
+    expect(find.textContaining('已按默认作者修正'), findsNothing);
+  });
+
+  testWidgets('批量修正部分失败时合并提示成功与失败计数', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('alpha', '1.0.0', author: '无'),
+        _pack('beta', '1.0.0', author: '未知'),
+      ],
+    )..failSaveFor.add('alpha');
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '张三'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.text('已按默认作者修正 1 个包的作者，1 个包保存失败'), findsOneWidget);
+  });
+
   testWidgets('新增包的占位作者在保存时静默替换为默认作者', (tester) async {
     final _FakePackStore store = _FakePackStore();
 
@@ -2809,6 +2851,7 @@ class _FakePackStore extends PackStore {
   int deleteCount = 0;
   bool failSave = false;
   bool failDelete = false;
+  final Set<String> failSaveFor = <String>{};
   final List<String> deletedNames = <String>[];
 
   List<PackModel> get packs => _packs;
@@ -2824,7 +2867,7 @@ class _FakePackStore extends PackStore {
 
   @override
   Future<void> savePack(PackModel pack) async {
-    if (failSave) {
+    if (failSave || failSaveFor.contains(pack.name.toLowerCase())) {
       throw const FileSystemException('磁盘已满');
     }
     saveCount++;

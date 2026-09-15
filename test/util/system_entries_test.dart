@@ -266,7 +266,8 @@ void main() {
             message: '创建包',
           ),
         ]
-        ..sourceVersion = 'v5.6.7';
+        ..sourceVersion = 'v5.6.7'
+        ..enabledFormats = <String>['nuget'];
       const BuildScriptHeader header = BuildScriptHeader(
         repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
@@ -297,6 +298,7 @@ void main() {
       expect(updated.history.single.message, '创建包');
       expect(updated.sourceVersion, 'v5.6.7');
       expect(updated.buildOptions, <String, String>{'tbb': 'on'});
+      expect(updated.enabledFormats, <String>['nuget']);
       // 不修改入参：原包列表保持原样
       expect(pack.commands, isEmpty);
       expect(pack.dependencies, hasLength(1));

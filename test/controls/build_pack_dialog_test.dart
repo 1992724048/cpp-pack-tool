@@ -792,6 +792,34 @@ void main() {
     expect(applied!.sourceVersion, 'v1.0.0');
   });
 
+  testWidgets('预构建包未产出来源版本时不重复同步（source:none）', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      sourceNone: true,
+      pack: _pack()..sourceVersion = 'v2.0.0',
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0');
+    expect(applied!.sourceVersion, 'v2.0.0');
+    expect(applied!.history, isEmpty);
+    expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
+  });
+
   testWidgets('来源版本为 tag 时自动同步包版本并记历史（Q3）', (tester) async {
     PackModel? applied;
     final DateTime now = DateTime(2026, 9, 16, 10, 30);
