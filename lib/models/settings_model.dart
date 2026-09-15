@@ -7,6 +7,7 @@ const List<String> _defaultCompilerPriority = <String>[
   'icx',
   'clang-cl',
   'msvc',
+  'mingw',
 ];
 
 class SettingsModel {
@@ -24,7 +25,7 @@ class SettingsModel {
   final String darkFlavor;
   final String accent;
 
-  /// 编译器优先级（`icx` / `clang-cl` / `msvc`，自高到低）。
+  /// 编译器优先级（`icx` / `clang-cl` / `msvc` / `mingw`，自高到低）。
   final List<String> compilerPriority;
 
   /// 上次编译器检测结果缓存；空表示无缓存（设置页与构建据此重检）。
@@ -62,6 +63,9 @@ Map<String, Object?> _detectedCompilerToMap(DetectedCompiler compiler) {
     'kind': compilerKindId(compiler.kind),
     'version': compiler.version,
     'executablePath': compiler.executablePath,
+    if (compiler.cxxExecutablePath != null &&
+        compiler.cxxExecutablePath!.isNotEmpty)
+      'cxxExecutablePath': compiler.cxxExecutablePath,
     if (compiler.environmentScript != null &&
         compiler.environmentScript!.isNotEmpty)
       'environmentScript': compiler.environmentScript,
@@ -119,6 +123,7 @@ DetectedCompiler? _detectedCompilerFrom(Object? value) {
     kind: kind,
     version: version,
     executablePath: executablePath,
+    cxxExecutablePath: _nonEmptyString(value['cxxExecutablePath']),
     environmentScript: _nonEmptyString(value['environmentScript']),
     extraPathEntries: _stringList(value['extraPathEntries']),
   );
@@ -142,7 +147,9 @@ List<String> _stringList(Object? value) {
 }
 
 /// 优先级读回：R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见
-/// 顺序去重），否则升级后优先级会跳过 clang-cl 条目直接回落 `msvc`。
+/// 顺序去重）；随后把「已支持但列表缺失」的种类按声明序补到末尾——新编译器
+/// 种类（如 MinGW）随版本升级自动进入旧配置，且置末不改变既有选择；设置页只
+/// 支持排序、不支持增删，补入是旧配置触达新种类的唯一路径。
 List<String> _compilerPriorityFrom(Object? value) {
   if (value is! List) {
     return _defaultCompilerPriority;
@@ -158,7 +165,13 @@ List<String> _compilerPriorityFrom(Object? value) {
       entries.add(id);
     }
   }
-  return entries.isEmpty ? _defaultCompilerPriority : entries;
+  for (final CompilerKind kind in CompilerKind.values) {
+    final String id = compilerKindId(kind);
+    if (seen.add(id)) {
+      entries.add(id);
+    }
+  }
+  return entries;
 }
 
 String? _optionalString(Object? value) {

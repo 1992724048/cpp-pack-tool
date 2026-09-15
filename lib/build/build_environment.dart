@@ -40,6 +40,10 @@ int _controlledTempSequence = 0;
 /// 引号被 Dart 的 Windows 参数转义破坏），再按 Windows 语义（键大小写
 /// 不敏感）覆盖同名键。脚本失败时 `&&` 短路使非零退出码保留到 cmd 进程
 /// （见 [_runEnvironmentScript]），这里抛出 [BuildPreparationException]。
+///
+/// MinGW 无 vcvars 等价脚本（`environmentScript` 恒 null），本函数天然不为其
+/// 继承 MSVC/ICX 环境——工具链自包含，只经 `PATH` 前置 bin 目录（windres
+/// 依赖 PATH 解析同目录 gcc）。
 Future<Map<String, String>> captureToolchainEnvironment(
   DetectedCompiler compiler, {
   PackProcessRunner runner = Process.run,
@@ -83,11 +87,13 @@ typedef ToolchainEnvironmentCapture = Future<Map<String, String>> Function(
 ///
 /// 设置页与构建共用此入口，避免宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时
 /// 探测失败（如 ICX 的 `error #10026`，见 [createControlledTempDirectory]）；
-/// [detect] 为测试注入点，缺省经 [detectCompilers] 以受控环境探测。检测完成
-/// 后删除本次临时目录（检测自包含；构建路径的目录由外层构建生命周期使用）。
+/// [detect] 为测试注入点，缺省经 [detectCompilers] 以受控环境探测；[msys2Root]
+/// 透传 [detectCompilers] 的 MinGW 安装根覆盖（测试用）。检测完成后删除本次
+/// 临时目录（检测自包含；构建路径的目录由外层构建生命周期使用）。
 Future<List<DetectedCompiler>> detectCompilersWithControlledTemp({
   PackProcessRunner runner = Process.run,
   String toolsRoot = 'tools',
+  String? msys2Root,
   Map<String, String>? baseEnvironment,
   CompilerDetector? detect,
 }) async {
@@ -100,7 +106,11 @@ Future<List<DetectedCompiler>> detectCompilersWithControlledTemp({
     if (detect != null) {
       return await detect();
     }
-    return await detectCompilers(runner: runner, environment: childBase);
+    return await detectCompilers(
+      runner: runner,
+      msys2Root: msys2Root,
+      environment: childBase,
+    );
   } finally {
     await _deleteQuietly(Directory(tempPath));
   }
@@ -136,11 +146,17 @@ class BuildEnvironment {
 /// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
 /// 未能归属的工具目录 → [pythonPathEntries]（Python 解释器目录） →
 /// [toolPathEntries]（`# tool` 声明的工具） →
-/// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
-/// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
+/// [DetectedCompiler.extraPathEntries]（如 LLVM bin、MSYS2 bin），条目大小写
+/// 不敏感去重；[options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
 /// [runtimeLibrary] 写入 `CNP_RUNTIME_LIBRARY`（`md` / `mt` 小写规范化，
 /// 非法值回退 [defaultRuntimeLibrary]）；`PYTHONPATH` 前置 [toolsRoot] 绝对路径
 /// （保留原值）；[environment] 不被修改。
+///
+/// `CNP_C_COMPILER` 取 [DetectedCompiler.executablePath]、
+/// `CNP_CXX_COMPILER` 取 [DetectedCompiler.cxxCompilerPath]（MinGW 的 gcc/g++
+/// 分设）；MinGW 条目额外解析 C 驱动同目录的 `windres.exe` 写入
+/// `CNP_RC_COMPILER`（供辅助模块注入 `CMAKE_RC_COMPILER`；缺失则不下发，
+/// CMake 可经 PATH 自行解析）。
 BuildEnvironment assembleBuildEnvironment({
   required DetectedCompiler compiler,
   required Map<String, String> environment,
@@ -157,12 +173,18 @@ BuildEnvironment assembleBuildEnvironment({
   _setEnvironmentValue(child, 'CNP_NINJA', cmakeNinja.ninjaExecutable);
   _setEnvironmentValue(child, 'CNP_TOOLS_DIR', toolsDir);
   _setEnvironmentValue(child, 'CNP_C_COMPILER', compiler.executablePath);
-  _setEnvironmentValue(child, 'CNP_CXX_COMPILER', compiler.executablePath);
+  _setEnvironmentValue(child, 'CNP_CXX_COMPILER', compiler.cxxCompilerPath);
   _setEnvironmentValue(
     child,
     'CNP_COMPILER_KIND',
     compilerKindId(compiler.kind),
   );
+  if (compiler.kind == CompilerKind.mingw) {
+    final String? rcCompiler = _findMingwRcCompiler(compiler);
+    if (rcCompiler != null) {
+      _setEnvironmentValue(child, 'CNP_RC_COMPILER', rcCompiler);
+    }
+  }
   _setEnvironmentValue(
     child,
     runtimeLibraryEnvName,
@@ -210,7 +232,7 @@ BuildEnvironment assembleBuildEnvironment({
 /// 缓存完全一致。无可用编译器且 clang/LLVM 兜底失败、或任一环节失败时抛
 /// [BuildPreparationException]。
 Future<BuildEnvironment> prepareBuildEnvironment({
-  List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
+  List<String> priority = const <String>['icx', 'clang-cl', 'msvc', 'mingw'],
   PackProcessRunner runner = Process.run,
   ToolProvisioner? provisioner,
   String toolsRoot = 'tools',
@@ -307,6 +329,20 @@ List<DetectedCompiler> _usableCachedCompilers(
     for (final DetectedCompiler compiler in cachedCompilers)
       if (isCompilerUsable(compiler)) compiler,
   ];
+}
+
+/// MinGW 工具链的 RC 编译器：C 驱动同目录的 `windres.exe`（binutils 与
+/// gcc 同 bin）；文件不存在时返回 null（不下发 `CNP_RC_COMPILER`）。
+///
+/// 选「Dart 侧解析并经环境变量透传」而非在辅助模块里从 `CNP_C_COMPILER`
+/// 同目录现推：可执行文件存在性在装配期校验（与 `CNP_CMAKE`/`CNP_NINJA`
+/// 的既有透传模式一致），辅助模块保持通用、无本机文件系统假设。
+String? _findMingwRcCompiler(DetectedCompiler compiler) {
+  final String windres = joinPath(
+    parentDirectory(compiler.executablePath),
+    'windres.exe',
+  );
+  return File(windres).existsSync() ? windres : null;
 }
 
 /// 创建**本次调用**的受控构建临时目录并返回规范化路径（`\` 分隔）。

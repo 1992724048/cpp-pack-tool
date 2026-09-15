@@ -249,6 +249,7 @@ void main() {
       final List<DetectedCompiler> compilers =
           await detectCompilersWithControlledTemp(
             toolsRoot: toolsRoot,
+            msys2Root: joinPath(root.path, 'missing-msys2'),
             baseEnvironment: <String, String>{
               'ONEAPI_ROOT': oneApiRoot,
               'TMP': r'C:\hostile-tmp',
@@ -485,6 +486,83 @@ void main() {
         runtimeLibrary: 'gnu',
       );
       expect(invalid.environment['CNP_RUNTIME_LIBRARY'], 'md');
+    });
+
+    test('MinGW：CNP_CXX_COMPILER 用 g++ 驱动、CNP_RC_COMPILER 取同目录 windres', () {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      final String gcc = joinPath(binDir, 'gcc.exe');
+      final String gxx = joinPath(binDir, 'g++.exe');
+      final String windres = joinPath(binDir, 'windres.exe');
+      _createFile(gcc);
+      _createFile(gxx);
+      _createFile(windres);
+
+      final BuildEnvironment result = assembleBuildEnvironment(
+        compiler: DetectedCompiler(
+          kind: CompilerKind.mingw,
+          version: '14.2.0（UCRT64）',
+          executablePath: gcc,
+          cxxExecutablePath: gxx,
+          environmentScript: null,
+          extraPathEntries: <String>[binDir],
+        ),
+        environment: <String, String>{'Path': r'C:\Windows'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+      );
+
+      expect(result.environment['CNP_COMPILER_KIND'], 'mingw');
+      expect(result.environment['CNP_C_COMPILER'], gcc);
+      expect(result.environment['CNP_CXX_COMPILER'], gxx);
+      expect(result.environment['CNP_RC_COMPILER'], windres);
+      expect(result.environment['Path'], '$binDir;C:\\Windows');
+    });
+
+    test('MinGW：windres 缺失时不下发 CNP_RC_COMPILER', () {
+      final Directory root = _tempDirectory();
+      final String binDir = joinPath(root.path, 'msys64/ucrt64/bin');
+      final String gcc = joinPath(binDir, 'gcc.exe');
+      _createFile(gcc);
+
+      final BuildEnvironment result = assembleBuildEnvironment(
+        compiler: DetectedCompiler(
+          kind: CompilerKind.mingw,
+          version: '14.2.0（UCRT64）',
+          executablePath: gcc,
+          environmentScript: null,
+        ),
+        environment: <String, String>{'FOO': '1'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+      );
+
+      expect(result.environment.containsKey('CNP_RC_COMPILER'), isFalse);
+      expect(result.environment['CNP_CXX_COMPILER'], gcc);
+    });
+
+    test('非 MinGW 编译器不下发 CNP_RC_COMPILER（即使同目录存在 windres）', () {
+      final Directory root = _tempDirectory();
+      final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
+      final String clangCl = joinPath(llvmBinDir, 'clang-cl.exe');
+      _createFile(clangCl);
+      _createFile(joinPath(llvmBinDir, 'windres.exe'));
+
+      final BuildEnvironment result = assembleBuildEnvironment(
+        compiler: DetectedCompiler(
+          kind: CompilerKind.clangCl,
+          version: '23.1.1',
+          executablePath: clangCl,
+          environmentScript: null,
+          extraPathEntries: <String>[llvmBinDir],
+        ),
+        environment: <String, String>{'FOO': '1'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+      );
+
+      expect(result.environment['CNP_COMPILER_KIND'], 'clang-cl');
+      expect(result.environment.containsKey('CNP_RC_COMPILER'), isFalse);
     });
   });
 

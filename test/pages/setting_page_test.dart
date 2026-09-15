@@ -253,7 +253,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(saved, isNotNull);
-    expect(saved!.compilerPriority, <String>['clang-cl', 'icx', 'msvc']);
+    expect(saved!.compilerPriority, <String>[
+      'clang-cl',
+      'icx',
+      'msvc',
+      'mingw',
+    ]);
     expect(saved!.outputDirectory, r'D:\nuget\out');
     expect(saved!.themeMode, ThemeModeSetting.dark);
     expect(saved!.darkFlavor, 'frappe');
@@ -264,7 +269,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(saved!.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(saved!.compilerPriority, <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
   });
 
   testWidgets('编译器首行上移与末行下移禁用', (tester) async {
@@ -272,8 +282,30 @@ void main() {
 
     expect(_moveUpButton(tester, 'icx').onPressed, isNull);
     expect(_moveDownButton(tester, 'icx').onPressed, isNotNull);
-    expect(_moveUpButton(tester, 'msvc').onPressed, isNotNull);
-    expect(_moveDownButton(tester, 'msvc').onPressed, isNull);
+    expect(_moveUpButton(tester, 'mingw').onPressed, isNotNull);
+    expect(_moveDownButton(tester, 'mingw').onPressed, isNull);
+  });
+
+  testWidgets('MinGW 行展示标签与环境标注版本', (tester) async {
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(compilerPriority: <String>['icx', 'mingw']),
+      onSave: (_) async {},
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+        _compiler(CompilerKind.mingw, '14.2.0（UCRT64）'),
+      ],
+    );
+
+    expect(find.text('MinGW'), findsOneWidget);
+    expect(find.text('14.2.0（UCRT64）'), findsOneWidget);
+    final double icxTop = tester
+        .getTopLeft(find.byKey(const Key('settingCompilerRow_icx')))
+        .dy;
+    final double mingwTop = tester
+        .getTopLeft(find.byKey(const Key('settingCompilerRow_mingw')))
+        .dy;
+    expect(icxTop, lessThan(mingwTop));
   });
 
   testWidgets('重新检测刷新编译器版本', (tester) async {

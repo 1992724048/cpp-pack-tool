@@ -408,7 +408,12 @@ void main() {
       expect(yaml, contains('kind: icx'));
 
       final SettingsModel loaded = await store.loadSettings();
-      expect(loaded.compilerPriority, <String>['icx', 'msvc']);
+      expect(loaded.compilerPriority, <String>[
+        'icx',
+        'msvc',
+        'clang-cl',
+        'mingw',
+      ]);
       expect(loaded.detectedCompilers, hasLength(1));
       expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
       expect(loaded.detectedCompilers.single.version, '2026.1.0');

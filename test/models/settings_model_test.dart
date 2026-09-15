@@ -10,7 +10,12 @@ void main() {
     expect(settings.themeMode, ThemeModeSetting.system);
     expect(settings.darkFlavor, 'mocha');
     expect(settings.accent, 'teal');
-    expect(settings.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(settings.compilerPriority, <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
     expect(settings.detectedCompilers, isEmpty);
   });
 
@@ -21,7 +26,12 @@ void main() {
     expect(map['themeMode'], 'system');
     expect(map['darkFlavor'], 'mocha');
     expect(map['accent'], 'teal');
-    expect(map['compilerPriority'], <String>['icx', 'clang-cl', 'msvc']);
+    expect(map['compilerPriority'], <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
   });
 
   test('往返保留全部字段', () {
@@ -30,7 +40,7 @@ void main() {
       themeMode: ThemeModeSetting.dark,
       darkFlavor: 'frappe',
       accent: 'mauve',
-      compilerPriority: <String>['msvc', 'icx'],
+      compilerPriority: <String>['msvc', 'icx', 'clang-cl', 'mingw'],
     );
 
     final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
@@ -39,7 +49,12 @@ void main() {
     expect(loaded.themeMode, ThemeModeSetting.dark);
     expect(loaded.darkFlavor, 'frappe');
     expect(loaded.accent, 'mauve');
-    expect(loaded.compilerPriority, <String>['msvc', 'icx']);
+    expect(loaded.compilerPriority, <String>[
+      'msvc',
+      'icx',
+      'clang-cl',
+      'mingw',
+    ]);
   });
 
   test('未知枚举与非法值回退默认', () {
@@ -63,7 +78,12 @@ void main() {
     expect(loaded.darkFlavor, 'mocha');
     expect(loaded.accent, 'teal');
     expect(loaded.outputDirectory, isNull);
-    expect(loaded.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(loaded.compilerPriority, <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
   });
 
   test('编译器优先级容错：非列表、空列表回退默认，非法项过滤', () {
@@ -77,9 +97,24 @@ void main() {
       'compilerPriority': <Object?>['msvc', 42, '', '  ', 'icx'],
     });
 
-    expect(nonList.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
-    expect(empty.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
-    expect(filtered.compilerPriority, <String>['msvc', 'icx']);
+    expect(nonList.compilerPriority, <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
+    expect(empty.compilerPriority, <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
+    expect(filtered.compilerPriority, <String>[
+      'msvc',
+      'icx',
+      'clang-cl',
+      'mingw',
+    ], reason: '缺失的已支持种类按声明序补到末尾（旧配置自动获得 MinGW）');
   });
 
   test('优先级 R23 回退迁移：GNU clang 标识改写为 clang-cl 并按首见去重', () {
@@ -90,11 +125,18 @@ void main() {
       'compilerPriority': <Object?>['clang', 'clang-cl', 'icx'],
     });
 
-    expect(legacy.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(legacy.compilerPriority, <String>[
+      'icx',
+      'clang-cl',
+      'msvc',
+      'mingw',
+    ]);
     expect(mixed.compilerPriority, <String>[
       'clang-cl',
       'icx',
-    ], reason: 'R23 的 GNU clang 标识迁移后与既有 clang-cl 视为同项，只保留首个');
+      'msvc',
+      'mingw',
+    ], reason: 'R23 的 GNU clang 标识迁移后与既有 clang-cl 视为同项，只保留首个；缺失种类补末');
   });
 
   test('空字符串输出目录视为未设置', () {
@@ -121,6 +163,14 @@ void main() {
           executablePath: r'C:\VS\cl.exe',
           environmentScript: null,
         ),
+        DetectedCompiler(
+          kind: CompilerKind.mingw,
+          version: '14.2.0（UCRT64）',
+          executablePath: r'C:\msys64\ucrt64\bin\gcc.exe',
+          cxxExecutablePath: r'C:\msys64\ucrt64\bin\g++.exe',
+          environmentScript: null,
+          extraPathEntries: <String>[r'C:\msys64\ucrt64\bin'],
+        ),
       ],
     );
 
@@ -128,7 +178,7 @@ void main() {
     final SettingsModel loaded = SettingsModel.fromMap(map);
 
     expect(map['detectedCompilers'], isA<List<Object?>>());
-    expect(loaded.detectedCompilers, hasLength(2));
+    expect(loaded.detectedCompilers, hasLength(3));
     expect(loaded.detectedCompilers[0].kind, CompilerKind.icx);
     expect(loaded.detectedCompilers[0].version, '2026.1.0');
     expect(
@@ -145,6 +195,17 @@ void main() {
     expect(loaded.detectedCompilers[1].kind, CompilerKind.msvc);
     expect(loaded.detectedCompilers[1].environmentScript, isNull);
     expect(loaded.detectedCompilers[1].extraPathEntries, isEmpty);
+    expect(loaded.detectedCompilers[2].kind, CompilerKind.mingw);
+    expect(loaded.detectedCompilers[2].version, '14.2.0（UCRT64）');
+    expect(
+      loaded.detectedCompilers[2].cxxExecutablePath,
+      r'C:\msys64\ucrt64\bin\g++.exe',
+    );
+    expect(
+      loaded.detectedCompilers[2].cxxCompilerPath,
+      r'C:\msys64\ucrt64\bin\g++.exe',
+    );
+    expect(loaded.detectedCompilers[2].environmentScript, isNull);
   });
 
   test('空缓存不写入映射，缺失/非列表视为无缓存', () {
@@ -261,7 +322,12 @@ void main() {
       ],
     });
 
-    expect(loaded.compilerPriority, <String>['msvc']);
+    expect(loaded.compilerPriority, <String>[
+      'msvc',
+      'icx',
+      'clang-cl',
+      'mingw',
+    ]);
     expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
   });
 }

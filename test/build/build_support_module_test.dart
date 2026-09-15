@@ -203,6 +203,35 @@ try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
     msvc_debug = list(captured[-1])
 
+    # MinGW：GNU 风格旗标、不写 MSVC 运行库变量、mt 链接期静态运行库、
+    # RC 编译器注入与保守 IPO（enable_ipo=True 可强制）。
+    os.environ['CNP_COMPILER_KIND'] = 'mingw'
+    os.environ['CNP_C_COMPILER'] = 'C:/msys64/ucrt64/bin/gcc.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/msys64/ucrt64/bin/g++.exe'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    mingw_release = list(captured[-1])
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
+    mingw_debug = list(captured[-1])
+    os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    mingw_static = list(captured[-1])
+    os.environ.pop('CNP_RUNTIME_LIBRARY', None)
+    os.environ['CNP_RC_COMPILER'] = 'C:/msys64/ucrt64/bin/windres.exe'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    mingw_rc = list(captured[-1])
+    os.environ.pop('CNP_RC_COMPILER', None)
+    cnp_build_support.cmake_configure(
+        'C:/src', 'C:/build', 'Release', [], enable_ipo=True)
+    mingw_forced_ipo = list(captured[-1])
+
+    # 路径推断：CNP_COMPILER_KIND 非法时 gcc/g++ → mingw。
+    os.environ['CNP_COMPILER_KIND'] = 'unknown'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    gcc_inferred = list(captured[-1])
+
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
     os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     static_runtime = list(captured[-1])
@@ -277,6 +306,27 @@ print('preset_opt_cxx=%s' % option(preset_release, 'CMAKE_CXX_FLAGS_RELEASE'))
 print('preset_opt_c=%s' % option(preset_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('preset_ipo=%s' % option(
     preset_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('mingw_avx2=%s' % option(mingw_release, 'CMAKE_C_FLAGS'))
+print('mingw_opt=%s' % option(mingw_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('mingw_opt_cxx=%s' % option(mingw_release, 'CMAKE_CXX_FLAGS_RELEASE'))
+print('mingw_msvc_runtime=%s' % option(
+    mingw_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
+print('mingw_ipo=%s' % option(
+    mingw_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('mingw_cxx=%s' % [item for item in mingw_release
+                        if item.startswith('-DCMAKE_CXX_COMPILER=')][0])
+print('mingw_debug_opt=%s' % option(mingw_debug, 'CMAKE_C_FLAGS_RELEASE'))
+print('mingw_md_shared=%s' % option(mingw_rc, 'CMAKE_SHARED_LINKER_FLAGS'))
+print('mingw_static_shared=%s' % option(
+    mingw_static, 'CMAKE_SHARED_LINKER_FLAGS'))
+print('mingw_static_exe=%s' % option(mingw_static, 'CMAKE_EXE_LINKER_FLAGS'))
+print('mingw_static_module=%s' % option(
+    mingw_static, 'CMAKE_MODULE_LINKER_FLAGS'))
+print('mingw_rc=%s' % option(mingw_rc, 'CMAKE_RC_COMPILER'))
+print('mingw_forced_ipo=%s' % option(
+    mingw_forced_ipo, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('gcc_inferred_avx2=%s' % option(gcc_inferred, 'CMAKE_C_FLAGS'))
+print('gcc_inferred_opt=%s' % option(gcc_inferred, 'CMAKE_C_FLAGS_RELEASE'))
 
 command = captured[0]
 print('generator=%s' % command[command.index('-G') + 1])
@@ -701,7 +751,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "6"'));
+      expect(source, contains('VERSION = "7"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -810,6 +860,49 @@ void main() {
         contains('preset_opt_c=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'),
       );
       expect(stdout, contains('preset_ipo=OFF'));
+      // MinGW：GNU 旗标、不写 CMAKE_MSVC_RUNTIME_LIBRARY、mt 链接期静态运行库、
+      // RC 编译器注入、IPO 保守关闭（enable_ipo=True 可强制）、gcc/g++ 路径推断。
+      expect(stdout, contains('mingw_avx2=-mavx2'));
+      expect(
+        stdout,
+        contains('mingw_opt=-O3 -ffunction-sections -fdata-sections -DNDEBUG'),
+      );
+      expect(
+        stdout,
+        contains(
+          'mingw_opt_cxx=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
+        ),
+      );
+      expect(stdout, contains('mingw_msvc_runtime=none'));
+      expect(stdout, contains('mingw_ipo=none'));
+      expect(
+        stdout,
+        contains('mingw_cxx=-DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe'),
+      );
+      expect(stdout, contains('mingw_debug_opt=none'));
+      expect(stdout, contains('mingw_md_shared=none'));
+      expect(
+        stdout,
+        contains('mingw_static_shared=-static-libgcc -static-libstdc++'),
+      );
+      expect(
+        stdout,
+        contains('mingw_static_exe=-static-libgcc -static-libstdc++'),
+      );
+      expect(
+        stdout,
+        contains('mingw_static_module=-static-libgcc -static-libstdc++'),
+      );
+      expect(stdout, contains('mingw_rc=C:/msys64/ucrt64/bin/windres.exe'));
+      expect(stdout, contains('mingw_forced_ipo=ON'));
+      expect(stdout, contains('ipo=off reason=mingw-conservative'));
+      expect(stdout, contains('gcc_inferred_avx2=-mavx2'));
+      expect(
+        stdout,
+        contains(
+          'gcc_inferred_opt=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
+        ),
+      );
       // 证据行。
       expect(
         stdout,

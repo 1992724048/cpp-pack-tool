@@ -20,12 +20,15 @@
     <out>/<原文件名>                root 根部的许可证文件
 
 CMake 相关函数读取 cpp_nuget_pack 注入的子进程环境变量：CNP_CMAKE、CNP_NINJA、
-CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND、CNP_RUNTIME_LIBRARY；
-CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 按编译器注入 AVX2（全部
-配置）与 Release 最高优化 / IPO（不支持或经 CNP_NO_IPO / enable_ipo=False 时
-自动退化），按 CNP_RUNTIME_LIBRARY 注入 MSVC 运行库家族（`md` 默认 / `mt`，
-Debug 自动 d 变体），不注入任何语言标准参数；`cmake_build` 缺省以 CPU 逻辑核数
-并行构建。
+CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND、CNP_RUNTIME_LIBRARY、
+CNP_RC_COMPILER；CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 按编译器
+注入 AVX2（全部配置）与 Release 最高优化 / IPO（不支持或经 CNP_NO_IPO /
+enable_ipo=False 时自动退化），按 CNP_RUNTIME_LIBRARY 注入运行库——MSVC 系
+（icx/clang-cl/msvc）为 MSVC 运行库家族（`md` 默认 / `mt`，Debug 自动 d 变体），
+MinGW 为 GNU 语义（`md` 动态缺省、`mt` 链接期 `-static-libgcc -static-libstdc++`，
+不写 `CMAKE_MSVC_RUNTIME_LIBRARY`）；`CNP_RC_COMPILER` 存在时注入
+`CMAKE_RC_COMPILER`（MinGW 的 windres）；不注入任何语言标准参数；`cmake_build`
+缺省以 CPU 逻辑核数并行构建。
 """
 
 import filecmp
@@ -34,7 +37,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "6"
+VERSION = "7"
 
 __all__ = (
     "VERSION",
@@ -60,7 +63,8 @@ LICENSE_CORE_PRIORITY = ("license", "licence", "copying", "unlicense", "notice")
 _CMAKE_RUNTIME_LIBRARY_ENV = "CNP_RUNTIME_LIBRARY"
 _DEFAULT_RUNTIME_LIBRARY = "md"
 # 运行库家族 → CMAKE_MSVC_RUNTIME_LIBRARY 取值（Debug 自动 d 变体：
-# md → /MD 与 /MDd，mt → /MT 与 /MTd）。
+# md → /MD 与 /MDd，mt → /MT 与 /MTd）。仅 MSVC 系编译器写入；MinGW 用
+# _MINGW_STATIC_RUNTIME_FLAGS 的链接旗标表达（见 cmake_configure）。
 _RUNTIME_LIBRARY_VARIANTS = {
     "md": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
     "mt": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
@@ -69,27 +73,46 @@ _OUTPUT_TAIL_LINES = 20
 _INTERMEDIATE_DIR_SUFFIXES = (".dir", "-c")
 
 # 编译器种类标识与 lib/build/toolchain.dart 的 CNP_COMPILER_KIND 对应。
-_COMPILER_KINDS = ("icx", "clang-cl", "msvc")
+_COMPILER_KINDS = ("icx", "clang-cl", "msvc", "mingw")
 
-# AVX2 向量化（全部配置）。
+# AVX2 向量化（全部配置）。MinGW 为 GNU 风格 -mavx2（UCRT64/MINGW64 的 GCC
+# 与 CLANG64 的 GNU ABI clang 均接受）。
 _AVX2_FLAGS = {
     "icx": ("/QxCORE-AVX2", "/QaxCORE-AVX2"),
     "clang-cl": ("/arch:AVX2",),
     "msvc": ("/arch:AVX2",),
+    "mingw": ("-mavx2",),
 }
 
 # Release 最高优化（各编译器上限；/Ob2 /Oi /Ot 内联与内建、/GF 字符串池、
 # /Gy 函数级链接，clang-cl / icx 已实证接受）。clang-cl 须用 MSVC 风格 `/O2`：
 # GNU 风格 `-O3` 会被驱动忽略并告警；LLVM 23 实证 `/O2`+`/Ot` 映射 cc1 `-O3`
-# （最高优化），组合净级别 `-O3`。
+# （最高优化），组合净级别 `-O3`。MinGW 用 GNU 风格 `-O3`，函数/数据段细分
+# 为 --gc-sections 的常规前置（单独使用无副作用）。
 _RELEASE_OPTIMIZATION_FLAGS = {
     "icx": ("/O3", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
     "clang-cl": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
     "msvc": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
+    "mingw": ("-O3", "-ffunction-sections", "-fdata-sections"),
 }
 
 # NDEBUG 定义前缀按编译器习惯书写（cl / icx-cl 兼容 `-D`，此处保留 MSVC 风格）。
-_DEFINE_FLAG_PREFIX = {"icx": "/D", "clang-cl": "-D", "msvc": "/D"}
+_DEFINE_FLAG_PREFIX = {"icx": "/D", "clang-cl": "-D", "msvc": "/D", "mingw": "-D"}
+
+# MinGW 静态运行库（mt）：链接期静态化 GCC 运行库与 C++ 标准库。本地 LLVM 23
+# 以 GNU target 实证：`-static-libstdc++` 展开为 `-Bstatic -lstdc++`、
+# `-static-libgcc` 将 `-lgcc_s` 替换为静态 `-lgcc -lgcc_eh`，GCC 与 MSYS2
+# CLANG64 的 clang 均接受。不追加 `-static`：目标产物多为共享库（DLL），全静态
+# 会把 winpthread 一并静态化、跨 DLL 场景易引发运行时状态分裂，且影响面超出
+# 运行库家族语义；winpthread 保持动态属可接受折衷（文档标注）。
+_MINGW_STATIC_RUNTIME_FLAGS = ("-static-libgcc", "-static-libstdc++")
+# 写入链接器旗标而非编译旗标：编译期不出现，避免 clang 的
+# -Wunused-command-line-argument 噪音（-Werror 配方下会被放大为错误）。
+_MINGW_STATIC_RUNTIME_VARIABLES = (
+    "CMAKE_SHARED_LINKER_FLAGS",
+    "CMAKE_EXE_LINKER_FLAGS",
+    "CMAKE_MODULE_LINKER_FLAGS",
+)
 
 # CMake IPO（Release）：msvc → /GL + /LTCG；icx → -Qipo；clang-cl → -flto=thin。
 _IPO_CMAKE_VARIABLE = "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE"
@@ -102,25 +125,34 @@ def cmake_configure(
 ):
     """以 Ninja 生成器配置 CMake 工程（单配置，运行库按 CNP_RUNTIME_LIBRARY）。
 
-    固定拼接 `-G Ninja`、`-DCMAKE_BUILD_TYPE`、`-DCMAKE_MSVC_RUNTIME_LIBRARY`；
-    `CNP_NINJA`/`CNP_C_COMPILER`/`CNP_CXX_COMPILER` 存在时追加对应 `-D` 参数；
-    `extra_args` 原样追加（其中同名 `-DCMAKE_*` 优先于本函数注入的优化参数）。
+    固定拼接 `-G Ninja`、`-DCMAKE_BUILD_TYPE`；`CNP_NINJA`/`CNP_C_COMPILER`/
+    `CNP_CXX_COMPILER` 存在时追加对应 `-D` 参数；`CNP_RC_COMPILER`（MinGW 的
+    windres）存在时追加 `-DCMAKE_RC_COMPILER`；`extra_args` 原样追加（其中同名
+    `-DCMAKE_*` 优先于本函数注入的参数）。
 
-    运行库家族读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感）：`md`（缺省/非法回退）
-    → `/MD` 与 Debug `/MDd`；`mt` → `/MT` 与 Debug `/MTd`。
+    运行库家族读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感）：MSVC 系（icx /
+    clang-cl / msvc）`md`（缺省/非法回退）→ `/MD` 与 Debug `/MDd`、`mt` →
+    `/MT` 与 Debug `/MTd`，写入 `CMAKE_MSVC_RUNTIME_LIBRARY`；MinGW 走 GNU
+    语义——不写 `CMAKE_MSVC_RUNTIME_LIBRARY`，`md` 为动态缺省（不加旗标），
+    `mt` 把 `-static-libgcc -static-libstdc++` 注入
+    `CMAKE_{SHARED,EXE,MODULE}_LINKER_FLAGS`（仅链接期，避免 clang 编译期
+    `-Wunused-command-line-argument` 噪音）。
 
     优化参数按编译器种类（`CNP_COMPILER_KIND`，回退从编译器路径推断）注入，
     **不注入任何语言标准（std/c++ 标准）参数**：
 
     - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang-cl / msvc →
-      `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS`）；
+      `/arch:AVX2`；mingw → `-mavx2`（写入两配置共用的 `CMAKE_C_FLAGS` /
+      `CMAKE_CXX_FLAGS`）；
     - Release 最高优化：icx `/O3`、clang-cl `/O2`、msvc `/O2`，并追加
-      `/Ob2 /Oi /Ot /GF /Gy`，保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` /
+      `/Ob2 /Oi /Ot /GF /Gy`；mingw `-O3 -ffunction-sections -fdata-sections`；
+      均保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` /
       `CMAKE_CXX_FLAGS_RELEASE`）；
     - Release 启用 CMake IPO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`）：
       msvc `/GL`+`/LTCG`、icx `-Qipo`；clang-cl 需 PATH 中可解析 `lld-link`，
-      缺失时自动退化；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可显式关闭
-      （供单个库按兼容性退化）；
+      缺失时自动退化；**MinGW 缺省保守关闭**（GCC LTO 跨工具链版本/插件差异
+      在共享库与静态库混用时风险面大），`enable_ipo=True` 可显式开启；
+      `enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可显式关闭；
     - Debug 不注入任何优化参数（保留调试信息），AVX2 仍保留。
 
     编译器种类未知时不注入优化参数；子进程失败抛 RuntimeError（含输出尾部）。
@@ -145,8 +177,9 @@ def cmake_configure(
         "-G",
         "Ninja",
         "-DCMAKE_BUILD_TYPE=" + str(config),
-        "-DCMAKE_MSVC_RUNTIME_LIBRARY=" + runtime_library,
     ]
+    if kind != "mingw":
+        command.append("-DCMAKE_MSVC_RUNTIME_LIBRARY=" + runtime_library)
     ninja = _optional_environment_path("CNP_NINJA")
     if ninja:
         command.append("-DCMAKE_MAKE_PROGRAM=" + ninja)
@@ -156,9 +189,13 @@ def cmake_configure(
     cxx_compiler = _optional_environment_path("CNP_CXX_COMPILER")
     if cxx_compiler:
         command.append("-DCMAKE_CXX_COMPILER=" + cxx_compiler)
+    rc_compiler = _optional_environment_path("CNP_RC_COMPILER")
+    if rc_compiler:
+        command.append("-DCMAKE_RC_COMPILER=" + rc_compiler)
     command.extend(
         _optimization_arguments(avx2_flags, optimization_flags, kind, provided)
     )
+    command.extend(_runtime_link_arguments(kind, runtime, provided))
 
     ipo_state, ipo_reason = _resolve_ipo_state(
         kind, config, enable_ipo, provided
@@ -167,7 +204,7 @@ def cmake_configure(
         command.append("-D%s=ON" % _IPO_CMAKE_VARIABLE)
     print(
         "[cnp_build_support] cmake_configure: config=%s compiler=%s avx2=%s "
-        "optimization=%s ipo=%s runtime=%s"
+        "optimization=%s ipo=%s runtime=%s rc=%s"
         % (
             config,
             kind or "unknown",
@@ -175,6 +212,7 @@ def cmake_configure(
             " ".join(optimization_flags) if optimization_flags else "-",
             ipo_state,
             runtime,
+            rc_compiler or "-",
         ),
         flush=True,
     )
@@ -494,9 +532,11 @@ def _optional_environment_path(name):
 
 
 def _compiler_kind():
-    """编译器种类：`CNP_COMPILER_KIND`（msvc/clang-cl/icx），回退从编译器路径推断。
+    """编译器种类：`CNP_COMPILER_KIND`（icx/clang-cl/msvc/mingw），回退从路径推断。
 
-    两者都识别不出时返回 None（调用方不注入优化参数）。
+    两者都识别不出时返回 None（调用方不注入优化参数）。路径推断为尽力而为：
+    `gcc`/`g++` → mingw；`clang` 系归 clang-cl（无法从名字区分 GNU ABI 的
+    clang，正常链路以 `CNP_COMPILER_KIND` 为准）。
     """
     kind = os.environ.get("CNP_COMPILER_KIND", "").strip().lower()
     if kind in _COMPILER_KINDS:
@@ -507,6 +547,8 @@ def _compiler_kind():
             return "icx"
         if executable.startswith("clang"):
             return "clang-cl"
+        if executable.startswith("gcc") or executable.startswith("g++"):
+            return "mingw"
         if executable in ("cl", "cl.exe"):
             return "msvc"
     return None
@@ -516,7 +558,8 @@ def _runtime_library():
     """运行库家族与 `CMAKE_MSVC_RUNTIME_LIBRARY` 取值：`(家族, 取值)`。
 
     读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感、允许两侧空白）；缺失或非法回退
-    `md`（动态运行库，Debug 自动 d 变体）。
+    `md`（动态运行库，Debug 自动 d 变体）。第二个元素仅 MSVC 系编译器消费；
+    MinGW 的运行库语义由 `_runtime_link_arguments` 用链接旗标表达。
     """
     family = os.environ.get(_CMAKE_RUNTIME_LIBRARY_ENV, "").strip().lower()
     if family not in _RUNTIME_LIBRARY_VARIANTS:
@@ -555,13 +598,32 @@ def _optimization_arguments(avx2_flags, optimization_flags, kind, provided):
     return arguments
 
 
+def _runtime_link_arguments(kind, runtime, provided):
+    """MinGW 运行库家族的链接期 `-D` 参数（配方已提供的同名变量不重复注入）。
+
+    仅 `kind == "mingw"` 且 `runtime == "mt"` 时注入
+    `_MINGW_STATIC_RUNTIME_FLAGS` 到 `_MINGW_STATIC_RUNTIME_VARIABLES` 各变量
+    （共享库 / 可执行 / 模块三类链接命令都覆盖）；`md` 为动态缺省、不注入。
+    """
+    if kind != "mingw" or runtime != "mt":
+        return []
+    joined = " ".join(_MINGW_STATIC_RUNTIME_FLAGS)
+    return [
+        "-D%s=%s" % (variable, joined)
+        for variable in _MINGW_STATIC_RUNTIME_VARIABLES
+        if variable not in provided
+    ]
+
+
 def _resolve_ipo_state(kind, config, enable_ipo, provided):
     """判定 Release IPO 状态：("on"/"off"/"preset", 退化原因或 None)。
 
     - 非 Release 配置不启用（不算退化）；
     - 配方经 `extra_args` 自带 IPO 变量时保持其取值（"preset"）；
     - `enable_ipo=False` / 环境变量 `CNP_NO_IPO` 显式关闭；`enable_ipo=True` 强制；
-    - auto：编译器种类未知 → 退化；clang-cl 无 `lld-link` → 退化（需 lld 链接器）。
+    - auto：编译器种类未知 → 退化；clang-cl 无 `lld-link` → 退化（需 lld
+      链接器）；MinGW 保守退化（GCC LTO 跨工具链版本 / 插件差异在共享库与静态
+      库混用时风险面大，待真机验收后再评估默认开启；`enable_ipo=True` 可强制）。
     """
     if str(config).lower() != "release":
         return "off", None
@@ -579,6 +641,8 @@ def _resolve_ipo_state(kind, config, enable_ipo, provided):
         return "off", "unknown-compiler"
     if kind == "clang-cl" and shutil.which(_IPO_LINKER_PROBE) is None:
         return "off", "lld-link-missing"
+    if kind == "mingw":
+        return "off", "mingw-conservative"
     return "on", None
 
 
