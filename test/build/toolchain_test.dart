@@ -16,7 +16,7 @@ void main() {
   group('compilerKindId', () {
     test('返回各编译器的稳定标识', () {
       expect(compilerKindId(CompilerKind.icx), 'icx');
-      expect(compilerKindId(CompilerKind.clangCl), 'clang-cl');
+      expect(compilerKindId(CompilerKind.clang), 'clang');
       expect(compilerKindId(CompilerKind.msvc), 'msvc');
     });
   });
@@ -24,10 +24,18 @@ void main() {
   group('compilerKindFromId', () {
     test('解析稳定标识（大小写不敏感、容忍空白），未知返回 null', () {
       expect(compilerKindFromId('icx'), CompilerKind.icx);
-      expect(compilerKindFromId(' clang-cl '), CompilerKind.clangCl);
+      expect(compilerKindFromId(' clang '), CompilerKind.clang);
       expect(compilerKindFromId('MSVC'), CompilerKind.msvc);
       expect(compilerKindFromId('gcc'), isNull);
       expect(compilerKindFromId(''), isNull);
+    });
+
+    test('旧 clang-cl 标识不再解析为有效种类，由迁移逻辑识别', () {
+      expect(compilerKindFromId('clang-cl'), isNull);
+      expect(isLegacyCompilerKindId(' clang-cl '), isTrue);
+      expect(isLegacyCompilerKindId('clang'), isFalse);
+      expect(isLegacyCompilerKindId('CLANG-CL'), isTrue);
+      expect(isLegacyCompilerKindId(''), isFalse);
     });
   });
 
@@ -53,7 +61,7 @@ void main() {
       expect(
         isCompilerUsable(
           DetectedCompiler(
-            kind: CompilerKind.clangCl,
+            kind: CompilerKind.clang,
             version: '23.1.1',
             executablePath: executable,
             environmentScript: null,
@@ -111,7 +119,7 @@ void main() {
   group('compilerKindLabel', () {
     test('返回各编译器的显示名', () {
       expect(compilerKindLabel(CompilerKind.icx), 'ICX');
-      expect(compilerKindLabel(CompilerKind.clangCl), 'clang-cl');
+      expect(compilerKindLabel(CompilerKind.clang), 'clang');
       expect(compilerKindLabel(CompilerKind.msvc), 'MSVC');
     });
   });
@@ -269,7 +277,7 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('目录内无 icx-cl.exe 时返回 null 且不执行进程', () async {
+    test('目录内无 icx 可执行文件时返回 null 且不执行进程', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/readme.txt'));
@@ -329,15 +337,15 @@ void main() {
     });
   });
 
-  group('detectClangCl', () {
-    test('解析版本与 LLVM bin 路径', () async {
+  group('detectClang', () {
+    test('解析 GNU clang 版本与 LLVM bin 路径', () async {
       final Directory root = _tempDirectory();
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
-      final String executable = joinPath(llvmBinDir, 'clang-cl.exe');
+      final String executable = joinPath(llvmBinDir, 'clang.exe');
       _createFile(executable);
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
-      final DetectedCompiler? detected = await detectClangCl(
+      final DetectedCompiler? detected = await detectClang(
         runner: _runner(
           calls,
           (_) async => _result(
@@ -351,7 +359,7 @@ void main() {
 
       expect(detected, isNotNull);
       final DetectedCompiler compiler = detected!;
-      expect(compiler.kind, CompilerKind.clangCl);
+      expect(compiler.kind, CompilerKind.clang);
       expect(compiler.version, '23.1.1');
       expect(compiler.executablePath, executable);
       expect(compiler.environmentScript, isNull);
@@ -361,13 +369,28 @@ void main() {
       expect(calls.single.arguments, <String>['--version']);
     });
 
-    test('clang-cl.exe 缺失时返回 null 且不执行进程', () async {
+    test('clang.exe 缺失时返回 null 且不执行进程', () async {
       final Directory root = _tempDirectory();
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
       Directory(llvmBinDir).createSync(recursive: true);
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
-      final DetectedCompiler? detected = await detectClangCl(
+      final DetectedCompiler? detected = await detectClang(
+        runner: _runner(calls, (_) async => throw StateError('不应执行进程')),
+        llvmBinDir: llvmBinDir,
+      );
+
+      expect(detected, isNull);
+      expect(calls, isEmpty);
+    });
+
+    test('仅 clang-cl.exe 存在时不视为 GNU clang', () async {
+      final Directory root = _tempDirectory();
+      final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
+      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final DetectedCompiler? detected = await detectClang(
         runner: _runner(calls, (_) async => throw StateError('不应执行进程')),
         llvmBinDir: llvmBinDir,
       );
@@ -379,9 +402,9 @@ void main() {
     test('版本输出不匹配时返回 null', () async {
       final Directory root = _tempDirectory();
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
-      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      _createFile(joinPath(llvmBinDir, 'clang.exe'));
 
-      final DetectedCompiler? detected = await detectClangCl(
+      final DetectedCompiler? detected = await detectClang(
         runner: _runner(
           <_ProcessCall>[],
           (_) async => _result('clang-cl: error\n'),
@@ -517,12 +540,12 @@ void main() {
   group('selectCompiler', () {
     test('按优先级返回首个可用', () {
       final DetectedCompiler icx = _compiler(CompilerKind.icx);
-      final DetectedCompiler clang = _compiler(CompilerKind.clangCl);
+      final DetectedCompiler clang = _compiler(CompilerKind.clang);
 
       expect(
         selectCompiler(
           <DetectedCompiler>[icx, clang],
-          <String>['clang-cl', 'icx', 'msvc'],
+          <String>['clang', 'icx', 'msvc'],
         ),
         same(clang),
       );
@@ -543,18 +566,26 @@ void main() {
         same(msvc),
       );
       expect(
-        selectCompiler(<DetectedCompiler>[msvc], <String>['icx', 'clang-cl']),
+        selectCompiler(<DetectedCompiler>[msvc], <String>['icx', 'clang']),
         isNull,
       );
       expect(
-        selectCompiler(<DetectedCompiler>[], <String>[
-          'icx',
+        selectCompiler(<DetectedCompiler>[], <String>['icx', 'clang', 'msvc']),
+        isNull,
+      );
+      expect(selectCompiler(<DetectedCompiler>[msvc], <String>[]), isNull);
+    });
+
+    test('旧 clang-cl 优先级不再匹配 clang（迁移由 SettingsModel 负责）', () {
+      final DetectedCompiler clang = _compiler(CompilerKind.clang);
+
+      expect(
+        selectCompiler(<DetectedCompiler>[clang], <String>[
           'clang-cl',
           'msvc',
         ]),
         isNull,
       );
-      expect(selectCompiler(<DetectedCompiler>[msvc], <String>[]), isNull);
     });
   });
 
@@ -647,12 +678,12 @@ void main() {
       );
     });
 
-    test('从覆盖路径按 icx → clang-cl → msvc 顺序收集', () async {
+    test('从覆盖路径按 icx → clang → msvc 顺序收集', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
-      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      _createFile(joinPath(llvmBinDir, 'clang.exe'));
       final String installPath = joinPath(root.path, 'VisualStudio');
       _createFile(
         joinPath(
@@ -679,7 +710,7 @@ void main() {
               if (executable.endsWith('icx-cl.exe')) {
                 return _result('Compiler 2026.1.1\n');
               }
-              if (executable.endsWith('clang-cl.exe')) {
+              if (executable.endsWith('clang.exe')) {
                 return _result('clang version 23.1.1\n');
               }
               return _result('$installPath\r\n');
@@ -693,7 +724,7 @@ void main() {
         compilers.map(
           (DetectedCompiler compiler) => compilerKindId(compiler.kind),
         ),
-        <String>['icx', 'clang-cl', 'msvc'],
+        <String>['icx', 'clang', 'msvc'],
       );
     });
 
@@ -702,7 +733,7 @@ void main() {
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
-      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      _createFile(joinPath(llvmBinDir, 'clang.exe'));
       final String installPath = joinPath(root.path, 'VisualStudio');
       _createFile(
         joinPath(
@@ -729,7 +760,7 @@ void main() {
           if (call.executable.endsWith('icx-cl.exe')) {
             return _result('Compiler 2026.1.1\n');
           }
-          if (call.executable.endsWith('clang-cl.exe')) {
+          if (call.executable.endsWith('clang.exe')) {
             return _result('clang version 23.1.1\n');
           }
           return _result('$installPath\r\n');
@@ -744,7 +775,7 @@ void main() {
         compilers.map(
           (DetectedCompiler compiler) => compilerKindId(compiler.kind),
         ),
-        <String>['icx', 'clang-cl', 'msvc'],
+        <String>['icx', 'clang', 'msvc'],
       );
       expect(calls, hasLength(3));
       for (final _ProcessCall call in calls) {
@@ -781,12 +812,12 @@ void main() {
       expect(icxProbe.environment?['TMP'], r'C:\tools\.tmp\build');
     });
 
-    test('clang-cl 无环境脚本时继承 MSVC 的 vcvars 脚本', () async {
+    test('clang 无环境脚本时继承 MSVC 的 vcvars 脚本', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
-      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      _createFile(joinPath(llvmBinDir, 'clang.exe'));
       final String installPath = joinPath(root.path, 'VisualStudio');
       _createFile(
         joinPath(
@@ -813,7 +844,7 @@ void main() {
               if (executable.endsWith('icx-cl.exe')) {
                 return _result('Compiler 2026.1.1\n');
               }
-              if (executable.endsWith('clang-cl.exe')) {
+              if (executable.endsWith('clang.exe')) {
                 return _result('clang version 23.1.1\n');
               }
               return _result('$installPath\r\n');
@@ -831,7 +862,7 @@ void main() {
         installPath,
         'VC/Auxiliary/Build/vcvars64.bat',
       );
-      expect(byKind['clang-cl']!.environmentScript, vcvars);
+      expect(byKind['clang']!.environmentScript, vcvars);
       expect(byKind['msvc']!.environmentScript, vcvars);
       expect(
         byKind['icx']!.environmentScript,
@@ -839,10 +870,10 @@ void main() {
       );
     });
 
-    test('无 MSVC 时 clang-cl 环境脚本保持 null', () async {
+    test('无 MSVC 时 clang 环境脚本保持 null', () async {
       final Directory root = _tempDirectory();
       final String llvmBinDir = joinPath(root.path, 'LLVM/bin');
-      _createFile(joinPath(llvmBinDir, 'clang-cl.exe'));
+      _createFile(joinPath(llvmBinDir, 'clang.exe'));
 
       final List<DetectedCompiler> compilers = await detectCompilers(
         runner:
@@ -852,7 +883,7 @@ void main() {
               String? workingDirectory,
               Map<String, String>? environment,
             }) async {
-              if (executable.endsWith('clang-cl.exe')) {
+              if (executable.endsWith('clang.exe')) {
                 return _result('clang version 23.1.1\n');
               }
               throw ProcessException(executable, arguments, 'not found');
@@ -863,7 +894,7 @@ void main() {
       );
 
       expect(compilers, hasLength(1));
-      expect(compilers.single.kind, CompilerKind.clangCl);
+      expect(compilers.single.kind, CompilerKind.clang);
       expect(compilers.single.environmentScript, isNull);
     });
 

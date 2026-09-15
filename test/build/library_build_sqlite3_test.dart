@@ -166,7 +166,7 @@ void main() {
 
       final BuildEnvironment env = await preparePackBuildEnvironment(
         pack,
-        priority: const <String>['icx', 'clang-cl', 'msvc'],
+        priority: const <String>['icx', 'clang', 'msvc'],
         toolsRoot: 'tools',
         loadSupportModule: _loadSupportModule,
       );

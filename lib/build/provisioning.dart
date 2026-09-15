@@ -299,7 +299,7 @@ class ToolProvisioner {
   /// Windows MSVC 版 tar.xz 并解压到 `tools/clang/`。
   ///
   /// 供编译器检测全部落空时兜底；解析失败回退 [clangLlvmFallbackVersion]
-  /// 对应地址。LLVM 发行版不含 MSVC 标准库头与链接库，clang-cl 仍需
+  /// 对应地址。LLVM 发行版不含 MSVC 标准库头与链接库，clang（GNU 驱动）仍需
   /// MSVC/SDK 提供编译与链接环境，故该工具不携带环境脚本。
   Future<ProvisionedTool> ensureClangLlvm({
     ToolDownloadProgressCallback? onDownloadProgress,

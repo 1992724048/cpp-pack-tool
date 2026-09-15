@@ -1,10 +1,10 @@
 /// 编译器类型；设置页优先级与 `CNP_COMPILER_KIND` 使用 [compilerKindId] 的标识。
-enum CompilerKind { icx, clangCl, msvc }
+enum CompilerKind { icx, clang, msvc }
 
 /// 编译器在设置页与 `CNP_COMPILER_KIND` 中使用的稳定标识。
 String compilerKindId(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'icx',
-  CompilerKind.clangCl => 'clang-cl',
+  CompilerKind.clang => 'clang',
   CompilerKind.msvc => 'msvc',
 };
 
@@ -19,10 +19,21 @@ CompilerKind? compilerKindFromId(String id) {
   return null;
 }
 
+/// R23 之前的 clang 驱动标识：旧版用 `clang-cl.exe`（MSVC 兼容驱动）作为
+/// `CNP_COMPILER_KIND`，现代 GNU 驱动（`clang.exe`）改用 `clang`。
+///
+/// 仅供配置迁移识别：旧缓存条目指向 clang-cl.exe 驱动，与 GNU 驱动语义不同
+/// （旗标体系不兼容），读回时必须丢弃并重检，不得映射为 [CompilerKind.clang]。
+const String legacyClangClKindId = 'clang-cl';
+
+/// 标识是否为 R23 之前的旧版 clang 驱动（大小写不敏感、容忍首尾空白）。
+bool isLegacyCompilerKindId(String id) =>
+    id.trim().toLowerCase() == legacyClangClKindId;
+
 /// 编译器在构建对话框与设置页中展示的名称。
 String compilerKindLabel(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'ICX',
-  CompilerKind.clangCl => 'clang-cl',
+  CompilerKind.clang => 'clang',
   CompilerKind.msvc => 'MSVC',
 };
 

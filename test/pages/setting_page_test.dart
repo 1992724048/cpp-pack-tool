@@ -197,7 +197,7 @@ void main() {
     await _pumpSetting(
       tester,
       settings: const SettingsModel(
-        compilerPriority: <String>['icx', 'clang-cl'],
+        compilerPriority: <String>['icx', 'clang'],
       ),
       onSave: (_) async {},
       detectCompilers: () async => <DetectedCompiler>[
@@ -205,7 +205,7 @@ void main() {
       ],
     );
 
-    expect(find.text('clang-cl'), findsOneWidget);
+    expect(find.text('clang'), findsOneWidget);
     expect(find.text('未检测到'), findsOneWidget);
     expect(find.text('2026.1.1'), findsOneWidget);
   });
@@ -253,7 +253,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(saved, isNotNull);
-    expect(saved!.compilerPriority, <String>['clang-cl', 'icx', 'msvc']);
+    expect(saved!.compilerPriority, <String>['clang', 'icx', 'msvc']);
     expect(saved!.outputDirectory, r'D:\nuget\out');
     expect(saved!.themeMode, ThemeModeSetting.dark);
     expect(saved!.darkFlavor, 'frappe');
@@ -264,7 +264,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(saved!.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(saved!.compilerPriority, <String>['icx', 'clang', 'msvc']);
   });
 
   testWidgets('编译器首行上移与末行下移禁用', (tester) async {

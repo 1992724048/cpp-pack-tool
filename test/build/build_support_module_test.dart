@@ -195,7 +195,20 @@ try:
     inferred_release = list(captured[-1])
     os.environ['CNP_COMPILER_KIND'] = 'icx'
 
+    # R23：GNU clang（clang/clang++ 驱动）→ GNU 风旗标 + 显式 lld-link。
+    os.environ['CNP_COMPILER_KIND'] = 'clang'
+    os.environ['CNP_C_COMPILER'] = 'C:/llvm/bin/clang.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/llvm/bin/clang++.exe'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    clang_gnu_release = list(captured[-1])
+
+    os.environ.pop('CNP_COMPILER_KIND', None)
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    gnu_inferred_release = list(captured[-1])
+
     os.environ['CNP_COMPILER_KIND'] = 'clang-cl'
+    os.environ['CNP_C_COMPILER'] = 'C:/llvm/bin/clang-cl.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/llvm/bin/clang-cl.exe'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     clang_release = list(captured[-1])
 
@@ -230,6 +243,12 @@ try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     clang_no_lld = list(captured[-1])
 
+    os.environ['CNP_COMPILER_KIND'] = 'clang'
+    os.environ['CNP_C_COMPILER'] = 'C:/llvm/bin/clang.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/llvm/bin/clang++.exe'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    clang_gnu_no_lld = list(captured[-1])
+
     os.environ['CNP_COMPILER_KIND'] = 'msvc'
     cnp_build_support.cmake_configure(
         'C:/src', 'C:/build', 'Release',
@@ -250,6 +269,20 @@ print('inferred_opt=%s' % option(inferred_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('clang_avx2_c=%s' % option(clang_release, 'CMAKE_C_FLAGS'))
 print('clang_opt_cxx=%s' % option(clang_release, 'CMAKE_CXX_FLAGS_RELEASE'))
 print('clang_ipo=%s' % option(clang_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('clang_cl_ld=%s' % option(clang_release, 'CMAKE_EXE_LINKER_FLAGS'))
+print('clang_gnu_avx2_c=%s' % option(clang_gnu_release, 'CMAKE_C_FLAGS'))
+print('clang_gnu_avx2_cxx=%s' % option(clang_gnu_release, 'CMAKE_CXX_FLAGS'))
+print('clang_gnu_opt=%s' % option(clang_gnu_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('clang_gnu_opt_cxx=%s' % option(clang_gnu_release, 'CMAKE_CXX_FLAGS_RELEASE'))
+print('clang_gnu_ipo=%s' % option(clang_gnu_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('clang_gnu_ld_exe=%s' % option(clang_gnu_release, 'CMAKE_EXE_LINKER_FLAGS'))
+print('clang_gnu_ld_shared=%s' % option(clang_gnu_release, 'CMAKE_SHARED_LINKER_FLAGS'))
+print('clang_gnu_ld_module=%s' % option(clang_gnu_release, 'CMAKE_MODULE_LINKER_FLAGS'))
+print('gnu_inferred_opt=%s' % option(gnu_inferred_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('gnu_inferred_ld_exe=%s' % option(gnu_inferred_release, 'CMAKE_EXE_LINKER_FLAGS'))
+print('clang_gnu_no_lld_ipo=%s' % option(
+    clang_gnu_no_lld, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('clang_gnu_no_lld_ld=%s' % option(clang_gnu_no_lld, 'CMAKE_EXE_LINKER_FLAGS'))
 print('msvc_opt=%s' % option(msvc_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('msvc_opt_cxx=%s' % option(msvc_release, 'CMAKE_CXX_FLAGS_RELEASE'))
 print('msvc_ipo=%s' % option(msvc_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
@@ -692,7 +725,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "5"'));
+      expect(source, contains('VERSION = "6"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -754,13 +787,39 @@ void main() {
       // 非法种类标识时回退按编译器路径推断（icx-cl.exe → icx）。
       expect(stdout, contains('inferred_avx2=/QxCORE-AVX2 /QaxCORE-AVX2'));
       expect(stdout, contains('inferred_opt=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
-      // clang-cl：/arch:AVX2 + /O2 /Ob2 /Oi /Ot /GF /Gy + lld 可解析时 IPO。
+      // clang-cl（cl 兼容驱动）：/arch:AVX2 + /O2 /Ob2 /Oi /Ot /GF /Gy + lld 可解析时 IPO。
       expect(stdout, contains('clang_avx2_c=/arch:AVX2'));
+      expect(stdout, contains('clang_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'));
+      expect(stdout, contains('clang_ipo=ON'));
+      expect(stdout, contains('clang_cl_ld=none'));
+      // R23：clang（GNU 驱动）→ -mavx2 / -O3 -ffunction-sections -fdata-sections
+      // + NDEBUG + 显式 -fuse-ld=lld-link（链接旗标变量逐个注入）。
+      expect(stdout, contains('clang_gnu_avx2_c=-mavx2'));
+      expect(stdout, contains('clang_gnu_avx2_cxx=-mavx2'));
       expect(
         stdout,
-        contains('clang_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'),
+        contains(
+          'clang_gnu_opt=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
+        ),
       );
-      expect(stdout, contains('clang_ipo=ON'));
+      expect(
+        stdout,
+        contains(
+          'clang_gnu_opt_cxx=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
+        ),
+      );
+      expect(stdout, contains('clang_gnu_ipo=ON'));
+      expect(stdout, contains('clang_gnu_ld_exe=-fuse-ld=lld-link'));
+      expect(stdout, contains('clang_gnu_ld_shared=-fuse-ld=lld-link'));
+      expect(stdout, contains('clang_gnu_ld_module=-fuse-ld=lld-link'));
+      // 种类缺失时按 clang++/clang.exe 路径推断为 GNU clang。
+      expect(
+        stdout,
+        contains(
+          'gnu_inferred_opt=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
+        ),
+      );
+      expect(stdout, contains('gnu_inferred_ld_exe=-fuse-ld=lld-link'));
       // msvc：/O2 /Ob2 /Oi /Ot /GF /Gy + IPO。
       expect(stdout, contains('msvc_opt=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
       expect(
@@ -775,10 +834,12 @@ void main() {
       // 编译器种类未知时不注入任何优化参数。
       expect(stdout, contains('unknown_avx2=none'));
       expect(stdout, contains('unknown_opt=none'));
-      // 退化路径：调用参数 / 环境变量 / clang-cl 缺 lld。
+      // 退化路径：调用参数 / 环境变量 / clang（GNU 与 clang-cl）缺 lld。
       expect(stdout, contains('disabled_call_ipo=none'));
       expect(stdout, contains('disabled_env_ipo=none'));
       expect(stdout, contains('clang_no_lld_ipo=none'));
+      expect(stdout, contains('clang_gnu_no_lld_ipo=none'));
+      expect(stdout, contains('clang_gnu_no_lld_ld=none'));
       expect(stdout, contains('ipo=off reason=disabled-by-call'));
       expect(stdout, contains('ipo=off reason=disabled-by-env'));
       expect(stdout, contains('ipo=off reason=lld-link-missing'));
