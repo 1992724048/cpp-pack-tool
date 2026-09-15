@@ -25,6 +25,7 @@ import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/author_rules.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/repo_icon.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/util/system_entries.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
@@ -168,6 +169,7 @@ class MainLayout extends StatefulWidget {
     this.loadBuildHeader = loadBuildScriptHeader,
     this.loadRemoteTags = listRemoteTags,
     this.fixIncludes = fixHeaderIncludes,
+    this.loadRepoIcon = ensureRepoAvatar,
     this.now = DateTime.now,
     this.hasBuildCache = hasPackBuildCache,
     this.deleteBuildCache = deletePackBuildCache,
@@ -206,6 +208,9 @@ class MainLayout extends StatefulWidget {
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
 
+  /// 解析并缓存远程仓库头像（磁盘缓存优先）；测试注入避免触网。
+  final Future<String?> Function(String repoUrl) loadRepoIcon;
+
   final DateTime Function() now;
 
   /// 删除包时探测其构建缓存是否存在；测试注入。
@@ -231,6 +236,15 @@ class _MainLayoutState extends State<MainLayout> {
 
   /// 包名（小写）→ 上次解析头部时的源目录/脚本路径指纹，避免重复读取。
   final Map<String, String> _resolvedHeaderKeys = <String, String>{};
+
+  /// 包名（小写）→ 远程仓库平台；已解析但无远程平台时为 null。
+  final Map<String, RepoPlatform?> _repoPlatforms = <String, RepoPlatform?>{};
+
+  /// 包名（小写）→ 头像文件绝对路径（磁盘缓存命中或获取成功时非空）。
+  final Map<String, String?> _repoIcons = <String, String?>{};
+
+  /// 仓库地址 → 进行中/已完成头像查询（去重同一仓库的并发查询）。
+  final Map<String, Future<String?>> _repoIconQueries = <String, Future<String?>>{};
 
   /// 仓库地址 → 远端最新 tag 查询 Future（去重同一仓库的并发查询）。
   final Map<String, Future<String?>> _latestTagQueries =
@@ -558,9 +572,49 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return;
     }
-    setState(() => _packRepos[name] = repo);
-    if (repo != null) {
-      unawaited(_latestTagFor(repo));
+    final String? resolvedRepo = repo;
+    final RepoLocation? location = resolvedRepo == null
+        ? null
+        : parseRepoLocation(resolvedRepo);
+    setState(() {
+      _packRepos[name] = resolvedRepo;
+      _repoPlatforms[name] = location?.platform;
+      if (location == null) {
+        _repoIcons[name] = null;
+      }
+    });
+    if (resolvedRepo == null) {
+      return;
+    }
+    unawaited(_latestTagFor(resolvedRepo));
+    if (location != null) {
+      unawaited(_resolveRepoAvatar(name, resolvedRepo));
+    }
+  }
+
+  /// 解析并缓存侧栏头像：同一仓库 URL 复用进行中的查询，成功后写入 [_repoIcons]。
+  Future<void> _resolveRepoAvatar(String packName, String repoUrl) async {
+    final Future<String?> query = _repoIconQueries.putIfAbsent(
+      repoUrl,
+      () => _queryRepoIcon(repoUrl),
+    );
+    String? path;
+    try {
+      path = await query;
+    } catch (_) {
+      path = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _repoIcons[packName] = path);
+  }
+
+  Future<String?> _queryRepoIcon(String repoUrl) async {
+    try {
+      return await widget.loadRepoIcon(repoUrl);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -649,8 +703,15 @@ class _MainLayoutState extends State<MainLayout> {
     }
     setState(() {
       _packs.removeAt(selected);
-      _packRepos.remove(pack.name.toLowerCase());
-      _resolvedHeaderKeys.remove(pack.name.toLowerCase());
+      final String packKey = pack.name.toLowerCase();
+      final String? deletedRepo = _packRepos[packKey];
+      _packRepos.remove(packKey);
+      _resolvedHeaderKeys.remove(packKey);
+      _repoPlatforms.remove(packKey);
+      _repoIcons.remove(packKey);
+      if (deletedRepo != null) {
+        _repoIconQueries.remove(deletedRepo);
+      }
       if (_packs.isEmpty) {
         _selected = null;
       } else if (selected >= _packs.length) {
@@ -1164,6 +1225,13 @@ class _MainLayoutState extends State<MainLayout> {
           onPackagingBuilderChanged: _selectPackagingBuilder,
           loadLatestVersion: _latestTagFor,
           repoBadgeFor: _repoBadgeFor,
+          repoIconFor: (PackModel pack) {
+            final String name = pack.name.toLowerCase();
+            return (
+              platform: _repoPlatforms[name],
+              avatarPath: _repoIcons[name],
+            );
+          },
           loadHeader: widget.loadBuildHeader,
         ),
         footerItems: [

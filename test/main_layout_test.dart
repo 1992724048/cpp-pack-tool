@@ -2310,9 +2310,88 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
-    expect(find.text('当前版本：v1.0.0'), findsOneWidget);
-    expect(find.text('最新版本：v2.0.0'), findsOneWidget);
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('v1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('v2.0.0')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('远程头像按仓库 URL 去重解析并落位侧栏', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'alpha',
+          '1.0.0',
+          sourcePath: r'C:\libs\alpha',
+          files: _buildPyFiles(),
+        ),
+        _pack(
+          'beta',
+          '1.0.0',
+          sourcePath: r'C:\libs\beta',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    int iconCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://github.com/madler/zlib.git',
+      ),
+      loadRemoteTags: (String repoUrl) async => <String>['v1.0.0'],
+      loadRepoIcon: (String repoUrl) async {
+        iconCalls++;
+        return r'C:\cache\icons\github\madler.png';
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(iconCalls, 1, reason: '同一仓库 URL 只解析一次（会话缓存）');
+    expect(find.byKey(const Key('repoAvatar_alpha')), findsOneWidget);
+    expect(find.byKey(const Key('repoAvatar_beta')), findsOneWidget);
+    expect(find.byKey(const Key('repoFallbackIcon_alpha')), findsNothing);
+  });
+
+  testWidgets('GitHub 平台在头像缺失时显示平台回退图标', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://github.com/madler/zlib',
+      ),
+      loadRemoteTags: (String repoUrl) async => <String>['v1.0.0'],
+      loadRepoIcon: (String repoUrl) async => null,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoFallbackIcon_demo')), findsOneWidget);
+    expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
   });
 
   testWidgets('删除包时探测构建缓存并可按需删除缓存', (tester) async {
@@ -2657,6 +2736,7 @@ Future<void> _pumpMainLayout(
   DateTime Function()? now,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
   Future<List<String>?> Function(String repoUrl)? loadRemoteTags,
+  Future<String?> Function(String repoUrl)? loadRepoIcon,
   PackHeaderIncludeFixer? fixIncludes,
   PackBuildCacheProbe? hasBuildCache,
   PackBuildCacheDeleter? deleteBuildCache,
@@ -2681,6 +2761,7 @@ Future<void> _pumpMainLayout(
         detectCompilers: detectCompilers ?? _noCompilers,
         loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
         loadRemoteTags: loadRemoteTags ?? _noRemoteTags,
+        loadRepoIcon: loadRepoIcon ?? _noRepoIcon,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
         hasBuildCache: hasBuildCache ?? _noBuildCache,
@@ -2705,6 +2786,8 @@ Future<List<DetectedCompiler>> _noCompilers() async =>
     const <DetectedCompiler>[];
 
 Future<List<String>?> _noRemoteTags(String repoUrl) async => null;
+
+Future<String?> _noRepoIcon(String repoUrl) async => null;
 
 DetectedCompiler _compiler(CompilerKind kind, String version) {
   return DetectedCompiler(
