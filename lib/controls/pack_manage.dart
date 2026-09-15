@@ -161,6 +161,7 @@ class _PackManageState extends State<PackManage> {
                   pack: pack,
                   selectedBuilder: builder,
                   onBuilderChanged: widget.onPackagingBuilderChanged,
+                  onSave: widget.onSave,
                 ),
           ),
     );

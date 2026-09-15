@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
@@ -193,6 +194,99 @@ void main() {
 
     final FilledButton button = tester.widget<FilledButton>(
       find.byKey(const Key('packPreviewButton')),
+    );
+    expect(button.onPressed, isNull);
+  });
+
+  testWidgets('启用集合只列出已启用格式（未记录的旧包全部启用）', (tester) async {
+    final PackModel cmakeOnly = _pack()..enabledFormats = <String>['cmake'];
+    await _pumpPage(tester, PackPackaging(pack: cmakeOnly));
+
+    expect(_builderFieldValue(tester), 'cmake');
+    expect(find.text('NuGet 包'), findsNothing);
+    expect(find.text('CMake'), findsOneWidget);
+  });
+
+  testWidgets('会话首选被禁用时回落到首个启用项', (tester) async {
+    final PackModel cmakeOnly = _pack()..enabledFormats = <String>['cmake'];
+
+    await _pumpPage(
+      tester,
+      PackPackaging(
+        pack: cmakeOnly,
+        selectedBuilder: PackageBuilderRegistry.all.first,
+      ),
+    );
+
+    expect(_builderFieldValue(tester), 'cmake');
+  });
+
+  testWidgets('修改启用格式后全字段保存，成功提示已保存', (tester) async {
+    final PackModel pack = _pack()
+      ..enabledFormats = <String>['nuget', 'cmake']
+      ..files = <FileModel>[
+        FileModel(name: 'foo.h', path: 'include/foo.h', size: 1),
+      ];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackPackaging(
+        pack: pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('modifyEnabledFormatsButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('formatSelectionDialog')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('formatItem_cmake_enabled')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('formatDisableButton')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('formatSelectionConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.enabledFormats, <String>['nuget']);
+    expect(saved!.files.single.path, 'include/foo.h');
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('保存启用格式失败时提示错误', (tester) async {
+    await _pumpPage(
+      tester,
+      PackPackaging(
+        pack: _pack(),
+        onSave: (PackModel updated) async => throw ArgumentError('磁盘错误'),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('modifyEnabledFormatsButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('formatItem_nuget_enabled')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('formatDisableButton')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('formatSelectionConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('保存失败：磁盘错误'), findsOneWidget);
+  });
+
+  testWidgets('未提供 onSave 时修改启用格式按钮禁用', (tester) async {
+    await _pumpPage(tester, PackPackaging(pack: _pack()));
+
+    final Button button = tester.widget<Button>(
+      find.byKey(const Key('modifyEnabledFormatsButton')),
     );
     expect(button.onPressed, isNull);
   });
