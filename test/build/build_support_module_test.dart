@@ -473,7 +473,8 @@ print('dir_count=%d' % count_a)
 print('file_count=%d' % count_b)
 ''';
 
-/// stage_binaries：Release/Debug 双目录布局、中间目录跳过与同名去重。
+/// stage_binaries：Release/Debug 双目录布局、MinGW `.a`/`.dll.a` 落点、
+/// 中间目录跳过与同名去重。
 const String _binariesDriver = r'''
 import os
 
@@ -485,6 +486,8 @@ fixtures = {
     'libA/foo.lib': 'foo-a',
     'libA/foo.pdb': 'pdb-a',
     'libA/bar.dll': 'bar-a',
+    'libA/libz.a': 'z-a',
+    'libA/libz.dll.a': 'z-import-a',
     'libB/foo.lib': 'foo-b',
     'CMakeFiles/generated.lib': 'generated',
     'obj/thing.dir/skipme.lib': 'skipme',
@@ -509,7 +512,8 @@ print('debug_copied=%d debug_lib=%d debug_bin=%d debug_skipped=%d' % (
     debug['copied'], debug['lib'], debug['bin'], debug['skipped']))
 ''';
 
-/// stage_binaries reset：段重置（残留消失、另一段保留）、默认旧语义与双跑不累积。
+/// stage_binaries reset：段重置（残留消失、另一段保留）、默认旧语义与双跑不累积
+/// （含 MinGW `.a`/`.dll.a` 产物落点）。
 const String _binariesResetDriver = r'''
 import os
 
@@ -538,6 +542,8 @@ def tree(root):
 
 write(build, 'fresh/libz.lib', 'fresh-lib')
 write(build, 'fresh/libz.dll', 'fresh-dll')
+write(build, 'fresh/libz.a', 'fresh-static')
+write(build, 'fresh/libz.dll.a', 'fresh-import')
 
 # 预置残留：旧产物、去重改名残留、混入的 debug 产物；另一配置段与 include 应受保护。
 write(out, 'release/lib/stale.lib', 'stale-lib')
@@ -751,7 +757,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "7"'));
+      expect(source, contains('VERSION = "8"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -992,12 +998,12 @@ void main() {
       expect(
         stdout,
         contains(
-          'release_copied=4 release_lib=2 release_bin=2 release_skipped=0',
+          'release_copied=6 release_lib=4 release_bin=2 release_skipped=0',
         ),
       );
       expect(
         stdout,
-        contains('debug_copied=4 debug_lib=2 debug_bin=2 debug_skipped=0'),
+        contains('debug_copied=6 debug_lib=4 debug_bin=2 debug_skipped=0'),
       );
 
       final String outRelease = _join(tempDir.path, 'out_release');
@@ -1006,6 +1012,8 @@ void main() {
         'release/bin/foo.pdb',
         'release/lib/foo.lib',
         'release/lib/foo_libB.lib',
+        'release/lib/libz.a',
+        'release/lib/libz.dll.a',
       ]);
       expect(
         _readText(_join(_join(_join(outRelease, 'release'), 'lib'), 'foo.lib')),
@@ -1021,6 +1029,17 @@ void main() {
         _readText(_join(_join(_join(outRelease, 'release'), 'bin'), 'foo.pdb')),
         'pdb-a',
       );
+      // MinGW：静态库与导入库均以 `.a` 结尾 → lib（而非 bin）。
+      expect(
+        _readText(_join(_join(_join(outRelease, 'release'), 'lib'), 'libz.a')),
+        'z-a',
+      );
+      expect(
+        _readText(
+          _join(_join(_join(outRelease, 'release'), 'lib'), 'libz.dll.a'),
+        ),
+        'z-import-a',
+      );
 
       final String outDebug = _join(tempDir.path, 'out_debug');
       expect(_relativeFiles(outDebug), <String>[
@@ -1028,6 +1047,8 @@ void main() {
         'debug/bin/foo.pdb',
         'debug/lib/foo.lib',
         'debug/lib/foo_libB.lib',
+        'debug/lib/libz.a',
+        'debug/lib/libz.dll.a',
       ]);
       expect(
         _readText(_join(_join(_join(outDebug, 'debug'), 'lib'), 'foo.lib')),
@@ -1048,29 +1069,42 @@ void main() {
       );
       final String stdout = result.stdout.toString();
       // 默认参数：旧语义不变，既有残留与增量产物共存。
-      expect(stdout, contains('default_counts=2/1/1'));
+      expect(stdout, contains('default_counts=4/3/1'));
       expect(
         stdout,
         contains(
-          'default_release=bin/libz.dll|bin/libzd.dll|lib/libz.lib|'
-          'lib/libz_build-release.lib|lib/stale.lib',
+          'default_release=bin/libz.dll|bin/libzd.dll|lib/libz.a|'
+          'lib/libz.dll.a|lib/libz.lib|lib/libz_build-release.lib|'
+          'lib/stale.lib',
         ),
         reason: '无 reset 时既有文件必须原样保留（向后兼容）',
       );
       // reset：本配置段只剩本次 staging 产物，另一段与 include 不受影响。
-      expect(stdout, contains('reset_counts=2/1/1'));
+      expect(stdout, contains('reset_counts=4/3/1'));
       expect(
         stdout,
-        contains('reset_release=bin/libz.dll|lib/libz.lib'),
+        contains(
+          'reset_release=bin/libz.dll|lib/libz.a|lib/libz.dll.a|lib/libz.lib',
+        ),
         reason: 'reset 后陈旧文件与 _build-* 去重残留应消失',
       );
       expect(stdout, contains('reset_debug=bin/libzd.dll'));
       expect(stdout, contains('reset_include=zlib.h'));
       // 双跑：重置后重复 staging 不产生累积。
-      expect(stdout, contains('rerun_release=bin/libz.dll|lib/libz.lib'));
+      expect(
+        stdout,
+        contains(
+          'rerun_release=bin/libz.dll|lib/libz.a|lib/libz.dll.a|lib/libz.lib',
+        ),
+      );
       // 构建目录缺失：报错且不触碰既有输出。
       expect(stdout, contains('missing=FileNotFoundError'));
-      expect(stdout, contains('missing_release=bin/libz.dll|lib/libz.lib'));
+      expect(
+        stdout,
+        contains(
+          'missing_release=bin/libz.dll|lib/libz.a|lib/libz.dll.a|lib/libz.lib',
+        ),
+      );
 
       final String out = _join(tempDir.path, 'out');
       expect(
@@ -1087,6 +1121,15 @@ void main() {
       expect(
         _readText(_join(_join(_join(out, 'release'), 'lib'), 'libz.lib')),
         'fresh-lib',
+      );
+      // MinGW 静态库与导入库：整段重置后为本次 staging 内容。
+      expect(
+        _readText(_join(_join(_join(out, 'release'), 'lib'), 'libz.a')),
+        'fresh-static',
+      );
+      expect(
+        _readText(_join(_join(_join(out, 'release'), 'lib'), 'libz.dll.a')),
+        'fresh-import',
       );
       expect(
         _readText(_join(_join(_join(out, 'debug'), 'bin'), 'libzd.dll')),

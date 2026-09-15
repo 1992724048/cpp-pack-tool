@@ -37,7 +37,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "7"
+VERSION = "8"
 
 __all__ = (
     "VERSION",
@@ -53,6 +53,10 @@ __all__ = (
 HEADER_EXTENSIONS = frozenset((".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp"))
 LIBRARY_EXTENSIONS = frozenset((".lib", ".a"))
 BINARY_EXTENSIONS = frozenset((".dll", ".pdb", ".exe"))
+# stage_binaries 收集的扩展名：库类（LIBRARY_EXTENSIONS，MinGW 的 `lib*.dll.a`
+# 经 splitext 得 `.a` 自然覆盖）与动态库 / 调试符号。`.exe` 不参与 staging
+# （classify_tree 才收 .exe，两者职责不同）。
+_STAGE_EXTENSIONS = LIBRARY_EXTENSIONS | frozenset((".dll", ".pdb"))
 
 # 与打包器 lib/packaging/license_file.dart 保持一致：核心名 + `-`/`.` 后缀变体。
 LICENSE_NAME_PATTERN = re.compile(
@@ -284,10 +288,12 @@ def stage_headers(paths, out):
 
 
 def stage_binaries(build_dir, out, config="Release", reset=False):
-    """递归收集构建树中的 `.lib/.dll/.pdb` 并按配置分层，返回计数 dict。
+    """递归收集构建树中的 `.lib/.a/.dll/.pdb` 并按配置分层，返回计数 dict。
 
-    - Release → `<out>/release/lib/`（.lib）与 `<out>/release/bin/`（.dll/.pdb）；
+    - Release → `<out>/release/lib/`（.lib/.a）与 `<out>/release/bin/`（.dll/.pdb）；
     - Debug → `<out>/debug/lib/` 与 `<out>/debug/bin/`；
+    - MinGW 的静态库 `lib*.a` 与导入库 `lib*.dll.a` 以 `.a` 结尾，同样落 lib
+      （`lib*.dll` 为运行时库、落 bin）；
     - 库类产物不落 `<out>` 根（打包侧按 release/debug 路径段识别构建类型）；
     - 跳过 `CMakeFiles`、`*.dir`、`*-c` 中间目录与 `out` 自身；
     - 同名不同内容按父目录名后缀去重（同名同内容只保留一份）；
@@ -322,12 +328,12 @@ def stage_binaries(build_dir, out, config="Release", reset=False):
         )
         for file_name in sorted(file_names):
             extension = os.path.splitext(file_name)[1].lower()
-            if extension in (".lib", ".dll", ".pdb"):
+            if extension in _STAGE_EXTENSIONS:
                 candidates.append((os.path.join(current, file_name), extension))
 
     counts = {"copied": 0, "lib": 0, "bin": 0, "skipped": 0}
     for source, extension in sorted(candidates):
-        is_library = extension == ".lib"
+        is_library = extension in LIBRARY_EXTENSIONS
         destination_dir = lib_dir if is_library else bin_dir
         status = _stage_file(source, destination_dir, os.path.basename(source))
         if status == "skipped":
