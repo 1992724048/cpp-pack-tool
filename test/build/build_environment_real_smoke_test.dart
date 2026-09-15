@@ -107,6 +107,90 @@ void main() {
         : _skipReason,
     timeout: const Timeout(Duration(minutes: 5)),
   );
+
+  test(
+    '真实环境冒烟：运行库家族下发至 CMakeCache（md/mt）',
+    () async {
+      final BuildEnvironment env = await prepareBuildEnvironment(
+        priority: const <String>['icx', 'clang-cl', 'msvc'],
+        supportModule: File(
+          'assets/build/cnp_build_support.py',
+        ).readAsStringSync(),
+      );
+      final Directory root = await Directory.systemTemp.createTemp(
+        'cnp-runtime-smoke-',
+      );
+      addTearDown(() {
+        if (root.existsSync()) {
+          root.deleteSync(recursive: true);
+        }
+      });
+      final Directory source = Directory(joinPath(root.path, 'src'))
+        ..createSync(recursive: true);
+      File(joinPath(source.path, 'CMakeLists.txt')).writeAsStringSync(
+        'cmake_minimum_required(VERSION 3.20)\n'
+        'project(cnp_runtime_probe C)\n'
+        'add_library(cnp_runtime_probe STATIC probe.c)\n',
+      );
+      File(
+        joinPath(source.path, 'probe.c'),
+      ).writeAsStringSync('int probe(void) { return 0; }\n');
+
+      Future<String> configure(String runtime) async {
+        final String buildDir = joinPath(root.path, 'build-$runtime');
+        final ProcessResult result = await Process.run(
+          'python',
+          <String>[
+            '-c',
+            'import sys\n'
+            'import cnp_build_support\n'
+            'cnp_build_support.cmake_configure(sys.argv[1], sys.argv[2], "Release")\n',
+            source.path,
+            buildDir,
+          ],
+          environment: <String, String>{
+            ...env.environment,
+            'CNP_RUNTIME_LIBRARY': runtime,
+          },
+        );
+        expect(
+          result.exitCode,
+          0,
+          reason: 'runtime=$runtime stdout=${result.stdout}\n'
+              'stderr=${result.stderr}',
+        );
+        final String cache = File(
+          joinPath(buildDir, 'CMakeCache.txt'),
+        ).readAsStringSync();
+        for (final String line in cache.split('\n')) {
+          if (line.startsWith('CMAKE_MSVC_RUNTIME_LIBRARY')) {
+            return line.split('=').skip(1).join('=').trim();
+          }
+        }
+        return '<missing>';
+      }
+
+      final String md = await configure('md');
+      final String mt = await configure('mt');
+      print('[evidence] runtime.md=$md');
+      print('[evidence] runtime.mt=$mt');
+      print(
+        '[evidence] CNP_RUNTIME_LIBRARY.default='
+        '${env.environment['CNP_RUNTIME_LIBRARY']}',
+      );
+      expect(
+        env.environment['CNP_RUNTIME_LIBRARY'],
+        'md',
+        reason: '未指定 runtimeLibrary 时缺省 md',
+      );
+      expect(md, r'MultiThreaded$<$<CONFIG:Debug>:Debug>DLL');
+      expect(mt, r'MultiThreaded$<$<CONFIG:Debug>:Debug>');
+    },
+    skip: Platform.environment['CNP_REAL_ENV_SMOKE'] == '1'
+        ? false
+        : _skipReason,
+    timeout: const Timeout(Duration(minutes: 30)),
+  );
 }
 
 String _markerState(String toolsDir, String toolName) {

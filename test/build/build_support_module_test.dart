@@ -203,6 +203,14 @@ try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
     msvc_debug = list(captured[-1])
 
+    os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    static_runtime = list(captured[-1])
+    os.environ['CNP_RUNTIME_LIBRARY'] = 'gnu'
+    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+    invalid_runtime = list(captured[-1])
+    os.environ.pop('CNP_RUNTIME_LIBRARY', None)
+
     os.environ.pop('CNP_COMPILER_KIND', None)
     os.environ.pop('CNP_C_COMPILER', None)
     os.environ.pop('CNP_CXX_COMPILER', None)
@@ -255,6 +263,8 @@ print('msvc_ipo=%s' % option(msvc_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_R
 print('debug_avx2=%s' % option(msvc_debug, 'CMAKE_C_FLAGS'))
 print('debug_opt=%s' % option(msvc_debug, 'CMAKE_C_FLAGS_RELEASE'))
 print('debug_ipo=%s' % option(msvc_debug, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('runtime_mt=%s' % option(static_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
+print('runtime_invalid=%s' % option(invalid_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
 print('unknown_avx2=%s' % option(unknown_release, 'CMAKE_C_FLAGS'))
 print('unknown_opt=%s' % option(unknown_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('disabled_call_ipo=%s' % option(
@@ -691,7 +701,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "5"'));
+      expect(source, contains('VERSION = "6"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -773,6 +783,15 @@ void main() {
       expect(stdout, contains('debug_avx2=/arch:AVX2'));
       expect(stdout, contains('debug_opt=none'));
       expect(stdout, contains('debug_ipo=none'));
+      // 运行库家族：缺省 md（/MD + Debug /MDd）、显式 mt（/MT + Debug /MTd）、非法回退 md。
+      expect(
+        stdout,
+        contains('runtime_mt=MultiThreaded\$<\$<CONFIG:Debug>:Debug>'),
+      );
+      expect(
+        stdout,
+        contains('runtime_invalid=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL'),
+      );
       // 编译器种类未知时不注入任何优化参数。
       expect(stdout, contains('unknown_avx2=none'));
       expect(stdout, contains('unknown_opt=none'));
@@ -797,7 +816,7 @@ void main() {
         contains(
           '[cnp_build_support] cmake_configure: config=Release compiler=icx '
           'avx2=/QxCORE-AVX2 /QaxCORE-AVX2 '
-          'optimization=/O3 /Ob2 /Oi /Ot /GF /Gy ipo=on',
+          'optimization=/O3 /Ob2 /Oi /Ot /GF /Gy ipo=on runtime=md',
         ),
       );
       expect(stdout, contains('nonzero=RuntimeError'));

@@ -8,8 +8,23 @@ import 'package:cpp_nuget_pack/util/version_range.dart';
 const String _buildScriptName = 'build.py';
 const String _toolDirectivePrefix = '# tool:';
 const String _optionDirectivePrefix = '# option:';
+const String _checkboxDirectivePrefix = '# checkbox:';
+const String _multiSelectDirectivePrefix = '# multiselect:';
 const String _sourceDirectivePrefix = '# source:';
 const String _dependsDirectivePrefix = '# depends:';
+const String _runtimeDirectivePrefix = '# runtime:';
+
+/// 运行库选项在 `PackModel.buildOptions` 中的保留键。
+///
+/// 键不存在 = 跟随配方默认（`# runtime:` 或 `md`）；值域 `MD` / `MT`（保存口径），
+/// 解析时大小写不敏感。
+const String runtimeOptionName = 'runtime';
+
+/// 子进程运行库环境变量名（值域 `md` / `mt`，小写规范化）。
+const String runtimeLibraryEnvName = 'CNP_RUNTIME_LIBRARY';
+
+/// 运行库家族缺省值：动态运行库 `md`（Debug 自动 `md`/`MDd` 变体）。
+const String defaultRuntimeLibrary = 'md';
 
 final RegExp _toolNamePattern = RegExp(r'^[A-Za-z0-9._-]+$');
 final RegExp _optionNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
@@ -52,14 +67,25 @@ class BuildScriptTool {
   final String? binSubdir;
 }
 
-/// `# option:` 声明的构建选项。
+/// 构建选项控件类型：`# option` 下拉 / `# checkbox` 复选 / `# multiselect` 多选。
+enum BuildOptionControl { dropdown, checkbox, multiselect }
+
+/// `# option:` / `# checkbox:` / `# multiselect:` 声明的构建选项。
 class BuildScriptOption {
-  const BuildScriptOption({required this.name, required this.values});
+  const BuildScriptOption({
+    required this.name,
+    required this.values,
+    this.control = BuildOptionControl.dropdown,
+  });
 
   final String name;
 
-  /// 候选值，首值为默认值。
+  /// 候选值：下拉为可选值列表（首值为默认）；复选框为「勾选态值 | 未勾选态值」
+  /// （首值为勾选态也是默认）；多选为声明序即保存序的候选值列表。
   final List<String> values;
+
+  /// 控件类型，缺省下拉（`# option:`，向后兼容）。
+  final BuildOptionControl control;
 
   String get defaultValue => values.first;
 }
@@ -82,6 +108,7 @@ class BuildScriptHeader {
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
     this.dependencies = const <BuildScriptDependency>[],
+    this.runtime,
   });
 
   final String repo;
@@ -93,10 +120,14 @@ class BuildScriptHeader {
   final List<BuildScriptTool> tools;
   final List<BuildScriptOption> options;
   final List<BuildScriptDependency> dependencies;
+
+  /// `# runtime:` 声明的默认运行库家族（`md` / `mt`，小写规范化）；未声明为 null。
+  final String? runtime;
 }
 
 /// 解析 build.py 头部：首行仓库地址 + 其后连续 `#` 行中的
-/// `# tool:` / `# option:` / `# source: none` / `# depends:` 指令。
+/// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
+/// `# source: none` / `# runtime:` / `# depends:` 指令。
 ///
 /// 首行不合法返回 null；非法或未知指令行按注释忽略，同名声明以首次为准；
 /// 遇到首个非 `#` 行（含空行）即终止头部连续段。
@@ -113,6 +144,7 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   final Set<String> optionNames = <String>{};
   final Set<String> dependencyNames = <String>{};
   bool sourceNone = false;
+  String? runtime;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
@@ -122,6 +154,12 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
       sourceNone = true;
       continue;
     }
+    if (line.startsWith(_runtimeDirectivePrefix)) {
+      runtime ??= normalizeRuntimeLibrary(
+        line.substring(_runtimeDirectivePrefix.length),
+      );
+      continue;
+    }
     final BuildScriptTool? tool = _parseToolLine(line);
     if (tool != null) {
       if (toolNames.add(tool.name)) {
@@ -129,7 +167,10 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
       }
       continue;
     }
-    final BuildScriptOption? option = _parseOptionLine(line);
+    final BuildScriptOption? option =
+        _parseOptionLine(line) ??
+        _parseCheckboxLine(line) ??
+        _parseMultiSelectLine(line);
     if (option != null && optionNames.add(option.name)) {
       options.add(option);
     }
@@ -145,6 +186,7 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     tools: tools,
     options: options,
     dependencies: dependencies,
+    runtime: runtime,
   );
 }
 
@@ -218,7 +260,49 @@ BuildScriptOption? _parseOptionLine(String line) {
   if (!line.startsWith(_optionDirectivePrefix)) {
     return null;
   }
-  final String rest = line.substring(_optionDirectivePrefix.length).trim();
+  return _parseValuedOption(
+    line.substring(_optionDirectivePrefix.length),
+    BuildOptionControl.dropdown,
+    minValues: 1,
+  );
+}
+
+BuildScriptOption? _parseCheckboxLine(String line) {
+  if (!line.startsWith(_checkboxDirectivePrefix)) {
+    return null;
+  }
+  return _parseValuedOption(
+    line.substring(_checkboxDirectivePrefix.length),
+    BuildOptionControl.checkbox,
+    minValues: 2,
+    maxValues: 2,
+  );
+}
+
+BuildScriptOption? _parseMultiSelectLine(String line) {
+  if (!line.startsWith(_multiSelectDirectivePrefix)) {
+    return null;
+  }
+  final BuildScriptOption? option = _parseValuedOption(
+    line.substring(_multiSelectDirectivePrefix.length),
+    BuildOptionControl.multiselect,
+    minValues: 1,
+  );
+  if (option == null ||
+      option.values.any((String value) => value.contains(';'))) {
+    return null;
+  }
+  return option;
+}
+
+/// 解析 `<名称> = <值> | <值> …` 形式：名称须匹配选项名正则，值去空白后不得为空、
+/// 不得重复，数量须落在 [minValues]/[maxValues] 范围内。
+BuildScriptOption? _parseValuedOption(
+  String rest,
+  BuildOptionControl control, {
+  required int minValues,
+  int? maxValues,
+}) {
   final int equalsIndex = rest.indexOf('=');
   if (equalsIndex < 0) {
     return null;
@@ -231,13 +315,17 @@ BuildScriptOption? _parseOptionLine(String line) {
     for (final String part in rest.substring(equalsIndex + 1).split('|'))
       part.trim(),
   ];
+  if (values.length < minValues ||
+      (maxValues != null && values.length > maxValues)) {
+    return null;
+  }
   if (values.any((String value) => value.isEmpty)) {
     return null;
   }
   if (values.toSet().length != values.length) {
     return null;
   }
-  return BuildScriptOption(name: name, values: values);
+  return BuildScriptOption(name: name, values: values, control: control);
 }
 
 /// 解析 `# depends: <包名> [<版本范围>]`：包名为单个非空白 token，
@@ -269,17 +357,77 @@ BuildScriptDependency? _parseDependsLine(String line) {
 String? parseBuildScriptRepo(String content) =>
     parseBuildScriptHeader(content)?.repo;
 
+/// 运行库家族声明值规范化：接受 `md` / `mt`（大小写不敏感、允许两侧空白），
+/// 其余值（含 null/空串）返回 null。
+String? normalizeRuntimeLibrary(String? value) {
+  final String normalized = (value ?? '').trim().toLowerCase();
+  if (normalized == 'md' || normalized == 'mt') {
+    return normalized;
+  }
+  return null;
+}
+
+/// 解析生效运行库家族：用户选择 > `# runtime:` 配方默认 > [defaultRuntimeLibrary]。
+///
+/// 非法保存值与非法配方声明逐级跳过；返回值恒为小写 `md` / `mt`。
+String resolveRuntimeLibrary({String? userValue, String? headerValue}) {
+  return normalizeRuntimeLibrary(userValue) ??
+      normalizeRuntimeLibrary(headerValue) ??
+      defaultRuntimeLibrary;
+}
+
 /// 依据声明集合解析最终选项值：合法保存值优先，非法或缺失取默认值，未声明键剔除。
+///
+/// 多选项归一化为声明序 `;` 连接（可全不选的空串）。
 Map<String, String> resolveBuildOptions(
   List<BuildScriptOption> options,
   Map<String, String> savedValues,
 ) {
   return <String, String>{
     for (final BuildScriptOption option in options)
-      option.name: option.values.contains(savedValues[option.name])
-          ? savedValues[option.name]!
-          : option.defaultValue,
+      option.name: effectiveBuildOptionValue(option, savedValues),
   };
+}
+
+/// 单个选项的生效值（UI 显示与构建下发共用同一口径）：
+///
+/// - 下拉 / 复选框：合法保存值优先（含默认值），非法或缺失取 [BuildScriptOption.defaultValue]；
+/// - 多选：保存值按 `;` 拆分、去空并与声明值求交，按声明序重新连接（可空串）。
+String effectiveBuildOptionValue(
+  BuildScriptOption option,
+  Map<String, String> savedValues,
+) {
+  final String? saved = savedValues[option.name];
+  switch (option.control) {
+    case BuildOptionControl.dropdown:
+    case BuildOptionControl.checkbox:
+      return saved != null && option.values.contains(saved)
+          ? saved
+          : option.defaultValue;
+    case BuildOptionControl.multiselect:
+      return normalizedMultiSelectValue(option.values, saved);
+  }
+}
+
+/// 多选选项的已选值集合：按 `;` 拆分保存值、去空并与声明值精确求交。
+Set<String> multiSelectSelection(List<String> values, String? saved) {
+  if (saved == null || saved.isEmpty) {
+    return const <String>{};
+  }
+  final Set<String> present = <String>{
+    for (final String part in saved.split(';'))
+      if (part.trim().isNotEmpty) part.trim(),
+  };
+  return <String>{
+    for (final String value in values)
+      if (present.contains(value)) value,
+  };
+}
+
+/// 多选选项的归一化保存值：已选值按声明序以 `;` 连接（全不选为空串）。
+String normalizedMultiSelectValue(List<String> values, String? saved) {
+  final Set<String> selected = multiSelectSelection(values, saved);
+  return values.where(selected.contains).join(';');
 }
 
 /// 选项名的子进程环境变量名（`tbb` → `CNP_OPTION_TBB`）。

@@ -458,6 +458,34 @@ void main() {
       expect(result.environment['CNP_OPTION_OPEN_MP'], 'off');
       expect(result.environment.containsKey('CNP_OPTION_OTHER'), isFalse);
     });
+
+    test('注入 CNP_RUNTIME_LIBRARY（缺省 md、显式 mt、非法回退 md）', () {
+      final BuildEnvironment byDefault = assembleBuildEnvironment(
+        compiler: _compiler(),
+        environment: <String, String>{'FOO': '1'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+      );
+      expect(byDefault.environment['CNP_RUNTIME_LIBRARY'], 'md');
+
+      final BuildEnvironment staticRuntime = assembleBuildEnvironment(
+        compiler: _compiler(),
+        environment: <String, String>{'FOO': '1'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+        runtimeLibrary: 'MT',
+      );
+      expect(staticRuntime.environment['CNP_RUNTIME_LIBRARY'], 'mt');
+
+      final BuildEnvironment invalid = assembleBuildEnvironment(
+        compiler: _compiler(),
+        environment: <String, String>{'FOO': '1'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+        runtimeLibrary: 'gnu',
+      );
+      expect(invalid.environment['CNP_RUNTIME_LIBRARY'], 'md');
+    });
   });
 
   group('prepareBuildEnvironment', () {
@@ -1296,6 +1324,59 @@ void main() {
         File(joinPath(root.path, 'cnp_build_support.py')).existsSync(),
         isFalse,
       );
+    });
+
+    test('运行库按 用户选择 > 配方声明 > md 解析并下发', () async {
+      final Directory root = _tempDirectory();
+      Future<BuildEnvironment> prepare({
+        required Map<String, String> buildOptions,
+        String? headerRuntime,
+      }) {
+        return preparePackBuildEnvironment(
+          _pack(buildOptions: buildOptions),
+          priority: <String>['msvc'],
+          provisioner: _FakeProvisioner(_cmakeNinja()),
+          toolsRoot: root.path,
+          baseEnvironment: <String, String>{},
+          loadHeader: (PackModel pack) async => BuildScriptHeader(
+            repo: 'https://example.com/demo.git',
+            runtime: headerRuntime,
+          ),
+          detect: () async => <DetectedCompiler>[_compiler()],
+          capture: _captureStub(<CompilerKind>[], (
+            DetectedCompiler compiler,
+            Map<String, String> baseEnvironment,
+          ) {
+            return baseEnvironment;
+          }),
+        );
+      }
+
+      final BuildEnvironment byDefault = await prepare(
+        buildOptions: <String, String>{},
+        headerRuntime: null,
+      );
+      expect(byDefault.environment['CNP_RUNTIME_LIBRARY'], 'md');
+      expect(byDefault.environment.containsKey('CNP_OPTION_RUNTIME'), isFalse);
+
+      final BuildEnvironment fromHeader = await prepare(
+        buildOptions: <String, String>{},
+        headerRuntime: 'mt',
+      );
+      expect(fromHeader.environment['CNP_RUNTIME_LIBRARY'], 'mt');
+
+      final BuildEnvironment fromUser = await prepare(
+        buildOptions: <String, String>{'runtime': 'MD'},
+        headerRuntime: 'mt',
+      );
+      expect(fromUser.environment['CNP_RUNTIME_LIBRARY'], 'md');
+      expect(fromUser.environment.containsKey('CNP_OPTION_RUNTIME'), isFalse);
+
+      final BuildEnvironment invalidUser = await prepare(
+        buildOptions: <String, String>{'runtime': 'gnu'},
+        headerRuntime: 'mt',
+      );
+      expect(invalidUser.environment['CNP_RUNTIME_LIBRARY'], 'mt');
     });
 
     test('头部读取失败包装为 BuildPreparationException 且不检测/供给', () async {

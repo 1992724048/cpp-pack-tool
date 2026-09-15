@@ -20,10 +20,12 @@
     <out>/<原文件名>                root 根部的许可证文件
 
 CMake 相关函数读取 cpp_nuget_pack 注入的子进程环境变量：CNP_CMAKE、CNP_NINJA、
-CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND；CNP_CMAKE 缺失或为空时给出
-明确错误。`cmake_configure` 按编译器注入 AVX2（全部配置）与 Release 最高优化 /
-IPO（不支持或经 CNP_NO_IPO / enable_ipo=False 时自动退化），不注入任何语言标准
-参数；`cmake_build` 缺省以 CPU 逻辑核数并行构建。
+CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND、CNP_RUNTIME_LIBRARY；
+CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 按编译器注入 AVX2（全部
+配置）与 Release 最高优化 / IPO（不支持或经 CNP_NO_IPO / enable_ipo=False 时
+自动退化），按 CNP_RUNTIME_LIBRARY 注入 MSVC 运行库家族（`md` 默认 / `mt`，
+Debug 自动 d 变体），不注入任何语言标准参数；`cmake_build` 缺省以 CPU 逻辑核数
+并行构建。
 """
 
 import filecmp
@@ -32,7 +34,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "5"
+VERSION = "6"
 
 __all__ = (
     "VERSION",
@@ -55,7 +57,14 @@ LICENSE_NAME_PATTERN = re.compile(
 )
 LICENSE_CORE_PRIORITY = ("license", "licence", "copying", "unlicense", "notice")
 
-_CMAKE_RUNTIME_LIBRARY = "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+_CMAKE_RUNTIME_LIBRARY_ENV = "CNP_RUNTIME_LIBRARY"
+_DEFAULT_RUNTIME_LIBRARY = "md"
+# 运行库家族 → CMAKE_MSVC_RUNTIME_LIBRARY 取值（Debug 自动 d 变体：
+# md → /MD 与 /MDd，mt → /MT 与 /MTd）。
+_RUNTIME_LIBRARY_VARIANTS = {
+    "md": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
+    "mt": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+}
 _OUTPUT_TAIL_LINES = 20
 _INTERMEDIATE_DIR_SUFFIXES = (".dir", "-c")
 
@@ -91,11 +100,14 @@ _DISABLE_IPO_ENV = "CNP_NO_IPO"
 def cmake_configure(
     source, build_dir, config="Release", extra_args=(), enable_ipo=None
 ):
-    """以 Ninja 生成器配置 CMake 工程（单配置，运行时库 MD/MDd）。
+    """以 Ninja 生成器配置 CMake 工程（单配置，运行库按 CNP_RUNTIME_LIBRARY）。
 
     固定拼接 `-G Ninja`、`-DCMAKE_BUILD_TYPE`、`-DCMAKE_MSVC_RUNTIME_LIBRARY`；
     `CNP_NINJA`/`CNP_C_COMPILER`/`CNP_CXX_COMPILER` 存在时追加对应 `-D` 参数；
     `extra_args` 原样追加（其中同名 `-DCMAKE_*` 优先于本函数注入的优化参数）。
+
+    运行库家族读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感）：`md`（缺省/非法回退）
+    → `/MD` 与 Debug `/MDd`；`mt` → `/MT` 与 Debug `/MTd`。
 
     优化参数按编译器种类（`CNP_COMPILER_KIND`，回退从编译器路径推断）注入，
     **不注入任何语言标准（std/c++ 标准）参数**：
@@ -117,6 +129,7 @@ def cmake_configure(
     extra = [str(argument) for argument in extra_args]
     provided = _provided_definition_variables(extra)
     kind = _compiler_kind()
+    runtime, runtime_library = _runtime_library()
     avx2_flags = _AVX2_FLAGS.get(kind, ()) if kind else ()
     is_release = str(config).lower() == "release"
     optimization_flags = ()
@@ -132,7 +145,7 @@ def cmake_configure(
         "-G",
         "Ninja",
         "-DCMAKE_BUILD_TYPE=" + str(config),
-        "-DCMAKE_MSVC_RUNTIME_LIBRARY=" + _CMAKE_RUNTIME_LIBRARY,
+        "-DCMAKE_MSVC_RUNTIME_LIBRARY=" + runtime_library,
     ]
     ninja = _optional_environment_path("CNP_NINJA")
     if ninja:
@@ -154,13 +167,14 @@ def cmake_configure(
         command.append("-D%s=ON" % _IPO_CMAKE_VARIABLE)
     print(
         "[cnp_build_support] cmake_configure: config=%s compiler=%s avx2=%s "
-        "optimization=%s ipo=%s"
+        "optimization=%s ipo=%s runtime=%s"
         % (
             config,
             kind or "unknown",
             " ".join(avx2_flags) if avx2_flags else "-",
             " ".join(optimization_flags) if optimization_flags else "-",
             ipo_state,
+            runtime,
         ),
         flush=True,
     )
@@ -496,6 +510,18 @@ def _compiler_kind():
         if executable in ("cl", "cl.exe"):
             return "msvc"
     return None
+
+
+def _runtime_library():
+    """运行库家族与 `CMAKE_MSVC_RUNTIME_LIBRARY` 取值：`(家族, 取值)`。
+
+    读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感、允许两侧空白）；缺失或非法回退
+    `md`（动态运行库，Debug 自动 d 变体）。
+    """
+    family = os.environ.get(_CMAKE_RUNTIME_LIBRARY_ENV, "").strip().lower()
+    if family not in _RUNTIME_LIBRARY_VARIANTS:
+        family = _DEFAULT_RUNTIME_LIBRARY
+    return family, _RUNTIME_LIBRARY_VARIANTS[family]
 
 
 def _provided_definition_variables(extra_args):

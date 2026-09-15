@@ -138,7 +138,9 @@ class BuildEnvironment {
 /// [toolPathEntries]（`# tool` 声明的工具） →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
 /// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
-/// `PYTHONPATH` 前置 [toolsRoot] 绝对路径（保留原值）；[environment] 不被修改。
+/// [runtimeLibrary] 写入 `CNP_RUNTIME_LIBRARY`（`md` / `mt` 小写规范化，
+/// 非法值回退 [defaultRuntimeLibrary]）；`PYTHONPATH` 前置 [toolsRoot] 绝对路径
+/// （保留原值）；[environment] 不被修改。
 BuildEnvironment assembleBuildEnvironment({
   required DetectedCompiler compiler,
   required Map<String, String> environment,
@@ -147,6 +149,7 @@ BuildEnvironment assembleBuildEnvironment({
   List<String> pythonPathEntries = const <String>[],
   List<String> toolPathEntries = const <String>[],
   Map<String, String> options = const <String, String>{},
+  String runtimeLibrary = defaultRuntimeLibrary,
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);
@@ -159,6 +162,11 @@ BuildEnvironment assembleBuildEnvironment({
     child,
     'CNP_COMPILER_KIND',
     compilerKindId(compiler.kind),
+  );
+  _setEnvironmentValue(
+    child,
+    runtimeLibraryEnvName,
+    normalizeRuntimeLibrary(runtimeLibrary) ?? defaultRuntimeLibrary,
   );
   for (final MapEntry<String, String> option in options.entries) {
     _setEnvironmentValue(child, optionEnvName(option.key), option.value);
@@ -188,7 +196,8 @@ BuildEnvironment assembleBuildEnvironment({
 /// [cachedCompilers] 中有效且匹配 [priority] 的编译器，缓存缺失/失效时按
 /// [priority] 检测（全部落空时下载 clang/LLVM 到 `tools/clang/` 兜底）→ 捕获
 /// 编译器环境 → 供给 CMake/Ninja、Python（本机优先，缺失下载 embeddable 版）与
-/// [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*` 与选项变量。
+/// [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*`、选项变量与
+/// `CNP_RUNTIME_LIBRARY`（[runtimeLibrary]，非法值回退 `md`）。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统）；受控 `TMP`/`TEMP` 写入其副本并随编译器检测、环境捕获
@@ -208,6 +217,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   Map<String, String>? baseEnvironment,
   List<BuildScriptTool> tools = const <BuildScriptTool>[],
   Map<String, String> options = const <String, String>{},
+  String runtimeLibrary = defaultRuntimeLibrary,
   String? supportModule,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
@@ -284,6 +294,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     pythonPathEntries: python.pathEntries,
     toolPathEntries: toolPathEntries,
     options: options,
+    runtimeLibrary: runtimeLibrary,
   );
 }
 
@@ -471,8 +482,9 @@ Future<void> _releaseSupportModule(String toolsRoot, String content) async {
   }
 }
 
-/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 供给声明工具与
-/// CMake/Ninja/Python → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
+/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项与运行库（用户选择 >
+/// `# runtime:` 配方默认 > `md`）→ 供给声明工具与 CMake/Ninja/Python → 释放
+/// [loadSupportModule] 内容（缺省 null 跳过）。
 ///
 /// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
 /// [BuildPreparationException]。其余参数（含 [onDownloadProgress]）透传
@@ -511,6 +523,10 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
     options: resolveBuildOptions(
       header?.options ?? const <BuildScriptOption>[],
       pack.buildOptions,
+    ),
+    runtimeLibrary: resolveRuntimeLibrary(
+      userValue: pack.buildOptions[runtimeOptionName],
+      headerValue: header?.runtime,
     ),
     supportModule: supportModule,
     cachedCompilers: cachedCompilers,

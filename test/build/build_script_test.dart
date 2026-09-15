@@ -254,6 +254,124 @@ void main() {
       expect(header!.options, isEmpty);
     });
 
+    test('# checkbox 解析（勾选态 / 未勾选态，首值为默认）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# checkbox: use_nasm = ON | OFF\n'
+        '# checkbox:strict=OFF|ON\n',
+      );
+
+      expect(header!.options, hasLength(2));
+      expect(header.options[0].name, 'use_nasm');
+      expect(header.options[0].control, BuildOptionControl.checkbox);
+      expect(header.options[0].values, <String>['ON', 'OFF']);
+      expect(header.options[0].defaultValue, 'ON');
+      expect(header.options[1].name, 'strict');
+      expect(header.options[1].values, <String>['OFF', 'ON']);
+    });
+
+    test('# checkbox 非法行忽略（值非恰 2 个 / 空 / 重复）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# checkbox: one = ON\n'
+        '# checkbox: three = ON | OFF | AUTO\n'
+        '# checkbox: empty = ON |\n'
+        '# checkbox: dup = ON | ON\n'
+        '# checkbox: no-equals ON OFF\n'
+        'print(1)\n',
+      );
+
+      expect(header!.options, isEmpty);
+    });
+
+    test('# multiselect 解析（声明序值列表）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# multiselect: accel = SSE2 | AVX2 | NEON\n',
+      );
+
+      expect(header!.options, hasLength(1));
+      expect(header.options.single.control, BuildOptionControl.multiselect);
+      expect(header.options.single.values, <String>['SSE2', 'AVX2', 'NEON']);
+    });
+
+    test('# multiselect 非法行忽略（空值 / 重复 / 含分号）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# multiselect: a = x | | y\n'
+        '# multiselect: b = x | x\n'
+        '# multiselect: c = a;b | c\n'
+        '# multiselect: d =\n'
+        'print(1)\n',
+      );
+
+      expect(header!.options, isEmpty);
+    });
+
+    test('三型同名以首次声明为准（跨指令）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# option: mode = fast | slow\n'
+        '# checkbox: mode = ON | OFF\n',
+      );
+
+      expect(header!.options, hasLength(1));
+      expect(header.options.single.control, BuildOptionControl.dropdown);
+    });
+
+    test('# runtime 解析（大小写不敏感，首次有效声明生效）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# runtime: MT\n'
+        '# runtime: md\n',
+      );
+
+      expect(header!.runtime, 'mt');
+
+      final BuildScriptHeader? invalidFirst = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# runtime: gnu\n'
+        '# runtime: md\n',
+      );
+      expect(invalidFirst!.runtime, 'md');
+
+      final BuildScriptHeader? noSpace = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# runtime:mt\n',
+      );
+      expect(noSpace!.runtime, 'mt');
+    });
+
+    test('# runtime 非法行忽略（空值 / 未知家族 / 多余 token）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# runtime:\n'
+        '# runtime: \n'
+        '# runtime: dynamic\n'
+        '# runtime: mt extra\n',
+      );
+
+      expect(header!.runtime, isNull);
+    });
+
+    test('# runtime 位于头部连续段之外时不生效', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '\n'
+        '# runtime: mt\n',
+      );
+
+      expect(header!.runtime, isNull);
+
+      final BuildScriptHeader? afterCode = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        'print(1)\n'
+        '# runtime: mt\n',
+      );
+
+      expect(afterCode!.runtime, isNull);
+    });
+
     test('未知 # 行忽略，空行终止头部连续段', () {
       final BuildScriptHeader? header = parseBuildScriptHeader(
         '# https://example.com/repo.git\n'
@@ -402,6 +520,175 @@ void main() {
         }),
         isEmpty,
       );
+    });
+
+    test('复选框：合法值优先，非法或缺失取首值（ON）', () {
+      const List<BuildScriptOption> checkboxOptions = <BuildScriptOption>[
+        BuildScriptOption(
+          name: 'use_nasm',
+          values: <String>['ON', 'OFF'],
+          control: BuildOptionControl.checkbox,
+        ),
+      ];
+
+      expect(
+        resolveBuildOptions(checkboxOptions, <String, String>{
+          'use_nasm': 'OFF',
+        }),
+        <String, String>{'use_nasm': 'OFF'},
+      );
+      expect(
+        resolveBuildOptions(checkboxOptions, <String, String>{
+          'use_nasm': 'ON',
+        }),
+        <String, String>{'use_nasm': 'ON'},
+      );
+      expect(
+        resolveBuildOptions(checkboxOptions, <String, String>{
+          'use_nasm': 'maybe',
+        }),
+        <String, String>{'use_nasm': 'ON'},
+      );
+      expect(resolveBuildOptions(checkboxOptions, <String, String>{
+        'use_nasm': '',
+      }), <String, String>{'use_nasm': 'ON'});
+    });
+
+    test('多选：求交并按声明序连接，可全不选（空串）', () {
+      const List<BuildScriptOption> multiOptions = <BuildScriptOption>[
+        BuildScriptOption(
+          name: 'accel',
+          values: <String>['SSE2', 'AVX2', 'NEON'],
+          control: BuildOptionControl.multiselect,
+        ),
+      ];
+
+      expect(
+        resolveBuildOptions(multiOptions, <String, String>{'accel': 'NEON;SSE2'}),
+        <String, String>{'accel': 'SSE2;NEON'},
+      );
+      expect(
+        resolveBuildOptions(multiOptions, <String, String>{
+          'accel': ' AVX2 ; bogus ',
+        }),
+        <String, String>{'accel': 'AVX2'},
+      );
+      expect(
+        resolveBuildOptions(multiOptions, <String, String>{'accel': ''}),
+        <String, String>{'accel': ''},
+      );
+      expect(resolveBuildOptions(multiOptions, <String, String>{}), <String, String>{
+        'accel': '',
+      });
+    });
+  });
+
+  group('effectiveBuildOptionValue', () {
+    const BuildScriptOption dropdown = BuildScriptOption(
+      name: 'mode',
+      values: <String>['fast', 'slow'],
+    );
+    const BuildScriptOption checkbox = BuildScriptOption(
+      name: 'toggle',
+      values: <String>['ON', 'OFF'],
+      control: BuildOptionControl.checkbox,
+    );
+    const BuildScriptOption multi = BuildScriptOption(
+      name: 'accel',
+      values: <String>['SSE2', 'AVX2', 'NEON'],
+      control: BuildOptionControl.multiselect,
+    );
+
+    test('下拉与复选框：合法保存值优先，非法或缺失取默认值', () {
+      expect(
+        effectiveBuildOptionValue(dropdown, <String, String>{'mode': 'slow'}),
+        'slow',
+      );
+      expect(
+        effectiveBuildOptionValue(dropdown, <String, String>{'mode': 'turbo'}),
+        'fast',
+      );
+      expect(effectiveBuildOptionValue(dropdown, <String, String>{}), 'fast');
+      expect(
+        effectiveBuildOptionValue(checkbox, <String, String>{'toggle': 'OFF'}),
+        'OFF',
+      );
+      expect(
+        effectiveBuildOptionValue(checkbox, <String, String>{'toggle': 'x'}),
+        'ON',
+      );
+    });
+
+    test('多选：归一化为声明序连接（可空串）', () {
+      expect(
+        effectiveBuildOptionValue(multi, <String, String>{
+          'accel': 'NEON;SSE2',
+        }),
+        'SSE2;NEON',
+      );
+      expect(
+        effectiveBuildOptionValue(multi, <String, String>{'accel': 'bogus'}),
+        '',
+      );
+      expect(
+        effectiveBuildOptionValue(multi, <String, String>{'accel': ''}),
+        '',
+      );
+      expect(effectiveBuildOptionValue(multi, <String, String>{}), '');
+    });
+
+    test('multiSelectSelection 求交并保留声明顺序', () {
+      expect(
+        multiSelectSelection(<String>['SSE2', 'AVX2', 'NEON'], 'NEON;SSE2'),
+        <String>{'SSE2', 'NEON'},
+      );
+      expect(
+        multiSelectSelection(<String>['SSE2', 'AVX2'], null),
+        isEmpty,
+      );
+      expect(
+        multiSelectSelection(<String>['SSE2', 'AVX2'], 'AVX2;ghost;'),
+        <String>{'AVX2'},
+      );
+    });
+
+    test('normalizedMultiSelectValue 归一化保存值', () {
+      expect(
+        normalizedMultiSelectValue(<String>['a', 'b', 'c'], 'c;a'),
+        'a;c',
+      );
+      expect(normalizedMultiSelectValue(<String>['a', 'b'], ''), '');
+      expect(normalizedMultiSelectValue(<String>['a', 'b'], null), '');
+    });
+  });
+
+  group('resolveRuntimeLibrary', () {
+    test('用户选择优先于配方声明', () {
+      expect(resolveRuntimeLibrary(userValue: 'MT', headerValue: 'md'), 'mt');
+      expect(resolveRuntimeLibrary(userValue: 'md', headerValue: 'mt'), 'md');
+    });
+
+    test('非法用户值回退配方声明，非法配方回退默认 md', () {
+      expect(resolveRuntimeLibrary(userValue: 'gnu', headerValue: 'MT'), 'mt');
+      expect(resolveRuntimeLibrary(userValue: '', headerValue: 'mt'), 'mt');
+      expect(
+        resolveRuntimeLibrary(userValue: 'gnu', headerValue: 'gnu'),
+        defaultRuntimeLibrary,
+      );
+      expect(resolveRuntimeLibrary(), defaultRuntimeLibrary);
+    });
+
+    test('normalizeRuntimeLibrary 大小写与空白不敏感', () {
+      expect(normalizeRuntimeLibrary(' MD '), 'md');
+      expect(normalizeRuntimeLibrary('Mt'), 'mt');
+      expect(normalizeRuntimeLibrary('dynamic'), isNull);
+      expect(normalizeRuntimeLibrary(null), isNull);
+      expect(normalizeRuntimeLibrary(''), isNull);
+    });
+
+    test('保留键与下发环境变量名常量', () {
+      expect(runtimeOptionName, 'runtime');
+      expect(runtimeLibraryEnvName, 'CNP_RUNTIME_LIBRARY');
     });
   });
 

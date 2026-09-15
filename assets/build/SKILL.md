@@ -10,7 +10,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 ## 何时使用
 
 - 需要把一个 C++ 库（git 仓库）纳入 cpp_nuget_pack 打包管线：在库源码根目录新建 `build.py`；
-- 已有 `build.py` 需要升级到 v2 契约（`# tool` / `# option` / `# source` 头部指令）；
+- 已有 `build.py` 需要升级契约（`# tool` / `# option` / `# checkbox` / `# multiselect` / `# source` / `# runtime` 头部指令）；
 - 上游只提供预构建归档、不做源码构建：用 `# source: none` + 下载 / 解压 / 分类（见「预构建配方」）；
 - 构建失败，需要排查环境变量、分类结果或退出码问题。
 
@@ -30,12 +30,15 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | --- | --- | --- |
 | 第 1 行 | `# <git仓库地址>` | 源码仓库 URL（如 `# https://github.com/madler/zlib`）。 |
 | 其后连续行 | `# tool: <name> <url> [bin=<子目录>]` | 声明自动下载的环境工具：zip 解压到 `tools/<name>/` 并加入子进程 PATH。`name` 限 `[A-Za-z0-9._-]+`；`url` 为 http(s) zip；`bin` 为相对子目录（如 `perl/bin`），不得含盘符或 `..`。 |
-| 其后连续行 | `# option: <name> = <默认值> \| <备选值> …` | 声明构建选项：**首值为默认值**，工具 UI 在「构建」按钮旁渲染下拉框，选中值经 `CNP_OPTION_<NAME>` 传入。`name` 限 `[A-Za-z_][A-Za-z0-9_]*`；候选值用 `\|` 分隔，不得为空或重复。 |
+| 其后连续行 | `# option: <name> = <默认值> \| <备选值> …` | 声明下拉选项：**首值为默认值**，工具 UI 在【文件管理】页「构建」按钮下方渲染下拉框，选中值经 `CNP_OPTION_<NAME>` 传入。`name` 限 `[A-Za-z_][A-Za-z0-9_]*`；候选值用 `\|` 分隔，不得为空或重复。 |
+| 其后连续行 | `# checkbox: <name> = <勾选值> \| <未勾选值>` | 声明布尔选项：工具 UI 渲染复选框，**首值为勾选态（也是默认值）**，建议写作 `ON \| OFF`；落盘值为勾选值 `ON` / 未勾选值 `OFF`，经 `CNP_OPTION_<NAME>` 传入。值恰为 2 个、非空且不重复。 |
+| 其后连续行 | `# multiselect: <name> = <值> \| <值> …` | 声明多选选项：工具 UI 渲染勾选组，已选值按声明序以 `;` 连接经 `CNP_OPTION_<NAME>` 传入（全不选为空串）；值不得为空、重复或含 `;`。 |
 | 其后连续行 | `# source: none` | 预构建配方：跳过 git 源码拉取；`SRC_PATH` 目录仍会创建并注入，作为脚本自行下载 / 解压的工作区。仅字面值 `none` 合法，其余值按注释忽略。 |
+| 其后连续行 | `# runtime: md \| mt` | 声明运行库家族默认值（用户未在 UI 显式覆盖时生效；缺省 `md`）。`md` = 动态运行库（Release `/MD`、Debug `/MDd`），`mt` = 静态运行库（`/MT`、`/MTd`）；非法值按注释忽略。 |
 | 其后连续行 | `# depends: <包名> [<版本范围>]` | 声明依赖的包：重映射/构建时自动加入依赖管理（系统条目，禁改删）。`<包名>` 非空白；`<版本范围>` 可选单 token（如 `[1.2.0,)`），缺省时按本地同名包版本推断。 |
 | 其余 `#` 行 | 普通注释 | 忽略；非法指令行同样按注释忽略（不报错）。 |
 
-> 同名 tool / option 以首次声明为准；未声明的选项不会下发环境变量。
+> 同名 tool / option / checkbox / multiselect 以首次声明为准；未声明的选项不会下发环境变量。
 >
 > 根级 `pre.bat` / `post.bat` 会被工具自动注册为系统编译命令（执行时附加 `"$(TargetPath)"` 参数，脚本内以 `%~1` 取目标路径；系统条目禁改删）。
 
@@ -50,7 +53,8 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | `CNP_C_COMPILER` / `CNP_CXX_COMPILER` | 本机选中的 C / C++ 编译器全路径。 |
 | `CNP_COMPILER_KIND` | 编译器种类：`msvc` / `clang-cl` / `icx`。 |
 | `CNP_TOOLS_DIR` | `tools/` 绝对路径（`# tool` 下载的工具都在这里）。 |
-| `CNP_OPTION_<NAME>` | `# option` 声明的选项当前值（名称大写）。 |
+| `CNP_OPTION_<NAME>` | `# option` / `# checkbox` / `# multiselect` 声明的选项当前值（名称大写；多选为声明序 `;` 连接、可空串）。 |
+| `CNP_RUNTIME_LIBRARY` | 运行库家族：`md`（缺省/非法回退）或 `mt`；由工具按「用户选择 > `# runtime:` > `md`」解析后下发，辅助模块统一消费。 |
 | `PYTHONPATH` | 已前置 `tools/`，脚本可直接 `import cnp_build_support`。 |
 | `PYTHONIOENCODING` | 恒为 `utf-8`：脚本 stdout/stderr 统一按 UTF-8 编码（中文 Windows 下管道默认 GBK），中文输出可直接 `print`，无需自行处理编码。 |
 
@@ -72,7 +76,7 @@ from cnp_build_support import (
 
 | 函数 | 用途 |
 | --- | --- |
-| `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：双配置（`CMAKE_BUILD_TYPE`）+ 运行时库（Release `/MD`、Debug `/MDd`），自动附加 `CMAKE_MAKE_PROGRAM` 与 `CMAKE_C(XX)_COMPILER`；按编译器注入 AVX2（全配置）与 Release 最高优化 / IPO，**不注入语言标准参数**；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可对单个库退化 LTO。 |
+| `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：双配置（`CMAKE_BUILD_TYPE`）+ 运行库按 `CNP_RUNTIME_LIBRARY` 注入（`md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`），自动附加 `CMAKE_MAKE_PROGRAM` 与 `CMAKE_C(XX)_COMPILER`；按编译器注入 AVX2（全配置）与 Release 最高优化 / IPO，**不注入语言标准参数**；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可对单个库退化 LTO。 |
 | `cmake_build(build_dir, config="Release", jobs=None)` | `cmake --build` 构建（Ninja 单配置）；`jobs` 缺省为 CPU 逻辑核数（`--parallel`），显式传 0/负值禁用并行。 |
 | `stage_headers(paths, out)` | 头文件 → `<out>/include/`。传目录时镜像其内容（保留子结构）；传文件时复制单个文件。 |
 | `stage_binaries(build_dir, out, config="Release", reset=False)` | 递归收集 `.lib/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重（去重残留形如 `_build-*`）。`reset=True` 先递归删除本配置段再 staging，杜绝陈旧文件与去重改名跨构建累积；默认 `False` 保持「只增量补入」旧语义。 |
@@ -90,6 +94,7 @@ from cnp_build_support import (
 - **架构**：只构建 x64（工具侧环境已按 x64 准备）。
 - **双配置**：一次构建同时产出 Release 与 Debug（各自独立 build 目录）；运行时库与构建类型由辅助模块固定，不要重复指定。**staging 用 `stage_binaries(..., reset=True)` 重置本配置段**——同名不同内容会按父目录后缀去重改名（`_build-*`），不重置会跨构建永久累积。
 - **生成器**：统一 CMake + Ninja（单配置），不要使用 Visual Studio 生成器。
+- **运行库（CRT）**：由 `cmake_configure` 按 `CNP_RUNTIME_LIBRARY` 统一注入（`md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`），配方不要自行注入 `CMAKE_MSVC_RUNTIME_LIBRARY`；需要默认静态运行库时在头部声明 `# runtime: mt`（用户仍可在 UI 覆盖）。**支持时优先构建独立 dll + lib（共享依赖省体积）**：动态运行库 + 独立 dll 让多个消费模块共用同一份 CRT 与库代码，产物体积显著更小；静态运行库（`mt`）仅在需要免依赖分发时选用。
 - **产物布局（release/debug 分层）**：`include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`。**库类产物禁止落 `BUILD_OUT` 根**（`lib/`、`bin/`）——打包侧按 `release`/`debug` 路径段识别构建类型，根目录产物会被判为“不限配置”（ALL），消费者无法按配置取库。
 - **优化参数（辅助模块自动注入，配方不要重复指定）**：
 
@@ -114,9 +119,12 @@ from cnp_build_support import (
 # https://github.com/example/mylib
 # tool: nasm https://example.com/nasm-2.16.03-win64.zip
 # option: tbb = off | on
+# checkbox: use_nasm = ON | OFF
+# multiselect: accel = SSE2 | AVX2 | NEON
+# runtime: mt
 #
-# 上面 3 行为完整头部：首行仓库地址，其后指令必须连续；
-# 出现空行或其它非 # 行后，其后的 # 行将不再按指令解析。
+# 上面的头部从首行仓库地址起必须连续；出现空行或其它非 # 行后，
+# 其后的 # 行将不再按指令解析。
 
 import os
 import sys
@@ -207,12 +215,13 @@ BUILD_OUT = os.environ["BUILD_OUT"]
 - [ ] 首行是 `# <git仓库地址>`；`# tool` / `# option` / `# source` 指令紧随其后且连续（无空行打断）。
 - [ ] `python build.py` 以退出码表达结果：0 = 成功，非 0 = 失败。
 - [ ] Release 与 Debug 双配置产物均已分类到 `BUILD_OUT` 的 `include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`；输出根无 `lib/`、`bin/` 残留。
-- [ ] 未在 `build.py` 中重复注入 AVX2 / 最高优化 / IPO / 语言标准参数（由辅助模块负责；确需覆盖时用 `extra_args` 同名变量或 `CNP_NO_IPO`）。
+- [ ] 未在 `build.py` 中重复注入 AVX2 / 最高优化 / IPO / 运行库 / 语言标准参数（由辅助模块负责；确需覆盖时用 `extra_args` 同名变量或 `CNP_NO_IPO`）。
 - [ ] 头文件走 `stage_headers`；库与动态库走 `stage_binaries`（`reset=True` 重置本配置段）；许可证（若有）走 `stage_license` 落 `BUILD_OUT` 根。
 - [ ] 路径全部由 `SRC_PATH` / `BUILD_OUT` 派生（或 `os.path.join` 拼接），无硬编码本机路径。
 - [ ] 未修改系统环境，未依赖本机预装软件；缺失工具在头部用 `# tool` 声明。
 - [ ] 中间构建目录位于 `SRC_PATH` 下，`BUILD_OUT` 无临时 / 中间文件残留。
-- [ ] 选项经 `os.environ.get("CNP_OPTION_<NAME>")` 读取；未声明选项不下发。
+- [ ] 选项经 `os.environ.get("CNP_OPTION_<NAME>")` 读取；多选值按 `;` 拆分求交；未声明选项不下发。
+- [ ] 支持时优先产出独立 dll + lib（共享依赖省体积）；`# runtime: mt` 仅在需要免依赖分发时声明。
 - [ ] 预构建配方：头部声明 `# source: none`；下载 / 解压缓存位于 `SRC_PATH` 下且可复用；无关目录未进入 `BUILD_OUT`。
 - [ ] 依赖其它包时在头部声明 `# depends: <包名> [<版本范围>]`。
 - [ ] 需消费方构建前/后处理（如注入）时，在源目录根部提供 `pre.bat` / `post.bat`（以 `%~1` 为目标路径）。`.bat` 以 cmd 原生编码落盘：优先 ANSI/MBCS（`content.encode("mbcs")`），代码页无法表示中文时退纯 ASCII 注释版本；**禁止 UTF-8 无 BOM 中文**——cmd 按系统代码页解析会出乱码命令行、报「不是内部或外部命令」（实测；做法见 mimalloc 配方 `write_post_bat`）。
