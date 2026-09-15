@@ -165,6 +165,34 @@ void main() {
       expect(requests, isEmpty, reason: '命中磁盘缓存不重复请求');
     });
 
+    test('缓存扫描忽略 .tmp 残留', () async {
+      final Directory temp = Directory.systemTemp.createTempSync('cnp_icon');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final Directory github = Directory('${temp.path}/icons/github');
+      github.createSync(recursive: true);
+      File('${github.path}/madler.png.tmp').writeAsBytesSync(<int>[1]);
+      int requests = 0;
+
+      Future<RepoIconResponse> fetcher(
+        Uri uri, {
+        required Duration timeout,
+      }) async {
+        requests++;
+        return (statusCode: 200, contentType: 'image/png', bytes: <int>[7, 7]);
+      }
+
+      final String? path = await ensureRepoAvatar(
+        'https://github.com/madler/zlib',
+        cacheRoot: temp.path,
+        fetch: fetcher,
+      );
+
+      expect(requests, 1, reason: '.tmp 残留不得当作磁盘缓存命中');
+      expect(path, isNotNull);
+      expect(path, endsWith('madler.png'));
+      expect(File('${github.path}/madler.png.tmp').existsSync(), isFalse);
+    });
+
     test('GitLab 经 API 解析 avatar_url 后下载', () async {
       final Directory temp = Directory.systemTemp.createTempSync('cnp_icon');
       addTearDown(() => temp.deleteSync(recursive: true));

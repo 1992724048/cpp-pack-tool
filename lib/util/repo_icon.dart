@@ -219,7 +219,12 @@ String? _findCachedAvatar(Directory directory, String cacheKey) {
       if (entity is! File) {
         continue;
       }
-      if (baseName(entity.path).startsWith('$cacheKey.')) {
+      final String name = baseName(entity.path);
+      // 崩溃残留的写盘中间文件（`<键>.<扩展名>.tmp`）不得被前缀命中
+      if (name.toLowerCase().endsWith('.tmp')) {
+        continue;
+      }
+      if (name.startsWith('$cacheKey.')) {
         matches.add(entity.absolute.path);
       }
     }

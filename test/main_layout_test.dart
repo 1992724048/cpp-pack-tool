@@ -22,6 +22,7 @@ import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/pages/about.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -1108,6 +1109,74 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsNothing);
+  });
+
+  testWidgets('构建失败后按 Esc 不关闭对话框且关闭按钮仍记录失败条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => _buildEnvironment(),
+      buildPack:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            throw const PackBuildException('构建失败（退出码 1）');
+          },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('构建失败：构建失败（退出码 1）'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byKey(const Key('buildPackDialog')),
+      findsOneWidget,
+      reason: '失败态按 Esc 不得撤走对话框：失败条目必须经关闭按钮回传落盘',
+    );
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildPackDialog')), findsNothing);
+    expect(store.saveCount, 1);
+    expect(store.packs.single.history, hasLength(1));
+    final HistoryModel entry = store.packs.single.history.single;
+    expect(entry.type, HistoryType.built);
+    expect(entry.message, '构建失败：构建失败（退出码 1）');
   });
 
   testWidgets('无包时打包按钮禁用', (tester) async {
@@ -2392,6 +2461,73 @@ void main() {
 
     expect(find.byKey(const Key('repoFallbackIcon_demo')), findsOneWidget);
     expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
+  });
+
+  testWidgets('重新映射换仓库时先清空旧头像', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    final Completer<List<FileModel>> scanCompleter =
+        Completer<List<FileModel>>();
+    final Completer<String?> newIconCompleter = Completer<String?>();
+    int headerCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) => scanCompleter.future,
+      loadBuildHeader: (PackModel pack) async {
+        headerCalls++;
+        return BuildScriptHeader(
+          repo: headerCalls == 1
+              ? 'https://github.com/madler/zlib'
+              : 'https://github.com/facebook/zstd',
+        );
+      },
+      loadRepoIcon: (String repoUrl) async {
+        if (repoUrl.contains('madler')) {
+          return r'C:\cache\icons\github\madler.png';
+        }
+        return newIconCompleter.future;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoAvatar_demo')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    scanCompleter.complete(<FileModel>[
+      FileModel(name: 'build.py', path: 'sub/build.py', size: 10),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(headerCalls, greaterThan(1));
+    expect(
+      find.byKey(const Key('repoFallbackIcon_demo')),
+      findsOneWidget,
+      reason: '仓库地址变化后、新头像查询完成前不得沿用旧仓库头像',
+    );
+    expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
+
+    newIconCompleter.complete(r'C:\cache\icons\github\zstd.png');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoAvatar_demo')), findsOneWidget);
   });
 
   testWidgets('删除包时探测构建缓存并可按需删除缓存', (tester) async {

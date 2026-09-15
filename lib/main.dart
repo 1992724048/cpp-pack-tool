@@ -576,10 +576,12 @@ class _MainLayoutState extends State<MainLayout> {
     final RepoLocation? location = resolvedRepo == null
         ? null
         : parseRepoLocation(resolvedRepo);
+    final String? previousRepo = _packRepos[name];
     setState(() {
       _packRepos[name] = resolvedRepo;
       _repoPlatforms[name] = location?.platform;
-      if (location == null) {
+      // 仓库地址变化时先清空旧头像：新头像查询完成前不得沿用上一仓库的图标
+      if (location == null || resolvedRepo != previousRepo) {
         _repoIcons[name] = null;
       }
     });
@@ -851,6 +853,8 @@ class _MainLayoutState extends State<MainLayout> {
     }
     final BuildDialogResult? result = await showDialog<BuildDialogResult>(
       context: context,
+      // 关闭必须经对话框内「关闭」按钮回传失败条目/修复报告：Esc 撤走会丢构建历史
+      dismissWithEsc: false,
       builder: (_) => BuildPackDialog(
         pack: pack,
         sourceNone: sourceNone,
