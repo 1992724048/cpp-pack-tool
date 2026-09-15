@@ -308,6 +308,22 @@ void main() {
       expect(header!.options, isEmpty);
     });
 
+    test('保留名 runtime 的选项声明忽略（大小写 / 空白不敏感，其余正常解析）', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
+        '# https://example.com/repo.git\n'
+        '# option: runtime = md | mt\n'
+        '# checkbox: Runtime = ON | OFF\n'
+        '# multiselect: RUNTIME = x | y\n'
+        '# option:   rUnTiMe   = fast | slow\n'
+        '# option: tbb = off | on\n',
+      );
+
+      expect(header!.options, hasLength(1));
+      expect(header.options.single.name, 'tbb');
+      expect(header.options.single.values, <String>['off', 'on']);
+      expect(header.runtime, isNull);
+    });
+
     test('三型同名以首次声明为准（跨指令）', () {
       final BuildScriptHeader? header = parseBuildScriptHeader(
         '# https://example.com/repo.git\n'

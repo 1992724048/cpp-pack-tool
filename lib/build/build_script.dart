@@ -17,7 +17,9 @@ const String _runtimeDirectivePrefix = '# runtime:';
 /// 运行库选项在 `PackModel.buildOptions` 中的保留键。
 ///
 /// 键不存在 = 跟随配方默认（`# runtime:` 或 `md`）；值域 `MD` / `MT`（保存口径），
-/// 解析时大小写不敏感。
+/// 解析时大小写不敏感。该名称为保留名：build.py 以 `# option` / `# checkbox` /
+/// `# multiselect` 声明同名选项（大小写 / 空白不敏感）时整行忽略，防止
+/// `CNP_OPTION_RUNTIME` 与 [runtimeLibraryEnvName] 取值矛盾。
 const String runtimeOptionName = 'runtime';
 
 /// 子进程运行库环境变量名（值域 `md` / `mt`，小写规范化）。
@@ -129,7 +131,8 @@ class BuildScriptHeader {
 /// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
 /// `# source: none` / `# runtime:` / `# depends:` 指令。
 ///
-/// 首行不合法返回 null；非法或未知指令行按注释忽略，同名声明以首次为准；
+/// 首行不合法返回 null；非法或未知指令行按注释忽略，选项名称为保留名
+/// （`runtime`，见 [runtimeOptionName]）的选项声明同样忽略；同名声明以首次为准；
 /// 遇到首个非 `#` 行（含空行）即终止头部连续段。
 BuildScriptHeader? parseBuildScriptHeader(String content) {
   final List<String> lines = content.split('\n');
@@ -295,8 +298,9 @@ BuildScriptOption? _parseMultiSelectLine(String line) {
   return option;
 }
 
-/// 解析 `<名称> = <值> | <值> …` 形式：名称须匹配选项名正则，值去空白后不得为空、
-/// 不得重复，数量须落在 [minValues]/[maxValues] 范围内。
+/// 解析 `<名称> = <值> | <值> …` 形式：名称须匹配选项名正则且非保留名
+/// （`runtime`，见 [runtimeOptionName]），值去空白后不得为空、不得重复，
+/// 数量须落在 [minValues]/[maxValues] 范围内。
 BuildScriptOption? _parseValuedOption(
   String rest,
   BuildOptionControl control, {
@@ -309,6 +313,9 @@ BuildScriptOption? _parseValuedOption(
   }
   final String name = rest.substring(0, equalsIndex).trim();
   if (!_optionNamePattern.hasMatch(name)) {
+    return null;
+  }
+  if (_isReservedOptionName(name)) {
     return null;
   }
   final List<String> values = <String>[
@@ -327,6 +334,11 @@ BuildScriptOption? _parseValuedOption(
   }
   return BuildScriptOption(name: name, values: values, control: control);
 }
+
+/// 选项名是否为保留名（[runtimeOptionName]，大小写 / 空白不敏感）：
+/// 保留名声明按非法行忽略，不报错。
+bool _isReservedOptionName(String name) =>
+    name.trim().toLowerCase() == runtimeOptionName;
 
 /// 解析 `# depends: <包名> [<版本范围>]`：包名为单个非空白 token，
 /// 版本范围可选且必须通过 [isValidVersionRange]；非法行返回 null（整行忽略）。

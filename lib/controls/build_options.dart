@@ -413,9 +413,11 @@ class RuntimeLibraryHelpButton extends StatelessWidget {
         richMessage: TextSpan(
           children: <InlineSpan>[
             TextSpan(text: '运行库（MSVC CRT）', style: boldPhrase),
+            const TextSpan(text: '\n· '),
+            TextSpan(text: '默认（跟随配方）', style: boldPhrase),
             const TextSpan(
               text:
-                  '\n· 默认（跟随配方）：由 build.py 配方的编译参数决定；'
+                  '：由 build.py 配方的编译参数决定；'
                   '需要覆盖时再显式选择 MD / MT。',
             ),
             const TextSpan(text: '\n· '),

@@ -30,7 +30,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | --- | --- | --- |
 | 第 1 行 | `# <git仓库地址>` | 源码仓库 URL（如 `# https://github.com/madler/zlib`）。 |
 | 其后连续行 | `# tool: <name> <url> [bin=<子目录>]` | 声明自动下载的环境工具：zip 解压到 `tools/<name>/` 并加入子进程 PATH。`name` 限 `[A-Za-z0-9._-]+`；`url` 为 http(s) zip；`bin` 为相对子目录（如 `perl/bin`），不得含盘符或 `..`。 |
-| 其后连续行 | `# option: <name> = <默认值> \| <备选值> …` | 声明下拉选项：**首值为默认值**，工具 UI 在【文件管理】页「构建」按钮下方渲染下拉框，选中值经 `CNP_OPTION_<NAME>` 传入。`name` 限 `[A-Za-z_][A-Za-z0-9_]*`；候选值用 `\|` 分隔，不得为空或重复。 |
+| 其后连续行 | `# option: <name> = <默认值> \| <备选值> …` | 声明下拉选项：**首值为默认值**，工具 UI 在【文件管理】页「构建」按钮下方渲染下拉框，选中值经 `CNP_OPTION_<NAME>` 传入。`name` 限 `[A-Za-z_][A-Za-z0-9_]*`（`runtime` 为保留名，禁止使用）；候选值用 `\|` 分隔，不得为空或重复。 |
 | 其后连续行 | `# checkbox: <name> = <勾选值> \| <未勾选值>` | 声明布尔选项：工具 UI 渲染复选框，**首值为勾选态（也是默认值）**，建议写作 `ON \| OFF`；落盘值为勾选值 `ON` / 未勾选值 `OFF`，经 `CNP_OPTION_<NAME>` 传入。值恰为 2 个、非空且不重复。 |
 | 其后连续行 | `# multiselect: <name> = <值> \| <值> …` | 声明多选选项：工具 UI 渲染勾选组，已选值按声明序以 `;` 连接经 `CNP_OPTION_<NAME>` 传入（全不选为空串）；值不得为空、重复或含 `;`。 |
 | 其后连续行 | `# source: none` | 预构建配方：跳过 git 源码拉取；`SRC_PATH` 目录仍会创建并注入，作为脚本自行下载 / 解压的工作区。仅字面值 `none` 合法，其余值按注释忽略。 |
@@ -39,6 +39,8 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | 其余 `#` 行 | 普通注释 | 忽略；非法指令行同样按注释忽略（不报错）。 |
 
 > 同名 tool / option / checkbox / multiselect 以首次声明为准；未声明的选项不会下发环境变量。
+>
+> `runtime` 为保留名（大小写 / 空白不敏感，供工具的运行库选择器使用），禁止用作选项名：以该名声明 `# option` / `# checkbox` / `# multiselect` 的行按非法行忽略（不报错，也不会下发 `CNP_OPTION_RUNTIME`）。
 >
 > 根级 `pre.bat` / `post.bat` 会被工具自动注册为系统编译命令（执行时附加 `"$(TargetPath)"` 参数，脚本内以 `%~1` 取目标路径；系统条目禁改删）。
 

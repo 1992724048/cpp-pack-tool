@@ -568,6 +568,18 @@ void main() {
       expect(loaded.buildOptions['mp'], 'off');
     });
 
+    test('toMap/fromMap 往返保留空串选项值（多选全不选）', () {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..buildOptions = <String, String>{'accel': '', 'tbb': 'on'};
+
+      final Map<String, Object?> map = pack.toMap();
+
+      expect(map['buildOptions'], <String, String>{'accel': '', 'tbb': 'on'});
+      final PackModel loaded = PackModel.fromMap(map);
+      expect(loaded.buildOptions, <String, String>{'accel': '', 'tbb': 'on'});
+    });
+
     test('fromMap 缺少 buildOptions 时默认为空', () {
       final PackModel pack = PackModel.fromMap(<String, Object?>{
         'name': 'demo',
