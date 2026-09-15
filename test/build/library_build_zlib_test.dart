@@ -271,15 +271,26 @@ void main() {
       );
 
       // 纯度守卫：release 段只允许 Release 产物，杜绝 Debug 混入与去重改名残留。
+      // 命名口径来自配方对上游 CMake 输出目标名的补丁（z/zs → zlib/zlibs）。
       expect(
         releaseLibs,
-        <String>['libz.lib', 'libzs.lib'],
-        reason: 'release/lib 精确集合：仅 Release 静态库（libzs）与导入库（libz）',
+        <String>['zlib.lib', 'zlibs.lib'],
+        reason: 'release/lib 精确集合：仅 Release 静态库（zlibs）与导入库（zlib）',
       );
       expect(
         releaseBins,
-        <String>['libz.dll'],
+        <String>['zlib.dll'],
         reason: 'release/bin 精确集合：仅 Release 动态库',
+      );
+      expect(
+        debugLibs,
+        <String>['zlibd.lib', 'zlibsd.lib'],
+        reason: 'debug/lib 精确集合：仅 Debug 静态库（zlibsd）与导入库（zlibd）',
+      );
+      expect(
+        debugBins,
+        <String>['zlibd.dll'],
+        reason: 'debug/bin 精确集合：仅 Debug 动态库',
       );
       expect(
         releaseTree.where(
@@ -288,7 +299,7 @@ void main() {
         isEmpty,
         reason: 'release 段不得含 .pdb（调试符号属 Debug 配置）',
       );
-      for (final String marker in <String>['libzd', 'libzsd', '_build-']) {
+      for (final String marker in <String>['zlibd', 'zlibsd', '_build-']) {
         expect(
           releaseTree.where(
             (String path) => baseName(path).toLowerCase().contains(marker),
