@@ -312,16 +312,12 @@ void main() {
 
       expect(settings.outputDirectory, isNull);
       expect(settings.themeMode, ThemeModeSetting.system);
-      expect(settings.darkFlavor, 'mocha');
-      expect(settings.accent, 'teal');
     });
 
     test('保存后可往返读回且保留 version 字段', () async {
       const SettingsModel settings = SettingsModel(
         outputDirectory: r'D:\nuget\out',
         themeMode: ThemeModeSetting.dark,
-        darkFlavor: 'frappe',
-        accent: 'mauve',
       );
 
       await store.saveSettings(settings);
@@ -333,8 +329,6 @@ void main() {
       final SettingsModel loaded = await store.loadSettings();
       expect(loaded.outputDirectory, r'D:\nuget\out');
       expect(loaded.themeMode, ThemeModeSetting.dark);
-      expect(loaded.darkFlavor, 'frappe');
-      expect(loaded.accent, 'mauve');
     });
 
     test('输出目录为空时不写入 YAML', () async {
@@ -344,8 +338,8 @@ void main() {
           .readAsStringSync();
       expect(yaml, isNot(contains('outputDirectory')));
       expect(yaml, contains('themeMode: system'));
-      expect(yaml, contains('darkFlavor: mocha'));
-      expect(yaml, contains('accent: teal'));
+      expect(yaml, isNot(contains('darkFlavor')));
+      expect(yaml, isNot(contains('accent')));
     });
 
     test('已有内容被全量重写', () async {
@@ -353,13 +347,15 @@ void main() {
       File('${tempDir.path}/config.yaml')
           .writeAsStringSync('version: 1\nlegacy: true\n');
 
-      await store.saveSettings(const SettingsModel(accent: 'red'));
+      await store.saveSettings(
+        const SettingsModel(themeMode: ThemeModeSetting.light),
+      );
 
       final String yaml = File('${tempDir.path}/config.yaml')
           .readAsStringSync();
       expect(yaml, contains('version: 1'));
       expect(yaml, isNot(contains('legacy')));
-      expect(yaml, contains('accent: red'));
+      expect(yaml, contains('themeMode: light'));
     });
 
     test('损坏的配置文件回退默认值', () async {
@@ -370,21 +366,23 @@ void main() {
       final SettingsModel settings = await store.loadSettings();
 
       expect(settings.themeMode, ThemeModeSetting.system);
-      expect(settings.darkFlavor, 'mocha');
-      expect(settings.accent, 'teal');
     });
 
-    test('未知字段值回退默认', () async {
+    test('旧主题键加载正常且保存后自然消失', () async {
       File('${tempDir.path}/config.yaml').createSync(recursive: true);
       File('${tempDir.path}/config.yaml').writeAsStringSync(
         'version: 1\nthemeMode: pink\ndarkFlavor: latte\naccent: rainbow\n',
       );
 
       final SettingsModel settings = await store.loadSettings();
-
       expect(settings.themeMode, ThemeModeSetting.system);
-      expect(settings.darkFlavor, 'mocha');
-      expect(settings.accent, 'teal');
+
+      await store.saveSettings(settings);
+
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, isNot(contains('darkFlavor')));
+      expect(yaml, isNot(contains('accent')));
     });
 
     test('检测缓存随设置往返并写入 YAML', () async {
@@ -426,14 +424,14 @@ void main() {
     test('损坏的检测缓存条目被跳过而不影响其余设置', () async {
       File('${tempDir.path}/config.yaml').createSync(recursive: true);
       File('${tempDir.path}/config.yaml').writeAsStringSync(
-        'version: 1\naccent: mauve\ndetectedCompilers:\n'
+        'version: 1\nthemeMode: dark\ndetectedCompilers:\n'
         '  - kind: gcc\n    version: 13\n    executablePath: /usr/bin/gcc\n'
         '  - kind: msvc\n    version: 14.44.35207\n    executablePath: C:\\\\VC\\\\cl.exe\n',
       );
 
       final SettingsModel settings = await store.loadSettings();
 
-      expect(settings.accent, 'mauve');
+      expect(settings.themeMode, ThemeModeSetting.dark);
       expect(settings.detectedCompilers, hasLength(1));
       expect(settings.detectedCompilers.single.kind, CompilerKind.msvc);
     });

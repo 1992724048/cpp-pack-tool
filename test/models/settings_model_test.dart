@@ -3,13 +3,11 @@ import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('默认值为 system / mocha / teal 且输出目录为空', () {
+  test('默认值为 system 且输出目录为空', () {
     const SettingsModel settings = SettingsModel();
 
     expect(settings.outputDirectory, isNull);
     expect(settings.themeMode, ThemeModeSetting.system);
-    expect(settings.darkFlavor, 'mocha');
-    expect(settings.accent, 'teal');
     expect(settings.compilerPriority, <String>[
       'icx',
       'clang-cl',
@@ -24,8 +22,6 @@ void main() {
 
     expect(map.containsKey('outputDirectory'), isFalse);
     expect(map['themeMode'], 'system');
-    expect(map['darkFlavor'], 'mocha');
-    expect(map['accent'], 'teal');
     expect(map['compilerPriority'], <String>[
       'icx',
       'clang-cl',
@@ -38,8 +34,6 @@ void main() {
     const SettingsModel settings = SettingsModel(
       outputDirectory: r'D:\nuget\out',
       themeMode: ThemeModeSetting.dark,
-      darkFlavor: 'frappe',
-      accent: 'mauve',
       compilerPriority: <String>['msvc', 'icx', 'clang-cl', 'mingw'],
     );
 
@@ -47,8 +41,6 @@ void main() {
 
     expect(loaded.outputDirectory, r'D:\nuget\out');
     expect(loaded.themeMode, ThemeModeSetting.dark);
-    expect(loaded.darkFlavor, 'frappe');
-    expect(loaded.accent, 'mauve');
     expect(loaded.compilerPriority, <String>[
       'msvc',
       'icx',
@@ -57,7 +49,7 @@ void main() {
     ]);
   });
 
-  test('未知枚举与非法值回退默认', () {
+  test('未知枚举与非法值回退默认，旧主题键读取后自然消失', () {
     final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
       'themeMode': 'pink',
       'darkFlavor': 'latte',
@@ -66,17 +58,15 @@ void main() {
     });
 
     expect(loaded.themeMode, ThemeModeSetting.system);
-    expect(loaded.darkFlavor, 'mocha');
-    expect(loaded.accent, 'teal');
     expect(loaded.outputDirectory, isNull);
+    expect(loaded.toMap().containsKey('darkFlavor'), isFalse);
+    expect(loaded.toMap().containsKey('accent'), isFalse);
   });
 
   test('空映射返回默认值', () {
     final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{});
 
     expect(loaded.themeMode, ThemeModeSetting.system);
-    expect(loaded.darkFlavor, 'mocha');
-    expect(loaded.accent, 'teal');
     expect(loaded.outputDirectory, isNull);
     expect(loaded.compilerPriority, <String>[
       'icx',

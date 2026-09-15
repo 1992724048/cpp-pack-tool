@@ -1,4 +1,3 @@
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,7 +22,10 @@ void main() {
     final Container container = tester.widget<Container>(
       find.descendant(of: find.byType(Tag), matching: find.byType(Container)),
     );
-    expect((container.decoration as BoxDecoration?)?.color, UCColors.accent);
+    final FluentThemeData theme = FluentTheme.of(
+      tester.element(find.byType(Tag)),
+    );
+    expect((container.decoration as BoxDecoration?)?.color, theme.accentColor);
     expect(_textColor(tester), isNotNull);
   });
 
@@ -86,7 +88,7 @@ const Color _latteGreen = Color(0xFF40A02B);
 
 const Color _mochaGreen = Color(0xFFA6E3A1);
 
-const Color _darkText = Color(0xFF1E1E2E);
+const Color _darkText = Color(0xFF1B1B1B);
 
 Future<void> _pumpTag(WidgetTester tester, Tag tag) async {
   await tester.pumpWidget(FluentApp(home: Center(child: tag)));

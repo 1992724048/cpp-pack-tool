@@ -173,8 +173,8 @@ void main() {
         const Size(14, 8),
       );
       expect(execInput.shape, BoxShape.rectangle);
-      expect(execInput.color, UCColors.flavor.text.withValues(alpha: 0.30));
-      expect(execInput.border!.top.color, UCColors.flavor.text);
+      expect(execInput.color, _theme(tester).resources.textFillColorPrimary.withValues(alpha: 0.30));
+      expect(execInput.border!.top.color, _theme(tester).resources.textFillColorPrimary);
       expect(execInput.border!.top.width, 1.5);
 
       final BoxDecoration stringInput = _pinDecoration(tester, 'n1', 'source');
@@ -183,8 +183,8 @@ void main() {
         const Size(10, 10),
       );
       expect(stringInput.shape, BoxShape.circle);
-      expect(stringInput.color, UCColors.flavor.blue.withValues(alpha: 0.35));
-      expect(stringInput.border!.top.color, UCColors.flavor.blue);
+      expect(stringInput.color, MarkerColors.blue.withValues(alpha: 0.35));
+      expect(stringInput.border!.top.color, MarkerColors.blue);
     });
 
     testWidgets('data 引脚配色：bool 橙、list<string> 紫', (WidgetTester tester) async {
@@ -200,15 +200,15 @@ void main() {
       );
 
       final BoxDecoration boolOut = _pinDecoration(tester, 'n1', 'result');
-      expect(boolOut.border!.top.color, UCColors.flavor.peach);
-      expect(boolOut.color, UCColors.flavor.peach.withValues(alpha: 0.35));
+      expect(boolOut.border!.top.color, MarkerColors.orange);
+      expect(boolOut.color, MarkerColors.orange.withValues(alpha: 0.35));
 
       final BoxDecoration listOut = _pinDecoration(tester, 'n2', 'result');
-      expect(listOut.border!.top.color, UCColors.flavor.mauve);
-      expect(listOut.color, UCColors.flavor.mauve.withValues(alpha: 0.35));
+      expect(listOut.border!.top.color, MarkerColors.purple);
+      expect(listOut.color, MarkerColors.purple.withValues(alpha: 0.35));
 
       final BoxDecoration boolIn = _pinDecoration(tester, 'n3', 'condition');
-      expect(boolIn.border!.top.color, UCColors.flavor.peach);
+      expect(boolIn.border!.top.color, MarkerColors.orange);
       expect(tester.takeException(), isNull);
     });
 
@@ -231,15 +231,15 @@ void main() {
 
       expect(
         _pinDecoration(tester, 'n2', 'result').color,
-        UCColors.flavor.blue,
+        MarkerColors.blue,
       );
       expect(
         _pinDecoration(tester, 'n1', 'source').color,
-        UCColors.flavor.blue,
+        MarkerColors.blue,
       );
       expect(
         _pinDecoration(tester, 'n1', 'exec').color,
-        UCColors.flavor.text.withValues(alpha: 0.30),
+        _theme(tester).resources.textFillColorPrimary.withValues(alpha: 0.30),
       );
     });
 
@@ -308,7 +308,7 @@ void main() {
       expect(nodeTypeIcon('variable.getString'), FluentIcons.read);
       expect(
         nodeCategoryColor(ScriptNodeCategory.variable),
-        UCColors.flavor.lavender,
+        MarkerColors.lavender,
       );
     });
 
@@ -320,8 +320,8 @@ void main() {
         ),
       );
 
-      expect(_cardBorder(tester, 'n1').top.color, UCColors.flavor.overlay0);
-      expect(_cardDecoration(tester, 'n1').color, UCColors.flavor.surface0);
+      expect(_cardBorder(tester, 'n1').top.color, _theme(tester).resources.cardStrokeColorDefault);
+      expect(_cardDecoration(tester, 'n1').color, _theme(tester).resources.cardBackgroundFillColorDefault);
 
       final TestGesture mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
@@ -333,14 +333,20 @@ void main() {
       );
       await tester.pump();
 
-      expect(_cardBorder(tester, 'n1').top.color, UCColors.flavor.overlay1);
-      expect(_cardDecoration(tester, 'n1').color, UCColors.flavor.surface1);
+      expect(
+        _cardBorder(tester, 'n1').top.color,
+        _theme(tester).resources.controlStrokeColorDefault,
+      );
+      expect(
+        _cardDecoration(tester, 'n1').color,
+        _theme(tester).resources.controlFillColorSecondary,
+      );
 
       await mouse.moveTo(const Offset(1200, 700));
       await tester.pump();
 
-      expect(_cardBorder(tester, 'n1').top.color, UCColors.flavor.overlay0);
-      expect(_cardDecoration(tester, 'n1').color, UCColors.flavor.surface0);
+      expect(_cardBorder(tester, 'n1').top.color, _theme(tester).resources.cardStrokeColorDefault);
+      expect(_cardDecoration(tester, 'n1').color, _theme(tester).resources.cardBackgroundFillColorDefault);
     });
 
     testWidgets('选中节点为 2px accent 描边且置顶渲染', (WidgetTester tester) async {
@@ -359,9 +365,9 @@ void main() {
 
       final BoxDecoration decoration = _cardDecoration(tester, 'n1');
       final Border border = _cardBorder(tester, 'n1');
-      expect(border.top.color, UCColors.accent);
+      expect(border.top.color, _theme(tester).accentColor);
       expect(border.top.width, 2);
-      expect(decoration.color, UCColors.flavor.surface0);
+      expect(decoration.color, _theme(tester).resources.cardBackgroundFillColorDefault);
 
       final List<String> order = tester
           .widgetList<NodeCard>(
@@ -430,15 +436,15 @@ void main() {
 
       expect(
         _ringDecoration(tester, 'n1', 'exec').border!.top.color,
-        UCColors.flavor.red,
+        AppColors.critical(_theme(tester).brightness),
       );
       expect(
         _ringDecoration(tester, 'n1', 'source').border!.top.color,
-        UCColors.flavor.red,
+        AppColors.critical(_theme(tester).brightness),
       );
       expect(
         _ringDecoration(tester, 'n1', 'destination').border!.top.color,
-        UCColors.flavor.blue.withValues(alpha: 0.75),
+        MarkerColors.blue.withValues(alpha: 0.75),
       );
     });
   });
@@ -776,7 +782,10 @@ void main() {
       final CustomPaint paint = tester.widget<CustomPaint>(grid);
       expect(paint.painter, isA<EditorGridPainter>());
       final EditorGridPainter painter = paint.painter! as EditorGridPainter;
-      expect(painter.color, UCColors.flavor.overlay0);
+      expect(
+        painter.color,
+        _theme(tester).resources.controlStrokeColorDefault,
+      );
       expect(EditorGridPainter.smallSpacing, 24);
       expect(EditorGridPainter.largeSpacing, 120);
       expect(EditorGridPainter.smallRadius, 1.2);
@@ -1103,7 +1112,7 @@ void main() {
       EdgePainter painter = _edgePainter(tester);
       expect(painter.preview, isNotNull);
       expect(painter.preview!.state, EdgePreviewState.normal);
-      expect(painter.preview!.color, UCColors.flavor.blue);
+      expect(painter.preview!.color, MarkerColors.blue);
       expect(painter.preview!.from, const Offset(248, 109));
       expect(painter.preview!.to, const Offset(272, 109));
 
@@ -1146,7 +1155,7 @@ void main() {
       );
       expect(
         candidateRing.border!.top.color,
-        UCColors.flavor.blue.withValues(alpha: 0.75),
+        MarkerColors.blue.withValues(alpha: 0.75),
       );
       expect(candidateRing.border!.top.width, 2);
       expect(_pinOpacity(tester, 'n4', 'source'), 1.0);
@@ -1228,7 +1237,7 @@ void main() {
       );
 
       final BoxDecoration ring = _ringDecoration(tester, 'n1', 'source');
-      expect(ring.border!.top.color, UCColors.flavor.red);
+      expect(ring.border!.top.color, AppColors.critical(_theme(tester).brightness));
       expect(ring.border!.top.width, 2);
       expect(find.byKey(const Key('pinRing_n1_exec')), findsOneWidget);
       expect(find.byKey(const Key('pinRing_n1_destination')), findsOneWidget);
@@ -1268,7 +1277,7 @@ void main() {
       );
       expect(errorPins['n2'], contains('exec'));
       final BoxDecoration ring = _ringDecoration(tester, 'n2', 'exec');
-      expect(ring.border!.top.color, UCColors.flavor.red);
+      expect(ring.border!.top.color, AppColors.critical(_theme(tester).brightness));
       expect(ring.border!.top.width, 2);
       expect(find.byKey(const Key('pinRing_n2_exec')), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -1778,7 +1787,7 @@ class _LibraryDragSource extends StatelessWidget {
       child: Container(
         key: const Key('libraryDragSource'),
         height: 60,
-        color: UCColors.flavor.surface0,
+        color: FluentTheme.of(context).cardColor,
         alignment: Alignment.center,
         child: Text(typeKey),
       ),
@@ -1790,6 +1799,14 @@ TransformationController _transformation(WidgetTester tester) {
   return tester
       .widget<InteractiveViewer>(find.byType(InteractiveViewer))
       .transformationController!;
+}
+
+FluentThemeData _theme(WidgetTester tester) {
+  final Finder canvas = find.byType(EditorCanvas);
+  if (canvas.evaluate().isNotEmpty) {
+    return FluentTheme.of(tester.element(canvas));
+  }
+  return FluentTheme.of(tester.element(find.byType(NodeCard).first));
 }
 
 Future<void> _setScale(

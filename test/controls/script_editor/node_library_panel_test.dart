@@ -4,7 +4,6 @@ import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/pages/script_editor.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
@@ -157,7 +156,7 @@ void main() {
       }
     });
 
-    testWidgets('条目 tooltip 为类型键、悬停背景 surface0', (WidgetTester tester) async {
+    testWidgets('条目 tooltip 为类型键、悬停背景为悬停填充色', (WidgetTester tester) async {
       await _pumpPanel(tester);
       final Finder item = find.byKey(const Key('nodeLibraryItem_flow.entry'));
 
@@ -175,7 +174,12 @@ void main() {
       await mouse.moveTo(tester.getCenter(item));
       await tester.pump();
 
-      expect(_itemColor(tester, item), UCColors.flavor.surface0);
+      expect(
+        _itemColor(tester, item),
+        FluentTheme.of(
+          tester.element(item),
+        ).resources.controlFillColorSecondary,
+      );
     });
 
     testWidgets('搜索按显示名/类型键/分类名大小写不敏感过滤且命中组自动展开', (WidgetTester tester) async {

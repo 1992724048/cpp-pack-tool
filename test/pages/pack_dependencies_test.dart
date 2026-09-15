@@ -1,4 +1,3 @@
-import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -154,7 +153,7 @@ void main() {
         pack,
         allPacks: <PackModel>[_pack('demo'), _pack('libfoo'), _pack('libbar')],
       ),
-      theme: buildTheme(Brightness.light, catppuccin.latte, 'teal'),
+      theme: buildTheme(Brightness.light),
     );
 
     // Divider 外层包裹水平外边距，需取内部绘制层比较实际线体范围

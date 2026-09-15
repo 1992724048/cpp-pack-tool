@@ -51,11 +51,17 @@ void main() {
   testWidgets('选中包、缺失节点与普通节点使用对应描边', (tester) async {
     await _pumpDialog(tester, packs: _packs(), selectedPackName: 'beta');
 
-    expect(_borderColor(tester, 'beta'), UCColors.accent);
+    final FluentThemeData theme = FluentTheme.of(
+      tester.element(find.byType(DependencyGraphDialog)),
+    );
+    expect(_borderColor(tester, 'beta'), theme.accentColor);
     expect(_borderWidth(tester, 'beta'), 2);
-    expect(_borderColor(tester, 'ghost'), UCColors.flavor.red);
+    expect(_borderColor(tester, 'ghost'), AppColors.critical(theme.brightness));
     expect(_borderWidth(tester, 'ghost'), 2);
-    expect(_borderColor(tester, 'gamma'), UCColors.flavor.overlay0);
+    expect(
+      _borderColor(tester, 'gamma'),
+      theme.resources.controlStrokeColorDefault,
+    );
     expect(_borderWidth(tester, 'gamma'), 1);
   });
 

@@ -476,11 +476,23 @@ void main() {
       );
     }
 
-    expect(_outputLine(tester, 'INFO: 开始构建'), UCColors.flavor.blue);
-    expect(_outputLine(tester, 'WARNING: 未启用 LTO'), UCColors.flavor.peach);
+    expect(
+      _outputLine(tester, 'INFO: 开始构建'),
+      AppColors.info(_theme(tester).brightness),
+    );
+    expect(
+      _outputLine(tester, 'WARNING: 未启用 LTO'),
+      AppColors.caution(_theme(tester).brightness),
+    );
     expect(findOutputKeyword('error: 编译失败')?.keyword, 'ERROR');
-    expect(_outputLine(tester, 'error: 编译失败'), UCColors.flavor.red);
-    expect(_outputLine(tester, '普通输出'), UCColors.flavor.text);
+    expect(
+      _outputLine(tester, 'error: 编译失败'),
+      AppColors.critical(_theme(tester).brightness),
+    );
+    expect(
+      _outputLine(tester, '普通输出'),
+      _theme(tester).resources.textFillColorPrimary,
+    );
   });
 
   testWidgets('失败时保留流式输出并补充尾部', (tester) async {
@@ -630,7 +642,10 @@ void main() {
     );
     expect(find.textContaining('普通输出', findRichText: true), findsNothing);
     expect(find.textContaining('INFO: 开始构建', findRichText: true), findsNothing);
-    expect(_outputLine(tester, 'error: 编译失败'), UCColors.flavor.red);
+    expect(
+      _outputLine(tester, 'error: 编译失败'),
+      AppColors.critical(_theme(tester).brightness),
+    );
 
     await tester.tap(find.byKey(const Key('buildOutputFilterClear')));
     await tester.pump();
@@ -1396,7 +1411,12 @@ Color _outputLine(WidgetTester tester, String line) {
         .widget<RichText>(find.textContaining(line, findRichText: true))
         .text
         .toPlainText(),
+    _theme(tester),
   );
+}
+
+FluentThemeData _theme(WidgetTester tester) {
+  return FluentTheme.of(tester.element(find.byType(BuildPackDialog)));
 }
 
 BuildEnvironment _environment({

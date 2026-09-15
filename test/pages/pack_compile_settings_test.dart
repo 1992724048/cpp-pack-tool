@@ -87,13 +87,13 @@ void main() {
     final List<Tag> tags = tester.widgetList<Tag>(find.byType(Tag)).toList();
     expect(tags, hasLength(5));
     expect(tags[0].text, 'ALL');
-    expect(tags[0].color, UCColors.flavor.blue);
+    expect(tags[0].color, MarkerColors.blue);
     expect(tags[1].text, 'Release');
-    expect(tags[1].color, UCColors.flavor.green);
+    expect(tags[1].color, MarkerColors.green);
     expect(tags[2].text, 'ALL');
     expect(tags[3].text, 'ALL');
     expect(tags[4].text, 'Debug');
-    expect(tags[4].color, UCColors.flavor.peach);
+    expect(tags[4].color, MarkerColors.orange);
 
     expect(find.text('暂无宏定义'), findsNothing);
     expect(find.text('构建配置'), findsNWidgets(5));
@@ -631,21 +631,31 @@ void main() {
     final List<Tag> tags = tester.widgetList<Tag>(find.byType(Tag)).toList();
     expect(tags, hasLength(6));
     expect(tags[0].text, '编译前');
-    expect(tags[0].color, UCColors.flavor.sky);
+    expect(tags[0].color, MarkerColors.cyan);
     expect(tags[1].text, 'ALL');
-    expect(tags[1].color, UCColors.flavor.blue);
+    expect(tags[1].color, MarkerColors.blue);
     expect(tags[2].text, '编译后');
-    expect(tags[2].color, UCColors.flavor.lavender);
+    expect(tags[2].color, MarkerColors.purple);
     expect(tags[3].text, 'Release');
-    expect(tags[3].color, UCColors.flavor.green);
+    expect(tags[3].color, MarkerColors.green);
     expect(tags[4].text, '编译前');
-    expect(tags[4].color, UCColors.flavor.sky);
+    expect(tags[4].color, MarkerColors.cyan);
     expect(tags[5].text, 'Debug');
-    expect(tags[5].color, UCColors.flavor.peach);
+    expect(tags[5].color, MarkerColors.orange);
 
-    expect(_statusText(tester, '1 个警告').style?.color, UCColors.flavor.yellow);
-    expect(_statusText(tester, '1 个错误').style?.color, UCColors.flavor.red);
-    expect(_statusText(tester, '正常').style?.color, UCColors.flavor.green);
+    final Brightness brightness = _theme(tester).brightness;
+    expect(
+      _statusText(tester, '1 个警告').style?.color,
+      AppColors.caution(brightness),
+    );
+    expect(
+      _statusText(tester, '1 个错误').style?.color,
+      AppColors.critical(brightness),
+    );
+    expect(
+      _statusText(tester, '正常').style?.color,
+      AppColors.success(brightness),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -731,6 +741,12 @@ Future<void> _pumpPage(WidgetTester tester, PackCompileSettings page) async {
 
   await tester.pumpWidget(FluentApp(home: page));
   await tester.pump();
+}
+
+FluentThemeData _theme(WidgetTester tester) {
+  return FluentTheme.of(
+    tester.element(find.byType(PackCompileSettings).first),
+  );
 }
 
 Future<void> _addEntry(

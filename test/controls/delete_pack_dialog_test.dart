@@ -84,7 +84,7 @@ void main() {
     final ButtonStyle style = tester.widget<FilledButton>(confirm).style!;
     expect(
       style.backgroundColor?.resolve(<WidgetState>{}),
-      UCColors.flavor.red,
+      AppColors.critical(Brightness.light),
     );
     expect(style.foregroundColor?.resolve(<WidgetState>{}), Colors.white);
   });

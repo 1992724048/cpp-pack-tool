@@ -19,16 +19,12 @@ void main() {
     expect(find.text('未设置'), findsNWidgets(2));
     expect(find.text('主题'), findsOneWidget);
     expect(find.text('主题模式'), findsOneWidget);
-    expect(find.text('深色主题配色'), findsOneWidget);
-    expect(find.text('强调色'), findsOneWidget);
     expect(find.byKey(const Key('settingPickDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingClearDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingPickCmakeDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingClearCmakeDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingDefaultAuthorField')), findsOneWidget);
     expect(find.byKey(const Key('settingThemeModeField')), findsOneWidget);
-    expect(find.byKey(const Key('settingDarkFlavorField')), findsOneWidget);
-    expect(find.byKey(const Key('settingAccentField')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -66,35 +62,14 @@ void main() {
     expect(find.text('已保存'), findsOneWidget);
   });
 
-  testWidgets('切换深色主题配色回传新值', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
+  testWidgets('外观分区仅保留主题模式（无深色配色与强调色）', (tester) async {
+    await _pumpSetting(tester, onSave: (_) async {});
 
-    await _selectCombo(tester, const Key('settingDarkFlavorField'), 'Frappe');
-
-    expect(saved, isNotNull);
-    expect(saved!.darkFlavor, 'frappe');
-    expect(saved!.themeMode, ThemeModeSetting.system);
-  });
-
-  testWidgets('切换强调色回传新值', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
-
-    await _selectCombo(tester, const Key('settingAccentField'), 'Mauve');
-
-    expect(saved, isNotNull);
-    expect(saved!.accent, 'mauve');
+    expect(find.byKey(const Key('settingThemeModeField')), findsOneWidget);
+    expect(find.byKey(const Key('settingDarkFlavorField')), findsNothing);
+    expect(find.byKey(const Key('settingAccentField')), findsNothing);
+    expect(find.text('深色主题配色'), findsNothing);
+    expect(find.text('强调色'), findsNothing);
   });
 
   testWidgets('选择目录后回传并显示新路径', (tester) async {
@@ -393,8 +368,6 @@ void main() {
       settings: const SettingsModel(
         outputDirectory: r'D:\nuget\out',
         themeMode: ThemeModeSetting.dark,
-        darkFlavor: 'frappe',
-        accent: 'mauve',
       ),
       onSave: (SettingsModel next) async {
         saved = next;
@@ -414,8 +387,6 @@ void main() {
     ]);
     expect(saved!.outputDirectory, r'D:\nuget\out');
     expect(saved!.themeMode, ThemeModeSetting.dark);
-    expect(saved!.darkFlavor, 'frappe');
-    expect(saved!.accent, 'mauve');
     expect(find.text('已保存'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('settingCompilerMoveUp_icx')));

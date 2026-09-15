@@ -376,7 +376,7 @@ void main() {
 
     final Tag tag = tester.widget<Tag>(find.byType(Tag));
     expect(tag.text, releaseBuildLabel);
-    expect(tag.color, UCColors.flavor.green);
+    expect(tag.color, MarkerColors.green);
     expect(tag.fontSize, 10);
   });
 
@@ -393,7 +393,7 @@ void main() {
 
     final Tag tag = tester.widget<Tag>(find.byType(Tag));
     expect(tag.text, debugBuildLabel);
-    expect(tag.color, UCColors.flavor.peach);
+    expect(tag.color, MarkerColors.orange);
   });
 
   testWidgets('构建标签紧贴名称右侧 5px', (tester) async {
@@ -1048,7 +1048,12 @@ void main() {
     addTearDown(mouse.removePointer);
     await mouse.moveTo(tester.getCenter(find.text('use_nasm')));
     await tester.pump();
-    expect(_rowDecoration(tester, row).color, UCColors.flavor.surface0);
+    expect(
+      _rowDecoration(tester, row).color,
+      FluentTheme.of(
+        tester.element(row),
+      ).resources.controlFillColorSecondary,
+    );
 
     await mouse.moveTo(
       tester.getCenter(find.byKey(const Key('buildPackButton'))),
