@@ -196,9 +196,7 @@ void main() {
   testWidgets('未检测到的编译器显示未检测到', (tester) async {
     await _pumpSetting(
       tester,
-      settings: const SettingsModel(
-        compilerPriority: <String>['icx', 'clang'],
-      ),
+      settings: const SettingsModel(compilerPriority: <String>['icx', 'clang']),
       onSave: (_) async {},
       detectCompilers: () async => <DetectedCompiler>[
         _compiler(CompilerKind.icx, '2026.1.1'),

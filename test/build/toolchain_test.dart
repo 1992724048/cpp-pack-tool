@@ -187,7 +187,10 @@ void main() {
       _createFile(legacy);
 
       final DetectedCompiler? detected = await detectIcx(
-        runner: _runner(<_ProcessCall>[], (_) async => _result('Compiler 2026.1.1\n')),
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => _result('Compiler 2026.1.1\n'),
+        ),
         oneApiRoot: oneApiRoot,
       );
 
@@ -257,9 +260,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx.exe'));
-      _createFile(
-        joinPath(oneApiRoot, 'compiler/2026.1/windows/bin/icx.exe'),
-      );
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/windows/bin/icx.exe'));
 
       final DetectedCompiler? detected = await detectIcx(
         runner: _runner(
@@ -278,12 +279,8 @@ void main() {
     test('混合布局下按版本号数值比较选择最高版本', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
-      _createFile(
-        joinPath(oneApiRoot, 'compiler/2025.3/windows/bin/icx.exe'),
-      );
-      _createFile(
-        joinPath(oneApiRoot, 'compiler/2026.2/windows/bin/icx.exe'),
-      );
+      _createFile(joinPath(oneApiRoot, 'compiler/2025.3/windows/bin/icx.exe'));
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.2/windows/bin/icx.exe'));
       _createFile(joinPath(oneApiRoot, 'compiler/2026.10/bin/icx.exe'));
 
       final DetectedCompiler? detected = await detectIcx(
@@ -616,10 +613,7 @@ void main() {
       final DetectedCompiler clang = _compiler(CompilerKind.clang);
 
       expect(
-        selectCompiler(<DetectedCompiler>[clang], <String>[
-          'clang-cl',
-          'msvc',
-        ]),
+        selectCompiler(<DetectedCompiler>[clang], <String>['clang-cl', 'msvc']),
         isNull,
       );
     });
@@ -651,9 +645,7 @@ void main() {
       );
       expect(
         calls
-            .where(
-              (_ProcessCall call) => call.executable.endsWith('icx.exe'),
-            )
+            .where((_ProcessCall call) => call.executable.endsWith('icx.exe'))
             .length,
         1,
       );
@@ -706,9 +698,7 @@ void main() {
       expect(compilers, hasLength(1));
       expect(
         calls
-            .where(
-              (_ProcessCall call) => call.executable.endsWith('icx.exe'),
-            )
+            .where((_ProcessCall call) => call.executable.endsWith('icx.exe'))
             .length,
         1,
       );

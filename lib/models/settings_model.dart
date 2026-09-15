@@ -3,11 +3,7 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 
 enum ThemeModeSetting { system, dark, light }
 
-const List<String> _defaultCompilerPriority = <String>[
-  'icx',
-  'clang',
-  'msvc',
-];
+const List<String> _defaultCompilerPriority = <String>['icx', 'clang', 'msvc'];
 
 class SettingsModel {
   const SettingsModel({

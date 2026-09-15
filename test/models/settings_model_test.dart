@@ -91,11 +91,10 @@ void main() {
     });
 
     expect(legacy.compilerPriority, <String>['icx', 'clang', 'msvc']);
-    expect(
-      mixed.compilerPriority,
-      <String>['clang', 'icx'],
-      reason: '旧标识迁移后与既有 clang 视为同项，只保留首个',
-    );
+    expect(mixed.compilerPriority, <String>[
+      'clang',
+      'icx',
+    ], reason: '旧标识迁移后与既有 clang 视为同项，只保留首个');
   });
 
   test('空字符串输出目录视为未设置', () {

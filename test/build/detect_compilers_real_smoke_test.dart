@@ -23,9 +23,8 @@ void main() {
       final Map<String, String> baseEnvironment = Map<String, String>.of(
         Platform.environment,
       );
-      final Map<String, String> controlled = await withControlledTempEnvironment(
-        baseEnvironment,
-      );
+      final Map<String, String> controlled =
+          await withControlledTempEnvironment(baseEnvironment);
       print('[evidence] controlled.TMP=${controlled['TMP']}');
       print('[evidence] controlled.TEMP=${controlled['TEMP']}');
       print(
@@ -77,8 +76,7 @@ void main() {
         expect(
           compilers.map((DetectedCompiler c) => c.kind),
           contains(CompilerKind.icx),
-          reason:
-              'Q7 回归：默认环境可检出 ICX 时受控 TMP 不得漏检（受控目录须为本次新建）',
+          reason: 'Q7 回归：默认环境可检出 ICX 时受控 TMP 不得漏检（受控目录须为本次新建）',
         );
       }
     },

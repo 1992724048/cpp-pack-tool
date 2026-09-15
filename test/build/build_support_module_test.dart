@@ -53,9 +53,8 @@ Future<String> _loadModuleSource() async {
     _cachedModuleSource = source;
     return source;
   } catch (_) {
-    final String source = File(
-      'assets/build/cnp_build_support.py',
-    ).readAsStringSync();
+    final String source = File('assets/build/cnp_build_support.py')
+        .readAsStringSync();
     _loadedFromBundle = false;
     _cachedModuleSource = source;
     return source;
@@ -64,11 +63,10 @@ Future<String> _loadModuleSource() async {
 
 ProcessResult _runPython(List<String> arguments, {String? workingDirectory}) {
   final List<String> command = _pythonCommand!;
-  return Process.runSync(
-    command.first,
-    <String>[...command.sublist(1), ...arguments],
-    workingDirectory: workingDirectory,
-  );
+  return Process.runSync(command.first, <String>[
+    ...command.sublist(1),
+    ...arguments,
+  ], workingDirectory: workingDirectory);
 }
 
 Directory _createTempDir(String prefix) {
@@ -744,10 +742,7 @@ void main() {
 
     test('cmake_configure：命令装配、优化注入与缺 CNP_CMAKE 明确报错', () async {
       final Directory tempDir = _createTempDir('cnp_support_cmake_');
-      final File driver = _writeDriver(
-        tempDir,
-        _cmakeDriver,
-      );
+      final File driver = _writeDriver(tempDir, _cmakeDriver);
       _installModule(tempDir, await _loadModuleSource());
 
       final ProcessResult result = _runDriver(driver, 'cmake');
@@ -786,10 +781,16 @@ void main() {
       expect(stdout, contains('icx_ipo=ON'));
       // 非法种类标识时回退按编译器路径推断（icx-cl.exe → icx）。
       expect(stdout, contains('inferred_avx2=/QxCORE-AVX2 /QaxCORE-AVX2'));
-      expect(stdout, contains('inferred_opt=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
+      expect(
+        stdout,
+        contains('inferred_opt=/O3 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'),
+      );
       // clang-cl（cl 兼容驱动）：/arch:AVX2 + /O2 /Ob2 /Oi /Ot /GF /Gy + lld 可解析时 IPO。
       expect(stdout, contains('clang_avx2_c=/arch:AVX2'));
-      expect(stdout, contains('clang_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'));
+      expect(
+        stdout,
+        contains('clang_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'),
+      );
       expect(stdout, contains('clang_ipo=ON'));
       expect(stdout, contains('clang_cl_ld=none'));
       // R23：clang（GNU 驱动）→ -mavx2 / -O3 -ffunction-sections -fdata-sections
@@ -915,17 +916,11 @@ void main() {
       final String includeA = _join(_join(tempDir.path, 'out_a'), 'include');
       expect(_readText(_join(includeA, 'alpha.h')), 'alpha');
       expect(_readText(_join(includeA, 'beta.hpp')), 'beta');
-      expect(
-        _readText(_join(_join(includeA, 'nested'), 'gamma.h')),
-        'gamma',
-      );
+      expect(_readText(_join(_join(includeA, 'nested'), 'gamma.h')), 'gamma');
       expect(File(_join(includeA, 'skip.c')).existsSync(), isFalse);
       expect(
         _readText(
-          _join(
-            _join(_join(tempDir.path, 'out_b'), 'include'),
-            'alpha.h',
-          ),
+          _join(_join(_join(tempDir.path, 'out_b'), 'include'), 'alpha.h'),
         ),
         'alpha',
       );
@@ -945,7 +940,9 @@ void main() {
       final String stdout = result.stdout.toString();
       expect(
         stdout,
-        contains('release_copied=4 release_lib=2 release_bin=2 release_skipped=0'),
+        contains(
+          'release_copied=4 release_lib=2 release_bin=2 release_skipped=0',
+        ),
       );
       expect(
         stdout,
@@ -1022,16 +1019,12 @@ void main() {
       expect(stdout, contains('rerun_release=bin/libz.dll|lib/libz.lib'));
       // 构建目录缺失：报错且不触碰既有输出。
       expect(stdout, contains('missing=FileNotFoundError'));
-      expect(
-        stdout,
-        contains('missing_release=bin/libz.dll|lib/libz.lib'),
-      );
+      expect(stdout, contains('missing_release=bin/libz.dll|lib/libz.lib'));
 
       final String out = _join(tempDir.path, 'out');
       expect(
-        File(
-          _join(_join(_join(out, 'release'), 'lib'), 'stale.lib'),
-        ).existsSync(),
+        File(_join(_join(_join(out, 'release'), 'lib'), 'stale.lib'))
+            .existsSync(),
         isFalse,
       );
       expect(
@@ -1077,11 +1070,7 @@ void main() {
       );
 
       final String outB = _join(tempDir.path, 'out_b');
-      expect(
-        Directory(outB).existsSync(),
-        isFalse,
-        reason: '仅子目录命中时不应创建输出目录',
-      );
+      expect(Directory(outB).existsSync(), isFalse, reason: '仅子目录命中时不应创建输出目录');
 
       final String outC = _join(tempDir.path, 'out_c');
       expect(_readText(_join(outC, 'LICENSE')), 'license-plain');
@@ -1105,9 +1094,7 @@ void main() {
       );
       expect(
         result.stdout.toString(),
-        contains(
-          'include=3 lib=2 bin=3 debug_lib=1 debug_bin=1 license=1',
-        ),
+        contains('include=3 lib=2 bin=3 debug_lib=1 debug_bin=1 license=1'),
       );
       expect(
         result.stdout.toString(),
@@ -1135,9 +1122,7 @@ void main() {
       ]);
       expect(_readText(_join(out, 'LICENSE')), 'license-root');
       expect(
-        _readText(
-          _join(_join(_join(out, 'include'), 'src'), 'beta.hpp'),
-        ),
+        _readText(_join(_join(_join(out, 'include'), 'src'), 'beta.hpp')),
         'h-beta',
       );
       expect(

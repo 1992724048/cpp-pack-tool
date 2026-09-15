@@ -266,7 +266,10 @@ void main() {
       expect(compilers.single.kind, CompilerKind.icx);
       expect(compilers.single.version, '2026.1.0');
       expect(calls.single.environment?['TMP'], startsWith('$parent\\run-'));
-      expect(calls.single.environment?['TEMP'], calls.single.environment?['TMP']);
+      expect(
+        calls.single.environment?['TEMP'],
+        calls.single.environment?['TMP'],
+      );
       expect(
         Directory(calls.single.environment!['TMP']!).existsSync(),
         isFalse,
@@ -832,11 +835,7 @@ void main() {
       expect(captureBase?['TEMP'], tempPath);
       expect(result.environment['TMP'], tempPath);
       expect(result.environment['TEMP'], tempPath);
-      expect(
-        Directory(tempPath).existsSync(),
-        isTrue,
-        reason: '受控临时目录应已创建',
-      );
+      expect(Directory(tempPath).existsSync(), isTrue, reason: '受控临时目录应已创建');
     });
 
     test('无可用编译器且 clang 供给失败时抛 BuildPreparationException 且不捕获/供给', () async {

@@ -407,7 +407,8 @@ class ToolProvisioner {
       apiUrl: clangReleasesApiUrl,
       assetPattern: _clangAssetNamePattern,
     );
-    return asset?.toString() ?? clangLlvmUrlForVersion(clangLlvmFallbackVersion);
+    return asset?.toString() ??
+        clangLlvmUrlForVersion(clangLlvmFallbackVersion);
   }
 
   /// 从 GitHub `releases/latest` 响应挑选匹配 [assetPattern] 的资产下载地址。
@@ -581,11 +582,11 @@ class ToolProvisioner {
   Future<List<String>> _launcherPathEntries() async {
     final ProcessResult result;
     try {
-      result = await _runner(
-        'py',
-        const <String>['-3', '-c', 'import sys; print(sys.executable)'],
-        environment: _environment,
-      );
+      result = await _runner('py', const <String>[
+        '-3',
+        '-c',
+        'import sys; print(sys.executable)',
+      ], environment: _environment);
     } on ProcessException {
       return const <String>[];
     }
@@ -810,13 +811,10 @@ List<String> _stablePythonVersions(String html) {
       found.add(version);
     }
   }
-  return found.toList()
-    ..sort(
-      (String left, String right) => _compareVersionParts(
-        _versionParts(right),
-        _versionParts(left),
-      ),
-    );
+  return found.toList()..sort(
+    (String left, String right) =>
+        _compareVersionParts(_versionParts(right), _versionParts(left)),
+  );
 }
 
 int _compareVersionParts(List<int> left, List<int> right) {

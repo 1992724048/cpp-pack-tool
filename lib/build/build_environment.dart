@@ -324,7 +324,9 @@ List<DetectedCompiler> _usableCachedCompilers(
 /// 优先 `<toolsRoot>/.tmp/build/run-<pid>-<毫秒>-<序号>`；[toolsRoot] 不可写
 /// （如工作目录为只读安装目录）时退回系统临时目录下的独立目录。两者都失败时
 /// 抛 [BuildPreparationException]。
-Future<String> createControlledTempDirectory({String toolsRoot = 'tools'}) async {
+Future<String> createControlledTempDirectory({
+  String toolsRoot = 'tools',
+}) async {
   final String parent = joinPath(
     Directory(toolsRoot).absolute.path,
     _controlledTempRelativePath,
@@ -348,9 +350,7 @@ Future<String> _fallbackSystemTempDirectory(Object cause) async {
     );
     return _windowsPath(directory.absolute.path);
   } catch (error) {
-    throw BuildPreparationException(
-      '创建构建临时目录失败：$cause；系统临时目录同样失败：$error',
-    );
+    throw BuildPreparationException('创建构建临时目录失败：$cause；系统临时目录同样失败：$error');
   }
 }
 
