@@ -4,6 +4,7 @@ import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/repo_version.dart';
@@ -154,6 +155,7 @@ class MainLayout extends StatefulWidget {
     this.exportCmakePackage = cmake_exporter.exportCmakePackage,
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
+    this.retryElevatedBuild = runElevatedPackBuild,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
     this.loadRemoteTags = listRemoteTags,
@@ -178,6 +180,11 @@ class MainLayout extends StatefulWidget {
   exportCmakePackage;
   final PackBuildRunner buildPack;
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
+
+  /// 临时目录权限失败时的提权重试入口（缺省 [runElevatedPackBuild]）；
+  /// 测试注入替代实现以避免触发真实 UAC 弹窗。
+  final ElevatedPackBuildRunner retryElevatedBuild;
+
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
 
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
@@ -619,6 +626,7 @@ class _MainLayoutState extends State<MainLayout> {
             scanFiles: widget.scanFiles,
             onApply: _applyRemap,
             fixIncludes: widget.fixIncludes,
+            retryElevated: widget.retryElevatedBuild,
           ),
         );
     if (!mounted || report == null) {

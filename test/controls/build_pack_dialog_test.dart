@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
@@ -813,15 +814,16 @@ void main() {
         order.add('fix:$sourcePath:$packageName');
         return fixGate.future;
       },
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-      }) async {
-        order.add('build');
-      },
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            order.add('build');
+          },
       scanFiles: (String sourcePath) async {
         order.add('scan');
         return const <FileModel>[];
@@ -882,6 +884,243 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('命中临时目录权限特征时显示提权重试入口', (tester) async {
+    await _pumpDialog(
+      tester,
+      retryElevated: _noopElevatedRunner(),
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
+    expect(find.byKey(const Key('buildElevatedRetryHint')), findsOneWidget);
+    expect(find.text('以管理员身份重试'), findsOneWidget);
+    expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('未命中特征或未提供提权入口时不显示按钮', (tester) async {
+    await _pumpDialog(
+      tester,
+      retryElevated: _noopElevatedRunner(),
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            throw const PackBuildException(
+              '构建失败（退出码 1）',
+              outputTail: 'error: cannot find file foo.h',
+            );
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildElevatedRetryButton')), findsNothing);
+    expect(find.byKey(const Key('buildElevatedRetryHint')), findsNothing);
+
+    await _pumpDialog(
+      tester,
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byKey(const Key('buildElevatedRetryButton')),
+      findsNothing,
+      reason: '未注入提权入口（retryElevated 为 null）时不显示按钮',
+    );
+  });
+
+  testWidgets('点击以管理员身份重试成功后继续重新映射并完成', (tester) async {
+    final List<String> order = <String>[];
+    BuildEnvironment? receivedEnvironment;
+
+    await _pumpDialog(
+      tester,
+      retryElevated:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            required BuildEnvironment buildEnvironment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            order.add('elevated');
+            receivedEnvironment = buildEnvironment;
+            onStage(PackBuildStage.downloading);
+            onOutput?.call('管理员构建输出');
+            onStage(PackBuildStage.building);
+          },
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async {
+        order.add('scan');
+        return const <FileModel>[];
+      },
+      onApply: (PackModel pack) async => order.add('apply'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(order, <String>['elevated', 'scan', 'apply']);
+    expect(receivedEnvironment?.environment['CNP_COMPILER_KIND'], 'icx');
+    expect(find.text('构建完成'), findsOneWidget);
+    expect(find.byKey(const Key('buildElevatedRetryButton')), findsNothing);
+    expect(find.textContaining('管理员构建输出', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('提权重试期间显示管理员阶段文案', (tester) async {
+    final Completer<void> downloadGate = Completer<void>();
+    final Completer<void> buildGate = Completer<void>();
+
+    await _pumpDialog(
+      tester,
+      retryElevated:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            required BuildEnvironment buildEnvironment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onStage(PackBuildStage.downloading);
+            await downloadGate.future;
+            onStage(PackBuildStage.building);
+            await buildGate.future;
+          },
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
+    await tester.pump();
+    expect(find.text('正在以管理员身份拉取源码…'), findsOneWidget);
+    expect(_closeButton(tester).onPressed, isNull);
+
+    downloadGate.complete();
+    await tester.pump();
+    expect(find.text('正在以管理员身份执行构建…'), findsOneWidget);
+
+    buildGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('构建完成'), findsOneWidget);
+  });
+
+  testWidgets('提权重试被取消时显示提示并保留重试入口', (tester) async {
+    await _pumpDialog(
+      tester,
+      retryElevated:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            required BuildEnvironment buildEnvironment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            throw const PackBuildException('已取消以管理员身份重试（UAC 授权被拒绝）');
+          },
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('构建失败：已取消以管理员身份重试（UAC 授权被拒绝）'), findsOneWidget);
+    expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
+    expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('提权重试失败保留输出并回到失败态', (tester) async {
+    int scanCount = 0;
+
+    await _pumpDialog(
+      tester,
+      retryElevated:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            required BuildEnvironment buildEnvironment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onOutput?.call('管理员构建输出行');
+            throw const PackBuildException(
+              '以管理员身份构建失败（退出码 3）',
+              outputTail: '管理员输出尾部',
+            );
+          },
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async {
+        scanCount++;
+        return const <FileModel>[];
+      },
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('构建失败：以管理员身份构建失败（退出码 3）'), findsOneWidget);
+    expect(find.textContaining('管理员构建输出行', findRichText: true), findsOneWidget);
+    expect(find.textContaining('管理员输出尾部', findRichText: true), findsOneWidget);
+    expect(scanCount, 0);
+    expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
+  });
+}
+
+/// 失败于临时目录权限特征的构建函数（ICX `error #10026`）。
+PackBuildRunner _permissionFailureBuild() {
+  return (
+    PackModel pack,
+    void Function(PackBuildStage) onStage, {
+    Map<String, String>? environment,
+    void Function(String line)? onOutput,
+    void Function(String version)? onSourceVersion,
+  }) async {
+    throw const PackBuildException(
+      '构建失败（退出码 1）',
+      outputTail: 'icx: error #10026: error generating temporary file',
+    );
+  };
+}
+
+/// 不做任何事的提权构建替身（仅用于让按钮可渲染）。
+ElevatedPackBuildRunner _noopElevatedRunner() {
+  return (
+    PackModel pack,
+    void Function(PackBuildStage) onStage, {
+    required BuildEnvironment buildEnvironment,
+    void Function(String line)? onOutput,
+    void Function(String version)? onSourceVersion,
+  }) async {};
 }
 
 /// 输出面板中某行的关键字颜色（无关键字行取常规文本色）。
@@ -967,6 +1206,7 @@ Future<void> _pumpDialog(
   PackModel? pack,
   bool sourceNone = false,
   PackHeaderIncludeFixer? fixIncludes,
+  ElevatedPackBuildRunner? retryElevated,
   ValueChanged<HeaderIncludeFixReport?>? onResult,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -995,6 +1235,7 @@ Future<void> _pumpDialog(
                       scanFiles: scanFiles,
                       onApply: onApply,
                       fixIncludes: fixIncludes ?? _emptyFixIncludes,
+                      retryElevated: retryElevated,
                     ),
                   );
               onResult?.call(result);

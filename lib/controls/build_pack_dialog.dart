@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
@@ -141,6 +142,7 @@ class BuildPackDialog extends StatefulWidget {
     required this.scanFiles,
     required this.onApply,
     this.fixIncludes = fixHeaderIncludes,
+    this.retryElevated,
   });
 
   final PackModel pack;
@@ -156,6 +158,9 @@ class BuildPackDialog extends StatefulWidget {
 
   /// 构建成功后、重新映射扫描前的 include 引用检查与自动修复。
   final PackHeaderIncludeFixer fixIncludes;
+
+  /// 提权重试入口（临时目录权限失败时提供「以管理员身份重试」）；null 时不提供。
+  final ElevatedPackBuildRunner? retryElevated;
 
   @override
   State<BuildPackDialog> createState() => _BuildPackDialogState();
@@ -185,6 +190,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   /// include 引用检查结果：关闭对话框时随 [Navigator.pop] 返回给调用方展示。
   HeaderIncludeFixReport? _fixReport;
+
+  /// 当前是否处于「以管理员身份重试」流程（阶段文案据此区分）。
+  bool _elevatedRetry = false;
 
   /// 工具下载进度（准备环境阶段）；离开准备阶段时清空。
   ToolDownloadProgress? _downloadProgress;
@@ -240,7 +248,45 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
+    await _afterBuildSucceeded();
+  }
 
+  /// 以管理员身份重试整条构建流水线（临时目录权限失败时由失败态按钮触发）。
+  ///
+  /// 环境与正常构建完全相同（复用准备阶段结果）；成功走同一后续流程
+  /// （头文件检查 → 重新映射 → 完成），失败保留输出回到失败态。
+  Future<void> _retryElevated() async {
+    final ElevatedPackBuildRunner? runner = widget.retryElevated;
+    final BuildEnvironment? environment = _environment;
+    if (runner == null || environment == null || _stage != _BuildStage.failed) {
+      return;
+    }
+    setState(() {
+      _elevatedRetry = true;
+      _stage = _BuildStage.downloading;
+      _error = null;
+      _downloadProgress = null;
+    });
+    try {
+      await runner(
+        widget.pack,
+        _onBuildStage,
+        buildEnvironment: environment,
+        onOutput: _onBuildOutput,
+        onSourceVersion: _onSourceVersion,
+      );
+    } catch (error) {
+      _showFailure(error, outputTail: _tailOf(error));
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    await _afterBuildSucceeded();
+  }
+
+  /// 构建脚本成功后的公共后续：include 引用检查 → 重新映射 → 应用 → 完成。
+  Future<void> _afterBuildSucceeded() async {
     final String? sourcePath = widget.pack.sourcePath;
     if (sourcePath == null) {
       _showFailure(const PackBuildException('该包缺少源目录信息'));
@@ -627,11 +673,13 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   String get _preparingText =>
       widget.sourceNone ? _sourceNoneDownloadText : '正在准备构建环境…';
 
-  String get _downloadingText =>
-      widget.sourceNone ? _sourceNoneDownloadText : '正在下载源码…';
+  String get _downloadingText => widget.sourceNone
+      ? _sourceNoneDownloadText
+      : (_elevatedRetry ? '正在以管理员身份拉取源码…' : '正在下载源码…');
 
-  String get _buildingText =>
-      widget.sourceNone ? _sourceNoneDownloadText : '正在执行构建…';
+  String get _buildingText => widget.sourceNone
+      ? _sourceNoneDownloadText
+      : (_elevatedRetry ? '正在以管理员身份执行构建…' : '正在执行构建…');
 
   Widget _buildStatus() {
     switch (_stage) {
@@ -663,7 +711,13 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [ProgressRing(), const SizedBox(width: 12), Text(label)]),
+        Row(
+          children: [
+            ProgressRing(),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label)),
+          ],
+        ),
         if (showDownloadProgress && progress != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -696,9 +750,35 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         Text('构建失败：${formatError(_error!)}'),
         const SizedBox(height: 8),
         const Text('详细输出见右侧面板'),
+        if (_canRetryElevated) ...[
+          const SizedBox(height: 12),
+          const Text(
+            '检测到临时目录权限问题（可能由内存盘等原因引起），可尝试以管理员身份重试。',
+            key: Key('buildElevatedRetryHint'),
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          Button(
+            key: const Key('buildElevatedRetryButton'),
+            onPressed: _retryElevated,
+            child: const Text('以管理员身份重试'),
+          ),
+        ],
       ],
     );
   }
+
+  /// 仅当失败信息命中临时目录权限特征且提供了提权重试入口时，才显示重试按钮。
+  bool get _canRetryElevated =>
+      widget.retryElevated != null &&
+      _environment != null &&
+      _stage == _BuildStage.failed &&
+      _error != null &&
+      detectTempPermissionFailure(_failureText);
+
+  /// 失败态的全部文本（异常信息 + 输出面板行，含已补充的输出尾部）。
+  String get _failureText =>
+      <String>[formatError(_error!), ..._outputLines].join('\n');
 
   Widget _buildResult() {
     final int totalSize = totalFileSize(_files);
