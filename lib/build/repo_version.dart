@@ -17,12 +17,15 @@ final RegExp _versionSegmentPattern = RegExp(
 ///
 /// 离线、超时、非零退出或 runner 异常时返回 null（静默失败，不抛出）；
 /// 仓库无 tag 时返回空列表。测试可注入 [runner] 与 [timeout]；
-/// [workingDirectory] 供本地仓库场景（远端名 `origin`）指定工作目录。
+/// [workingDirectory] 供本地仓库场景（远端名 `origin`）指定工作目录；
+/// [environment] 为子进程环境覆盖层（如代理变量），与 `GIT_TERMINAL_PROMPT`
+/// 合并（后者恒为 `0`）。
 Future<List<String>?> listRemoteTags(
   String repoUrl, {
   PackProcessRunner runner = Process.run,
   Duration timeout = _remoteTagsTimeout,
   String? workingDirectory,
+  Map<String, String>? environment,
 }) async {
   final ProcessResult result;
   try {
@@ -30,7 +33,10 @@ Future<List<String>?> listRemoteTags(
       'git',
       <String>['ls-remote', '--tags', '--refs', repoUrl],
       workingDirectory: workingDirectory,
-      environment: <String, String>{_gitPromptEnvironmentKey: '0'},
+      environment: <String, String>{
+        ...?environment,
+        _gitPromptEnvironmentKey: '0',
+      },
     ).timeout(timeout);
   } on ProcessException {
     return null;
@@ -68,10 +74,12 @@ List<String> _parseRemoteTags(String stdout) {
 /// 与 UI「最新版本」同一口径：同一 [latestTag] 解析与数值比较、同一
 /// `ls-remote --tags --refs` 数据面；查询失败（离线/超时/无 origin）或
 /// 无可用 tag 时返回 null，由调用方回退默认分支行为。
+/// [environment] 为子进程环境覆盖层（构建路径传入含代理变量的环境）。
 Future<String?> resolveLatestStableTag(
   Directory repository, {
   PackProcessRunner runner = Process.run,
   Duration timeout = _remoteTagsTimeout,
+  Map<String, String>? environment,
 }) async {
   final ProcessResult result;
   try {
@@ -79,7 +87,10 @@ Future<String?> resolveLatestStableTag(
       'git',
       <String>['ls-remote', '--tags', '--refs', 'origin'],
       workingDirectory: repository.path,
-      environment: <String, String>{_gitPromptEnvironmentKey: '0'},
+      environment: <String, String>{
+        ...?environment,
+        _gitPromptEnvironmentKey: '0',
+      },
     ).timeout(timeout);
   } on ProcessException {
     return null;

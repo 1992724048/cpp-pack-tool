@@ -40,6 +40,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.downloading);
             await downloadGate.future;
@@ -122,6 +123,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -153,6 +155,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => throw ArgumentError('目录不存在: X'),
       onApply: (PackModel pack) async {},
@@ -174,6 +177,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async => throw Exception('写入失败'),
@@ -196,6 +200,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -220,6 +225,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException('构建失败（退出码 1）');
           },
@@ -255,6 +261,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw PackBuildException('${'x' * 200}\nsecond line');
           },
@@ -287,6 +294,7 @@ void main() {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {},
       build: _permissionFailureBuild(),
       scanFiles: (String sourcePath) async => const <FileModel>[],
@@ -322,6 +330,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -355,6 +364,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             buildCount++;
           },
@@ -394,6 +404,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             received = environment;
           },
@@ -419,6 +430,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -449,6 +461,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             receivedLines = <String>[
               'INFO: 开始构建',
@@ -505,6 +518,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onOutput?.call('ERROR: 即将失败');
             throw const PackBuildException(
@@ -544,6 +558,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onOutput?.call('line one');
             onOutput?.call('line two');
@@ -691,6 +706,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -732,6 +748,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -801,6 +818,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.downloading);
             await downloadGate.future;
@@ -873,6 +891,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onSourceVersion?.call('v3.1.4');
           },
@@ -900,6 +919,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {
@@ -926,6 +946,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {
@@ -958,6 +979,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onSourceVersion?.call('v1.18.0');
           },
@@ -994,6 +1016,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onSourceVersion?.call('version-3.49.1');
           },
@@ -1021,6 +1044,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onSourceVersion?.call('a1b2c3d');
           },
@@ -1053,6 +1077,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onSourceVersion?.call('v1.0.0');
           },
@@ -1101,6 +1126,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             order.add('build');
           },
@@ -1148,6 +1174,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async {
         scanCount++;
@@ -1194,6 +1221,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -1238,6 +1266,7 @@ void main() {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             order.add('elevated');
             receivedEnvironment = buildEnvironment;
@@ -1279,6 +1308,7 @@ void main() {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.downloading);
             await downloadGate.future;
@@ -1317,6 +1347,7 @@ void main() {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException('已取消以管理员身份重试（UAC 授权被拒绝）');
           },
@@ -1348,6 +1379,7 @@ void main() {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onOutput?.call('管理员构建输出行');
             throw const PackBuildException(
@@ -1385,6 +1417,7 @@ PackBuildRunner _permissionFailureBuild() {
     Map<String, String>? environment,
     void Function(String line)? onOutput,
     void Function(String version)? onSourceVersion,
+    List<String> gitGlobalArguments = const <String>[],
   }) async {
     throw const PackBuildException(
       '构建失败（退出码 1）',
@@ -1464,6 +1497,7 @@ PackBuildRunner _emitLines(List<String> lines) {
     Map<String, String>? environment,
     void Function(String line)? onOutput,
     void Function(String version)? onSourceVersion,
+    List<String> gitGlobalArguments = const <String>[],
   }) async {
     for (final String line in lines) {
       onOutput?.call(line);

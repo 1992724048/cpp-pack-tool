@@ -6,7 +6,9 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/proxy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 typedef _ProcessCall = ({
@@ -596,6 +598,60 @@ void main() {
       expect(reported, isEmpty);
       expect(result.compiler, same(cached));
       expect(result.environment['CNP_COMPILER_KIND'], 'msvc');
+    });
+
+    test('手动代理解析注入子进程环境（大写键、NO_PROXY 附加本地地址）', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler cached = _cachedCompiler(root);
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{'no_proxy': 'stale'},
+        cachedCompilers: <DetectedCompiler>[cached],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+        proxy: const ProxyResolution(
+          mode: ProxyModeSetting.manual,
+          httpProxy: ProxyEndpoint(host: '127.0.0.1', port: 7890),
+          httpsProxy: ProxyEndpoint(host: '127.0.0.1', port: 7890),
+        ),
+      );
+
+      expect(result.environment['HTTP_PROXY'], 'http://127.0.0.1:7890');
+      expect(result.environment['HTTPS_PROXY'], 'http://127.0.0.1:7890');
+      expect(result.environment['NO_PROXY'], 'localhost,127.0.0.1');
+      expect(result.environment.containsKey('no_proxy'), isFalse);
+    });
+
+    test('关闭代理（缺省）清空快照既有代理变量', () async {
+      final Directory root = _tempDirectory();
+      final DetectedCompiler cached = _cachedCompiler(root);
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        priority: <String>['msvc'],
+        provisioner: _FakeProvisioner(_cmakeNinja()),
+        toolsRoot: joinPath(root.path, 'tools'),
+        baseEnvironment: <String, String>{
+          'http_proxy': 'http://stale:1',
+          'HTTPS_PROXY': 'http://stale:2',
+        },
+        cachedCompilers: <DetectedCompiler>[cached],
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          return baseEnvironment;
+        }),
+      );
+
+      expect(result.environment['http_proxy'], '');
+      expect(result.environment['HTTPS_PROXY'], '');
     });
 
     test('缓存可执行文件缺失时重检并回调新结果', () async {

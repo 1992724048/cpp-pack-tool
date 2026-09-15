@@ -24,6 +24,7 @@ import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/author_rules.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/proxy.dart';
 import 'package:cpp_nuget_pack/util/repo_icon.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/util/system_entries.dart';
@@ -122,13 +123,15 @@ typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   ToolDownloadProgressCallback? onDownloadProgress,
 });
 
-/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块。
+/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块；
+/// [proxy] 代理解析注入工具下载与构建子进程环境。
 Future<BuildEnvironment> _preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> compilerPriority,
   required List<toolchain.DetectedCompiler> cachedCompilers,
   required CompilerDetectionCallback onCompilersDetected,
   ToolDownloadProgressCallback? onDownloadProgress,
+  ProxyResolution? proxy,
 }) {
   return preparePackBuildEnvironment(
     pack,
@@ -136,6 +139,7 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
     onDownloadProgress: onDownloadProgress,
+    proxy: proxy,
     loadSupportModule: () =>
         rootBundle.loadString('assets/build/cnp_build_support.py'),
   );
@@ -162,9 +166,9 @@ class MainLayout extends StatefulWidget {
     this.retryElevatedBuild = runElevatedPackBuild,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
-    this.loadRemoteTags = listRemoteTags,
+    this.loadRemoteTags,
     this.fixIncludes = fixHeaderIncludes,
-    this.loadRepoIcon = ensureRepoAvatar,
+    this.loadRepoIcon,
     this.now = DateTime.now,
     this.hasBuildCache = hasPackBuildCache,
     this.deleteBuildCache = deletePackBuildCache,
@@ -197,14 +201,16 @@ class MainLayout extends StatefulWidget {
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
 
-  /// 查询仓库远端 tag 列表（懒查询 + 按 URL 会话缓存的底层入口）；测试注入避免触网。
-  final Future<List<String>?> Function(String repoUrl) loadRemoteTags;
+  /// 查询仓库远端 tag 列表（懒查询 + 按 URL 会话缓存的底层入口）；测试注入避免触网；
+  /// null 时走默认实现（注入代理解析）。
+  final Future<List<String>?> Function(String repoUrl)? loadRemoteTags;
 
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
 
-  /// 解析并缓存远程仓库头像（磁盘缓存优先）；测试注入避免触网。
-  final Future<String?> Function(String repoUrl) loadRepoIcon;
+  /// 解析并缓存远程仓库头像（磁盘缓存优先）；测试注入避免触网；
+  /// null 时走默认实现（注入代理解析）。
+  final Future<String?> Function(String repoUrl)? loadRepoIcon;
 
   final DateTime Function() now;
 
@@ -250,6 +256,10 @@ class _MainLayoutState extends State<MainLayout> {
 
   /// 默认作者批量修正防重入（启动与设置变更可能相邻触发）。
   bool _fixingAuthors = false;
+
+  /// 代理解析缓存（与设置对象绑定；设置被替换后按需重新解析）。
+  Future<ProxyResolution>? _proxyResolutionFuture;
+  SettingsModel? _proxyResolutionSettings;
 
   @override
   void initState() {
@@ -609,10 +619,28 @@ class _MainLayoutState extends State<MainLayout> {
 
   Future<String?> _queryRepoIcon(String repoUrl) async {
     try {
-      return await widget.loadRepoIcon(repoUrl);
+      final Future<String?> Function(String repoUrl)? loader =
+          widget.loadRepoIcon;
+      if (loader != null) {
+        return await loader(repoUrl);
+      }
+      return await ensureRepoAvatar(repoUrl, proxy: await _proxyResolution());
     } catch (_) {
       return null;
     }
+  }
+
+  /// 当前设置的代理解析（同一设置对象复用；设置变更后重新解析，自动模式读注册表）。
+  Future<ProxyResolution> _proxyResolution() {
+    final SettingsModel settings = widget.settings;
+    final Future<ProxyResolution>? pending = _proxyResolutionFuture;
+    if (pending != null && identical(_proxyResolutionSettings, settings)) {
+      return pending;
+    }
+    _proxyResolutionSettings = settings;
+    final Future<ProxyResolution> resolved = resolveProxyFromSettings(settings);
+    _proxyResolutionFuture = resolved;
+    return resolved;
   }
 
   /// 仓库远端最新 tag：命中缓存直接返回，进行中的查询去重复用。
@@ -629,7 +657,17 @@ class _MainLayoutState extends State<MainLayout> {
   Future<String?> _queryLatestTag(String repoUrl) async {
     List<String>? tags;
     try {
-      tags = await widget.loadRemoteTags(repoUrl);
+      final Future<List<String>?> Function(String repoUrl)? loader =
+          widget.loadRemoteTags;
+      if (loader != null) {
+        tags = await loader(repoUrl);
+      } else {
+        final ProxyResolution proxy = await _proxyResolution();
+        tags = await listRemoteTags(
+          repoUrl,
+          environment: proxyEnvironmentOverrides(proxy),
+        );
+      }
     } catch (_) {
       tags = null;
     }
@@ -840,8 +878,26 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _buildPack(PackModel pack) async {
+    final ProxyResolution proxy = await _proxyResolution();
+    if (!mounted) {
+      return;
+    }
     final PackBuildEnvironmentPreparer prepare =
-        widget.prepareBuildEnv ?? _preparePackBuildEnvironment;
+        widget.prepareBuildEnv ??
+        (
+          PackModel pack, {
+          required List<String> compilerPriority,
+          required List<toolchain.DetectedCompiler> cachedCompilers,
+          required CompilerDetectionCallback onCompilersDetected,
+          ToolDownloadProgressCallback? onDownloadProgress,
+        }) => _preparePackBuildEnvironment(
+          pack,
+          compilerPriority: compilerPriority,
+          cachedCompilers: cachedCompilers,
+          onCompilersDetected: onCompilersDetected,
+          onDownloadProgress: onDownloadProgress,
+          proxy: proxy,
+        );
     final bool sourceNone = await _loadSourceNone(pack);
     if (!mounted) {
       return;
@@ -853,7 +909,23 @@ class _MainLayoutState extends State<MainLayout> {
       builder: (_) => BuildPackDialog(
         pack: pack,
         sourceNone: sourceNone,
-        build: widget.buildPack,
+        gitGlobalArguments: proxy.gitGlobalArguments(),
+        build:
+            (
+              PackModel pack,
+              void Function(PackBuildStage) onStage, {
+              Map<String, String>? environment,
+              void Function(String line)? onOutput,
+              void Function(String version)? onSourceVersion,
+              List<String> gitGlobalArguments = const <String>[],
+            }) => widget.buildPack(
+              pack,
+              onStage,
+              environment: environment,
+              onOutput: onOutput,
+              onSourceVersion: onSourceVersion,
+              gitGlobalArguments: gitGlobalArguments,
+            ),
         prepare:
             (
               PackModel pack, {

@@ -48,6 +48,28 @@ void main() {
       });
     });
 
+    test('环境覆盖层与 GIT_TERMINAL_PROMPT 合并下发（代理变量透传）', () async {
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await listRemoteTags(
+        'https://github.com/foo/bar.git',
+        runner: _runner(
+          calls,
+          (_) async => ProcessResult(1, 0, '', ''),
+        ),
+        environment: <String, String>{
+          'HTTP_PROXY': 'http://127.0.0.1:7890',
+          'NO_PROXY': 'localhost,127.0.0.1',
+        },
+      );
+
+      expect(calls.single.environment, <String, String>{
+        'HTTP_PROXY': 'http://127.0.0.1:7890',
+        'NO_PROXY': 'localhost,127.0.0.1',
+        'GIT_TERMINAL_PROMPT': '0',
+      });
+    });
+
     test('仓库无 tag 时返回空列表', () async {
       final List<String>? tags = await listRemoteTags(
         'https://example.com/repo.git',

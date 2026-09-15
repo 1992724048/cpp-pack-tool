@@ -19,13 +19,14 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
 });
 
 /// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`/
-/// `onSourceVersion` 调用 [runPackBuild]。
+/// `onSourceVersion`/`gitGlobalArguments` 调用 [runPackBuild]。
 typedef PackBuildRunner = Future<void> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   Map<String, String>? environment,
   void Function(String line)? onOutput,
   void Function(String version)? onSourceVersion,
+  List<String> gitGlobalArguments,
 });
 
 /// 流式子进程执行器：与 `Process.start` 同形的可注入替代（测试用）。
@@ -119,6 +120,7 @@ Future<PackSourcePreparation> preparePackSource(
   void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
+  List<String> gitGlobalArguments = const <String>[],
 }) async {
   final String? sourcePath = pack.sourcePath;
   if (sourcePath == null) {
@@ -159,6 +161,7 @@ Future<PackSourcePreparation> preparePackSource(
         target,
         environment,
         onOutput,
+        gitGlobalArguments,
       );
     } else {
       await _cloneRepository(
@@ -168,6 +171,7 @@ Future<PackSourcePreparation> preparePackSource(
         header.repo,
         environment,
         onOutput,
+        gitGlobalArguments,
       );
     }
     final String? stableTag = await _alignSourceVersion(
@@ -176,6 +180,7 @@ Future<PackSourcePreparation> preparePackSource(
       target,
       environment,
       onOutput,
+      gitGlobalArguments,
     );
     await _cleanRepository(
       processRunner,
@@ -183,6 +188,7 @@ Future<PackSourcePreparation> preparePackSource(
       target,
       environment,
       onOutput,
+      gitGlobalArguments,
     );
     if (onSourceVersion != null) {
       final String? version = await _querySourceVersion(
@@ -190,6 +196,7 @@ Future<PackSourcePreparation> preparePackSource(
         target,
         environment,
         stableTag: stableTag,
+        gitGlobalArguments: gitGlobalArguments,
       );
       if (version != null) {
         onSourceVersion(version);
@@ -235,6 +242,7 @@ Future<void> runPackBuild(
   void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
+  List<String> gitGlobalArguments = const <String>[],
 }) async {
   final PackSourcePreparation source = await preparePackSource(
     pack,
@@ -245,6 +253,7 @@ Future<void> runPackBuild(
     onSourceVersion: onSourceVersion,
     cacheRoot: cacheRoot,
     environment: environment,
+    gitGlobalArguments: gitGlobalArguments,
   );
   onStage(PackBuildStage.building);
   await _runBuildScript(
@@ -270,6 +279,7 @@ Future<void> runPackBuildStreaming(
   void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
+  List<String> gitGlobalArguments = const <String>[],
 }) {
   return runPackBuild(
     pack,
@@ -280,6 +290,7 @@ Future<void> runPackBuildStreaming(
     onSourceVersion: onSourceVersion,
     cacheRoot: cacheRoot,
     environment: environment,
+    gitGlobalArguments: gitGlobalArguments,
   );
 }
 
@@ -303,6 +314,7 @@ Future<void> _pullRepository(
   Directory target,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) async {
   final ProcessResult fetch = await _runGit(
     processRunner,
@@ -311,6 +323,7 @@ Future<void> _pullRepository(
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
+    gitGlobalArguments: gitGlobalArguments,
   );
   _requirePullStep(fetch);
   final ProcessResult reset = await _resetHard(
@@ -319,6 +332,7 @@ Future<void> _pullRepository(
     target,
     environment,
     onOutput,
+    gitGlobalArguments,
   );
   if (reset.exitCode != 0) {
     throw PackBuildException(
@@ -337,6 +351,7 @@ Future<void> _cleanRepository(
   Directory target,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) async {
   final ProcessResult clean = await _runGit(
     processRunner,
@@ -345,6 +360,7 @@ Future<void> _cleanRepository(
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
+    gitGlobalArguments: gitGlobalArguments,
   );
   _requirePullStep(clean);
 }
@@ -359,6 +375,7 @@ Future<ProcessResult> _resetHard(
   Directory target,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) async {
   final ProcessResult upstream = await _runGit(
     processRunner,
@@ -367,6 +384,7 @@ Future<ProcessResult> _resetHard(
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
+    gitGlobalArguments: gitGlobalArguments,
   );
   if (upstream.exitCode == 0) {
     return upstream;
@@ -377,6 +395,7 @@ Future<ProcessResult> _resetHard(
     target,
     environment,
     onOutput,
+    gitGlobalArguments,
   );
   if (remoteHead == null) {
     // 缓存仓库可能缺失 `refs/remotes/origin/HEAD`（克隆后被清理/损坏），
@@ -388,6 +407,7 @@ Future<ProcessResult> _resetHard(
       workingDirectory: target.path,
       environment: environment,
       onOutput: onOutput,
+      gitGlobalArguments: gitGlobalArguments,
     );
     remoteHead = await _readRemoteHead(
       processRunner,
@@ -395,6 +415,7 @@ Future<ProcessResult> _resetHard(
       target,
       environment,
       onOutput,
+      gitGlobalArguments,
     );
   }
   if (remoteHead != null) {
@@ -405,6 +426,7 @@ Future<ProcessResult> _resetHard(
       workingDirectory: target.path,
       environment: environment,
       onOutput: onOutput,
+      gitGlobalArguments: gitGlobalArguments,
     );
   }
   return upstream;
@@ -418,6 +440,7 @@ Future<String?> _readRemoteHead(
   Directory target,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) async {
   final ProcessResult result = await _runGit(
     processRunner,
@@ -426,6 +449,7 @@ Future<String?> _readRemoteHead(
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
+    gitGlobalArguments: gitGlobalArguments,
   );
   if (result.exitCode != 0) {
     return null;
@@ -459,11 +483,18 @@ Future<String?> _alignSourceVersion(
   Directory target,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) async {
   final String? tag = await resolveLatestStableTag(
     target,
-    runner: _tagQueryRunner(processRunner, streamRunner, onOutput),
+    runner: _tagQueryRunner(
+      processRunner,
+      streamRunner,
+      onOutput,
+      gitGlobalArguments,
+    ),
     timeout: const Duration(seconds: 15),
+    environment: environment,
   );
   if (tag == null) {
     return null;
@@ -475,6 +506,7 @@ Future<String?> _alignSourceVersion(
     workingDirectory: target.path,
     environment: environment,
     onOutput: onOutput,
+    gitGlobalArguments: gitGlobalArguments,
   );
   if (checkout.exitCode != 0) {
     onOutput?.call('警告：检出最新稳定 tag $tag 失败，保持默认分支继续构建');
@@ -485,29 +517,43 @@ Future<String?> _alignSourceVersion(
 
 /// tag 查询执行器：按当前模式选择（注入流式执行器时经 `git ls-remote` 流式
 /// 转发，与 fetch/python 输出口径一致；否则用收集式 [processRunner]）。
+/// [gitGlobalArguments]（如手动代理的 `-c http.proxy=...`）前置到子命令之前。
 PackProcessRunner _tagQueryRunner(
   PackProcessRunner processRunner,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) {
-  if (streamRunner == null) {
-    return processRunner;
-  }
   return (
     String executable,
     List<String> arguments, {
     String? workingDirectory,
     Map<String, String>? environment,
   }) async {
-    final ProcessResult result = await _runStreamingProcess(
+    final List<String> commandArguments = <String>[
+      ...gitGlobalArguments,
+      ...arguments,
+    ];
+    final Map<String, String> gitEnvironment = <String, String>{
+      ...?environment,
+      _gitPromptEnvironmentKey: '0',
+    };
+    if (streamRunner == null) {
+      return processRunner(
+        executable,
+        commandArguments,
+        workingDirectory: workingDirectory,
+        environment: gitEnvironment,
+      );
+    }
+    return _runStreamingProcess(
       streamRunner,
       executable,
-      arguments,
+      commandArguments,
       workingDirectory,
-      <String, String>{...?environment, _gitPromptEnvironmentKey: '0'},
+      gitEnvironment,
       onOutput,
     );
-    return result;
   };
 }
 
@@ -518,6 +564,7 @@ Future<void> _cloneRepository(
   String repository,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments,
 ) async {
   await _deleteResidual(target.path);
   final ProcessResult result = await _runGit(
@@ -526,6 +573,7 @@ Future<void> _cloneRepository(
     <String>['clone', '--progress', repository, target.path],
     environment: environment,
     onOutput: onOutput,
+    gitGlobalArguments: gitGlobalArguments,
   );
   if (result.exitCode == 0) {
     return;
@@ -544,16 +592,21 @@ Future<ProcessResult> _runGit(
   String? workingDirectory,
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  List<String> gitGlobalArguments = const <String>[],
 }) {
   final Map<String, String> gitEnvironment = <String, String>{
     ...?environment,
     _gitPromptEnvironmentKey: '0',
   };
+  final List<String> commandArguments = <String>[
+    ...gitGlobalArguments,
+    ...arguments,
+  ];
   if (streamRunner != null) {
     return _runStreamingProcess(
       streamRunner,
       'git',
-      arguments,
+      commandArguments,
       workingDirectory,
       gitEnvironment,
       onOutput,
@@ -561,7 +614,7 @@ Future<ProcessResult> _runGit(
   }
   return processRunner(
     'git',
-    arguments,
+    commandArguments,
     workingDirectory: workingDirectory,
     environment: gitEnvironment,
   );
@@ -575,21 +628,28 @@ Future<String?> _querySourceVersion(
   Directory target,
   Map<String, String>? environment, {
   String? stableTag,
+  List<String> gitGlobalArguments = const <String>[],
 }) async {
   if (stableTag != null) {
     return stableTag;
   }
-  final String? tag = await _describeTag(processRunner, target, environment);
+  final String? tag = await _describeTag(
+    processRunner,
+    target,
+    environment,
+    gitGlobalArguments,
+  );
   if (tag != null) {
     return tag;
   }
-  return _shortHead(processRunner, target, environment);
+  return _shortHead(processRunner, target, environment, gitGlobalArguments);
 }
 
 Future<String?> _describeTag(
   PackProcessRunner processRunner,
   Directory target,
   Map<String, String>? environment,
+  List<String> gitGlobalArguments,
 ) async {
   try {
     final ProcessResult result = await _runGit(
@@ -598,6 +658,7 @@ Future<String?> _describeTag(
       const <String>['describe', '--tags', '--abbrev=0'],
       workingDirectory: target.path,
       environment: environment,
+      gitGlobalArguments: gitGlobalArguments,
     );
     if (result.exitCode != 0) {
       return null;
@@ -613,6 +674,7 @@ Future<String?> _shortHead(
   PackProcessRunner processRunner,
   Directory target,
   Map<String, String>? environment,
+  List<String> gitGlobalArguments,
 ) async {
   try {
     final ProcessResult result = await _runGit(
@@ -621,6 +683,7 @@ Future<String?> _shortHead(
       const <String>['rev-parse', '--short', 'HEAD'],
       workingDirectory: target.path,
       environment: environment,
+      gitGlobalArguments: gitGlobalArguments,
     );
     if (result.exitCode != 0) {
       return null;

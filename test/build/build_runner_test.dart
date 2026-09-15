@@ -241,6 +241,47 @@ void main() {
       });
     });
 
+    test('git 全局参数（手动代理 -c）前置到每条 git 命令', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\nprint(1)\n',
+      );
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+        gitGlobalArguments: const <String>[
+          '-c',
+          'http.proxy=http://127.0.0.1:7890',
+        ],
+      );
+
+      final List<_ProcessCall> gitCalls = calls
+          .where((_ProcessCall call) => call.executable == 'git')
+          .toList();
+      expect(gitCalls, isNotEmpty);
+      for (final _ProcessCall call in gitCalls) {
+        expect(call.arguments.take(2).toList(), <String>[
+          '-c',
+          'http.proxy=http://127.0.0.1:7890',
+        ]);
+      }
+
+      final List<_ProcessCall> pythonCalls = calls
+          .where((_ProcessCall call) => call.executable != 'git')
+          .toList();
+      expect(pythonCalls, isNotEmpty);
+      expect(
+        pythonCalls.first.arguments,
+        isNot(contains('http.proxy=http://127.0.0.1:7890')),
+      );
+    });
+
     test('已有 .git 时原位硬重置：fetch → reset @{u} → clean -ffdx 且保留 .git', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
@@ -1511,7 +1552,9 @@ void main() {
       expect(tags.executable, 'git');
       expect(tags.arguments, <String>['ls-remote', '--tags', '--refs', 'origin']);
       expect(tags.workingDirectory, targetPath);
+      // tag 查询与其他 git 调用共用环境（代理变量随之下发）。
       expect(tags.environment, <String, String>{
+        ...injected,
         'GIT_TERMINAL_PROMPT': '0',
       });
 

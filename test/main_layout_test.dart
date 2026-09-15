@@ -192,6 +192,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
     );
 
@@ -885,6 +886,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             builtPack = pack;
             receivedEnvironment = environment;
@@ -921,6 +923,73 @@ void main() {
     expect(store.packs.single.files, hasLength(1));
     expect(store.packs.single.files.single.path, 'new/new.h');
     expect(store.packs.single.sourceVersion, 'v9.9.9');
+  });
+
+  testWidgets('手动代理设置以 -c http.proxy 参数下发构建', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'build.py', path: 'build.py', size: 10),
+          ],
+        ),
+      ],
+    );
+    List<String>? receivedGitArguments;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: SettingsModel(
+        proxyMode: ProxyModeSetting.manual,
+        proxyHost: '127.0.0.1',
+        proxyPort: 7890,
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) async => _buildEnvironment(),
+      buildPack:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
+          }) async {
+            receivedGitArguments = gitGlobalArguments;
+            onStage(PackBuildStage.downloading);
+            onStage(PackBuildStage.building);
+          },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(receivedGitArguments, <String>[
+      '-c',
+      'http.proxy=http://127.0.0.1:7890',
+    ]);
   });
 
   testWidgets('默认构建接线使用流式构建执行器', (tester) async {
@@ -992,6 +1061,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
     );
 
@@ -1075,6 +1145,7 @@ void main() {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
         void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       fixIncludes: (String sourcePath, {required String packageName}) async {
         received = (sourcePath, packageName);
@@ -1143,6 +1214,7 @@ void main() {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
             void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException('构建失败（退出码 1）');
           },
@@ -3044,17 +3116,9 @@ List<FileModel> _buildPyFiles() => <FileModel>[
 ];
 
 Finder _pageSurface(WidgetTester tester) {
-  final Color cardColor = FluentTheme.of(tester.element(find.byType(Setting)))
-      .cardColor;
   return find.descendant(
     of: find.byType(Setting),
-    matching: find.byWidgetPredicate((Widget widget) {
-      if (widget is! Container) {
-        return false;
-      }
-      final Decoration? decoration = widget.decoration;
-      return decoration is BoxDecoration && decoration.color == cardColor;
-    }),
+    matching: find.byKey(const Key('settingsPageSurface')),
   );
 }
 

@@ -5,7 +5,9 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/proxy.dart';
 
 /// 构建环境准备失败异常：[message] 面向用户展示。
 class BuildPreparationException implements Exception {
@@ -253,11 +255,16 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   ToolDownloadProgressCallback? onDownloadProgress,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
+  ProxyResolution? proxy,
 }) async {
   final Map<String, String> base = baseEnvironment ?? Platform.environment;
   final Map<String, String> childBase = await withControlledTempEnvironment(
     base,
     toolsRoot: toolsRoot,
+  );
+  applyProxyEnvironment(
+    childBase,
+    proxy ?? const ProxyResolution(mode: ProxyModeSetting.off),
   );
   DetectedCompiler? compiler = selectCompiler(
     _usableCachedCompilers(cachedCompilers),
@@ -278,6 +285,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     baseEnvironment: childBase,
     priority: priority,
     onDownloadProgress: onDownloadProgress,
+    proxy: proxy,
   );
 
   final ToolchainEnvironmentCapture captureEnvironment =
@@ -294,6 +302,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
         toolsRoot: toolsRoot,
         runner: runner,
         environment: captured,
+        proxy: proxy,
       );
   final CmakeNinja cmakeNinja = await toolProvisioner.ensureCmakeNinja(
     onDownloadProgress: onDownloadProgress,
@@ -461,6 +470,7 @@ Future<DetectedCompiler> _provisionFallbackCompiler({
   required Map<String, String> baseEnvironment,
   required List<String> priority,
   ToolDownloadProgressCallback? onDownloadProgress,
+  ProxyResolution? proxy,
 }) async {
   final ToolProvisioner toolProvisioner =
       provisioner ??
@@ -468,6 +478,7 @@ Future<DetectedCompiler> _provisionFallbackCompiler({
         toolsRoot: toolsRoot,
         runner: runner,
         environment: baseEnvironment,
+        proxy: proxy,
       );
   final ProvisionedTool clang;
   try {
@@ -546,6 +557,7 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
   ToolDownloadProgressCallback? onDownloadProgress,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
+  ProxyResolution? proxy,
 }) async {
   final Future<BuildScriptHeader?> Function(PackModel pack) headerLoader =
       loadHeader ?? loadBuildScriptHeader;
@@ -577,6 +589,7 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
     onDownloadProgress: onDownloadProgress,
     detect: detect,
     capture: capture,
+    proxy: proxy,
   );
 }
 

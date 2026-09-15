@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
+import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/proxy.dart';
 
 /// 可辨识的远程仓库平台（仅公共托管；自建实例按不可辨识处理）。
 enum RepoPlatform { github, gitlab }
@@ -152,12 +154,14 @@ String extensionForContentType(String? contentType) {
 /// 确保头像可用：命中磁盘缓存直接返回绝对路径；否则网络获取并落盘；
 /// 失败（含超时、无头像）静默返回 null，不做负缓存与 TTL。
 ///
-/// [cacheRoot] 默认与构建缓存同根（`cache/icons/<平台>/`）；[fetch] 可注入。
+/// [cacheRoot] 默认与构建缓存同根（`cache/icons/<平台>/`）；[fetch] 可注入；
+/// [proxy] 代理解析（缺省直连，显式覆盖 `HttpClient` 默认的环境变量读取）。
 Future<String?> ensureRepoAvatar(
   String repo, {
   String cacheRoot = 'cache',
   Duration timeout = const Duration(seconds: 15),
   RepoIconFetcher? fetch,
+  ProxyResolution? proxy,
 }) async {
   final RepoLocation? location = parseRepoLocation(repo);
   if (location == null) {
@@ -171,7 +175,10 @@ Future<String?> ensureRepoAvatar(
   if (cached != null) {
     return cached;
   }
-  final RepoIconFetcher fetcher = fetch ?? _fetchOverHttp;
+  final RepoIconFetcher fetcher =
+      fetch ??
+      (Uri uri, {required Duration timeout}) =>
+          _fetchOverHttp(uri, timeout: timeout, proxy: proxy);
   try {
     final String? avatarUrl = await _resolveAvatarUrl(
       location,
@@ -299,13 +306,19 @@ Future<String?> _writeAvatarCache(
   }
 }
 
-/// 默认 HTTP 获取：跟随重定向（HttpClient 默认行为），全流程受 [timeout] 约束。
+/// 默认 HTTP 获取：跟随重定向（HttpClient 默认行为），全流程受 [timeout] 约束；
+/// [proxy] 缺省直连（显式赋值 `findProxy`，不读取环境变量）。
 Future<RepoIconResponse> _fetchOverHttp(
   Uri uri, {
   required Duration timeout,
+  ProxyResolution? proxy,
 }) async {
   final HttpClient client = HttpClient();
-  client.connectionTimeout = timeout;
+  configureHttpClient(
+    client,
+    proxy ?? const ProxyResolution(mode: ProxyModeSetting.off),
+    connectionTimeout: timeout,
+  );
   try {
     final HttpClientRequest request = await client.getUrl(uri).timeout(timeout);
     request.headers.set(HttpHeaders.userAgentHeader, _userAgent);

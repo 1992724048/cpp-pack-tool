@@ -155,6 +155,7 @@ class BuildPackDialog extends StatefulWidget {
     this.fixIncludes = fixHeaderIncludes,
     this.retryElevated,
     this.now = DateTime.now,
+    this.gitGlobalArguments = const <String>[],
   });
 
   final PackModel pack;
@@ -176,6 +177,9 @@ class BuildPackDialog extends StatefulWidget {
 
   /// 时间源（历史记录时间戳）；测试可注入。
   final DateTime Function() now;
+
+  /// git 命令全局参数（手动代理 `-c http.proxy=...`），透传给 [build]。
+  final List<String> gitGlobalArguments;
 
   @override
   State<BuildPackDialog> createState() => _BuildPackDialogState();
@@ -266,6 +270,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         environment: environment.environment,
         onOutput: _onBuildOutput,
         onSourceVersion: _onSourceVersion,
+        gitGlobalArguments: widget.gitGlobalArguments,
       );
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
