@@ -85,7 +85,7 @@ class HeaderIncludeIssue {
     HeaderIncludeIssueKind.noCandidate => '包内未找到同名文件',
     HeaderIncludeIssueKind.multipleCandidates =>
       '存在多个同名候选：${candidates.join('、')}',
-    HeaderIncludeIssueKind.crossTree => '唯一候选不在同一目录：${candidates.join('、')}',
+    HeaderIncludeIssueKind.crossTree => '唯一候选打包后与引用文件不同目录：${candidates.join('、')}',
     HeaderIncludeIssueKind.missingAngle => '尖括号自引用缺失（不自动修改）',
   };
 }

@@ -1094,7 +1094,7 @@ void main() {
     expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsOneWidget);
     expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
     expect(
-      find.text('"src/gtest-internal-inl.h"：唯一候选不在同一目录：src/gtest/gtest-internal-inl.h'),
+      find.text('"src/gtest-internal-inl.h"：唯一候选打包后与引用文件不同目录：src/gtest/gtest-internal-inl.h'),
       findsOneWidget,
     );
 
