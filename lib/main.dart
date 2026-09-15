@@ -788,32 +788,42 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return;
     }
-    final HeaderIncludeFixReport? report =
-        await showDialog<HeaderIncludeFixReport>(
-          context: context,
-          builder: (_) => BuildPackDialog(
-            pack: pack,
-            sourceNone: sourceNone,
-            build: widget.buildPack,
-            prepare:
-                (
-                  PackModel pack, {
-                  ToolDownloadProgressCallback? onDownloadProgress,
-                }) => prepare(
-                  pack,
-                  compilerPriority: widget.settings.compilerPriority,
-                  cachedCompilers: widget.settings.detectedCompilers,
-                  onCompilersDetected: _persistDetectedCompilers,
-                  onDownloadProgress: onDownloadProgress,
-                ),
-            scanFiles: widget.scanFiles,
-            onApply: _applyRemap,
-            fixIncludes: widget.fixIncludes,
-            retryElevated: widget.retryElevatedBuild,
-            now: widget.now,
-          ),
-        );
-    if (!mounted || report == null) {
+    final BuildDialogResult? result = await showDialog<BuildDialogResult>(
+      context: context,
+      builder: (_) => BuildPackDialog(
+        pack: pack,
+        sourceNone: sourceNone,
+        build: widget.buildPack,
+        prepare:
+            (
+              PackModel pack, {
+              ToolDownloadProgressCallback? onDownloadProgress,
+            }) => prepare(
+              pack,
+              compilerPriority: widget.settings.compilerPriority,
+              cachedCompilers: widget.settings.detectedCompilers,
+              onCompilersDetected: _persistDetectedCompilers,
+              onDownloadProgress: onDownloadProgress,
+            ),
+        scanFiles: widget.scanFiles,
+        onApply: _applyRemap,
+        fixIncludes: widget.fixIncludes,
+        retryElevated: widget.retryElevatedBuild,
+        now: widget.now,
+      ),
+    );
+    if (!mounted || result == null) {
+      return;
+    }
+    final HistoryModel? failureEntry = result.failureEntry;
+    if (failureEntry != null) {
+      await _recordBuildFailure(pack, failureEntry);
+      if (!mounted) {
+        return;
+      }
+    }
+    final HeaderIncludeFixReport? report = result.fixReport;
+    if (report == null) {
       return;
     }
     if (report.fixedCount > 0) {
@@ -822,6 +832,36 @@ class _MainLayoutState extends State<MainLayout> {
     if (report.hasIssues) {
       await showHeaderIncludeIssuesDialog(context, report: report);
     }
+  }
+
+  /// 记录构建失败条目（失败会话关闭时落盘一次）；保存失败仅提示、不阻断。
+  Future<void> _recordBuildFailure(
+    PackModel pack,
+    HistoryModel entry,
+  ) async {
+    final PackModel? current = _findPack(pack.name);
+    if (current == null) {
+      return;
+    }
+    current.history = appendHistoryEntry(current.history, entry);
+    try {
+      await widget.store.savePack(current);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '构建记录保存失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    _upsertPack(current);
   }
 
   /// build.py 是否声明 `# source: none`（预构建配方）；读取失败按否处理。

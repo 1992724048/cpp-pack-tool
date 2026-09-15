@@ -98,4 +98,27 @@ void main() {
       );
     });
   });
+
+  group('formatDuration', () {
+    test('不足一分钟显示秒', () {
+      expect(formatDuration(const Duration(seconds: 45)), '45 秒');
+    });
+
+    test('分钟与秒组合显示', () {
+      expect(formatDuration(const Duration(minutes: 3, seconds: 12)), '3 分 12 秒');
+    });
+
+    test('整分钟省略秒', () {
+      expect(formatDuration(const Duration(minutes: 3)), '3 分');
+    });
+
+    test('小时与分钟组合显示', () {
+      expect(formatDuration(const Duration(hours: 1, minutes: 2)), '1 小时 2 分');
+    });
+
+    test('不足 1 秒按下限显示 1 秒', () {
+      expect(formatDuration(Duration.zero), '1 秒');
+      expect(formatDuration(const Duration(milliseconds: 400)), '1 秒');
+    });
+  });
 }

@@ -134,6 +134,15 @@ bool _isAsciiLetter(int codeUnit) {
       (codeUnit >= 0x61 && codeUnit <= 0x7A);
 }
 
+/// 构建对话框关闭载荷：[fixReport] 为头文件引用检查报告（未执行时为 null），
+/// [failureEntry] 为失败会话的历史条目（成功完成时为 null，提权重试成功后丢弃）。
+class BuildDialogResult {
+  const BuildDialogResult({this.fixReport, this.failureEntry});
+
+  final HeaderIncludeFixReport? fixReport;
+  final HistoryModel? failureEntry;
+}
+
 class BuildPackDialog extends StatefulWidget {
   const BuildPackDialog({
     super.key,
@@ -185,6 +194,13 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   final TextEditingController _outputFilterController = TextEditingController();
   String _outputFilter = '';
 
+  /// 构建会话计时：initState 启动，成功在完成态定格、失败在首次 [_showFailure] 定格；
+  /// 提权重试时继续累计（不重置），即累计流水线执行时长。
+  final Stopwatch _sessionWatch = Stopwatch();
+
+  /// 失败会话的历史条目（首次失败构造一次；成功完成时丢弃）。
+  HistoryModel? _failureEntry;
+
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
   final List<String> _outputLines = <String>[];
@@ -212,6 +228,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   @override
   void initState() {
     super.initState();
+    _sessionWatch.start();
     _prepare();
   }
 
@@ -276,6 +293,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _error = null;
       _downloadProgress = null;
     });
+    _sessionWatch.start();
     try {
       await runner(
         widget.pack,
@@ -321,23 +339,31 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
     PackModel updated = copyPackWithFiles(widget.pack, files);
     // 仅本次构建解析出来源版本时执行同步：预构建配方（source:none）不会产出
-    // 来源版本，沿用旧记录可避免每次构建用陈旧值重复同步并追加版本变更历史。
+    // 来源版本，沿用旧记录可避免每次构建用陈旧值重复同步。
     String? syncedVersion;
     if (_sourceVersion != null) {
       updated.sourceVersion = _sourceVersion;
       final String? versionFromTag = packageVersionFromTag(_sourceVersion);
       if (versionFromTag != null && versionFromTag != updated.version) {
-        updated.history = appendHistoryEntry(
-          updated.history,
-          HistoryModel(
-            time: widget.now(),
-            type: HistoryType.versionChanged,
-            message: '版本变更：${updated.version} → $versionFromTag（构建自动同步）',
-          ),
-        );
-        updated = _withVersion(updated, versionFromTag);
         syncedVersion = versionFromTag;
       }
+    }
+    final String previousVersion = updated.version;
+    final bool versionSynced =
+        syncedVersion != null && syncedVersion != previousVersion;
+    final String elapsedText = formatDuration(_sessionWatch.elapsed);
+    updated.history = appendHistoryEntry(
+      updated.history,
+      HistoryModel(
+        time: widget.now(),
+        type: HistoryType.built,
+        message: versionSynced
+            ? '构建成功：耗时 $elapsedText，版本已同步 $previousVersion → $syncedVersion'
+            : '构建成功：耗时 $elapsedText',
+      ),
+    );
+    if (versionSynced) {
+      updated = _withVersion(updated, syncedVersion);
     }
     setState(() {
       _files = files;
@@ -355,7 +381,11 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    setState(() => _stage = _BuildStage.completed);
+    _sessionWatch.stop();
+    setState(() {
+      _stage = _BuildStage.completed;
+      _failureEntry = null;
+    });
   }
 
   /// 全字段拷贝并替换版本号（`PackModel.version` 为 final，只能重建）。
@@ -469,11 +499,17 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   }
 
   /// 展示失败：保留已流式积累的输出行并补充 [outputTail]（已在面板中的行不重复）；
-  /// 无任何输出时仅显示 tail。
+  /// 无任何输出时仅显示 tail。失败会话的构建条目在首次失败时构造一次。
   void _showFailure(Object error, {String? outputTail}) {
     if (!mounted) {
       return;
     }
+    _sessionWatch.stop();
+    _failureEntry ??= HistoryModel(
+      time: widget.now(),
+      type: HistoryType.built,
+      message: _buildFailureMessage(error),
+    );
     setState(() {
       _stage = _BuildStage.failed;
       _error = error;
@@ -499,6 +535,18 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   static String? _tailOf(Object error) =>
       error is PackBuildException ? error.outputTail : null;
+
+  /// 失败条目原因：`formatError` 首个非空行、超 120 字符截断加省略号。
+  static String _buildFailureMessage(Object error) {
+    final String reason = formatError(error)
+        .split('\n')
+        .map((String line) => line.trim())
+        .firstWhere((String line) => line.isNotEmpty, orElse: () => '未知错误');
+    final String truncated = reason.length <= 120
+        ? reason
+        : '${reason.substring(0, 120)}…';
+    return '构建失败：$truncated';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -550,7 +598,13 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
           key: const Key('buildCloseButton'),
           onPressed: _isRunning
               ? null
-              : () => Navigator.pop(context, _fixReport),
+              : () => Navigator.pop(
+                  context,
+                  BuildDialogResult(
+                    fixReport: _fixReport,
+                    failureEntry: _failureEntry,
+                  ),
+                ),
           child: const Text('关闭'),
         ),
       ],

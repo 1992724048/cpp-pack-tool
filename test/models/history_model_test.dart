@@ -110,6 +110,20 @@ void main() {
       expect(historyTypeLabels[HistoryType.versionChanged], '版本');
       expect(historyTypeLabels[HistoryType.filesChanged], '映射');
       expect(historyTypeLabels[HistoryType.exported], '打包');
+      expect(historyTypeLabels[HistoryType.built], '构建');
+    });
+
+    test('built 类型可往返序列化', () {
+      final HistoryModel entry = HistoryModel(
+        time: DateTime(2026, 9, 16, 10, 30),
+        type: HistoryType.built,
+        message: '构建成功：耗时 3 分 12 秒',
+      );
+
+      final HistoryModel loaded = HistoryModel.fromMap(entry.toMap());
+
+      expect(loaded.type, HistoryType.built);
+      expect(loaded.message, '构建成功：耗时 3 分 12 秒');
     });
   });
 

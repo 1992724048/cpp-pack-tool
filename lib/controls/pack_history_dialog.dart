@@ -211,5 +211,6 @@ Color _typeColor(HistoryType type) {
     HistoryType.versionChanged => UCColors.flavor.blue,
     HistoryType.filesChanged => UCColors.flavor.peach,
     HistoryType.exported => UCColors.flavor.mauve,
+    HistoryType.built => UCColors.flavor.teal,
   };
 }

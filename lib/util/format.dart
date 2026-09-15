@@ -49,3 +49,19 @@ String formatTimestamp(DateTime time) {
   return '${pad(time.year, 4)}-${pad(time.month)}-${pad(time.day)} '
       '${pad(time.hour)}:${pad(time.minute)}:${pad(time.second)}';
 }
+
+/// 时长文本：`45 秒` / `3 分 12 秒` / `3 分` / `1 小时 2 分`；
+/// 不足 1 秒按下限 `1 秒` 显示（避免「0 秒」）。
+String formatDuration(Duration duration) {
+  final int totalSeconds = duration.inSeconds < 1 ? 1 : duration.inSeconds;
+  final int hours = totalSeconds ~/ 3600;
+  final int minutes = (totalSeconds % 3600) ~/ 60;
+  final int seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return minutes > 0 ? '$hours 小时 $minutes 分' : '$hours 小时';
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? '$minutes 分 $seconds 秒' : '$minutes 分';
+  }
+  return '$seconds 秒';
+}

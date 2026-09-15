@@ -207,6 +207,112 @@ void main() {
     expect(_closeButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('构建失败后关闭返回失败条目', (tester) async {
+    BuildDialogResult? closedWith;
+
+    await _pumpDialog(
+      tester,
+      onResult: (BuildDialogResult? value) => closedWith = value,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            throw const PackBuildException('构建失败（退出码 1）');
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(closedWith, isNotNull);
+    expect(closedWith!.fixReport, isNull);
+    final HistoryModel entry = closedWith!.failureEntry!;
+    expect(entry.type, HistoryType.built);
+    expect(entry.message, '构建失败：构建失败（退出码 1）');
+  });
+
+  testWidgets('失败条目取首行、去换行且超 120 字符截断', (tester) async {
+    BuildDialogResult? closedWith;
+    final DateTime now = DateTime(2026, 9, 16, 10, 30);
+
+    await _pumpDialog(
+      tester,
+      now: () => now,
+      onResult: (BuildDialogResult? value) => closedWith = value,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            throw PackBuildException('${'x' * 200}\nsecond line');
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final HistoryModel entry = closedWith!.failureEntry!;
+    expect(entry.message, '构建失败：${'x' * 120}…');
+    expect(entry.time, now);
+  });
+
+  testWidgets('提权重试成功后失败条目被丢弃', (tester) async {
+    BuildDialogResult? closedWith;
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      onResult: (BuildDialogResult? value) => closedWith = value,
+      retryElevated:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            required BuildEnvironment buildEnvironment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {},
+      build: _permissionFailureBuild(),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('构建完成'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(closedWith!.failureEntry, isNull);
+    expect(applied!.history, hasLength(1));
+    expect(applied!.history.single.type, HistoryType.built);
+    expect(applied!.history.single.message, startsWith('构建成功：耗时 '));
+  });
+
   testWidgets('完成后点击关闭按钮关闭对话框', (tester) async {
     await _pumpDialog(
       tester,
@@ -816,11 +922,14 @@ void main() {
 
     expect(applied!.version, '1.0.0');
     expect(applied!.sourceVersion, 'v2.0.0');
-    expect(applied!.history, isEmpty);
+    expect(applied!.history, hasLength(1));
+    expect(applied!.history.single.type, HistoryType.built);
+    expect(applied!.history.single.message, startsWith('构建成功：耗时 '));
+    expect(applied!.history.single.message, isNot(contains('版本已同步')));
     expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
   });
 
-  testWidgets('来源版本为 tag 时自动同步包版本并记历史（Q3）', (tester) async {
+  testWidgets('来源版本为 tag 时自动同步包版本并合并进构建条目（R9）', (tester) async {
     PackModel? applied;
     final DateTime now = DateTime(2026, 9, 16, 10, 30);
 
@@ -848,8 +957,11 @@ void main() {
     expect(applied!.version, '1.18.0');
     expect(applied!.sourceVersion, 'v1.18.0');
     expect(applied!.history, hasLength(1));
-    expect(applied!.history.single.type, HistoryType.versionChanged);
-    expect(applied!.history.single.message, '版本变更：1.0.0 → 1.18.0（构建自动同步）');
+    expect(applied!.history.single.type, HistoryType.built);
+    expect(
+      applied!.history.single.message,
+      matches(RegExp(r'^构建成功：耗时 .+，版本已同步 1\.0\.0 → 1\.18\.0$')),
+    );
     expect(applied!.history.single.time, now);
     expect(find.byKey(const Key('buildSyncedVersion')), findsOneWidget);
     expect(find.text('已自动同步版本：1.18.0'), findsOneWidget);
@@ -907,7 +1019,9 @@ void main() {
 
     expect(applied!.version, '1.0.0');
     expect(applied!.sourceVersion, 'a1b2c3d');
-    expect(applied!.history, isEmpty);
+    expect(applied!.history, hasLength(1));
+    expect(applied!.history.single.type, HistoryType.built);
+    expect(applied!.history.single.message, isNot(contains('版本已同步')));
     expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
   });
 
@@ -936,7 +1050,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(applied!.version, '1.0.0');
-    expect(applied!.history, isEmpty);
+    expect(applied!.history, hasLength(1));
+    expect(applied!.history.single.type, HistoryType.built);
+    expect(applied!.history.single.message, isNot(contains('版本已同步')));
     expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
   });
 
@@ -944,7 +1060,7 @@ void main() {
     final List<String> order = <String>[];
     final Completer<HeaderIncludeFixReport> fixGate =
         Completer<HeaderIncludeFixReport>();
-    HeaderIncludeFixReport? closedWith;
+    BuildDialogResult? closedWith;
     const HeaderIncludeFixReport report = HeaderIncludeFixReport(
       fixed: <HeaderIncludeFix>[
         HeaderIncludeFix(
@@ -958,7 +1074,7 @@ void main() {
 
     await _pumpDialog(
       tester,
-      onResult: (HeaderIncludeFixReport? value) => closedWith = value,
+      onResult: (BuildDialogResult? value) => closedWith = value,
       fixIncludes: (String sourcePath, {required String packageName}) {
         order.add('fix:$sourcePath:$packageName');
         return fixGate.future;
@@ -999,7 +1115,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(closedWith, same(report));
+    expect(closedWith!.fixReport, same(report));
+    expect(closedWith!.failureEntry, isNull);
     expect(find.byKey(const Key('buildPackDialog')), findsNothing);
   });
 
@@ -1356,7 +1473,7 @@ Future<void> _pumpDialog(
   bool sourceNone = false,
   PackHeaderIncludeFixer? fixIncludes,
   ElevatedPackBuildRunner? retryElevated,
-  ValueChanged<HeaderIncludeFixReport?>? onResult,
+  ValueChanged<BuildDialogResult?>? onResult,
   DateTime Function()? now,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -1369,8 +1486,8 @@ Future<void> _pumpDialog(
         builder: (BuildContext context) => Center(
           child: Button(
             onPressed: () async {
-              final HeaderIncludeFixReport? result =
-                  await showDialog<HeaderIncludeFixReport>(
+              final BuildDialogResult? result =
+                  await showDialog<BuildDialogResult>(
                     context: context,
                     builder: (_) => BuildPackDialog(
                       pack: pack ?? _pack(),
