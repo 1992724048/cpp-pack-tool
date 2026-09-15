@@ -416,7 +416,8 @@ Future<Map<String, String>> _queryRegistryKey(
       return const <String, String>{};
     }
     return parseRegistryQueryOutput('${result.stdout}');
-  } on ProcessException {
+  } catch (_) {
+    // 注册表不可读/查询异常按不可用处理（自动模式退直连），不阻断调用方。
     return const <String, String>{};
   }
 }
