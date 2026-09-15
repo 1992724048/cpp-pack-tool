@@ -380,7 +380,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       ..libraries = libraries ?? pack.libraries
       ..history = pack.history
       ..scripts = pack.scripts
-      ..buildOptions = pack.buildOptions;
+      ..buildOptions = pack.buildOptions
+      ..enabledFormats = pack.enabledFormats;
   }
 
   List<_CompileEntry> _macroEntries() {

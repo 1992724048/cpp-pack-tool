@@ -9,6 +9,7 @@ import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -791,6 +792,126 @@ void main() {
     expect(applied!.sourceVersion, 'v1.0.0');
   });
 
+  testWidgets('来源版本为 tag 时自动同步包版本并记历史（Q3）', (tester) async {
+    PackModel? applied;
+    final DateTime now = DateTime(2026, 9, 16, 10, 30);
+
+    await _pumpDialog(
+      tester,
+      now: () => now,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onSourceVersion?.call('v1.18.0');
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.18.0');
+    expect(applied!.sourceVersion, 'v1.18.0');
+    expect(applied!.history, hasLength(1));
+    expect(applied!.history.single.type, HistoryType.versionChanged);
+    expect(applied!.history.single.message, '版本变更：1.0.0 → 1.18.0（构建自动同步）');
+    expect(applied!.history.single.time, now);
+    expect(find.byKey(const Key('buildSyncedVersion')), findsOneWidget);
+    expect(find.text('已自动同步版本：1.18.0'), findsOneWidget);
+  });
+
+  testWidgets('单段前缀 tag 同样参与同步（version-3.49.1）', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onSourceVersion?.call('version-3.49.1');
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '3.49.1');
+    expect(find.text('已自动同步版本：3.49.1'), findsOneWidget);
+  });
+
+  testWidgets('短哈希来源版本不参与同步（不动版本）', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onSourceVersion?.call('a1b2c3d');
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0');
+    expect(applied!.sourceVersion, 'a1b2c3d');
+    expect(applied!.history, isEmpty);
+    expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
+  });
+
+  testWidgets('来源版本与包版本一致时零变化', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      pack: _pack()..sourceVersion = 'v1.0.0',
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+          }) async {
+            onSourceVersion?.call('v1.0.0');
+          },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0');
+    expect(applied!.history, isEmpty);
+    expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
+  });
+
   testWidgets('构建成功后先检查头文件引用再重新映射并随关闭返回报告', (tester) async {
     final List<String> order = <String>[];
     final Completer<HeaderIncludeFixReport> fixGate =
@@ -1208,6 +1329,7 @@ Future<void> _pumpDialog(
   PackHeaderIncludeFixer? fixIncludes,
   ElevatedPackBuildRunner? retryElevated,
   ValueChanged<HeaderIncludeFixReport?>? onResult,
+  DateTime Function()? now,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -1236,6 +1358,7 @@ Future<void> _pumpDialog(
                       onApply: onApply,
                       fixIncludes: fixIncludes ?? _emptyFixIncludes,
                       retryElevated: retryElevated,
+                      now: now ?? DateTime.now,
                     ),
                   );
               onResult?.call(result);

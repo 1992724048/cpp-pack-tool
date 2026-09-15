@@ -44,10 +44,16 @@ class _SettingState extends State<Setting> {
   List<toolchain.DetectedCompiler> _detected =
       const <toolchain.DetectedCompiler>[];
   bool _detecting = true;
+  late final TextEditingController _defaultAuthorController;
+  late final FocusNode _defaultAuthorFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _defaultAuthorController = TextEditingController(
+      text: widget.settings.defaultAuthor,
+    );
+    _defaultAuthorFocusNode = FocusNode()..addListener(_onAuthorFocusChanged);
     final List<toolchain.DetectedCompiler> cached =
         widget.settings.detectedCompilers;
     if (cached.isEmpty) {
@@ -56,6 +62,42 @@ class _SettingState extends State<Setting> {
       _detected = cached;
       _detecting = false;
     }
+  }
+
+  @override
+  void didUpdateWidget(covariant Setting oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.settings.defaultAuthor == widget.settings.defaultAuthor) {
+      return;
+    }
+    if (!_defaultAuthorFocusNode.hasFocus) {
+      _defaultAuthorController.text = widget.settings.defaultAuthor;
+    }
+  }
+
+  @override
+  void dispose() {
+    _defaultAuthorFocusNode
+      ..removeListener(_onAuthorFocusChanged)
+      ..dispose();
+    _defaultAuthorController.dispose();
+    super.dispose();
+  }
+
+  void _onAuthorFocusChanged() {
+    if (_defaultAuthorFocusNode.hasFocus) {
+      return;
+    }
+    _saveDefaultAuthor();
+  }
+
+  /// 失焦或回车时保存默认作者；值未变化不触发（防重复写盘 / 重复 toast）。
+  void _saveDefaultAuthor() {
+    final String value = _defaultAuthorController.text.trim();
+    if (value == widget.settings.defaultAuthor) {
+      return;
+    }
+    _apply(_defaultAuthorSettings(value));
   }
 
   Future<void> _detectCompilers({required bool showLoading}) async {
@@ -112,10 +154,29 @@ class _SettingState extends State<Setting> {
     showFloatingToast(context, '已保存');
   }
 
-  SettingsModel _directorySettings(String? outputDirectory) {
+  SettingsModel _directorySettings({
+    required String? outputDirectory,
+    required String? cmakeOutputDirectory,
+  }) {
     final SettingsModel current = widget.settings;
     return SettingsModel(
       outputDirectory: outputDirectory,
+      cmakeOutputDirectory: cmakeOutputDirectory,
+      defaultAuthor: current.defaultAuthor,
+      themeMode: current.themeMode,
+      darkFlavor: current.darkFlavor,
+      accent: current.accent,
+      compilerPriority: current.compilerPriority,
+      detectedCompilers: current.detectedCompilers,
+    );
+  }
+
+  SettingsModel _defaultAuthorSettings(String defaultAuthor) {
+    final SettingsModel current = widget.settings;
+    return SettingsModel(
+      outputDirectory: current.outputDirectory,
+      cmakeOutputDirectory: current.cmakeOutputDirectory,
+      defaultAuthor: defaultAuthor,
       themeMode: current.themeMode,
       darkFlavor: current.darkFlavor,
       accent: current.accent,
@@ -132,6 +193,8 @@ class _SettingState extends State<Setting> {
     final SettingsModel current = widget.settings;
     return SettingsModel(
       outputDirectory: current.outputDirectory,
+      cmakeOutputDirectory: current.cmakeOutputDirectory,
+      defaultAuthor: current.defaultAuthor,
       themeMode: themeMode ?? current.themeMode,
       darkFlavor: darkFlavor ?? current.darkFlavor,
       accent: accent ?? current.accent,
@@ -144,6 +207,8 @@ class _SettingState extends State<Setting> {
     final SettingsModel current = widget.settings;
     return SettingsModel(
       outputDirectory: current.outputDirectory,
+      cmakeOutputDirectory: current.cmakeOutputDirectory,
+      defaultAuthor: current.defaultAuthor,
       themeMode: current.themeMode,
       darkFlavor: current.darkFlavor,
       accent: current.accent,
@@ -156,6 +221,8 @@ class _SettingState extends State<Setting> {
     final SettingsModel current = widget.settings;
     return SettingsModel(
       outputDirectory: current.outputDirectory,
+      cmakeOutputDirectory: current.cmakeOutputDirectory,
+      defaultAuthor: current.defaultAuthor,
       themeMode: current.themeMode,
       darkFlavor: current.darkFlavor,
       accent: current.accent,
@@ -182,10 +249,40 @@ class _SettingState extends State<Setting> {
     if (path == null || !mounted) {
       return;
     }
-    await _apply(_directorySettings(path));
+    await _apply(
+      _directorySettings(
+        outputDirectory: path,
+        cmakeOutputDirectory: widget.settings.cmakeOutputDirectory,
+      ),
+    );
   }
 
-  Future<void> _clearDirectory() => _apply(_directorySettings(null));
+  Future<void> _clearDirectory() => _apply(
+    _directorySettings(
+      outputDirectory: null,
+      cmakeOutputDirectory: widget.settings.cmakeOutputDirectory,
+    ),
+  );
+
+  Future<void> _pickCmakeDirectory() async {
+    final String? path = await widget.pickDirectory();
+    if (path == null || !mounted) {
+      return;
+    }
+    await _apply(
+      _directorySettings(
+        outputDirectory: widget.settings.outputDirectory,
+        cmakeOutputDirectory: path,
+      ),
+    );
+  }
+
+  Future<void> _clearCmakeDirectory() => _apply(
+    _directorySettings(
+      outputDirectory: widget.settings.outputDirectory,
+      cmakeOutputDirectory: null,
+    ),
+  );
 
   Future<void> _generateSkill() async {
     final String? path = await widget.pickSaveFile(_skillFileName);
@@ -226,7 +323,31 @@ class _SettingState extends State<Setting> {
               children: [
                 _buildSectionTitle(context, '打包输出目录'),
                 const SizedBox(height: 12),
-                _buildOutputDirectoryField(context),
+                InfoLabel(
+                  label: 'NuGet 打包输出目录',
+                  child: _buildDirectoryRow(
+                    path: widget.settings.outputDirectory,
+                    pickKey: const Key('settingPickDirButton'),
+                    clearKey: const Key('settingClearDirButton'),
+                    onPick: _pickDirectory,
+                    onClear: _clearDirectory,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InfoLabel(
+                  label: 'CMake 打包输出目录',
+                  child: _buildDirectoryRow(
+                    path: widget.settings.cmakeOutputDirectory,
+                    pickKey: const Key('settingPickCmakeDirButton'),
+                    clearKey: const Key('settingClearCmakeDirButton'),
+                    onPick: _pickCmakeDirectory,
+                    onClear: _clearCmakeDirectory,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                _buildSectionTitle(context, '默认作者'),
+                const SizedBox(height: 12),
+                _buildDefaultAuthorField(context),
                 const SizedBox(height: 24),
                 _buildSectionTitle(context, '主题'),
                 const SizedBox(height: 12),
@@ -262,29 +383,53 @@ class _SettingState extends State<Setting> {
     );
   }
 
-  Widget _buildOutputDirectoryField(BuildContext context) {
+  Widget _buildDirectoryRow({
+    required String? path,
+    required Key pickKey,
+    required Key clearKey,
+    required VoidCallback onPick,
+    required VoidCallback onClear,
+  }) {
     final FluentThemeData theme = FluentTheme.of(context);
-    final String? outputDirectory = widget.settings.outputDirectory;
     return Row(
       children: [
         Expanded(
           child: Text(
-            outputDirectory ?? '未设置',
+            path ?? '未设置',
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: theme.resources.textFillColorSecondary),
           ),
         ),
         const SizedBox(width: 12),
-        Button(
-          key: const Key('settingPickDirButton'),
-          onPressed: _pickDirectory,
-          child: const Text('选择目录…'),
-        ),
+        Button(key: pickKey, onPressed: onPick, child: const Text('选择目录…')),
         const SizedBox(width: 8),
         Button(
-          key: const Key('settingClearDirButton'),
-          onPressed: outputDirectory == null ? null : _clearDirectory,
+          key: clearKey,
+          onPressed: path == null ? null : onClear,
           child: const Text('清除'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDefaultAuthorField(BuildContext context) {
+    final FluentThemeData theme = FluentTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 320,
+          child: TextBox(
+            key: const Key('settingDefaultAuthorField'),
+            controller: _defaultAuthorController,
+            focusNode: _defaultAuthorFocusNode,
+            onSubmitted: (String _) => _saveDefaultAuthor(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '新包将预填此值；作者为空或占位（「无」「未知」等）的包将自动替换为默认作者。',
+          style: TextStyle(color: theme.resources.textFillColorSecondary),
         ),
       ],
     );

@@ -13,13 +13,19 @@ void main() {
     await _pumpSetting(tester, onSave: (_) async {});
 
     expect(find.text('打包输出目录'), findsOneWidget);
-    expect(find.text('未设置'), findsOneWidget);
+    expect(find.text('NuGet 打包输出目录'), findsOneWidget);
+    expect(find.text('CMake 打包输出目录'), findsOneWidget);
+    expect(find.text('默认作者'), findsOneWidget);
+    expect(find.text('未设置'), findsNWidgets(2));
     expect(find.text('主题'), findsOneWidget);
     expect(find.text('主题模式'), findsOneWidget);
     expect(find.text('深色主题配色'), findsOneWidget);
     expect(find.text('强调色'), findsOneWidget);
     expect(find.byKey(const Key('settingPickDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingClearDirButton')), findsOneWidget);
+    expect(find.byKey(const Key('settingPickCmakeDirButton')), findsOneWidget);
+    expect(find.byKey(const Key('settingClearCmakeDirButton')), findsOneWidget);
+    expect(find.byKey(const Key('settingDefaultAuthorField')), findsOneWidget);
     expect(find.byKey(const Key('settingThemeModeField')), findsOneWidget);
     expect(find.byKey(const Key('settingDarkFlavorField')), findsOneWidget);
     expect(find.byKey(const Key('settingAccentField')), findsOneWidget);
@@ -34,7 +40,7 @@ void main() {
     );
 
     expect(find.text(r'D:\nuget\out'), findsOneWidget);
-    expect(find.text('未设置'), findsNothing);
+    expect(find.text('未设置'), findsOneWidget);
     expect(_clearButton(tester).onPressed, isNotNull);
   });
 
@@ -152,7 +158,7 @@ void main() {
 
     expect(saved, isNotNull);
     expect(saved!.outputDirectory, isNull);
-    expect(find.text('未设置'), findsOneWidget);
+    expect(find.text('未设置'), findsNWidgets(2));
     expect(find.text('已保存'), findsOneWidget);
   });
 
@@ -164,6 +170,153 @@ void main() {
     expect(find.textContaining('保存失败'), findsOneWidget);
     expect(find.textContaining('磁盘写入失败'), findsOneWidget);
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
+    expect(find.text('已保存'), findsNothing);
+  });
+
+  testWidgets('选择 CMake 目录后回传并显示新路径', (tester) async {
+    SettingsModel? saved;
+    await _pumpSetting(
+      tester,
+      pickDirectory: () async => r'D:\out\cmake',
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('settingPickCmakeDirButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.cmakeOutputDirectory, r'D:\out\cmake');
+    expect(saved!.outputDirectory, isNull);
+    expect(find.text(r'D:\out\cmake'), findsOneWidget);
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('清除 CMake 目录回传空值', (tester) async {
+    SettingsModel? saved;
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(cmakeOutputDirectory: r'D:\out\cmake'),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('settingClearCmakeDirButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved!.cmakeOutputDirectory, isNull);
+    expect(find.text('未设置'), findsNWidgets(2));
+  });
+
+  testWidgets('主题变更保存时保留双目录与默认作者字段', (tester) async {
+    SettingsModel? saved;
+    await _pumpSetting(
+      tester,
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out\nuget',
+        cmakeOutputDirectory: r'D:\out\cmake',
+        defaultAuthor: '张三',
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await _selectCombo(tester, const Key('settingThemeModeField'), '深色');
+
+    expect(saved!.outputDirectory, r'D:\out\nuget');
+    expect(saved!.cmakeOutputDirectory, r'D:\out\cmake');
+    expect(saved!.defaultAuthor, '张三');
+    expect(saved!.themeMode, ThemeModeSetting.dark);
+  });
+
+  testWidgets('默认作者失焦时保存并提示已保存', (tester) async {
+    SettingsModel? saved;
+    await _pumpSetting(
+      tester,
+      // 有检测缓存，页面打开时不自动检测写回，便于隔离默认作者行为。
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('settingDefaultAuthorField')),
+      '张三',
+    );
+    await tester.pump();
+    expect(saved, isNull);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNotNull);
+    expect(saved!.defaultAuthor, '张三');
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('默认作者回车时保存', (tester) async {
+    SettingsModel? saved;
+    await _pumpSetting(
+      tester,
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('settingDefaultAuthorField')),
+      '李四',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved!.defaultAuthor, '李四');
+  });
+
+  testWidgets('默认作者未变化时不写盘', (tester) async {
+    SettingsModel? saved;
+    await _pumpSetting(
+      tester,
+      settings: SettingsModel(
+        defaultAuthor: '张三',
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      onSave: (SettingsModel next) async {
+        saved = next;
+      },
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('settingDefaultAuthorField')),
+      '张三',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved, isNull);
     expect(find.text('已保存'), findsNothing);
   });
 
@@ -475,8 +628,7 @@ void main() {
       loadSkillTemplate: () async => '# 模板内容',
     );
 
-    await tester.tap(find.byKey(const Key('settingGenerateSkillButton')));
-    await tester.pump();
+    await _tapSkillButton(tester);
     await _drainRealIo(
       tester,
       () => find.text('已生成 SKILL.md').evaluate().isNotEmpty,
@@ -502,8 +654,7 @@ void main() {
       },
     );
 
-    await tester.tap(find.byKey(const Key('settingGenerateSkillButton')));
-    await tester.pump();
+    await _tapSkillButton(tester);
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(loadCalls, 0);
@@ -522,8 +673,7 @@ void main() {
       loadSkillTemplate: () async => throw Exception('模板缺失'),
     );
 
-    await tester.tap(find.byKey(const Key('settingGenerateSkillButton')));
-    await tester.pump();
+    await _tapSkillButton(tester);
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.textContaining('生成失败'), findsOneWidget);
@@ -544,8 +694,7 @@ void main() {
       loadSkillTemplate: () async => '# 模板内容',
     );
 
-    await tester.tap(find.byKey(const Key('settingGenerateSkillButton')));
-    await tester.pump();
+    await _tapSkillButton(tester);
     await _drainRealIo(
       tester,
       () => find.textContaining('生成失败').evaluate().isNotEmpty,
@@ -690,6 +839,15 @@ Future<void> _selectCombo(WidgetTester tester, Key key, String label) async {
   await tester.tap(find.text(label).last);
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
+}
+
+/// 滚动到 SKILL.md 分区后点击生成按钮（页面分区增多后按钮可能位于视口外）。
+Future<void> _tapSkillButton(WidgetTester tester) async {
+  final Finder button = find.byKey(const Key('settingGenerateSkillButton'));
+  await tester.ensureVisible(button);
+  await tester.pump();
+  await tester.tap(button);
+  await tester.pump();
 }
 
 Button _clearButton(WidgetTester tester) =>

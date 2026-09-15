@@ -990,7 +990,8 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
       ..libraries = widget.pack.libraries
       ..history = widget.pack.history
       ..scripts = _scriptsWithCurrent(current)
-      ..buildOptions = widget.pack.buildOptions;
+      ..buildOptions = widget.pack.buildOptions
+      ..enabledFormats = widget.pack.enabledFormats;
   }
 
   List<ScriptProjectModel> _scriptsWithCurrent(ScriptProjectModel? current) {

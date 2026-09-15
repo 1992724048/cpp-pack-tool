@@ -284,5 +284,6 @@ PackModel _withDependencies(
     ..libraries = pack.libraries
     ..history = pack.history
     ..scripts = pack.scripts
-    ..buildOptions = pack.buildOptions;
+    ..buildOptions = pack.buildOptions
+    ..enabledFormats = pack.enabledFormats;
 }

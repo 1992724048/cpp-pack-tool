@@ -523,5 +523,6 @@ PackModel _withBuildOption(PackModel pack, String name, String? value) {
     ..libraries = pack.libraries
     ..history = pack.history
     ..scripts = pack.scripts
-    ..buildOptions = options;
+    ..buildOptions = options
+    ..enabledFormats = pack.enabledFormats;
 }

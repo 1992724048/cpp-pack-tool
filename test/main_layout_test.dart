@@ -1024,7 +1024,12 @@ void main() {
   testWidgets('构建后自动修复头文件引用并以悬浮提示与待处理对话框上报', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
-        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo', files: _buildPyFiles()),
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
       ],
     );
     (String, String)? received;
@@ -1056,14 +1061,13 @@ void main() {
         FileModel(name: 'new.h', path: 'new/new.h', size: 1),
       ],
       loadBuildHeader: (PackModel pack) async => null,
-      prepareBuildEnv:
-          (
-            PackModel pack, {
-            required List<String> compilerPriority,
-            required List<DetectedCompiler> cachedCompilers,
-            required CompilerDetectionCallback onCompilersDetected,
-            ToolDownloadProgressCallback? onDownloadProgress,
-          }) async => _buildEnvironment(),
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => _buildEnvironment(),
       buildPack: (
         PackModel pack,
         void Function(PackBuildStage) onStage, {
@@ -1094,7 +1098,9 @@ void main() {
     expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsOneWidget);
     expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
     expect(
-      find.text('"src/gtest-internal-inl.h"：唯一候选打包后与引用文件不同目录：src/gtest/gtest-internal-inl.h'),
+      find.text(
+        '"src/gtest-internal-inl.h"：唯一候选打包后与引用文件不同目录：src/gtest/gtest-internal-inl.h',
+      ),
       findsOneWidget,
     );
 
@@ -1151,7 +1157,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('请先在设置页配置打包输出目录'), findsOneWidget);
+    expect(find.text('请先在设置页配置 NuGet 打包输出目录'), findsOneWidget);
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
     expect(find.byKey(const Key('packExportDialog')), findsNothing);
   });
@@ -1509,12 +1515,10 @@ void main() {
     expect(dialog, findsOneWidget);
     expect(find.text('导出校验'), findsOneWidget);
     expect(
-      find.descendant(
-        of: dialog,
-        matching: find.text('build/native/files/bin/tool.exe'),
-      ),
+      find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
+    expect(find.byTooltip('build/native/files/bin/tool.exe'), findsOneWidget);
     expect(
       find.descendant(of: dialog, matching: find.text('可执行二进制随包分发')),
       findsOneWidget,
@@ -1582,12 +1586,10 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(
-        of: dialog,
-        matching: find.text('build/native/files/bin/tool.exe'),
-      ),
+      find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
+    expect(find.byTooltip('build/native/files/bin/tool.exe'), findsOneWidget);
     // 两类问题并存时仍展示供应链提示
     expect(
       find.descendant(
@@ -1624,7 +1626,10 @@ void main() {
     await _pumpMainLayout(
       tester,
       store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
       exportPackage: (PackModel pack, String outputDirectory) async {
         nugetCalls++;
         return (
@@ -1686,7 +1691,10 @@ void main() {
     await _pumpMainLayout(
       tester,
       store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
       exportPackage: (PackModel pack, String outputDirectory) async {
         nugetCalls++;
         return (
@@ -1726,9 +1734,10 @@ void main() {
     expect(dialog, findsOneWidget);
     expect(find.text('导出校验'), findsOneWidget);
     expect(
-      find.descendant(of: dialog, matching: find.text('files/bin/tool.exe')),
+      find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
+    expect(find.byTooltip('files/bin/tool.exe'), findsOneWidget);
     expect(
       find.descendant(
         of: dialog,
@@ -1760,7 +1769,10 @@ void main() {
     await _pumpMainLayout(
       tester,
       store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
       exportPackage: (PackModel pack, String outputDirectory) async {
         nugetCalls++;
         return (
@@ -2302,6 +2314,288 @@ void main() {
     expect(find.text('当前版本：v1.0.0'), findsOneWidget);
     expect(find.text('最新版本：v2.0.0'), findsOneWidget);
   });
+
+  testWidgets('删除包时探测构建缓存并可按需删除缓存', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+    String? probedName;
+    String? deletedName;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      hasBuildCache: (String packName) async {
+        probedName = packName;
+        return true;
+      },
+      deleteBuildCache: (String packName) async {
+        deletedName = packName;
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(probedName, 'demo');
+    expect(find.textContaining('cache/build/demo'), findsOneWidget);
+    expect(
+      tester
+          .widget<Checkbox>(find.byKey(const Key('deletePackCacheCheckbox')))
+          .onChanged,
+      isNotNull,
+    );
+
+    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, isEmpty);
+    expect(deletedName, 'demo');
+    expect(find.text('已删除（含构建缓存）'), findsOneWidget);
+  });
+
+  testWidgets('构建缓存删除失败时提示且不阻断包删除', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      hasBuildCache: (String packName) async => true,
+      deleteBuildCache: (String packName) async =>
+          throw const FileSystemException('目录被占用'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, isEmpty);
+    expect(find.textContaining('已删除包，但构建缓存删除失败'), findsOneWidget);
+    expect(find.textContaining('目录被占用'), findsOneWidget);
+    expect(find.text('已删除（含构建缓存）'), findsNothing);
+  });
+
+  testWidgets('未勾选删除缓存时仅删除包并提示已删除', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+    String? deletedName;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      hasBuildCache: (String packName) async => true,
+      deleteBuildCache: (String packName) async {
+        deletedName = packName;
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, isEmpty);
+    expect(deletedName, isNull);
+    expect(find.text('已删除'), findsOneWidget);
+  });
+
+  testWidgets('启动后按默认作者批量修正占位作者并提示', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('alpha', '1.0.0', author: '无'),
+        _pack('beta', '1.0.0', author: '未知'),
+        _pack('gamma', '1.0.0', author: 'Alice'),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '张三'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    String authorOf(String name) =>
+        store.packs.firstWhere((PackModel pack) => pack.name == name).author;
+    expect(authorOf('alpha'), '张三');
+    expect(authorOf('beta'), '张三');
+    expect(authorOf('gamma'), 'Alice');
+    expect(find.text('已按默认作者修正 2 个包的作者'), findsOneWidget);
+  });
+
+  testWidgets('默认作者为空时不修正占位作者', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('alpha', '1.0.0', author: '无')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.author, '无');
+    expect(find.textContaining('已按默认作者修正'), findsNothing);
+    expect(store.saveCount, 0);
+  });
+
+  testWidgets('新增包的占位作者在保存时静默替换为默认作者', (tester) async {
+    final _FakePackStore store = _FakePackStore();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '张三'),
+      pickDirectory: () async => r'C:\libs\foo',
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('添加文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(find.byKey(const Key('packIdField')), 'demo');
+    await tester.enterText(find.byKey(const Key('packVersionField')), '1.0.0');
+    await tester.enterText(find.byKey(const Key('packAuthorField')), '无');
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs.single.author, '张三');
+    expect(store.packs.single.name, 'demo');
+  });
+
+  testWidgets('启用集合仅含 CMake 时按 CMake 目录路由导出', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')
+          ..enabledFormats = <String>['cmake'],
+      ],
+    );
+    int nugetCalls = 0;
+    String? cmakeDirectory;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out\nuget',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        nugetCalls++;
+        return (
+          outputPath: r'D:\out\nuget\demo.nupkg',
+          fileCount: 1,
+          packageSize: 1,
+        );
+      },
+      exportCmakePackage: (PackModel pack, String outputDirectory) async {
+        cmakeDirectory = outputDirectory;
+        return (
+          outputPath: r'D:\out\cmake\demo.zip',
+          fileCount: 1,
+          packageSize: 1,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(cmakeDirectory, r'D:\out\cmake');
+    expect(nugetCalls, 0);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(find.text('打包完成'), findsOneWidget);
+  });
+
+  testWidgets('启用集合仅含 CMake 且未设置 CMake 目录时提示对应目录', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')
+          ..enabledFormats = <String>['cmake'],
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out\nuget'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('请先在设置页配置 CMake 打包输出目录'), findsOneWidget);
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+  });
+
+  testWidgets('启用集合仅含 CMake 时导出校验不收集脚本问题', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          scripts: <ScriptProjectModel>[_brokenScript()],
+        )..enabledFormats = <String>['cmake'],
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(cmakeOutputDirectory: r'D:\out\cmake'),
+      exportCmakePackage: (PackModel pack, String outputDirectory) async =>
+          (outputPath: r'D:\out\cmake\demo.zip', fileCount: 1, packageSize: 1),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -2322,6 +2616,8 @@ Future<void> _pumpMainLayout(
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
   Future<List<String>?> Function(String repoUrl)? loadRemoteTags,
   PackHeaderIncludeFixer? fixIncludes,
+  PackBuildCacheProbe? hasBuildCache,
+  PackBuildCacheDeleter? deleteBuildCache,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -2345,12 +2641,18 @@ Future<void> _pumpMainLayout(
         loadRemoteTags: loadRemoteTags ?? _noRemoteTags,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
+        hasBuildCache: hasBuildCache ?? _noBuildCache,
+        deleteBuildCache: deleteBuildCache ?? _noDeleteBuildCache,
       ),
     ),
   );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
 }
+
+Future<bool> _noBuildCache(String packName) async => false;
+
+Future<void> _noDeleteBuildCache(String packName) async {}
 
 Future<HeaderIncludeFixReport> _emptyFixIncludes(
   String sourcePath, {
@@ -2444,6 +2746,7 @@ int? _selectedIndex(WidgetTester tester) =>
 PackModel _pack(
   String name,
   String version, {
+  String author = 'tester',
   String? sourcePath,
   List<FileModel>? files,
   List<DependencyModel>? dependencies,
@@ -2453,7 +2756,7 @@ PackModel _pack(
   final PackModel pack = PackModel(
     name: name,
     version: version,
-    author: 'tester',
+    author: author,
     sourcePath: sourcePath,
   );
   if (files != null) {

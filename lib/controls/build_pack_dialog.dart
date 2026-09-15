@@ -5,8 +5,10 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
+import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -143,6 +145,7 @@ class BuildPackDialog extends StatefulWidget {
     required this.onApply,
     this.fixIncludes = fixHeaderIncludes,
     this.retryElevated,
+    this.now = DateTime.now,
   });
 
   final PackModel pack;
@@ -161,6 +164,9 @@ class BuildPackDialog extends StatefulWidget {
 
   /// 提权重试入口（临时目录权限失败时提供「以管理员身份重试」）；null 时不提供。
   final ElevatedPackBuildRunner? retryElevated;
+
+  /// 时间源（历史记录时间戳）；测试可注入。
+  final DateTime Function() now;
 
   @override
   State<BuildPackDialog> createState() => _BuildPackDialogState();
@@ -187,6 +193,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   int _addedCount = 0;
   int _removedCount = 0;
   String? _sourceVersion;
+
+  /// 构建成功后由源码版本自动同步出的包版本（未同步时为 null）。
+  String? _syncedVersion;
 
   /// include 引用检查结果：关闭对话框时随 [Navigator.pop] 返回给调用方展示。
   HeaderIncludeFixReport? _fixReport;
@@ -310,12 +319,27 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
 
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
-    final PackModel updated = copyPackWithFiles(widget.pack, files);
+    PackModel updated = copyPackWithFiles(widget.pack, files);
     updated.sourceVersion = _sourceVersion ?? widget.pack.sourceVersion;
+    final String? syncedVersion = packageVersionFromTag(updated.sourceVersion);
+    bool synced = false;
+    if (syncedVersion != null && syncedVersion != updated.version) {
+      updated.history = appendHistoryEntry(
+        updated.history,
+        HistoryModel(
+          time: widget.now(),
+          type: HistoryType.versionChanged,
+          message: '版本变更：${updated.version} → $syncedVersion（构建自动同步）',
+        ),
+      );
+      updated = _withVersion(updated, syncedVersion);
+      synced = true;
+    }
     setState(() {
       _files = files;
       _addedCount = diff.added;
       _removedCount = diff.removed;
+      _syncedVersion = synced ? syncedVersion : null;
     });
 
     try {
@@ -328,6 +352,30 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       return;
     }
     setState(() => _stage = _BuildStage.completed);
+  }
+
+  /// 全字段拷贝并替换版本号（`PackModel.version` 为 final，只能重建）。
+  PackModel _withVersion(PackModel pack, String version) {
+    return PackModel(
+        name: pack.name,
+        version: version,
+        author: pack.author,
+        description: pack.description,
+        license: pack.license,
+        iconPath: pack.iconPath,
+        sourcePath: pack.sourcePath,
+        sourceVersion: pack.sourceVersion,
+      )
+      ..files = pack.files
+      ..commands = pack.commands
+      ..dependencies = pack.dependencies
+      ..macros = pack.macros
+      ..libDirectories = pack.libDirectories
+      ..libraries = pack.libraries
+      ..history = pack.history
+      ..scripts = pack.scripts
+      ..buildOptions = pack.buildOptions
+      ..enabledFormats = pack.enabledFormats;
   }
 
   /// 构建成功、重新映射扫描前的 include 引用检查（含自动修复）。
@@ -795,6 +843,14 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         Text('新增：$_addedCount 个文件'),
         const SizedBox(height: 4),
         Text('移除：$_removedCount 个文件'),
+        if (_syncedVersion != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            '已自动同步版本：$_syncedVersion',
+            key: const Key('buildSyncedVersion'),
+            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          ),
+        ],
       ],
     );
   }
