@@ -1,6 +1,9 @@
 import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/rendering.dart' show SelectionRegistrar;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 /// `cnp_build_support.classify_tree` 的开始标记前缀（见 SKILL.md「分类标记」）；
 /// 预构建配方据此把阶段从「下载」切换到「分类」。
@@ -89,11 +92,12 @@ bool _isAsciiLetter(int codeUnit) {
       (codeUnit >= 0x61 && codeUnit <= 0x7A);
 }
 
-/// 构建输出区：过滤框（列表包裹区上方）+ 列表包裹区（横向滚动 + 纵向自动滚底）。
+/// 构建输出区：过滤框 + 复制按钮（列表包裹区上方）+ 列表包裹区
+/// （文本可选择 + 横向滚动 + 纵向自动滚底）。
 ///
 /// [lines] 为原始输出行（调用方持有并负责 2000 行裁剪）；[revision] 每次输出
 /// 变更自增，面板据此在内容增长时自动滚动到底部。过滤只影响显示，不改变
-/// [lines]。
+/// [lines]；复制按钮复制 [lines] 的全部原始行（与过滤状态无关）。
 class BuildOutputPanel extends StatefulWidget {
   const BuildOutputPanel({
     super.key,
@@ -157,11 +161,40 @@ class _BuildOutputPanelState extends State<BuildOutputPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        SizedBox(height: 32, child: _buildOutputFilter()),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: SizedBox(height: 32, child: _buildOutputFilter()),
+            ),
+            const SizedBox(width: 8),
+            _buildCopyButton(),
+          ],
+        ),
         const SizedBox(height: 8),
         Expanded(child: _buildOutputPanel()),
       ],
     );
+  }
+
+  Widget _buildCopyButton() {
+    return SizedBox(
+      width: 28,
+      height: 28,
+      child: Tooltip(
+        message: '复制日志',
+        child: IconButton(
+          key: const Key('buildOutputCopyButton'),
+          icon: const Icon(FluentIcons.copy, size: 14),
+          onPressed: widget.lines.isEmpty ? null : _copyOutput,
+        ),
+      ),
+    );
+  }
+
+  /// 复制完整原始输出（过滤仅影响显示，不影响复制范围）；成功后悬浮提示。
+  void _copyOutput() {
+    Clipboard.setData(ClipboardData(text: widget.lines.join('\n')));
+    showFloatingToast(context, '已复制');
   }
 
   Widget _buildOutputFilter() {
@@ -215,7 +248,7 @@ class _BuildOutputPanelState extends State<BuildOutputPanel> {
         border: Border.all(color: theme.resources.cardStrokeColorDefault),
       ),
       padding: const EdgeInsets.all(12),
-      child: _buildOutputContent(),
+      child: SelectionArea(child: _buildOutputContent()),
     );
   }
 
@@ -240,12 +273,26 @@ class _BuildOutputPanelState extends State<BuildOutputPanel> {
           child: SingleChildScrollView(
             controller: _outputHorizontalScroller,
             scrollDirection: Axis.horizontal,
-            child: Column(
-              key: const Key('buildOutputContent'),
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                for (final String line in lines) _buildOutputLine(line),
-              ],
+            child: Builder(
+              builder: (BuildContext contentContext) {
+                final SelectionRegistrar? registrar =
+                    SelectionContainer.maybeOf(contentContext);
+                final Color selectionColor =
+                    DefaultSelectionStyle.of(contentContext).selectionColor ??
+                    DefaultSelectionStyle.defaultColor;
+                return Column(
+                  key: const Key('buildOutputContent'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    for (final String line in lines)
+                      _buildOutputLine(
+                        line,
+                        registrar: registrar,
+                        selectionColor: selectionColor,
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -279,7 +326,11 @@ class _BuildOutputPanelState extends State<BuildOutputPanel> {
     );
   }
 
-  Widget _buildOutputLine(String line) {
+  Widget _buildOutputLine(
+    String line, {
+    required SelectionRegistrar? registrar,
+    required Color selectionColor,
+  }) {
     final FluentThemeData theme = FluentTheme.of(context);
     final Color keywordColor = outputLineColor(line, theme);
     final TextStyle keywordStyle = _outputTextStyle.copyWith(
@@ -294,6 +345,8 @@ class _BuildOutputPanelState extends State<BuildOutputPanel> {
         style: textStyle,
         children: _splitOutputLine(line, keywordStyle),
       ),
+      selectionRegistrar: registrar,
+      selectionColor: selectionColor,
     );
   }
 

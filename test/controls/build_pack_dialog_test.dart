@@ -16,6 +16,8 @@ import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -817,6 +819,123 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
+  testWidgets('输出面板文本可选择（SelectionArea）', (tester) async {
+    await _pumpDialog(
+      tester,
+      build: _emitLines(const <String>['INFO: 开始构建', '普通输出']),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(SelectionArea), findsOneWidget);
+  });
+
+  testWidgets('输出文本支持 Ctrl+A / Ctrl+C 复制', (tester) async {
+    final List<MethodCall> calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        calls.add(call);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await _pumpDialog(
+      tester,
+      build: _emitLines(const <String>['alpha line', 'beta line']),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.textContaining('alpha line', findRichText: true));
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+    await tester.pump();
+
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.textContaining('alpha line', findRichText: true),
+    );
+    expect(paragraph.selections, isNotEmpty, reason: 'Ctrl+A 应全选输出文本');
+  });
+
+  testWidgets('复制按钮随输出从禁用变为可用并复制完整原始输出', (tester) async {
+    final List<MethodCall> calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        calls.add(call);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final Completer<BuildEnvironment> prepareGate =
+        Completer<BuildEnvironment>();
+
+    await _pumpDialog(
+      tester,
+      prepare: (
+        PackModel pack, {
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) => prepareGate.future,
+      build: _emitLines(const <String>['INFO: 开始构建', 'error: 编译失败']),
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_copyButton(tester).onPressed, isNull, reason: '无输出时禁用');
+
+    prepareGate.complete(_environment());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_copyButton(tester).onPressed, isNotNull);
+
+    await tester.enterText(find.byKey(const Key('buildOutputFilter')), 'ERROR');
+    await tester.pump();
+    expect(find.textContaining('INFO: 开始构建', findRichText: true), findsNothing);
+
+    await tester.tap(find.byKey(const Key('buildOutputCopyButton')));
+    await tester.pump();
+
+    final List<MethodCall> clipboardCalls = calls
+        .where((MethodCall call) => call.method == 'Clipboard.setData')
+        .toList();
+    expect(clipboardCalls, hasLength(1));
+    final Map<Object?, Object?> arguments =
+        clipboardCalls.single.arguments as Map<Object?, Object?>;
+    expect(
+      arguments['text'],
+      'INFO: 开始构建\nerror: 编译失败',
+      reason: '复制范围恒为完整原始输出，过滤仅影响显示',
+    );
+
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('已复制'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('准备环境阶段展示工具下载进度与瞬时速度', (tester) async {
     final Completer<BuildEnvironment> prepareGate =
         Completer<BuildEnvironment>();
@@ -1609,6 +1728,9 @@ PackModel _pack({String? sourcePath = r'C:\libs\demo'}) {
 
 Button _closeButton(WidgetTester tester) =>
     tester.widget<Button>(find.byKey(const Key('buildCloseButton')));
+
+IconButton _copyButton(WidgetTester tester) =>
+    tester.widget<IconButton>(find.byKey(const Key('buildOutputCopyButton')));
 
 PackBuildRunner _emitLines(List<String> lines) {
   return (
