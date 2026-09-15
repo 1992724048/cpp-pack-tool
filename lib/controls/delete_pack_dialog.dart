@@ -82,8 +82,10 @@ class _DeletePackDialogState extends State<_DeletePackDialog> {
             FilledButton(
               key: const Key('deletePackConfirmButton'),
               style: ButtonStyle(
-                backgroundColor: WidgetStatePropertyAll(UCColors.flavor.red),
-                foregroundColor: WidgetStatePropertyAll(Colors.white),
+                backgroundColor: WidgetStatePropertyAll(
+                  AppColors.critical(theme.brightness),
+                ),
+                foregroundColor: const WidgetStatePropertyAll(Colors.white),
               ),
               onPressed: () => Navigator.pop(context, (
                 confirmed: true,
@@ -127,7 +129,7 @@ class _DeletePackDialogState extends State<_DeletePackDialog> {
               constraints: const BoxConstraints(minHeight: 32),
               decoration: BoxDecoration(
                 color: _cacheRowHovered
-                    ? UCColors.flavor.surface0
+                    ? theme.resources.controlFillColorSecondary
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -177,7 +179,10 @@ Widget _buildDependentsSection(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text('以下包依赖它：', style: TextStyle(color: UCColors.flavor.red)),
+      Text(
+        '以下包依赖它：',
+        style: TextStyle(color: AppColors.critical(theme.brightness)),
+      ),
       const SizedBox(height: 6),
       FluentTheme(
         data: theme.copyWith(

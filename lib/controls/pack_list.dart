@@ -58,11 +58,13 @@ class PackList {
     return switch (badge) {
       RepoBadge.git => Tooltip(
         message: '远程仓库',
-        child: Icon(
-          key: Key('repoBadge_${pack.name}'),
-          FluentIcons.git_graph,
-          size: 12,
-          color: UCColors.flavor.subtext0,
+        child: Builder(
+          builder: (BuildContext context) => Icon(
+            key: Key('repoBadge_${pack.name}'),
+            FluentIcons.git_graph,
+            size: 12,
+            color: FluentTheme.of(context).resources.textFillColorTertiary,
+          ),
         ),
       ),
       RepoBadge.update => Tooltip(
@@ -71,7 +73,7 @@ class PackList {
           key: Key('repoUpdateBadge_${pack.name}'),
           FluentIcons.update_restore,
           size: 12,
-          color: UCColors.flavor.green,
+          color: MarkerColors.green,
         ),
       ),
       null => null,
@@ -90,17 +92,31 @@ class PackList {
         fit: BoxFit.contain,
         errorBuilder:
             (BuildContext context, Object error, StackTrace? stackTrace) =>
-                _platformIcon(pack, source?.platform),
+                _platformIcon(
+                  pack,
+                  source?.platform,
+                  _fallbackIconColor(context),
+                ),
       );
     }
     final RepoPlatform? platform = source?.platform;
     if (platform != null) {
-      return _platformIcon(pack, platform);
+      return Builder(
+        builder: (BuildContext context) =>
+            _platformIcon(pack, platform, _fallbackIconColor(context)),
+      );
     }
     return _localIcon(pack);
   }
 
-  static Widget _platformIcon(PackModel pack, RepoPlatform? platform) {
+  static Color _fallbackIconColor(BuildContext context) =>
+      FluentTheme.of(context).resources.textFillColorTertiary;
+
+  static Widget _platformIcon(
+    PackModel pack,
+    RepoPlatform? platform,
+    Color color,
+  ) {
     final String assetPath = platform == RepoPlatform.github
         ? Svgs.repoGithubPath
         : Svgs.repoRemotePath;
@@ -109,10 +125,7 @@ class PackList {
       key: Key('repoFallbackIcon_${pack.name}'),
       width: 20,
       height: 20,
-      colorFilter: ColorFilter.mode(
-        UCColors.flavor.subtext0,
-        BlendMode.srcIn,
-      ),
+      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
       semanticsLabel: '开源仓库图标',
       errorBuilder:
           (BuildContext context, Object error, StackTrace stackTrace) =>

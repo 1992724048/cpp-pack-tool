@@ -92,7 +92,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
               color: theme.resources.cardBackgroundFillColorSecondary,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: UCColors.flavor.overlay0.withValues(alpha: 0.4),
+                color: theme.resources.controlStrokeColorDefault,
               ),
             ),
             child: InteractiveViewer(
@@ -111,7 +111,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
                       child: CustomPaint(
                         painter: _DependencyGraphPainter(
                           edges: _layout.edges,
-                          lineColor: UCColors.flavor.overlay0,
+                          lineColor: theme.resources.controlStrokeColorDefault,
                         ),
                       ),
                     ),
@@ -139,11 +139,15 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
     return Row(
       children: [
         Expanded(child: Text('拖拽平移、滚轮缩放；红色为缺失依赖', style: style)),
-        _buildLegendItem('普通', UCColors.flavor.overlay0, style),
+        _buildLegendItem(
+          '普通',
+          theme.resources.controlStrokeColorDefault,
+          style,
+        ),
         const SizedBox(width: 12),
-        _buildLegendItem('当前包', UCColors.accent, style),
+        _buildLegendItem('当前包', theme.accentColor, style),
         const SizedBox(width: 12),
-        _buildLegendItem('缺失', UCColors.flavor.red, style),
+        _buildLegendItem('缺失', AppColors.critical(theme.brightness), style),
       ],
     );
   }
@@ -176,7 +180,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
         color: theme.resources.cardBackgroundFillColorDefault,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: _nodeBorderColor(node),
+          color: _nodeBorderColor(node, theme),
           width: emphasized ? 2 : 1,
         ),
       ),
@@ -210,7 +214,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
                 ),
               if (node.isMissing) ...[
                 if (node.version != null) const SizedBox(width: 6),
-                Tag(text: '缺失', color: UCColors.flavor.red, fontSize: 10),
+                Tag(text: '缺失', color: MarkerColors.red, fontSize: 10),
               ],
             ],
           ),
@@ -220,14 +224,14 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
   }
 }
 
-Color _nodeBorderColor(_GraphNode node) {
+Color _nodeBorderColor(_GraphNode node, FluentThemeData theme) {
   if (node.isMissing) {
-    return UCColors.flavor.red;
+    return AppColors.critical(theme.brightness);
   }
   if (node.isSelected) {
-    return UCColors.accent;
+    return theme.accentColor;
   }
-  return UCColors.flavor.overlay0;
+  return theme.resources.controlStrokeColorDefault;
 }
 
 class _DependencyGraphLayout {

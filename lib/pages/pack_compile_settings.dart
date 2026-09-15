@@ -670,18 +670,19 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   }
 
   (String, Color) _scriptStatus(ScriptProjectModel script) {
+    final Brightness brightness = FluentTheme.of(context).brightness;
     final List<ScriptDiagnostic> diagnostics = GraphValidator.validate(script);
     final int errors = diagnostics
         .where((ScriptDiagnostic diagnostic) => diagnostic.isError)
         .length;
     final int warnings = diagnostics.length - errors;
     if (errors > 0) {
-      return ('$errors 个错误', UCColors.flavor.red);
+      return ('$errors 个错误', AppColors.critical(brightness));
     }
     if (warnings > 0) {
-      return ('$warnings 个警告', UCColors.flavor.yellow);
+      return ('$warnings 个警告', AppColors.caution(brightness));
     }
-    return ('正常', UCColors.flavor.green);
+    return ('正常', AppColors.success(brightness));
   }
 
   Widget _buildEntryList(List<_CompileEntry> entries, String columnLabel) {
@@ -761,7 +762,9 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                   const SizedBox(width: 5),
                   Tag(
                     text: '系统',
-                    color: UCColors.flavor.overlay1,
+                    color: FluentTheme.of(
+                      context,
+                    ).resources.solidBackgroundFillColorQuarternary,
                     fontSize: 10,
                   ),
                 ],

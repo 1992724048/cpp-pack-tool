@@ -209,13 +209,13 @@ class _PackDependenciesState extends State<PackDependencies> {
                   const SizedBox(width: 5),
                   Tag(
                     text: '系统',
-                    color: UCColors.flavor.overlay1,
+                    color: theme.resources.solidBackgroundFillColorQuarternary,
                     fontSize: 10,
                   ),
                 ],
                 if (missing) ...[
                   const SizedBox(width: 5),
-                  Tag(text: '缺失', color: UCColors.flavor.red, fontSize: 10),
+                  Tag(text: '缺失', color: MarkerColors.red, fontSize: 10),
                 ],
               ],
             ),

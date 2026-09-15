@@ -111,7 +111,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   Widget build(BuildContext context) {
     return Container(
       key: const Key('nodeEditorPage'),
-      color: UCColors.flavor.mantle,
+      color: FluentTheme.of(context).scaffoldBackgroundColor,
       child: Column(
         children: [
           _buildTopBar(),
@@ -128,8 +128,8 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
       height: _topBarHeight,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: UCColors.flavor.mantle,
-        border: Border(bottom: BorderSide(color: UCColors.flavor.surface2)),
+        color: FluentTheme.of(context).scaffoldBackgroundColor,
+        border: Border(bottom: BorderSide(color: FluentTheme.of(context).resources.dividerStrokeColorDefault)),
       ),
       child: Row(
         children: [
@@ -156,12 +156,12 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: UCColors.flavor.text,
+                color: FluentTheme.of(context).resources.textFillColorPrimary,
               ),
             ),
           ),
           const SizedBox(width: 12),
-          Container(width: 1, height: 20, color: UCColors.flavor.surface2),
+          Container(width: 1, height: 20, color: FluentTheme.of(context).resources.dividerStrokeColorDefault),
           const SizedBox(width: 16),
           _buildScriptProjectSelector(),
           const SizedBox(width: 8),
@@ -206,14 +206,6 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
             height: 32,
             child: FilledButton(
               key: const Key('generatePreviewButton'),
-              style: ButtonStyle(
-                foregroundColor: WidgetStateProperty.resolveWith(
-                  (Set<WidgetState> states) =>
-                      states.contains(WidgetState.disabled)
-                      ? UCColors.flavor.subtext0
-                      : UCColors.flavor.crust,
-                ),
-              ),
               onPressed: _hasProject ? _generatePreview : null,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -256,7 +248,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
                 project.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: UCColors.flavor.text),
+                style: TextStyle(fontSize: 13, color: FluentTheme.of(context).resources.textFillColorPrimary),
               ),
           ],
           items: <ComboBoxItem<ScriptProjectModel>>[
@@ -322,7 +314,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
         _buildSidePanel(
           panelKey: const Key('nodeLibraryPanel'),
           width: _nodeLibraryWidth,
-          border: Border(right: BorderSide(color: UCColors.flavor.surface2)),
+          border: Border(right: BorderSide(color: FluentTheme.of(context).resources.dividerStrokeColorDefault)),
           child: NodeLibraryPanel(
             onAddNode: _hasProject ? _addNodeFromLibrary : null,
           ),
@@ -331,7 +323,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
         _buildSidePanel(
           panelKey: const Key('inspectorPanel'),
           width: _inspectorWidth,
-          border: Border(left: BorderSide(color: UCColors.flavor.surface2)),
+          border: Border(left: BorderSide(color: FluentTheme.of(context).resources.dividerStrokeColorDefault)),
           child: NodeInspector(
             controller: _controller,
             pack: widget.pack,
@@ -363,7 +355,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
           ignoring: !_hasProject,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: UCColors.flavor.base,
+              color: FluentTheme.of(context).scaffoldBackgroundColor,
               border: border,
             ),
             child: child,
@@ -377,7 +369,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
     final GraphEditorController? controller = _controller;
     if (controller == null) {
       return Container(
-        color: UCColors.flavor.mantle,
+        color: FluentTheme.of(context).scaffoldBackgroundColor,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -385,17 +377,17 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
               Icon(
                 FluentIcons.power_shell,
                 size: 40,
-                color: UCColors.flavor.subtext1,
+                color: FluentTheme.of(context).resources.textFillColorSecondary,
               ),
               const SizedBox(height: 16),
               Text(
                 '尚未创建脚本项目',
-                style: TextStyle(fontSize: 14, color: UCColors.flavor.text),
+                style: TextStyle(fontSize: 14, color: FluentTheme.of(context).resources.textFillColorPrimary),
               ),
               const SizedBox(height: 8),
               Text(
                 '节点图将编译为编译前/后 PowerShell 脚本',
-                style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+                style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary),
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -780,18 +772,23 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
   /// 顶栏保存状态四态（§3.3）：未保存 / 保存中 / 已保存 / 保存失败 + 重试。
   Widget _buildSaveStatus() {
     final EditorSaveQueue queue = _saveQueue;
+    final FluentThemeData theme = FluentTheme.of(context);
     final TextStyle statusStyle = TextStyle(
       fontSize: 12,
       color: queue.status == EditorSaveStatus.failed
-          ? UCColors.flavor.red
-          : UCColors.flavor.subtext1,
+          ? AppColors.critical(theme.brightness)
+          : theme.resources.textFillColorSecondary,
     );
     return Row(
       key: const Key('saveStatus'),
       mainAxisSize: MainAxisSize.min,
       children: switch (queue.status) {
         EditorSaveStatus.unsaved => <Widget>[
-          Icon(FluentIcons.save, size: 14, color: UCColors.flavor.subtext0),
+          Icon(
+            FluentIcons.save,
+            size: 14,
+            color: theme.resources.textFillColorTertiary,
+          ),
           const SizedBox(width: 6),
           Text('未保存', style: statusStyle),
         ],
@@ -805,12 +802,20 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
           Text('保存中…', style: statusStyle),
         ],
         EditorSaveStatus.saved => <Widget>[
-          Icon(FluentIcons.check_mark, size: 14, color: UCColors.flavor.green),
+          Icon(
+            FluentIcons.check_mark,
+            size: 14,
+            color: AppColors.success(theme.brightness),
+          ),
           const SizedBox(width: 6),
           Text('已保存', style: statusStyle),
         ],
         EditorSaveStatus.failed => <Widget>[
-          Icon(FluentIcons.error_badge, size: 14, color: UCColors.flavor.red),
+          Icon(
+            FluentIcons.error_badge,
+            size: 14,
+            color: AppColors.critical(theme.brightness),
+          ),
           const SizedBox(width: 6),
           Text('保存失败', style: statusStyle),
           const SizedBox(width: 8),

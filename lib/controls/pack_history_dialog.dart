@@ -185,6 +185,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
   }
 
   Widget _buildRail({required Color color, required bool isLast}) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return SizedBox(
       width: 16,
       child: Column(
@@ -197,7 +198,10 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
           ),
           if (!isLast)
             Expanded(
-              child: Container(width: 2, color: UCColors.flavor.surface2),
+              child: Container(
+                width: 2,
+                color: theme.resources.dividerStrokeColorDefault,
+              ),
             ),
         ],
       ),
@@ -207,10 +211,10 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
 
 Color _typeColor(HistoryType type) {
   return switch (type) {
-    HistoryType.created => UCColors.flavor.green,
-    HistoryType.versionChanged => UCColors.flavor.blue,
-    HistoryType.filesChanged => UCColors.flavor.peach,
-    HistoryType.exported => UCColors.flavor.mauve,
-    HistoryType.built => UCColors.flavor.teal,
+    HistoryType.created => MarkerColors.green,
+    HistoryType.versionChanged => MarkerColors.blue,
+    HistoryType.filesChanged => MarkerColors.orange,
+    HistoryType.exported => MarkerColors.purple,
+    HistoryType.built => MarkerColors.teal,
   };
 }

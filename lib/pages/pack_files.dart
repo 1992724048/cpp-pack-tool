@@ -299,8 +299,8 @@ class _PackFilesState extends State<PackFiles> {
     return Tag(
       text: label,
       color: label == releaseBuildLabel
-          ? UCColors.flavor.green
-          : UCColors.flavor.peach,
+          ? MarkerColors.green
+          : MarkerColors.orange,
       fontSize: 10,
     );
   }
@@ -426,7 +426,10 @@ class _PackFilesState extends State<PackFiles> {
       children: <Widget>[
         Text(
           '运行库',
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+          style: TextStyle(
+            fontSize: 12,
+            color: FluentTheme.of(context).resources.textFillColorSecondary,
+          ),
         ),
         const SizedBox(width: 8),
         RuntimeLibrarySelector(
@@ -472,17 +475,18 @@ class _PackFilesState extends State<PackFiles> {
     } else {
       latestTooltip = '最新版本：—';
     }
-    final Color valueColor = UCColors.flavor.text;
-    final Color placeholderColor = UCColors.flavor.subtext0;
+    final FluentThemeData theme = FluentTheme.of(context);
+    final Color valueColor = theme.resources.textFillColorPrimary;
+    final Color placeholderColor = theme.resources.textFillColorTertiary;
     final TextStyle labelStyle = TextStyle(
       fontSize: 12,
-      color: UCColors.flavor.subtext1,
+      color: theme.resources.textFillColorSecondary,
     );
     return Container(
       key: const Key('packRepoVersionLabel'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: UCColors.flavor.surface0,
+        color: theme.resources.solidBackgroundFillColorQuarternary,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Tooltip(
@@ -491,10 +495,10 @@ class _PackFilesState extends State<PackFiles> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (hasUpdate) ...<Widget>[
-              Icon(
+              const Icon(
                 FluentIcons.update_restore,
                 size: 12,
-                color: UCColors.flavor.green,
+                color: MarkerColors.green,
               ),
               const SizedBox(width: 6),
             ],

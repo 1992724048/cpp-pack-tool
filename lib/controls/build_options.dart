@@ -1,5 +1,4 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -47,6 +46,7 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return Padding(
       key: const Key('buildOptionsSection'),
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -62,7 +62,7 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: UCColors.flavor.text,
+                    color: theme.resources.textFillColorPrimary,
                   ),
                 ),
                 const Spacer(),
@@ -71,7 +71,11 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
             ),
           ),
           if (widget.expanded) ...<Widget>[
-            Container(height: 1, color: UCColors.flavor.surface2),
+            Container(
+              height: 1,
+              color: theme.resources.dividerStrokeColorDefault,
+            ),
+            const SizedBox(height: 8),
             ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: _maxListHeight),
               child: Scrollbar(
@@ -82,8 +86,15 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      for (final BuildScriptOption option in widget.options)
-                        _buildOptionRow(option),
+                      for (
+                        int index = 0;
+                        index < widget.options.length;
+                        index++
+                      ) ...<Widget>[
+                        if (index > 0) const SizedBox(height: 4),
+                        _buildOptionRow(theme, widget.options[index]),
+                      ],
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
@@ -113,10 +124,10 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
     );
   }
 
-  Widget _buildOptionRow(BuildScriptOption option) {
+  Widget _buildOptionRow(FluentThemeData theme, BuildScriptOption option) {
     switch (option.control) {
       case BuildOptionControl.dropdown:
-        return _buildDropdownRow(option);
+        return _buildDropdownRow(theme, option);
       case BuildOptionControl.checkbox:
         return _CheckboxOptionRow(
           option: option,
@@ -125,18 +136,18 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
           onChanged: widget.onChange,
         );
       case BuildOptionControl.multiselect:
-        return _buildMultiSelectRow(option);
+        return _buildMultiSelectRow(theme, option);
     }
   }
 
-  Widget _buildDropdownRow(BuildScriptOption option) {
+  Widget _buildDropdownRow(FluentThemeData theme, BuildScriptOption option) {
     final String value = effectiveBuildOptionValue(option, widget.values);
     return SizedBox(
       key: Key('buildOptionRow_${option.name}'),
-      height: 32,
+      height: 40,
       child: Row(
         children: <Widget>[
-          Expanded(child: _buildOptionTitle(option.name)),
+          Expanded(child: _buildOptionTitle(theme, option.name)),
           SizedBox(
             width: _optionFieldWidth,
             child: FluentTheme(
@@ -176,17 +187,17 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
     );
   }
 
-  Widget _buildMultiSelectRow(BuildScriptOption option) {
+  Widget _buildMultiSelectRow(FluentThemeData theme, BuildScriptOption option) {
     final Set<String> selected = multiSelectSelection(
       option.values,
       widget.values[option.name],
     );
     return ConstrainedBox(
       key: Key('buildOptionRow_${option.name}'),
-      constraints: const BoxConstraints(minHeight: 32),
+      constraints: const BoxConstraints(minHeight: 40),
       child: Row(
         children: <Widget>[
-          Expanded(child: _buildOptionTitle(option.name)),
+          Expanded(child: _buildOptionTitle(theme, option.name)),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: _multiSelectMaxWidth),
             child: Wrap(
@@ -223,7 +234,7 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
                     _toggleMultiSelectValue(option, value, next ?? !checked),
         ),
         const SizedBox(width: 8),
-        Text(value, style: _optionTextStyle()),
+        Text(value, style: _optionTextStyle(FluentTheme.of(context))),
       ],
     );
   }
@@ -246,14 +257,14 @@ class _BuildOptionsPanelState extends State<BuildOptionsPanel> {
   }
 }
 
-/// 选项标题 / 多选值文本：13 常规 `flavor.text`、超宽省略。
-TextStyle _optionTextStyle() =>
-    TextStyle(fontSize: 13, color: UCColors.flavor.text);
+/// 选项标题 / 多选值文本：13 常规 `textFillColorPrimary`、超宽省略。
+TextStyle _optionTextStyle(FluentThemeData theme) =>
+    TextStyle(fontSize: 13, color: theme.resources.textFillColorPrimary);
 
-Widget _buildOptionTitle(String name) => Text(
+Widget _buildOptionTitle(FluentThemeData theme, String name) => Text(
   name,
   overflow: TextOverflow.ellipsis,
-  style: _optionTextStyle(),
+  style: _optionTextStyle(theme),
 );
 
 /// 布尔选项行：整行可点（悬停背景 + click 光标），Checkbox 自身保留键盘切换；
@@ -290,6 +301,7 @@ class _CheckboxOptionRowState extends State<_CheckboxOptionRow> {
 
   @override
   Widget build(BuildContext context) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return MouseRegion(
       cursor: widget.enabled ? SystemMouseCursors.click : MouseCursor.defer,
       onEnter: (_) => setState(() => _hovered = true),
@@ -299,14 +311,16 @@ class _CheckboxOptionRowState extends State<_CheckboxOptionRow> {
         onTap: _toggle,
         child: Container(
           key: Key('buildOptionRow_${widget.option.name}'),
-          constraints: const BoxConstraints(minHeight: 32),
+          constraints: const BoxConstraints(minHeight: 40),
           decoration: BoxDecoration(
-            color: _hovered ? UCColors.flavor.surface0 : Colors.transparent,
+            color: _hovered
+                ? theme.resources.controlFillColorSecondary
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(4),
           ),
           child: Row(
             children: <Widget>[
-              Expanded(child: _buildOptionTitle(widget.option.name)),
+              Expanded(child: _buildOptionTitle(theme, widget.option.name)),
               Checkbox(
                 key: Key('buildOption_${widget.option.name}'),
                 checked: _checked,
@@ -400,11 +414,6 @@ class RuntimeLibraryHelpButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle body = TextStyle(
-      fontSize: 12,
-      height: 1.5,
-      color: UCColors.flavor.base,
-    );
     final TextStyle boldPhrase = const TextStyle(fontWeight: FontWeight.w600);
     return SizedBox(
       width: 28,
@@ -440,15 +449,9 @@ class RuntimeLibraryHelpButton extends StatelessWidget {
             ),
           ],
         ),
-        style: TooltipThemeData(
+        style: const TooltipThemeData(
           maxWidth: 360,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: UCColors.flavor.text,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          textStyle: body,
-          showDuration: const Duration(seconds: 30),
+          showDuration: Duration(seconds: 30),
         ),
         child: IconButton(
           key: const Key('buildRuntimeHelp'),

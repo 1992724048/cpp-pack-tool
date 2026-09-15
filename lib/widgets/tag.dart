@@ -1,4 +1,3 @@
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class Tag extends StatelessWidget {
@@ -24,9 +23,9 @@ class Tag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeContext = FluentTheme.of(context);
-    final Color backgroundColor = color ?? UCColors.accent;
+    final Color backgroundColor = color ?? themeContext.accentColor;
     final Color textColor = backgroundColor.computeLuminance() > 0.5
-        ? const Color(0xFF1E1E2E)
+        ? const Color(0xFF1B1B1B)
         : Colors.white;
     final TextStyle textStyle = TextStyle(
       color: textColor,

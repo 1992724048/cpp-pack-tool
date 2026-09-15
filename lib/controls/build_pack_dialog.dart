@@ -93,13 +93,13 @@ typedef MatchKeyword = ({String keyword, int index});
 ///
 /// 关键字按字界匹配（大小写不敏感），避免 `terror`/`errorHandler` 一类
 /// 片段误判；一行含多个关键字时取最靠前者。
-Color outputLineColor(String line) {
+Color outputLineColor(String line, FluentThemeData theme) {
   final MatchKeyword? match = findOutputKeyword(line);
   return switch (match?.keyword) {
-    _errorKeyword => UCColors.flavor.red,
-    _warningKeyword => UCColors.flavor.peach,
-    _infoKeyword => UCColors.flavor.blue,
-    _ => UCColors.flavor.text,
+    _errorKeyword => AppColors.critical(theme.brightness),
+    _warningKeyword => AppColors.caution(theme.brightness),
+    _infoKeyword => AppColors.info(theme.brightness),
+    _ => theme.resources.textFillColorPrimary,
   };
 }
 
@@ -720,7 +720,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     return Center(
       child: Text(
         message,
-        style: _outputTextStyle.copyWith(color: UCColors.flavor.subtext0),
+        style: _outputTextStyle.copyWith(
+          color: FluentTheme.of(context).resources.textFillColorTertiary,
+        ),
       ),
     );
   }
@@ -741,13 +743,14 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   }
 
   Widget _buildOutputLine(String line) {
-    final Color keywordColor = outputLineColor(line);
+    final FluentThemeData theme = FluentTheme.of(context);
+    final Color keywordColor = outputLineColor(line, theme);
     final TextStyle keywordStyle = _outputTextStyle.copyWith(
       color: keywordColor,
       fontWeight: FontWeight.w600,
     );
     final TextStyle textStyle = _outputTextStyle.copyWith(
-      color: UCColors.flavor.text,
+      color: theme.resources.textFillColorPrimary,
     );
     return RichText(
       text: TextSpan(
@@ -829,7 +832,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
           Text(
             _downloadProgressText(progress),
             key: const Key('buildDownloadProgress'),
-            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+            style: TextStyle(
+              fontSize: 12,
+              color: FluentTheme.of(context).resources.textFillColorTertiary,
+            ),
           ),
         ],
       ],
@@ -906,7 +912,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
           Text(
             '已自动同步版本：$_syncedVersion',
             key: const Key('buildSyncedVersion'),
-            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+            style: TextStyle(
+              fontSize: 12,
+              color: FluentTheme.of(context).resources.textFillColorTertiary,
+            ),
           ),
         ],
       ],

@@ -1,7 +1,7 @@
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/rendering.dart';
 
 /// 连线命中采样段数（§5.4：贝塞尔按 16 段采样为折线）。
 const int edgeHitSampleSegments = 16;
@@ -78,18 +78,23 @@ double _distanceToSegment(Offset start, Offset end, Offset point) {
 /// 连线命中容差：clamp(8 / scale, 4, 16) 场景 px（§5.4/§5.7）。
 double edgeHitTolerance(double scale) => (8 / scale).clamp(4.0, 16.0);
 
-/// 引脚/连线的数据类型色（§2.2）：exec `text`、string `blue`、bool `peach`、
-/// `list<string>` `mauve`、number `green`，未知 data 类型回退 `overlay1`。
-Color pinStrokeColor(ScriptPinKind kind, ScriptDataType? dataType) {
+/// 引脚/连线的数据类型色（§2.2）：exec `textFillColorPrimary`、string `blue`、
+/// bool `orange`、`list<string>` `purple`、number `green`，未知 data 类型回退
+/// `textFillColorDisabled`。
+Color pinStrokeColor(
+  ScriptPinKind kind,
+  ScriptDataType? dataType,
+  FluentThemeData theme,
+) {
   if (kind == ScriptPinKind.exec) {
-    return UCColors.flavor.text;
+    return theme.resources.textFillColorPrimary;
   }
   return switch (dataType) {
-    ScriptDataType.string => UCColors.flavor.blue,
-    ScriptDataType.boolean => UCColors.flavor.peach,
-    ScriptDataType.listString => UCColors.flavor.mauve,
-    ScriptDataType.number => UCColors.flavor.green,
-    null => UCColors.flavor.overlay1,
+    ScriptDataType.string => MarkerColors.blue,
+    ScriptDataType.boolean => MarkerColors.orange,
+    ScriptDataType.listString => MarkerColors.purple,
+    ScriptDataType.number => MarkerColors.green,
+    null => theme.resources.textFillColorDisabled,
   };
 }
 
@@ -116,15 +121,22 @@ typedef EdgePreviewVisual = ({
 
 /// 连线与拖拽预览线绘制器（视觉规范 §5.4）。
 ///
-/// exec 常规 2.5px `flavor.text` α0.70、data 常规 2.0px 类型色 α0.95；
+/// exec 常规 2.5px `textFillColorPrimary` α0.70、data 常规 2.0px 类型色 α0.95；
 /// hover 原色 α1.0 且线宽 +0.5；选中 accent 3.0px + 两端 r=4 实心圆点；
 /// 预览线按状态取源类型色（normal α0.85 / compatible 转实）
-/// 或 `flavor.red` α0.90（incompatible），指针端均为 r=4 空心圆。
+/// 或 `AppColors.critical` α0.90（incompatible），指针端均为 r=4 空心圆。
 class EdgePainter extends CustomPainter {
-  const EdgePainter({this.edges = const <EdgeVisual>[], this.preview});
+  const EdgePainter({
+    this.edges = const <EdgeVisual>[],
+    this.preview,
+    required this.theme,
+  });
 
   final List<EdgeVisual> edges;
   final EdgePreviewVisual? preview;
+
+  /// token 来源（线色 / 选中强调 / 非法预览色）；由画布注入。
+  final FluentThemeData theme;
 
   static const double execWidth = 2.5;
   static const double dataWidth = 2.0;
@@ -152,14 +164,14 @@ class EdgePainter extends CustomPainter {
   }
 
   void _paintEdge(Canvas canvas, EdgeVisual edge) {
-    final Color base = pinStrokeColor(edge.kind, edge.dataType);
+    final Color base = pinStrokeColor(edge.kind, edge.dataType, theme);
     final double baseWidth = edge.kind == ScriptPinKind.exec
         ? execWidth
         : dataWidth;
     final Color color;
     final double width;
     if (edge.selected) {
-      color = UCColors.accent;
+      color = theme.accentColor;
       width = selectedWidth;
     } else if (edge.hovered) {
       color = base;
@@ -173,7 +185,7 @@ class EdgePainter extends CustomPainter {
     }
     canvas.drawPath(edgePath(edge.from, edge.to), _strokePaint(color, width));
     if (edge.selected) {
-      final Paint dot = Paint()..color = UCColors.accent;
+      final Paint dot = Paint()..color = theme.accentColor;
       canvas.drawCircle(edge.from, endpointDotRadius, dot);
       canvas.drawCircle(edge.to, endpointDotRadius, dot);
     }
@@ -187,7 +199,9 @@ class EdgePainter extends CustomPainter {
       ),
       EdgePreviewState.compatible => (preview.color, previewCompatibleWidth),
       EdgePreviewState.incompatible => (
-        UCColors.flavor.red.withValues(alpha: previewIncompatibleAlpha),
+        AppColors.critical(theme.brightness).withValues(
+          alpha: previewIncompatibleAlpha,
+        ),
         previewIncompatibleWidth,
       ),
     };
@@ -213,6 +227,7 @@ class EdgePainter extends CustomPainter {
   @override
   bool shouldRepaint(EdgePainter oldDelegate) {
     return !listEquals(oldDelegate.edges, edges) ||
-        oldDelegate.preview != preview;
+        oldDelegate.preview != preview ||
+        oldDelegate.theme.brightness != theme.brightness;
   }
 }

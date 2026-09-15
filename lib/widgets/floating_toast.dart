@@ -122,15 +122,15 @@ class _FloatingToastState extends State<_FloatingToast>
     final ({IconData icon, Color color}) style = switch (widget.type) {
       FloatingToastType.success => (
         icon: WindowsIcons.completed,
-        color: UCColors.flavor.green,
+        color: AppColors.success(theme.brightness),
       ),
       FloatingToastType.error => (
         icon: WindowsIcons.error_badge,
-        color: UCColors.flavor.red,
+        color: AppColors.critical(theme.brightness),
       ),
       FloatingToastType.info => (
         icon: WindowsIcons.info,
-        color: UCColors.flavor.blue,
+        color: AppColors.info(theme.brightness),
       ),
     };
 

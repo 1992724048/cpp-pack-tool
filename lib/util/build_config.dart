@@ -20,19 +20,19 @@ String buildModelLabel(BuildModel buildModel) {
 
 /// 构建标签着色（视觉规范 §2.2）：ALL 蓝 / Release 绿 / Debug 橙。
 Color buildModelColor(BuildModel buildModel) => switch (buildModel) {
-  BuildModel.all => UCColors.flavor.blue,
-  BuildModel.release => UCColors.flavor.green,
-  BuildModel.debug => UCColors.flavor.peach,
+  BuildModel.all => MarkerColors.blue,
+  BuildModel.release => MarkerColors.green,
+  BuildModel.debug => MarkerColors.orange,
 };
 
 /// 触发时机标签（视觉规范 §2.2）。
 String scriptTriggerLabel(ScriptTrigger trigger) =>
     trigger == ScriptTrigger.pre ? '编译前' : '编译后';
 
-/// 触发时机着色（视觉规范 §2.2）：编译前 sky / 编译后 lavender。
+/// 触发时机着色（视觉规范 §2.2）：编译前 cyan / 编译后 purple。
 Color scriptTriggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
-    ? UCColors.flavor.sky
-    : UCColors.flavor.lavender;
+    ? MarkerColors.cyan
+    : MarkerColors.purple;
 
 /// 从文件相对路径推断构建配置标签。
 ///

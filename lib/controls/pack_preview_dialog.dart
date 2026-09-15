@@ -324,9 +324,9 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
   Widget _buildEntryHeader(PackageEntry entry) {
     final FluentThemeData theme = FluentTheme.of(context);
     final (String category, Color color) = switch (entry.source) {
-      PackageGeneratedSource() => ('生成文件', UCColors.flavor.blue),
-      PackageFileSource(isBinary: true) => ('二进制文件', UCColors.flavor.peach),
-      PackageFileSource() => ('源文件', UCColors.flavor.green),
+      PackageGeneratedSource() => ('生成文件', MarkerColors.blue),
+      PackageFileSource(isBinary: true) => ('二进制文件', MarkerColors.orange),
+      PackageFileSource() => ('源文件', MarkerColors.green),
     };
     return Row(
       children: [
