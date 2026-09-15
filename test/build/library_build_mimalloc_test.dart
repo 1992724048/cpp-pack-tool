@@ -3,10 +3,12 @@
 // mimalloc 真机构建验收（P3 L5）：经生产链路 preparePackBuildEnvironment + runPackBuild
 // 真实 clone https://github.com/microsoft/mimalloc.git（默认分支 main3），以本机编译器
 // 构建 Release/Debug 双配置并分类到 BUILD_OUT（release/lib|bin + debug/lib|bin），另断言
-// 预构建工具 minject.exe 入 release/bin 与 debug/bin、根目录生成 post.bat 注入脚本。
+// 预构建工具 minject.exe 入 release/bin 与 debug/bin、根目录生成 post.bat 注入脚本
+// （ANSI/ASCII 编码落盘——cmd 原生可解析且无参数调用无输出）。
 //
 // 运行：$env:CNP_REAL_LIBRARY_BUILDS='mimalloc'; flutter test test/build/library_build_mimalloc_test.dart
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
@@ -214,9 +216,11 @@ void main() {
         'debug/bin/minject.exe',
       );
       final String postBatPath = joinPath(packDir.path, 'post.bat');
-      final String postBatContent = File(postBatPath).existsSync()
-          ? File(postBatPath).readAsStringSync()
-          : '';
+      final List<int> postBatBytes = File(postBatPath).existsSync()
+          ? File(postBatPath).readAsBytesSync()
+          : <int>[];
+      // cmd 以系统 ANSI 代码页解析 .bat：latin1 逐字节映射即可断言其中的 ASCII 片段
+      final String postBatContent = latin1.decode(postBatBytes);
 
       print(
         '[evidence] include/mimalloc.h=${File(joinPath(includeDir, 'mimalloc.h')).existsSync()}',
@@ -235,7 +239,8 @@ void main() {
         '[evidence] debug/bin/minject.exe=${File(debugMinjectPath).existsSync()}',
       );
       print('[evidence] post.bat=${File(postBatPath).existsSync()}');
-      print('[evidence] post.bat content:');
+      print('[evidence] post.bat bytes=${postBatBytes.length}');
+      print('[evidence] post.bat content (latin1):');
       print(postBatContent.trim());
       print('[evidence] LICENSE=${File(licensePath).existsSync()}');
       print('[evidence] artifacts=${_relativeFiles(packDir.path)}');
@@ -268,8 +273,7 @@ void main() {
       expect(
         releaseBins,
         contains('mimalloc-redirect.dll'),
-        reason:
-            'Release release/bin 应含 mimalloc-redirect.dll（MI_WIN_REDIRECT 构建期复制）',
+        reason: 'Release release/bin 应含 mimalloc-redirect.dll（MI_WIN_REDIRECT 构建期复制）',
       );
       expect(debugLibs, isNotEmpty, reason: 'debug/lib 应存在且含 .lib');
       expect(debugBins, isNotEmpty, reason: 'debug/bin 应存在且含 .dll');
@@ -307,6 +311,21 @@ void main() {
         postBatContent.contains('exit /b 0'),
         isTrue,
         reason: 'post.bat 注入失败不阻断构建（恒 exit /b 0）',
+      );
+      expect(
+        postBatBytes.take(3).toList(),
+        isNot(<int>[0xEF, 0xBB, 0xBF]),
+        reason: 'post.bat 不得带 UTF-8 BOM（cmd 会把 BOM 混入命令解析）',
+      );
+      final ProcessResult postBatRun = await Process.run('cmd', <String>[
+        '/c',
+        '"$postBatPath"',
+      ]);
+      expect(postBatRun.exitCode, 0, reason: '无参数调用 post.bat 应静默 exit /b 0');
+      expect(
+        '${postBatRun.stdout}${postBatRun.stderr}'.trim(),
+        isEmpty,
+        reason: 'cmd 以系统 ANSI 代码页解析 post.bat 不应出现乱码命令行报错',
       );
       expect(
         Directory(joinPath(packDir.path, 'lib')).existsSync(),
