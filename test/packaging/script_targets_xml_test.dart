@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
@@ -68,6 +69,12 @@ PackModel _pack(String name, List<FileModel> files) {
     author: 'tester',
   );
   pack.files.addAll(files);
+  pack.commands = <CmdModel>[
+    const CmdModel(
+      command: r'''echo 'a & b' <c> > "d"''',
+      type: CmdType.preBuild,
+    ),
+  ];
   pack.scripts = <ScriptProjectModel>[
     _script('script_1', 'A---B', trigger: ScriptTrigger.pre),
     _script('script_2', 'R&D 打包', trigger: ScriptTrigger.post),
@@ -148,6 +155,13 @@ void main() {
         contains(
           '<!-- 脚本：脚本 &lt;一&gt; &amp; &quot;二&quot; &apos;三&apos; - - 四 -->',
         ),
+      );
+      expect(
+        content,
+        contains(
+          r'<Exec Command="echo &apos;a &amp; b&apos; &lt;c&gt; &gt; &quot;d&quot;"',
+        ),
+        reason: '夹具「${fixture.key}」的命令 Exec 应转义 XML 特殊字符',
       );
       if (fixture.hasRuntimeBinaries) {
         expect(content, contains('<Target Name="DeployPkgRuntimeBinaries"'));
