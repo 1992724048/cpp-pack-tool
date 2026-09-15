@@ -17,7 +17,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 ## 运行方式（工具侧）
 
 1. 解析库源码根目录的 `build.py`（文件名大小写不敏感；根级 `build.py` 不随包分发）；
-2. 检测编译器（ICX > clang-cl > MSVC，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
+2. 检测编译器（ICX > clang-cl > MSVC > MinGW，可在工具设置页调整优先级）并准备 CMake / Ninja 与 `# tool` 声明的工具；
 3. 准备源码：无缓存时 `git clone` 到 `cache/build/<清洗包ID>/`；已有缓存时原位硬重置（`git fetch` → `reset --hard` 上游 → `clean -ffdx`），声明 `# source: none` 时跳过 git 仅创建该目录（缓存目录**不清理**，脚本下载/解压内容跨构建复用）；
 4. 以**包源目录为工作目录**运行 `python build.py`（Python 缺失时工具自动下载最小版到 `tools/python`；`python` 优先、`py -3` 兜底），并注入「环境变量」一节的变量；
 5. 脚本输出经管道逐行实时显示在构建对话框（`python -u` 无缓冲；git 拉取同样流式）；退出码 0 = 成功，非 0 = 失败（工具保留已显示输出并附输出尾部）；成功后自动扫描并重新映射产物。
@@ -52,8 +52,9 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | `BUILD_OUT` | 包源目录：分类后的最终产物写入这里（会随包入包）。**源码就绪后、执行 `build.py` 前会被清空**（git 拉取失败时不清理），仅保留根级 `build.py`（大小写不敏感）、`icon.*`、`pre.bat`/`post.bat`、根级 `.git` 与许可证类文件（`LICENSE`/`LICENCE`/`COPYING`/`UNLICENSE`/`NOTICE` 及 `-`/`.` 变体，含 `TBB-LICENSE` 类前缀变体；多段前缀如 `third-party-LICENSE` 不保护）；不要把需要跨构建的中间产物放这里。 |
 | `CNP_CMAKE` | cmake 可执行文件路径（`cmake_configure` / `cmake_build` 必需）。 |
 | `CNP_NINJA` | ninja 可执行文件路径（自动作为 `CMAKE_MAKE_PROGRAM`）。 |
-| `CNP_C_COMPILER` / `CNP_CXX_COMPILER` | 本机选中的 C / C++ 编译器全路径。 |
-| `CNP_COMPILER_KIND` | 编译器种类：`msvc` / `clang-cl` / `icx`。 |
+| `CNP_C_COMPILER` / `CNP_CXX_COMPILER` | 本机选中的 C / C++ 编译器全路径（MinGW 分设 `gcc.exe` / `g++.exe`，或 `clang.exe` / `clang++.exe`）。 |
+| `CNP_COMPILER_KIND` | 编译器种类：`msvc` / `clang-cl` / `icx` / `mingw`。 |
+| `CNP_RC_COMPILER` | MinGW 的 RC 编译器 `windres.exe` 路径（与 `gcc.exe` 同 bin；仅该文件存在时注入）。 |
 | `CNP_TOOLS_DIR` | `tools/` 绝对路径（`# tool` 下载的工具都在这里）。 |
 | `CNP_OPTION_<NAME>` | `# option` / `# checkbox` / `# multiselect` 声明的选项当前值（名称大写；多选为声明序 `;` 连接、可空串）。 |
 | `CNP_RUNTIME_LIBRARY` | 运行库家族：`md`（缺省/非法回退）或 `mt`；由工具按「用户选择 > `# runtime:` > `md`」解析后下发，辅助模块统一消费。 |
@@ -78,7 +79,7 @@ from cnp_build_support import (
 
 | 函数 | 用途 |
 | --- | --- |
-| `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：双配置（`CMAKE_BUILD_TYPE`）+ 运行库按 `CNP_RUNTIME_LIBRARY` 注入（`md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`），自动附加 `CMAKE_MAKE_PROGRAM` 与 `CMAKE_C(XX)_COMPILER`；按编译器注入 AVX2（全配置）与 Release 最高优化 / IPO，**不注入语言标准参数**；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可对单个库退化 LTO。 |
+| `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：双配置（`CMAKE_BUILD_TYPE`）+ 运行库按 `CNP_RUNTIME_LIBRARY` 注入（MSVC 系 `md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`；MinGW `md` 动态缺省、`mt` 链接期 `-static-libgcc -static-libstdc++`，不写 `CMAKE_MSVC_RUNTIME_LIBRARY`），自动附加 `CMAKE_MAKE_PROGRAM`、`CMAKE_C(XX)_COMPILER` 与 `CNP_RC_COMPILER`（MinGW 的 `CMAKE_RC_COMPILER`）；按编译器注入 AVX2（全配置）与 Release 最高优化 / IPO，**不注入语言标准参数**；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可对单个库退化 LTO。 |
 | `cmake_build(build_dir, config="Release", jobs=None)` | `cmake --build` 构建（Ninja 单配置）；`jobs` 缺省为 CPU 逻辑核数（`--parallel`），显式传 0/负值禁用并行。 |
 | `stage_headers(paths, out)` | 头文件 → `<out>/include/`。传目录时镜像其内容（保留子结构）；传文件时复制单个文件。 |
 | `stage_binaries(build_dir, out, config="Release", reset=False)` | 递归收集 `.lib/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重（去重残留形如 `_build-*`）。`reset=True` 先递归删除本配置段再 staging，杜绝陈旧文件与去重改名跨构建累积；默认 `False` 保持「只增量补入」旧语义。 |
@@ -96,7 +97,8 @@ from cnp_build_support import (
 - **架构**：只构建 x64（工具侧环境已按 x64 准备）。
 - **双配置**：一次构建同时产出 Release 与 Debug（各自独立 build 目录）；运行时库与构建类型由辅助模块固定，不要重复指定。**staging 用 `stage_binaries(..., reset=True)` 重置本配置段**——同名不同内容会按父目录后缀去重改名（`_build-*`），不重置会跨构建永久累积。
 - **生成器**：统一 CMake + Ninja（单配置），不要使用 Visual Studio 生成器。
-- **运行库（CRT）**：由 `cmake_configure` 按 `CNP_RUNTIME_LIBRARY` 统一注入（`md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`），配方不要自行注入 `CMAKE_MSVC_RUNTIME_LIBRARY`；需要默认静态运行库时在头部声明 `# runtime: mt`（用户仍可在 UI 覆盖）。**支持时优先构建独立 dll + lib（共享依赖省体积）**：动态运行库 + 独立 dll 让多个消费模块共用同一份 CRT 与库代码，产物体积显著更小；静态运行库（`mt`）仅在需要免依赖分发时选用。
+- **运行库（CRT）**：由 `cmake_configure` 按 `CNP_RUNTIME_LIBRARY` 统一注入——MSVC 系为 `md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`（写入 `CMAKE_MSVC_RUNTIME_LIBRARY`）；MinGW 为 GNU 语义：`md` 动态缺省（可随附 `libgcc_s`/`libstdc++`（CLANG64 为 libc++）系列 DLL），`mt` 把 `-static-libgcc -static-libstdc++` 注入链接器旗标（winpthread 仍为动态依赖，属有意取舍——全静态 `-static` 会牵动共享库的运行时状态，不在 v1 范围）。配方不要自行注入 `CMAKE_MSVC_RUNTIME_LIBRARY` 或运行库旗标；需要默认静态运行库时在头部声明 `# runtime: mt`（用户仍可在 UI 覆盖）。**支持时优先构建独立 dll + lib（共享依赖省体积）**：动态运行库 + 独立 dll 让多个消费模块共用同一份 CRT 与库代码，产物体积显著更小；静态运行库（`mt`）仅在需要免依赖分发时选用。
+- **MinGW 要点**：产物为 GNU 命名（`lib*.dll` / `lib*.dll.a`）；`windres.exe` 由工具从编译器同 bin 注入 `CMAKE_RC_COMPILER`（含 `.rc` 的工程无需自行配置）；不要套用 MSVC 旗标（`/O2`、`/MD` 等在 MinGW 下无效或报错），GNU 旗标由辅助模块统一注入；不要假设存在 vcvars 环境脚本（MinGW 工具链自包含，bin 已前置 PATH）。
 - **产物布局（release/debug 分层）**：`include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`。**库类产物禁止落 `BUILD_OUT` 根**（`lib/`、`bin/`）——打包侧按 `release`/`debug` 路径段识别构建类型，根目录产物会被判为“不限配置”（ALL），消费者无法按配置取库。
 - **优化参数（辅助模块自动注入，配方不要重复指定）**：
 
@@ -105,6 +107,7 @@ from cnp_build_support import (
   | ICX | `/QxCORE-AVX2 /QaxCORE-AVX2` | `/O3 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-Qipo`） |
   | clang-cl | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
   | MSVC | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`/GL` + `/LTCG`） |
+  | MinGW | `-mavx2` | `-O3 -ffunction-sections -fdata-sections` | 保守关闭（`enable_ipo=True` 可显式开启） |
 
   - Debug 不注入任何优化参数（保留调试信息，优先保证调试用途），AVX2 仍保留；
   - **语言标准不动原则**：辅助模块与配方都不得注入 `/std:`、`-std=` 等语言标准参数，保持库工程原有设定；
