@@ -359,52 +359,90 @@ class NuGetPackageBuilder implements PackageBuilder {
   static String _configurationCondition(String configuration) =>
       "'\$(Configuration)'=='$configuration'";
 
+  /// 编译前/后命令以自定义目标 + `Exec` 发射（消费者构建时自动执行）。
+  ///
+  /// 不能写 `PreBuildEvent`/`PostBuildEvent` 属性：VS v180 的 C++ 事件目标读取的
+  /// 是项元数据 `%(PreBuildEvent.Command)`/`%(PostBuildEvent.Command)`
+  /// （Microsoft.CppCommon.targets），晚导入的 NuGet `.targets` 属性不被消费，
+  /// 消费者构建时命令静默不执行（实测）；自定义目标与 DeployPkg/CnpScripts
+  /// 同模式（实测晚导入可执行）。声明次序保持原属性组位置：post 目标早于
+  /// DeployPkg/License 目标，与旧 PostBuildEvent 事件位置有差异，但命令引用
+  /// `$(TargetPath)` 与包内脚本、不依赖部署产物，功能独立，可接受。
   static void _writeCommandGroups(StringBuffer buffer, PackModel pack) {
     final _CommandGroup commands = _CommandGroup();
     for (final CmdModel command in pack.commands) {
       commands.add(command);
     }
-    _writeCommandPropertyGroup(buffer, commands.all);
-    _writeCommandPropertyGroup(
+    final String cleanId = pack.name.replaceAll(_invalidTargetNameChar, '_');
+    final String hash = hash8(pack.name);
+    _writeCommandGroupTargets(
       buffer,
-      commands.release,
-      condition: _configurationCondition(releaseBuildLabel),
+      cleanId: cleanId,
+      hash: hash,
+      commands: commands.all,
     );
-    _writeCommandPropertyGroup(
+    _writeCommandGroupTargets(
       buffer,
-      commands.debug,
-      condition: _configurationCondition(debugBuildLabel),
+      cleanId: cleanId,
+      hash: hash,
+      commands: commands.release,
+      configuration: releaseBuildLabel,
+    );
+    _writeCommandGroupTargets(
+      buffer,
+      cleanId: cleanId,
+      hash: hash,
+      commands: commands.debug,
+      configuration: debugBuildLabel,
     );
   }
 
-  static void _writeCommandPropertyGroup(
-    StringBuffer buffer,
-    _CommandBuildGroup commands, {
-    String? condition,
+  static void _writeCommandGroupTargets(
+    StringBuffer buffer, {
+    required String cleanId,
+    required String hash,
+    required _CommandBuildGroup commands,
+    String? configuration,
+  }) {
+    final String suffix = configuration == null ? '' : '_$configuration';
+    final String condition = configuration == null
+        ? ''
+        : ' Condition="${_configurationCondition(configuration)}"';
+    _writeCommandTarget(
+      buffer,
+      name: 'CnpPreBuild_${cleanId}_$hash$suffix',
+      anchor: 'BeforeTargets="ClCompile"',
+      condition: condition,
+      commands: commands.preBuild,
+    );
+    _writeCommandTarget(
+      buffer,
+      name: 'CnpPostBuild_${cleanId}_$hash$suffix',
+      anchor: 'AfterTargets="Build"',
+      condition: condition,
+      commands: commands.postBuild,
+    );
+  }
+
+  static void _writeCommandTarget(
+    StringBuffer buffer, {
+    required String name,
+    required String anchor,
+    required String condition,
+    required List<String> commands,
   }) {
     if (commands.isEmpty) {
       return;
     }
-    final String attribute = condition == null ? '' : ' Condition="$condition"';
-    buffer.writeln('  <PropertyGroup$attribute>');
-    _writeCommandEvent(buffer, 'PreBuildEvent', commands.preBuild);
-    _writeCommandEvent(buffer, 'PostBuildEvent', commands.postBuild);
-    buffer.writeln('  </PropertyGroup>');
-  }
-
-  static void _writeCommandEvent(
-    StringBuffer buffer,
-    String name,
-    List<String> commands,
-  ) {
-    if (commands.isEmpty) {
-      return;
+    buffer.writeln('  <Target Name="$name" $anchor$condition>');
+    for (final String command in commands) {
+      buffer.writeln(
+        '    <Exec Command="${_escapeXml(command)}" '
+        r'WorkingDirectory="$(ProjectDir)" '
+        'IgnoreStandardErrorWarningFormat="true" />',
+      );
     }
-    final String value = <String>[
-      '\$($name)',
-      for (final String command in commands) _escapeXml(command),
-    ].join('&#x0D;&#x0A;');
-    buffer.writeln('    <$name>$value</$name>');
+    buffer.writeln('  </Target>');
   }
 
   static void _writeMasmImportGroup(StringBuffer buffer) {

@@ -536,7 +536,7 @@ void main() {
       );
     });
 
-    test('编译命令按类型追加消费者值并转义 XML 特殊字符', () async {
+    test('编译前/后命令生成自定义目标与逐命令 Exec 并转义 XML 特殊字符', () async {
       final PackModel pack = _pack()
         ..commands = <CmdModel>[
           const CmdModel(command: 'echo one', type: CmdType.preBuild),
@@ -552,20 +552,39 @@ void main() {
       expect(
         targets,
         contains(
-          r'<PreBuildEvent>$(PreBuildEvent)&#x0D;&#x0A;echo one&#x0D;&#x0A;echo two</PreBuildEvent>',
+          '<Target Name="CnpPreBuild_demo_89e495e7" BeforeTargets="ClCompile">',
         ),
       );
       expect(
         targets,
         contains(
-          r'<PostBuildEvent>$(PostBuildEvent)&#x0D;&#x0A;echo $(ProjectDir) &amp; &lt;done&gt;</PostBuildEvent>',
+          '<Target Name="CnpPostBuild_demo_89e495e7" AfterTargets="Build">',
         ),
       );
-      expect(targets, contains('<PropertyGroup>'));
-      expect(targets, isNot(contains('PropertyGroup Condition')));
+      expect(
+        targets,
+        contains(
+          r'<Exec Command="echo one" WorkingDirectory="$(ProjectDir)" IgnoreStandardErrorWarningFormat="true" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(r'<Exec Command="echo $(ProjectDir) &amp; &lt;done&gt;"'),
+      );
+      expect(
+        targets.indexOf('echo one'),
+        lessThan(targets.indexOf('echo two')),
+      );
+      expect(
+        targets.indexOf('echo two'),
+        lessThan(targets.indexOf('CnpPostBuild_demo_89e495e7')),
+      );
+      expect(targets, isNot(contains('<PropertyGroup')));
+      expect(targets, isNot(contains('PreBuildEvent')));
+      expect(targets, isNot(contains('PostBuildEvent')));
     });
 
-    test('编译命令按构建配置写入条件 PropertyGroup', () async {
+    test('编译前/后命令按构建配置生成条件目标（名称带配置后缀）', () async {
       final PackModel pack = _pack()
         ..commands = <CmdModel>[
           const CmdModel(
@@ -582,28 +601,40 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      const String releaseGroup =
-          r'''<PropertyGroup Condition="'$(Configuration)'=='Release'">''';
-      const String debugGroup =
-          r'''<PropertyGroup Condition="'$(Configuration)'=='Debug'">''';
-      expect(targets, contains(releaseGroup));
-      expect(targets, contains(debugGroup));
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpPreBuild_demo_89e495e7_Release" '
+          'BeforeTargets="ClCompile" '
+          r'''Condition="'$(Configuration)'=='Release'">''',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpPostBuild_demo_89e495e7_Debug" '
+          'AfterTargets="Build" '
+          r'''Condition="'$(Configuration)'=='Debug'">''',
+        ),
+      );
       expect(
         targets.indexOf('echo pre-rel'),
-        greaterThan(targets.indexOf(releaseGroup)),
+        greaterThan(targets.indexOf('CnpPreBuild_demo_89e495e7_Release')),
       );
       expect(
         targets.indexOf('echo post-dbg'),
-        greaterThan(targets.indexOf(debugGroup)),
+        greaterThan(targets.indexOf('CnpPostBuild_demo_89e495e7_Debug')),
       );
-      expect(targets, isNot(contains('<PropertyGroup>')));
+      expect(targets, isNot(contains('CnpPreBuild_demo_89e495e7"')));
+      expect(targets, isNot(contains('CnpPostBuild_demo_89e495e7"')));
     });
 
-    test('无编译命令时不生成命令 PropertyGroup', () async {
+    test('无编译命令时不生成命令目标与 Exec', () async {
       final String targets = _targetsOf(await _builder.buildPlan(_pack()));
 
-      expect(targets, isNot(contains('PreBuildEvent')));
-      expect(targets, isNot(contains('PostBuildEvent')));
+      expect(targets, isNot(contains('CnpPreBuild')));
+      expect(targets, isNot(contains('CnpPostBuild')));
+      expect(targets, isNot(contains('<Exec')));
       expect(targets, isNot(contains('<PropertyGroup')));
     });
 
@@ -864,6 +895,8 @@ void main() {
       expect(targets, isNot(contains('<AdditionalDependencies>')));
       expect(targets, isNot(contains('ItemDefinitionGroup Condition')));
       expect(targets, isNot(contains('<PropertyGroup')));
+      expect(targets, isNot(contains('CnpPreBuild')));
+      expect(targets, isNot(contains('CnpPostBuild')));
       expect(targets, isNot(contains('<ImportGroup')));
       expect(targets, isNot(contains('<MASM')));
       expect(targets, isNot(contains('<ResourceCompile')));

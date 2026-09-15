@@ -38,7 +38,7 @@
 
 - 自动把 `build/native/include` 追加到包含路径
 - 写入宏定义、附加库目录与附加库（按 ALL/Release/Debug 条件分组；包内 `.lib` 按路径自动识别配置，同时补充库目录与库名）
-- 编译前/后命令写入 `PreBuildEvent`/`PostBuildEvent`（保留消费者工程已有值）
+- 编译前/后命令以自定义目标自动执行：`CnpPreBuild_<包ID清洗>_<hash8>`（`BeforeTargets="ClCompile"`）/ `CnpPostBuild_<包ID清洗>_<hash8>`（`AfterTargets="Build"`），每命令一条 `Exec`（工作目录 `$(ProjectDir)`，ALL/Release/Debug 条件在目标级，Release/Debug 组以 `_Release`/`_Debug` 后缀区分）
 - 包内 dll/pdb 由 `DeployPkgRuntimeBinaries` 目标在构建后硬链接到 `$(OutDir)`（失败回退为拷贝，并登记 `FileWrites` 供清理）
 - 包内包含 `.asm` 时条件导入 VS 的 `masm.props`/`masm.targets`，生成 `MASM` 项
 - 包内包含 `.rc` 时生成 `ResourceCompile` 项
