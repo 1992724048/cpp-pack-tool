@@ -368,6 +368,45 @@ void main() {
       expect(settings.themeMode, ThemeModeSetting.system);
     });
 
+    test('代理字段写入 YAML 并往返读回', () async {
+      await store.saveSettings(
+        const SettingsModel(
+          proxyMode: ProxyModeSetting.manual,
+          proxyHost: 'http://127.0.0.1',
+          proxyPort: 7890,
+        ),
+      );
+
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, contains('proxyMode: manual'));
+      expect(yaml, contains('proxyHost: http://127.0.0.1'));
+      expect(yaml, contains('proxyPort: 7890'));
+
+      final SettingsModel loaded = await store.loadSettings();
+      expect(loaded.proxyMode, ProxyModeSetting.manual);
+      expect(loaded.proxyHost, 'http://127.0.0.1');
+      expect(loaded.proxyPort, 7890);
+    });
+
+    test('旧配置无代理字段时默认关闭且不写入地址与端口', () async {
+      File('${tempDir.path}/config.yaml').createSync(recursive: true);
+      File('${tempDir.path}/config.yaml')
+          .writeAsStringSync('version: 1\nthemeMode: system\n');
+
+      final SettingsModel settings = await store.loadSettings();
+      expect(settings.proxyMode, ProxyModeSetting.off);
+      expect(settings.proxyHost, '');
+      expect(settings.proxyPort, isNull);
+
+      await store.saveSettings(settings);
+      final String yaml = File('${tempDir.path}/config.yaml')
+          .readAsStringSync();
+      expect(yaml, contains('proxyMode: off'));
+      expect(yaml, isNot(contains('proxyHost')));
+      expect(yaml, isNot(contains('proxyPort')));
+    });
+
     test('旧主题键加载正常且保存后自然消失', () async {
       File('${tempDir.path}/config.yaml').createSync(recursive: true);
       File('${tempDir.path}/config.yaml').writeAsStringSync(

@@ -372,4 +372,90 @@ void main() {
 
     expect(loaded.cmakeOutputDirectory, isNull);
   });
+
+  test('代理字段默认关闭且 toMap 始终写 proxyMode', () {
+    const SettingsModel settings = SettingsModel();
+
+    expect(settings.proxyMode, ProxyModeSetting.off);
+    expect(settings.proxyHost, '');
+    expect(settings.proxyPort, isNull);
+    final Map<String, Object?> map = settings.toMap();
+    expect(map['proxyMode'], 'off');
+    expect(map.containsKey('proxyHost'), isFalse);
+    expect(map.containsKey('proxyPort'), isFalse);
+  });
+
+  test('代理字段往返保留模式、地址与端口', () {
+    const SettingsModel settings = SettingsModel(
+      proxyMode: ProxyModeSetting.manual,
+      proxyHost: 'http://127.0.0.1',
+      proxyPort: 7890,
+    );
+
+    final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
+
+    expect(loaded.proxyMode, ProxyModeSetting.manual);
+    expect(loaded.proxyHost, 'http://127.0.0.1');
+    expect(loaded.proxyPort, 7890);
+  });
+
+  test('代理模式未知值回退 off，地址 trim，端口非法读回 null', () {
+    final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
+      'proxyMode': 'stealth',
+      'proxyHost': '  10.0.0.1  ',
+      'proxyPort': 70000,
+    });
+
+    expect(loaded.proxyMode, ProxyModeSetting.off);
+    expect(loaded.proxyHost, '10.0.0.1');
+    expect(loaded.proxyPort, isNull);
+
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'proxyPort': '8080'}).proxyPort,
+      8080,
+    );
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'proxyPort': 0}).proxyPort,
+      isNull,
+    );
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'proxyPort': -1}).proxyPort,
+      isNull,
+    );
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'proxyPort': 'abc'}).proxyPort,
+      isNull,
+    );
+  });
+
+  test('copyWith 覆盖字段并保留其余字段；可空字段用哨兵区分清空', () {
+    const SettingsModel settings = SettingsModel(
+      outputDirectory: r'D:\out',
+      cmakeOutputDirectory: r'D:\cmake',
+      defaultAuthor: '张三',
+      themeMode: ThemeModeSetting.dark,
+      proxyHost: '127.0.0.1',
+      proxyPort: 1080,
+    );
+
+    final SettingsModel same = settings.copyWith();
+    expect(same.outputDirectory, r'D:\out');
+    expect(same.cmakeOutputDirectory, r'D:\cmake');
+    expect(same.defaultAuthor, '张三');
+    expect(same.themeMode, ThemeModeSetting.dark);
+    expect(same.proxyHost, '127.0.0.1');
+    expect(same.proxyPort, 1080);
+
+    final SettingsModel cleared = settings.copyWith(
+      outputDirectory: null,
+      cmakeOutputDirectory: null,
+      proxyPort: null,
+      proxyMode: ProxyModeSetting.auto,
+    );
+    expect(cleared.outputDirectory, isNull);
+    expect(cleared.cmakeOutputDirectory, isNull);
+    expect(cleared.proxyPort, isNull);
+    expect(cleared.proxyMode, ProxyModeSetting.auto);
+    expect(cleared.defaultAuthor, '张三');
+  });
 }

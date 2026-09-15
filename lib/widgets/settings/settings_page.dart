@@ -35,6 +35,7 @@ class SettingsPage extends StatelessWidget {
     final FluentThemeData theme = FluentTheme.of(context);
     return SizedBox.expand(
       child: Container(
+        key: const Key('settingsPageSurface'),
         decoration: BoxDecoration(color: theme.cardColor),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(

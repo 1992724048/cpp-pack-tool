@@ -3,9 +3,13 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/widgets/settings/settings_card.dart';
+import 'package:cpp_nuget_pack/widgets/settings/settings_group.dart';
+import 'package:cpp_nuget_pack/widgets/settings/settings_page.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
@@ -40,11 +44,23 @@ class _SettingState extends State<Setting> {
         ThemeModeSetting.light: '浅色',
       };
 
+  static const Map<ProxyModeSetting, String> _proxyModeLabels =
+      <ProxyModeSetting, String>{
+        ProxyModeSetting.off: '关闭（直连）',
+        ProxyModeSetting.auto: '自动检测',
+        ProxyModeSetting.manual: '手动设置',
+      };
+
   List<toolchain.DetectedCompiler> _detected =
       const <toolchain.DetectedCompiler>[];
   bool _detecting = true;
   late final TextEditingController _defaultAuthorController;
   late final FocusNode _defaultAuthorFocusNode;
+  late final TextEditingController _proxyHostController;
+  late final FocusNode _proxyHostFocusNode;
+  late final TextEditingController _proxyPortController;
+  late final FocusNode _proxyPortFocusNode;
+  String? _proxyPortError;
 
   @override
   void initState() {
@@ -53,6 +69,14 @@ class _SettingState extends State<Setting> {
       text: widget.settings.defaultAuthor,
     );
     _defaultAuthorFocusNode = FocusNode()..addListener(_onAuthorFocusChanged);
+    _proxyHostController = TextEditingController(
+      text: widget.settings.proxyHost,
+    );
+    _proxyHostFocusNode = FocusNode()..addListener(_onProxyHostFocusChanged);
+    _proxyPortController = TextEditingController(
+      text: widget.settings.proxyPort?.toString() ?? '',
+    );
+    _proxyPortFocusNode = FocusNode()..addListener(_onProxyPortFocusChanged);
     final List<toolchain.DetectedCompiler> cached =
         widget.settings.detectedCompilers;
     if (cached.isEmpty) {
@@ -66,11 +90,17 @@ class _SettingState extends State<Setting> {
   @override
   void didUpdateWidget(covariant Setting oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.settings.defaultAuthor == widget.settings.defaultAuthor) {
-      return;
-    }
-    if (!_defaultAuthorFocusNode.hasFocus) {
+    if (oldWidget.settings.defaultAuthor != widget.settings.defaultAuthor &&
+        !_defaultAuthorFocusNode.hasFocus) {
       _defaultAuthorController.text = widget.settings.defaultAuthor;
+    }
+    if (oldWidget.settings.proxyHost != widget.settings.proxyHost &&
+        !_proxyHostFocusNode.hasFocus) {
+      _proxyHostController.text = widget.settings.proxyHost;
+    }
+    if (oldWidget.settings.proxyPort != widget.settings.proxyPort &&
+        !_proxyPortFocusNode.hasFocus) {
+      _proxyPortController.text = widget.settings.proxyPort?.toString() ?? '';
     }
   }
 
@@ -80,6 +110,14 @@ class _SettingState extends State<Setting> {
       ..removeListener(_onAuthorFocusChanged)
       ..dispose();
     _defaultAuthorController.dispose();
+    _proxyHostFocusNode
+      ..removeListener(_onProxyHostFocusChanged)
+      ..dispose();
+    _proxyHostController.dispose();
+    _proxyPortFocusNode
+      ..removeListener(_onProxyPortFocusChanged)
+      ..dispose();
+    _proxyPortController.dispose();
     super.dispose();
   }
 
@@ -90,6 +128,20 @@ class _SettingState extends State<Setting> {
     _saveDefaultAuthor();
   }
 
+  void _onProxyHostFocusChanged() {
+    if (_proxyHostFocusNode.hasFocus) {
+      return;
+    }
+    _saveProxyHost();
+  }
+
+  void _onProxyPortFocusChanged() {
+    if (_proxyPortFocusNode.hasFocus) {
+      return;
+    }
+    _saveProxyPort();
+  }
+
   /// 失焦或回车时保存默认作者；值未变化不触发（防重复写盘 / 重复 toast）。
   void _saveDefaultAuthor() {
     final String value = _defaultAuthorController.text.trim();
@@ -97,6 +149,46 @@ class _SettingState extends State<Setting> {
       return;
     }
     _apply(_defaultAuthorSettings(value));
+  }
+
+  Future<void> _saveProxyMode(ProxyModeSetting mode) {
+    if (mode == widget.settings.proxyMode) {
+      return Future<void>.value();
+    }
+    return _apply(widget.settings.copyWith(proxyMode: mode));
+  }
+
+  /// 手动代理地址失焦/回车保存；值未变化不写盘。地址允许 `http://host` 前缀
+  /// （保存原样），空值视为未设置（运行侧退直连）。
+  void _saveProxyHost() {
+    final String value = _proxyHostController.text.trim();
+    if (value == widget.settings.proxyHost) {
+      return;
+    }
+    _apply(widget.settings.copyWith(proxyHost: value));
+  }
+
+  /// 手动代理端口失焦/回车保存；空值清除端口（可回退地址中声明的端口），
+  /// 非 1–65535 的整数时显示内联错误且不写盘。
+  void _saveProxyPort() {
+    final String text = _proxyPortController.text.trim();
+    if (text.isEmpty) {
+      setState(() => _proxyPortError = null);
+      if (widget.settings.proxyPort != null) {
+        _apply(widget.settings.copyWith(proxyPort: null));
+      }
+      return;
+    }
+    final int? port = int.tryParse(text);
+    if (port == null || port < 1 || port > 65535) {
+      setState(() => _proxyPortError = '端口需为 1–65535 的整数');
+      return;
+    }
+    setState(() => _proxyPortError = null);
+    if (port == widget.settings.proxyPort) {
+      return;
+    }
+    _apply(widget.settings.copyWith(proxyPort: port));
   }
 
   Future<void> _detectCompilers({required bool showLoading}) async {
@@ -157,64 +249,23 @@ class _SettingState extends State<Setting> {
     required String? outputDirectory,
     required String? cmakeOutputDirectory,
   }) {
-    final SettingsModel current = widget.settings;
-    return SettingsModel(
+    return widget.settings.copyWith(
       outputDirectory: outputDirectory,
       cmakeOutputDirectory: cmakeOutputDirectory,
-      defaultAuthor: current.defaultAuthor,
-      themeMode: current.themeMode,
-      compilerPriority: current.compilerPriority,
-      detectedCompilers: current.detectedCompilers,
     );
   }
 
-  SettingsModel _defaultAuthorSettings(String defaultAuthor) {
-    final SettingsModel current = widget.settings;
-    return SettingsModel(
-      outputDirectory: current.outputDirectory,
-      cmakeOutputDirectory: current.cmakeOutputDirectory,
-      defaultAuthor: defaultAuthor,
-      themeMode: current.themeMode,
-      compilerPriority: current.compilerPriority,
-      detectedCompilers: current.detectedCompilers,
-    );
-  }
+  SettingsModel _defaultAuthorSettings(String defaultAuthor) =>
+      widget.settings.copyWith(defaultAuthor: defaultAuthor);
 
-  SettingsModel _themeSettings({ThemeModeSetting? themeMode}) {
-    final SettingsModel current = widget.settings;
-    return SettingsModel(
-      outputDirectory: current.outputDirectory,
-      cmakeOutputDirectory: current.cmakeOutputDirectory,
-      defaultAuthor: current.defaultAuthor,
-      themeMode: themeMode ?? current.themeMode,
-      compilerPriority: current.compilerPriority,
-      detectedCompilers: current.detectedCompilers,
-    );
-  }
+  SettingsModel _themeSettings({ThemeModeSetting? themeMode}) =>
+      widget.settings.copyWith(themeMode: themeMode);
 
-  SettingsModel _compilerSettings(List<String> compilerPriority) {
-    final SettingsModel current = widget.settings;
-    return SettingsModel(
-      outputDirectory: current.outputDirectory,
-      cmakeOutputDirectory: current.cmakeOutputDirectory,
-      defaultAuthor: current.defaultAuthor,
-      themeMode: current.themeMode,
-      compilerPriority: compilerPriority,
-      detectedCompilers: current.detectedCompilers,
-    );
-  }
+  SettingsModel _compilerSettings(List<String> compilerPriority) =>
+      widget.settings.copyWith(compilerPriority: compilerPriority);
 
-  SettingsModel _detectedSettings(List<toolchain.DetectedCompiler> detected) {
-    final SettingsModel current = widget.settings;
-    return SettingsModel(
-      outputDirectory: current.outputDirectory,
-      cmakeOutputDirectory: current.cmakeOutputDirectory,
-      defaultAuthor: current.defaultAuthor,
-      themeMode: current.themeMode,
-      compilerPriority: current.compilerPriority,
-      detectedCompilers: detected,
-    );
-  }
+  SettingsModel _detectedSettings(List<toolchain.DetectedCompiler> detected) =>
+      widget.settings.copyWith(detectedCompilers: detected);
 
   void _moveCompiler(int index, int offset) {
     final List<String> priority = List<String>.of(
@@ -297,74 +348,84 @@ class _SettingState extends State<Setting> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Container(
-        decoration: BoxDecoration(color: FluentTheme.of(context).cardColor),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSectionTitle(context, '打包输出目录'),
-                const SizedBox(height: 12),
-                InfoLabel(
-                  label: 'NuGet 打包输出目录',
-                  child: _buildDirectoryRow(
-                    path: widget.settings.outputDirectory,
-                    pickKey: const Key('settingPickDirButton'),
-                    clearKey: const Key('settingClearDirButton'),
-                    onPick: _pickDirectory,
-                    onClear: _clearDirectory,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                InfoLabel(
-                  label: 'CMake 打包输出目录',
-                  child: _buildDirectoryRow(
-                    path: widget.settings.cmakeOutputDirectory,
-                    pickKey: const Key('settingPickCmakeDirButton'),
-                    clearKey: const Key('settingClearCmakeDirButton'),
-                    onPick: _pickCmakeDirectory,
-                    onClear: _clearCmakeDirectory,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                _buildSectionTitle(context, '默认作者'),
-                const SizedBox(height: 12),
-                _buildDefaultAuthorField(context),
-                const SizedBox(height: 24),
-                _buildSectionTitle(context, '主题'),
-                const SizedBox(height: 12),
-                InfoLabel(label: '主题模式', child: _buildThemeModeField()),
-                const SizedBox(height: 24),
-                _buildSectionTitle(context, '编译器'),
-                const SizedBox(height: 12),
-                _buildCompilerSection(context),
-                const SizedBox(height: 24),
-                _buildSectionTitle(context, 'SKILL.md'),
-                const SizedBox(height: 12),
-                _buildSkillSection(context),
-              ],
+    final bool manualProxy =
+        widget.settings.proxyMode == ProxyModeSetting.manual;
+    return SettingsPage(
+      title: '设置',
+      description: const Text(
+        '配置打包输出目录、默认作者、外观、编译器优先级、网络代理与 AI 技能输出。',
+      ),
+      children: <Widget>[
+        SettingsGroup(
+          header: '打包',
+          first: true,
+          children: <Widget>[
+            _buildDirectoryCard(
+              header: 'NuGet 打包输出目录',
+              path: widget.settings.outputDirectory,
+              pickKey: const Key('settingPickDirButton'),
+              clearKey: const Key('settingClearDirButton'),
+              onPick: _pickDirectory,
+              onClear: _clearDirectory,
             ),
-          ),
+            _buildDirectoryCard(
+              header: 'CMake 打包输出目录',
+              path: widget.settings.cmakeOutputDirectory,
+              pickKey: const Key('settingPickCmakeDirButton'),
+              clearKey: const Key('settingClearCmakeDirButton'),
+              onPick: _pickCmakeDirectory,
+              onClear: _clearCmakeDirectory,
+            ),
+          ],
         ),
+        SettingsGroup(
+          header: '新包默认值',
+          children: <Widget>[_buildDefaultAuthorCard()],
+        ),
+        SettingsGroup(
+          header: '外观',
+          children: <Widget>[_buildThemeModeCard()],
+        ),
+        SettingsGroup(
+          header: '编译器',
+          children: <Widget>[_buildCompilerCard()],
+        ),
+        SettingsGroup(
+          header: '网络',
+          children: <Widget>[
+            _buildProxyModeCard(),
+            if (manualProxy) _buildProxyManualCard(),
+          ],
+        ),
+        SettingsGroup(
+          header: 'AI 技能',
+          children: <Widget>[_buildSkillCard()],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDirectoryCard({
+    required String header,
+    required String? path,
+    required Key pickKey,
+    required Key clearKey,
+    required VoidCallback onPick,
+    required VoidCallback onClear,
+  }) {
+    return SettingsCard(
+      header: Text(header),
+      content: _buildPathControls(
+        path: path,
+        pickKey: pickKey,
+        clearKey: clearKey,
+        onPick: onPick,
+        onClear: onClear,
       ),
     );
   }
 
-  Widget _buildSectionTitle(BuildContext context, String title) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        color: FluentTheme.of(context).typography.body?.color,
-      ),
-    );
-  }
-
-  Widget _buildDirectoryRow({
+  Widget _buildPathControls({
     required String? path,
     required Key pickKey,
     required Key clearKey,
@@ -372,18 +433,24 @@ class _SettingState extends State<Setting> {
     required VoidCallback onClear,
   }) {
     final FluentThemeData theme = FluentTheme.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            path ?? '未设置',
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: theme.resources.textFillColorSecondary),
+    final String label = path ?? '未设置';
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Tooltip(
+            message: label,
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.resources.textFillColorSecondary),
+            ),
           ),
         ),
-        const SizedBox(width: 12),
         Button(key: pickKey, onPressed: onPick, child: const Text('选择目录…')),
-        const SizedBox(width: 8),
         Button(
           key: clearKey,
           onPressed: path == null ? null : onClear,
@@ -393,90 +460,175 @@ class _SettingState extends State<Setting> {
     );
   }
 
-  Widget _buildDefaultAuthorField(BuildContext context) {
-    final FluentThemeData theme = FluentTheme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 320,
-          child: TextBox(
-            key: const Key('settingDefaultAuthorField'),
-            controller: _defaultAuthorController,
-            focusNode: _defaultAuthorFocusNode,
-            onSubmitted: (String _) => _saveDefaultAuthor(),
-          ),
+  Widget _buildDefaultAuthorCard() {
+    return SettingsCard(
+      header: const Text('默认作者'),
+      description: const Text(
+        '新包将预填此值；作者为空或占位（「无」「未知」等）的包将自动替换为默认作者。',
+      ),
+      content: SizedBox(
+        width: 320,
+        child: TextBox(
+          key: const Key('settingDefaultAuthorField'),
+          controller: _defaultAuthorController,
+          focusNode: _defaultAuthorFocusNode,
+          onSubmitted: (String _) => _saveDefaultAuthor(),
         ),
-        const SizedBox(height: 8),
-        Text(
-          '新包将预填此值；作者为空或占位（「无」「未知」等）的包将自动替换为默认作者。',
-          style: TextStyle(color: theme.resources.textFillColorSecondary),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildThemeModeField() {
-    return _comboBoxFrame(
-      ComboBox<ThemeModeSetting>(
-        key: const Key('settingThemeModeField'),
-        value: widget.settings.themeMode,
-        isExpanded: true,
-        onChanged: (ThemeModeSetting? value) {
-          if (value != null && value != widget.settings.themeMode) {
-            _apply(_themeSettings(themeMode: value));
-          }
-        },
-        items: <ComboBoxItem<ThemeModeSetting>>[
-          for (final ThemeModeSetting mode in ThemeModeSetting.values)
-            ComboBoxItem<ThemeModeSetting>(
-              value: mode,
-              child: Text(_themeModeLabels[mode]!),
-            ),
-        ],
       ),
     );
   }
 
-  Widget _buildCompilerSection(BuildContext context) {
-    if (_detecting && _detected.isEmpty) {
-      return const Row(
-        children: [
-          SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2)),
-          SizedBox(width: 12),
-          Text('正在检测编译器…'),
-        ],
-      );
-    }
-    final List<String> priority = widget.settings.compilerPriority;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '优先使用的编译器（自上而下）',
-                style: TextStyle(
-                  color: FluentTheme.of(context)
-                      .resources
-                      .textFillColorSecondary,
-                ),
+  Widget _buildThemeModeCard() {
+    return SettingsCard(
+      header: const Text('主题模式'),
+      content: _comboBoxField(
+        width: 160,
+        child: ComboBox<ThemeModeSetting>(
+          key: const Key('settingThemeModeField'),
+          value: widget.settings.themeMode,
+          isExpanded: true,
+          onChanged: (ThemeModeSetting? value) {
+            if (value != null && value != widget.settings.themeMode) {
+              _apply(_themeSettings(themeMode: value));
+            }
+          },
+          items: <ComboBoxItem<ThemeModeSetting>>[
+            for (final ThemeModeSetting mode in ThemeModeSetting.values)
+              ComboBoxItem<ThemeModeSetting>(
+                value: mode,
+                child: Text(_themeModeLabels[mode]!),
               ),
-            ),
-            Button(
-              key: const Key('settingCompilerRefreshButton'),
-              onPressed: _detecting
-                  ? null
-                  : () => _detectCompilers(showLoading: true),
-              child: const Text('重新检测'),
-            ),
           ],
         ),
-        const SizedBox(height: 8),
-        for (var index = 0; index < priority.length; index++)
-          _buildCompilerRow(priority[index], index),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildProxyModeCard() {
+    return SettingsCard(
+      header: const Text('代理模式'),
+      description: const Text(
+        '自动检测：使用 Windows 系统代理设置，不可用时自动直连。'
+        '手动设置：填写本机代理服务器，代理不可用时自动直连。',
+      ),
+      content: _comboBoxField(
+        width: 160,
+        child: ComboBox<ProxyModeSetting>(
+          key: const Key('settingProxyModeField'),
+          value: widget.settings.proxyMode,
+          isExpanded: true,
+          onChanged: (ProxyModeSetting? value) {
+            if (value != null) {
+              _saveProxyMode(value);
+            }
+          },
+          items: <ComboBoxItem<ProxyModeSetting>>[
+            for (final ProxyModeSetting mode in ProxyModeSetting.values)
+              ComboBoxItem<ProxyModeSetting>(
+                value: mode,
+                child: Text(_proxyModeLabels[mode]!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProxyManualCard() {
+    final FluentThemeData theme = FluentTheme.of(context);
+    return SettingsCard(
+      header: const Text('手动设置'),
+      description: const Text(
+        '服务器地址支持 host:port 或 http://host:port，端口留空时使用地址中声明的端口'
+        '（均未声明时默认 1080）。',
+      ),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 240,
+                  child: TextBox(
+                    key: const Key('settingProxyHostField'),
+                    controller: _proxyHostController,
+                    focusNode: _proxyHostFocusNode,
+                    placeholder: '127.0.0.1',
+                    onSubmitted: (String _) => _saveProxyHost(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 96,
+                  child: TextBox(
+                    key: const Key('settingProxyPortField'),
+                    controller: _proxyPortController,
+                    focusNode: _proxyPortFocusNode,
+                    placeholder: '7890',
+                    onSubmitted: (String _) => _saveProxyPort(),
+                  ),
+                ),
+              ],
+            ),
+            if (_proxyPortError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  _proxyPortError!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.critical(theme.brightness),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompilerCard() {
+    final List<String> priority = widget.settings.compilerPriority;
+    final bool hideRows = _detecting && _detected.isEmpty;
+    return SettingsCard(
+      header: const Text('编译器优先级'),
+      description: const Text('优先使用的编译器（自上而下）'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                if (_detecting) ...<Widget>[
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: ProgressRing(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('正在检测编译器…'),
+                ],
+                const Spacer(),
+                Button(
+                  key: const Key('settingCompilerRefreshButton'),
+                  onPressed: _detecting
+                      ? null
+                      : () => _detectCompilers(showLoading: true),
+                  child: const Text('重新检测'),
+                ),
+              ],
+            ),
+            if (!hideRows)
+              for (var index = 0; index < priority.length; index++)
+                _buildCompilerRow(priority[index], index),
+          ],
+        ),
+      ),
     );
   }
 
@@ -556,30 +708,23 @@ class _SettingState extends State<Setting> {
     );
   }
 
-  Widget _buildSkillSection(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            '生成 build.py 编写技能文档（SKILL.md），可放入 AI 插件的技能目录使用。',
-            style: TextStyle(
-              color: FluentTheme.of(context).resources.textFillColorSecondary,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Button(
-          key: const Key('settingGenerateSkillButton'),
-          onPressed: _generateSkill,
-          child: const Text('生成 SKILL.md…'),
-        ),
-      ],
+  Widget _buildSkillCard() {
+    return SettingsCard(
+      header: const Text('SKILL.md'),
+      description: const Text(
+        '生成 build.py 编写技能文档（SKILL.md），可放入 AI 插件的技能目录使用。',
+      ),
+      content: Button(
+        key: const Key('settingGenerateSkillButton'),
+        onPressed: _generateSkill,
+        child: const Text('生成 SKILL.md…'),
+      ),
     );
   }
 
-  Widget _comboBoxFrame(Widget child) {
+  Widget _comboBoxField({required double width, required Widget child}) {
     return SizedBox(
-      width: 240,
+      width: width,
       child: FluentTheme(
         data: FluentTheme.of(context).copyWith(visualDensity: comboBoxDensity),
         child: child,
