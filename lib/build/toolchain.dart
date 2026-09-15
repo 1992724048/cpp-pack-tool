@@ -13,7 +13,8 @@ const String _vcToolsComponent =
     'Microsoft.VisualStudio.Component.VC.Tools.x86.x64';
 
 /// 检测 Intel oneAPI ICX：取 `<oneApiRoot>/compiler/<最高版本|latest>/` 下
-/// `bin/icx-cl.exe`（2024+ 布局）或 `windows/bin/icx-cl.exe`（旧布局）。
+/// `bin/icx.exe`（2024+ 布局，优先）或 `windows/bin/icx.exe`（旧布局）；驱动缺失时
+/// 回退旧名 `icx-cl.exe`（兼容更早安装）。
 ///
 /// [environment] 为版本探测子进程的环境（如注入受控 `TMP`/`TEMP`）；null 时
 /// 继承宿主环境。探测只认退出码 0 且 stdout 命中版本：ICX 在临时目录不可用时
@@ -276,16 +277,21 @@ String? _findIcxExecutable(String oneApiRoot) {
   return latestExecutable;
 }
 
-/// 新布局（2024+）为 `compiler/<目录>/bin/icx-cl.exe`，旧布局为
-/// `compiler/<目录>/windows/bin/icx-cl.exe`；两者都探测，取先命中的布局。
+/// 新布局（2024+）为 `compiler/<目录>/bin/icx[,-cl].exe`，旧布局为
+/// `compiler/<目录>/windows/bin/icx[,-cl].exe`；两者都探测，取先命中的布局。
+///
+/// R23 起优先 GNU 接口驱动 `icx.exe`（`icx`/`icx-cl` 双风格均兼容，构建旗标
+/// `/O3 ...` 已实证）；仅当安装中缺失 `icx.exe` 时回退旧名 `icx-cl.exe`。
 String? _icxExecutableIn(String oneApiRoot, String compilerDirectoryName) {
   for (final String layout in const <String>['bin', 'windows/bin']) {
-    final String executable = joinPath(
-      oneApiRoot,
-      'compiler/$compilerDirectoryName/$layout/icx-cl.exe',
-    );
-    if (File(executable).existsSync()) {
-      return executable;
+    for (final String name in const <String>['icx.exe', 'icx-cl.exe']) {
+      final String executable = joinPath(
+        oneApiRoot,
+        'compiler/$compilerDirectoryName/$layout/$name',
+      );
+      if (File(executable).existsSync()) {
+        return executable;
+      }
     }
   }
   return null;

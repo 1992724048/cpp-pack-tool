@@ -732,7 +732,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String toolsRoot = joinPath(root.path, 'tools');
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
-      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx.exe'));
       final String tempParent = joinPath(
         Directory(toolsRoot).absolute.path,
         '.tmp/build',
@@ -766,7 +766,7 @@ void main() {
       expect(result.compiler.kind, CompilerKind.icx);
       expect(result.compiler.version, '2026.1.0');
       final Iterable<_ProcessCall> icxProbes = calls.where(
-        (_ProcessCall call) => call.executable.endsWith('icx-cl.exe'),
+        (_ProcessCall call) => call.executable.endsWith('icx.exe'),
       );
       expect(icxProbes, hasLength(1));
       final String tempPath = icxProbes.single.environment!['TMP']!;
