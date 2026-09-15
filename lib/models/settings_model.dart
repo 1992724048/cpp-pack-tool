@@ -13,6 +13,8 @@ const List<String> _defaultCompilerPriority = <String>[
 class SettingsModel {
   const SettingsModel({
     this.outputDirectory,
+    this.cmakeOutputDirectory,
+    this.defaultAuthor = '',
     this.themeMode = ThemeModeSetting.system,
     this.darkFlavor = 'mocha',
     this.accent = 'teal',
@@ -20,7 +22,15 @@ class SettingsModel {
     this.detectedCompilers = const <DetectedCompiler>[],
   });
 
+  /// NuGet 打包输出目录。
   final String? outputDirectory;
+
+  /// CMake 打包输出目录。
+  final String? cmakeOutputDirectory;
+
+  /// 全局默认作者：新包预填，占位作者在保存/加载时自动替换。
+  final String defaultAuthor;
+
   final ThemeModeSetting themeMode;
   final String darkFlavor;
   final String accent;
@@ -34,6 +44,9 @@ class SettingsModel {
   Map<String, Object?> toMap() {
     return <String, Object?>{
       if (outputDirectory != null) 'outputDirectory': outputDirectory,
+      if (cmakeOutputDirectory != null)
+        'cmakeOutputDirectory': cmakeOutputDirectory,
+      if (defaultAuthor.isNotEmpty) 'defaultAuthor': defaultAuthor,
       'themeMode': themeMode.name,
       'darkFlavor': darkFlavor,
       'accent': accent,
@@ -49,6 +62,8 @@ class SettingsModel {
   factory SettingsModel.fromMap(Map<String, Object?> map) {
     return SettingsModel(
       outputDirectory: _optionalString(map['outputDirectory']),
+      cmakeOutputDirectory: _optionalString(map['cmakeOutputDirectory']),
+      defaultAuthor: _trimmedString(map['defaultAuthor']),
       themeMode: _themeModeFrom(map['themeMode']),
       darkFlavor: _allowedValue(map['darkFlavor'], darkFlavorNames, 'mocha'),
       accent: _allowedValue(map['accent'], accentColorNames, 'teal'),
@@ -179,6 +194,14 @@ String? _optionalString(Object? value) {
     return null;
   }
   return value;
+}
+
+/// 容错字符串读取：非字符串视为空串，读回 trim。
+String _trimmedString(Object? value) {
+  if (value is! String) {
+    return '';
+  }
+  return value.trim();
 }
 
 ThemeModeSetting _themeModeFrom(Object? value) {

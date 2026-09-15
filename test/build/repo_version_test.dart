@@ -257,6 +257,37 @@ void main() {
       expect(compareTagVersions('', '1.0.0'), 0);
     });
   });
+
+  group('packageVersionFromTag', () {
+    test('去除 v/V 前缀与单段字母前缀', () {
+      expect(packageVersionFromTag('v1.18.0'), '1.18.0');
+      expect(packageVersionFromTag('V2.0.0'), '2.0.0');
+      expect(packageVersionFromTag('openssl-4.0.2'), '4.0.2');
+      expect(packageVersionFromTag('version-3.49.1'), '3.49.1');
+      expect(packageVersionFromTag('OpenSSL_0_9_8zh'), isNull);
+    });
+
+    test('原样数字点分与单段结果', () {
+      expect(packageVersionFromTag('4.0.2'), '4.0.2');
+      expect(packageVersionFromTag('1'), '1');
+      expect(packageVersionFromTag('v1'), '1');
+    });
+
+    test('短哈希 / 预发布 / 日期式 / 空输入返回 null（不动）', () {
+      expect(packageVersionFromTag('a1b2c3d'), isNull);
+      expect(packageVersionFromTag('v2.0.0-beta.1'), isNull);
+      expect(packageVersionFromTag('openssl-4.1.0-alpha1'), isNull);
+      expect(packageVersionFromTag('2026-09-16'), isNull);
+      expect(packageVersionFromTag('latest'), isNull);
+      expect(packageVersionFromTag(''), isNull);
+      expect(packageVersionFromTag('   '), isNull);
+      expect(packageVersionFromTag(null), isNull);
+    });
+
+    test('首尾空白裁剪后解析', () {
+      expect(packageVersionFromTag('  v1.2.3  '), '1.2.3');
+    });
+  });
 }
 
 PackProcessRunner _runner(

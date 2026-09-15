@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/build/build_cache.dart';
 import 'package:cpp_nuget_pack/build/build_cleanup.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/repo_version.dart';
-import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -141,11 +141,9 @@ Future<PackSourcePreparation> preparePackSource(
   }
 
   onStage(PackBuildStage.downloading);
-  final Directory target = Directory(
-    joinPath(
-      Directory(cacheRoot).absolute.path,
-      'build/${PackStore.sanitizeFileName(pack.name)}',
-    ),
+  final Directory target = packBuildCacheDirectory(
+    pack.name,
+    cacheRoot: cacheRoot,
   );
   if (header.sourceNone) {
     // 预构建配方（`# source: none`）：跳过 git 源码拉取；缓存目录仍会创建并

@@ -31,6 +31,10 @@ class PackModel {
   List<ScriptProjectModel> scripts = [];
   Map<String, String> buildOptions = <String, String>{};
 
+  /// 启用的打包格式 id（如 `nuget` / `cmake`，规范序 = 注册表序）。
+  /// 空列表 = 未记录（所有格式启用）——旧包缺字段读回即空，行为等同现状。
+  List<String> enabledFormats = <String>[];
+
   static List<PackModel> packs = [];
 
   PackModel({
@@ -82,6 +86,8 @@ class PackModel {
       ],
       if (buildOptions.isNotEmpty)
         'buildOptions': <String, String>{...buildOptions},
+      if (enabledFormats.isNotEmpty)
+        'enabledFormats': <String>[...enabledFormats],
     };
   }
 
@@ -146,6 +152,7 @@ class PackModel {
       }
     }
     pack.buildOptions = _stringStringMap(map, 'buildOptions');
+    pack.enabledFormats = _stringList(map, 'enabledFormats');
     return pack;
   }
 }
@@ -185,6 +192,18 @@ Map<String, String> _stringStringMap(Map<String, Object?> map, String key) {
       if (entry.key is String && entry.value is String)
         entry.key as String: entry.value as String,
   };
+}
+
+/// 容错字符串列表读取：非列表/非字符串项/空串跳过（空结果 = 未记录）。
+List<String> _stringList(Map<String, Object?> map, String key) {
+  final Object? value = map[key];
+  if (value is! List) {
+    return <String>[];
+  }
+  return <String>[
+    for (final Object? item in value)
+      if (item is String && item.isNotEmpty) item,
+  ];
 }
 
 String _requiredString(Map<String, Object?> map, String key) {

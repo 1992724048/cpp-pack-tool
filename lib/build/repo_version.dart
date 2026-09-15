@@ -128,9 +128,38 @@ int compareTagVersions(String a, String b) {
   return 0;
 }
 
+/// 由源码版本推导包版本：去 `v`/`V` 前缀或单段字母前缀（`openssl-4.0.2` →
+/// `4.0.2`），结果须为数字点分原文；短哈希 / 预发布后缀等解析失败返回 null。
+///
+/// 与构建选 tag 同源（[_tagVersionBody]），`version-3.49.1` 一类单段前缀
+/// 仓库同样可同步。
+String? packageVersionFromTag(String? sourceVersion) {
+  if (sourceVersion == null) {
+    return null;
+  }
+  return _tagVersionBody(sourceVersion);
+}
+
 /// 解析 tag 的版本分段：`v?<数字点分>` 或单段字母前缀 + `-`/`_` + 数字点分
 /// （如 `openssl-4.0.2`）；解析失败（含预发布后缀、日期式等）返回 null。
 List<int>? _parseTagVersion(String tag) {
+  final String? body = _tagVersionBody(tag);
+  if (body == null) {
+    return null;
+  }
+  final List<int> segments = <int>[];
+  for (final String part in body.split('.')) {
+    final int? value = int.tryParse(part);
+    if (value == null) {
+      return null;
+    }
+    segments.add(value);
+  }
+  return segments;
+}
+
+/// 数字点分版本原文（去 `v`/`V` 或单段字母前缀）；解析失败返回 null。
+String? _tagVersionBody(String tag) {
   final String trimmed = tag.trim();
   if (trimmed.isEmpty) {
     return null;
@@ -146,16 +175,10 @@ List<int>? _parseTagVersion(String tag) {
   if (prefixed != null) {
     body = prefixed.group(1)!;
   }
-  final List<int> segments = <int>[];
   for (final String part in body.split('.')) {
     if (!_digitsPattern.hasMatch(part)) {
       return null;
     }
-    final int? value = int.tryParse(part);
-    if (value == null) {
-      return null;
-    }
-    segments.add(value);
   }
-  return segments;
+  return body;
 }

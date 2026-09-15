@@ -330,4 +330,56 @@ void main() {
     ]);
     expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
   });
+
+  test('默认值与空映射：CMake 目录未设置、默认作者为空', () {
+    const SettingsModel settings = SettingsModel();
+
+    expect(settings.cmakeOutputDirectory, isNull);
+    expect(settings.defaultAuthor, '');
+    expect(
+      const SettingsModel().toMap().containsKey('cmakeOutputDirectory'),
+      isFalse,
+    );
+    expect(const SettingsModel().toMap().containsKey('defaultAuthor'), isFalse);
+  });
+
+  test('toMap/fromMap 往返保留双输出目录与默认作者', () {
+    const SettingsModel settings = SettingsModel(
+      outputDirectory: r'D:\out\nuget',
+      cmakeOutputDirectory: r'D:\out\cmake',
+      defaultAuthor: '张三',
+    );
+
+    final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
+
+    expect(loaded.outputDirectory, r'D:\out\nuget');
+    expect(loaded.cmakeOutputDirectory, r'D:\out\cmake');
+    expect(loaded.defaultAuthor, '张三');
+  });
+
+  test('默认作者读回 trim，非字符串/空白视为空', () {
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'defaultAuthor': '  Alice  '})
+          .defaultAuthor,
+      'Alice',
+    );
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'defaultAuthor': '   '})
+          .defaultAuthor,
+      '',
+    );
+    expect(
+      SettingsModel.fromMap(<String, Object?>{'defaultAuthor': 42})
+          .defaultAuthor,
+      '',
+    );
+  });
+
+  test('CMake 输出目录空串视为未设置', () {
+    final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
+      'cmakeOutputDirectory': '',
+    });
+
+    expect(loaded.cmakeOutputDirectory, isNull);
+  });
 }
