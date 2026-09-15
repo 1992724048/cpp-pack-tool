@@ -219,12 +219,95 @@ void main() {
     expect(result, isNotNull);
     expect(result!.iconPath, isNull);
   });
+
+  testWidgets('默认作者预填到作者字段', (tester) async {
+    await _pumpDialog(
+      tester,
+      scanFuture: Future<List<FileModel>>.value(const <FileModel>[]),
+      initialAuthor: '张三',
+    );
+
+    expect(
+      tester
+          .widget<TextBox>(find.byKey(const Key('packAuthorField')))
+          .controller
+          ?.text,
+      '张三',
+    );
+  });
+
+  testWidgets('打包格式摘要默认全部启用，可打开对话框移除格式并随提交写入', (tester) async {
+    PackModel? result;
+    await _pumpDialog(
+      tester,
+      scanFuture: Future<List<FileModel>>.value(const <FileModel>[]),
+      onResult: (PackModel? value) => result = value,
+    );
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('addPackFormatSummary'))).data,
+      'NuGet 包、CMake',
+    );
+
+    await tester.tap(find.byKey(const Key('addPackFormatButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('formatSelectionDialog')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('formatItem_cmake_enabled')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('formatDisableButton')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('formatSelectionConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('addPackFormatSummary'))).data,
+      'NuGet 包',
+    );
+
+    await _fillRequiredFields(tester);
+    await _tapDialogButton(tester, '确定');
+
+    expect(result, isNotNull);
+    expect(result!.enabledFormats, <String>['nuget']);
+  });
+
+  testWidgets('自定义许可证需输入文本，提交时原样写入', (tester) async {
+    PackModel? result;
+    await _pumpDialog(
+      tester,
+      scanFuture: Future<List<FileModel>>.value(const <FileModel>[]),
+      onResult: (PackModel? value) => result = value,
+    );
+
+    await _fillRequiredFields(tester);
+    await _selectLicense(tester, '自定义…');
+
+    expect(find.byKey(const Key('packLicenseCustomField')), findsOneWidget);
+    expect(find.text('请输入自定义许可证'), findsOneWidget);
+    expect(_confirmButton(tester).onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const Key('packLicenseCustomField')),
+      'MyLicense',
+    );
+    await tester.pump();
+    expect(_confirmButton(tester).onPressed, isNotNull);
+
+    await _tapDialogButton(tester, '确定');
+
+    expect(result, isNotNull);
+    expect(result!.license, 'MyLicense');
+  });
 }
 
 Future<void> _pumpDialog(
   WidgetTester tester, {
   required Future<List<FileModel>> scanFuture,
   ValueChanged<PackModel?>? onResult,
+  String initialAuthor = '',
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -241,6 +324,7 @@ Future<void> _pumpDialog(
                 builder: (_) => AddDirectoryDialog(
                   directoryPath: _directoryPath,
                   scanFuture: scanFuture,
+                  initialAuthor: initialAuthor,
                 ),
               );
               onResult?.call(result);

@@ -1,7 +1,8 @@
 import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
+import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-const double _labelColumnWidth = 120;
+const double _labelColumnWidth = 140;
 
 /// 导出前校验警告。返回 true 表示继续导出，false 表示取消。
 ///
@@ -19,7 +20,7 @@ Future<bool> showPackagingIssuesDialog(
     builder: (BuildContext dialogContext) => ContentDialog(
       key: const Key('packagingIssuesDialog'),
       title: const Text('导出校验'),
-      constraints: const BoxConstraints(maxWidth: 440),
+      constraints: const BoxConstraints(maxWidth: 560),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -104,16 +105,23 @@ Widget _buildIssuesTable(BuildContext context, List<PackagingIssue> issues) {
               children: [
                 SizedBox(
                   width: _labelColumnWidth,
-                  child: Text(
-                    issues[index].label,
-                    overflow: TextOverflow.ellipsis,
+                  child: Tooltip(
+                    message: issues[index].label,
+                    child: Text(
+                      _displayLabel(issues[index].label),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
                 Expanded(
-                  child: Text(
-                    issues[index].message,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: valueColor),
+                  child: Tooltip(
+                    message: issues[index].message,
+                    child: Text(
+                      issues[index].message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: valueColor),
+                    ),
                   ),
                 ),
               ],
@@ -123,4 +131,12 @@ Widget _buildIssuesTable(BuildContext context, List<PackagingIssue> issues) {
       ],
     ),
   );
+}
+
+/// 名称列显示：含路径分隔符时仅显示末段（全路径在 Tooltip 中可见）。
+String _displayLabel(String label) {
+  if (!label.contains('/') && !label.contains('\\')) {
+    return label;
+  }
+  return baseName(label);
 }

@@ -392,6 +392,96 @@ void main() {
     expect(find.byKey(const Key('packInfoEditButton')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('自定义许可证：空文本时保存禁用，输入后可保存原值', (tester) async {
+    final PackModel pack = _pack();
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackInfo(
+        pack: pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+    await _tapEdit(tester);
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+    await _selectLicense(tester, '自定义…');
+
+    expect(find.byKey(const Key('packInfoLicenseCustomField')), findsOneWidget);
+    expect(find.text('请输入自定义许可证'), findsOneWidget);
+    expect(_saveButton(tester).onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const Key('packInfoLicenseCustomField')),
+      'MyLicense-1.0',
+    );
+    await tester.pump();
+    expect(_saveButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved!.license, 'MyLicense-1.0');
+    expect(saved!.version, '2.0.0');
+  });
+
+  testWidgets('编辑态回显已有自定义许可证并进入自定义模式', (tester) async {
+    final PackModel pack = _pack(license: 'Custom-1.0');
+
+    await _pumpPage(tester, PackInfo(pack: pack, onSave: _acceptSave));
+    await _tapEdit(tester);
+
+    expect(
+      tester
+          .widget<ComboBox<String?>>(
+            find.byKey(const Key('packInfoLicenseField')),
+          )
+          .value,
+      '自定义…',
+    );
+    expect(
+      _textBox(tester, 'packInfoLicenseCustomField').controller!.text,
+      'Custom-1.0',
+    );
+    expect(find.textContaining('建议使用 SPDX 标识符'), findsOneWidget);
+  });
+
+  testWidgets('保存包信息时保留启用格式集合', (tester) async {
+    final PackModel pack = _pack()..enabledFormats = <String>['cmake'];
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackInfo(
+        pack: pack,
+        onSave: (PackModel updated) async {
+          saved = updated;
+          return true;
+        },
+      ),
+    );
+    await _tapEdit(tester);
+    await tester.enterText(
+      find.byKey(const Key('packInfoVersionField')),
+      '2.0.0',
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('packInfoSaveButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saved!.enabledFormats, <String>['cmake']);
+  });
 }
 
 Future<bool> _acceptSave(PackModel pack) async => true;
