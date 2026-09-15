@@ -39,6 +39,47 @@ void main() {
     expect(find.byIcon(FluentIcons.chevron_right), findsNWidgets(2));
   });
 
+  // 目录节点由文件路径派生，不存在空目录节点（计数恒 ≥1），故无空目录展示口径。
+  testWidgets('目录名称后显示后代文件计数', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'README.md', path: 'README.md', size: 100),
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 2048),
+      FileModel(name: 'bar.h', path: 'include/detail/bar.h', size: 1024),
+      FileModel(name: 'baz.h', path: 'include/detail/baz.h', size: 512),
+      FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 512),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    _expectRowSize('include', '(3 个文件)');
+    _expectRowSize('src', '(1 个文件)');
+    expect(find.text('(2 个文件)'), findsNothing);
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+    _expectRowSize('detail', '(2 个文件)');
+
+    await tester.tap(find.text('detail'));
+    await tester.pump(const Duration(milliseconds: 400));
+    _expectRowSize('foo.h', '2.0 KB');
+    _expectRowSize('bar.h', '1.0 KB');
+  });
+
+  testWidgets('文件行不显示文件计数', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'README.md', path: 'README.md', size: 100),
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    expect(find.textContaining('个文件'), findsOneWidget);
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('foo.h'), findsOneWidget);
+    expect(find.textContaining('个文件'), findsOneWidget);
+  });
+
   testWidgets('点击目录行切换展开与折叠', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'foo.h', path: 'include/foo.h', size: 2048),
@@ -981,13 +1022,15 @@ Future<void> _selectBuildOption(
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+/// 名称所在行链（目录行内嵌名称+计数行，大小位于外层行）。
 Finder _contentRow(String name) =>
-    find.ancestor(of: find.text(name), matching: find.byType(Row)).first;
+    find.ancestor(of: find.text(name), matching: find.byType(Row));
 
 void _expectRowSize(String name, String size) {
   expect(
     find.descendant(of: _contentRow(name), matching: find.text(size)),
-    findsOneWidget,
+    findsAtLeastNWidgets(1),
+    reason: '「$name」行应显示「$size」',
   );
 }
 

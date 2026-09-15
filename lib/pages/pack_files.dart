@@ -172,6 +172,7 @@ class _PackFilesState extends State<PackFiles> {
           () => _DirNode(name: segment, path: childPath),
         );
         parent.size += file.size;
+        parent.fileCount += 1;
       }
       parent.files.add(file);
     }
@@ -196,7 +197,15 @@ class _PackFilesState extends State<PackFiles> {
             isExpanded: expanded,
           ),
           expanded: expanded,
-          content: _buildRow(dir.name, formatBytes(dir.size), sizeColor),
+          content: _buildRow(
+            dir.name,
+            formatBytes(dir.size),
+            sizeColor,
+            label: Text(
+              '(${dir.fileCount} 个文件)',
+              style: TextStyle(color: sizeColor),
+            ),
+          ),
           children: _buildTreeItems(dir, sizeColor),
         ),
       );
@@ -520,6 +529,7 @@ class _DirNode {
   final Map<String, _DirNode> children = <String, _DirNode>{};
   final List<FileModel> files = <FileModel>[];
   int size = 0;
+  int fileCount = 0;
 }
 
 PackModel _withBuildOption(PackModel pack, String name, String value) {
