@@ -4,6 +4,7 @@ import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
@@ -34,6 +35,7 @@ import 'controls/add_directory_dialog.dart';
 import 'controls/build_pack_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/dependency_graph_dialog.dart';
+import 'controls/header_include_issues_dialog.dart';
 import 'controls/missing_dependencies_dialog.dart';
 import 'controls/pack_export_dialog.dart';
 import 'controls/pack_history_dialog.dart';
@@ -155,6 +157,7 @@ class MainLayout extends StatefulWidget {
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
     this.loadRemoteTags = listRemoteTags,
+    this.fixIncludes = fixHeaderIncludes,
     this.now = DateTime.now,
   });
 
@@ -182,6 +185,9 @@ class MainLayout extends StatefulWidget {
 
   /// 查询仓库远端 tag 列表（懒查询 + 按 URL 会话缓存的底层入口）；测试注入避免触网。
   final Future<List<String>?> Function(String repoUrl) loadRemoteTags;
+
+  /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
+  final PackHeaderIncludeFixer fixIncludes;
 
   final DateTime Function() now;
 
@@ -592,27 +598,38 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (_) => BuildPackDialog(
-        pack: pack,
-        sourceNone: sourceNone,
-        build: widget.buildPack,
-        prepare:
-            (
-              PackModel pack, {
-              ToolDownloadProgressCallback? onDownloadProgress,
-            }) => prepare(
-              pack,
-              compilerPriority: widget.settings.compilerPriority,
-              cachedCompilers: widget.settings.detectedCompilers,
-              onCompilersDetected: _persistDetectedCompilers,
-              onDownloadProgress: onDownloadProgress,
-            ),
-        scanFiles: widget.scanFiles,
-        onApply: _applyRemap,
-      ),
-    );
+    final HeaderIncludeFixReport? report =
+        await showDialog<HeaderIncludeFixReport>(
+          context: context,
+          builder: (_) => BuildPackDialog(
+            pack: pack,
+            sourceNone: sourceNone,
+            build: widget.buildPack,
+            prepare:
+                (
+                  PackModel pack, {
+                  ToolDownloadProgressCallback? onDownloadProgress,
+                }) => prepare(
+                  pack,
+                  compilerPriority: widget.settings.compilerPriority,
+                  cachedCompilers: widget.settings.detectedCompilers,
+                  onCompilersDetected: _persistDetectedCompilers,
+                  onDownloadProgress: onDownloadProgress,
+                ),
+            scanFiles: widget.scanFiles,
+            onApply: _applyRemap,
+            fixIncludes: widget.fixIncludes,
+          ),
+        );
+    if (!mounted || report == null) {
+      return;
+    }
+    if (report.fixedCount > 0) {
+      showFloatingToast(context, '已自动修复 ${report.fixedCount} 处头文件引用');
+    }
+    if (report.hasIssues) {
+      await showHeaderIncludeIssuesDialog(context, report: report);
+    }
   }
 
   /// build.py 是否声明 `# source: none`（预构建配方）；读取失败按否处理。

@@ -5,6 +5,7 @@ import 'package:cpp_nuget_pack/app_info.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
@@ -1020,6 +1021,89 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
+  testWidgets('构建后自动修复头文件引用并以悬浮提示与待处理对话框上报', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo', files: _buildPyFiles()),
+      ],
+    );
+    (String, String)? received;
+    const HeaderIncludeFixReport report = HeaderIncludeFixReport(
+      fixed: <HeaderIncludeFix>[
+        HeaderIncludeFix(
+          filePath: 'src/gtest/gtest-all.cc',
+          line: 2,
+          from: 'src/gtest.cc',
+          to: 'gtest.cc',
+        ),
+      ],
+      issues: <HeaderIncludeIssue>[
+        HeaderIncludeIssue(
+          filePath: 'src/gtest/gtest.cc',
+          line: 133,
+          include: 'src/gtest-internal-inl.h',
+          kind: HeaderIncludeIssueKind.crossTree,
+          candidates: <String>['src/gtest/gtest-internal-inl.h'],
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'new.h', path: 'new/new.h', size: 1),
+      ],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) async => _buildEnvironment(),
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+      fixIncludes: (String sourcePath, {required String packageName}) async {
+        received = (sourcePath, packageName);
+        return report;
+      },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(received, (r'C:\libs\demo', 'demo'));
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('已自动修复 1 处头文件引用'), findsOneWidget);
+    expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsOneWidget);
+    expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
+    expect(
+      find.text('"src/gtest-internal-inl.h"：唯一候选不在同一目录：src/gtest/gtest-internal-inl.h'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('headerIncludeIssuesCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsNothing);
+  });
+
   testWidgets('无包时打包按钮禁用', (tester) async {
     await _pumpMainLayout(
       tester,
@@ -1027,7 +1111,6 @@ void main() {
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
     );
-
     expect(_packButton(tester).onPressed, isNull);
   });
 
@@ -2238,6 +2321,7 @@ Future<void> _pumpMainLayout(
   DateTime Function()? now,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
   Future<List<String>?> Function(String repoUrl)? loadRemoteTags,
+  PackHeaderIncludeFixer? fixIncludes,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -2259,6 +2343,7 @@ Future<void> _pumpMainLayout(
         detectCompilers: detectCompilers ?? _noCompilers,
         loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
         loadRemoteTags: loadRemoteTags ?? _noRemoteTags,
+        fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
       ),
     ),
@@ -2266,6 +2351,11 @@ Future<void> _pumpMainLayout(
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
 }
+
+Future<HeaderIncludeFixReport> _emptyFixIncludes(
+  String sourcePath, {
+  required String packageName,
+}) async => const HeaderIncludeFixReport();
 
 Future<List<DetectedCompiler>> _noCompilers() async =>
     const <DetectedCompiler>[];

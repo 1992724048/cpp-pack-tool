@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
@@ -787,6 +789,99 @@ void main() {
     expect(applied, isNotNull);
     expect(applied!.sourceVersion, 'v1.0.0');
   });
+
+  testWidgets('构建成功后先检查头文件引用再重新映射并随关闭返回报告', (tester) async {
+    final List<String> order = <String>[];
+    final Completer<HeaderIncludeFixReport> fixGate =
+        Completer<HeaderIncludeFixReport>();
+    HeaderIncludeFixReport? closedWith;
+    const HeaderIncludeFixReport report = HeaderIncludeFixReport(
+      fixed: <HeaderIncludeFix>[
+        HeaderIncludeFix(
+          filePath: 'src/gtest/gtest-all.cc',
+          line: 2,
+          from: 'src/gtest.cc',
+          to: 'gtest.cc',
+        ),
+      ],
+    );
+
+    await _pumpDialog(
+      tester,
+      onResult: (HeaderIncludeFixReport? value) => closedWith = value,
+      fixIncludes: (String sourcePath, {required String packageName}) {
+        order.add('fix:$sourcePath:$packageName');
+        return fixGate.future;
+      },
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {
+        order.add('build');
+      },
+      scanFiles: (String sourcePath) async {
+        order.add('scan');
+        return const <FileModel>[];
+      },
+      onApply: (PackModel pack) async {
+        order.add('apply');
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(order, <String>['build', r'fix:C:\libs\demo:demo']);
+    expect(find.text('正在检查头文件引用…'), findsOneWidget);
+    expect(_closeButton(tester).onPressed, isNull);
+
+    fixGate.complete(report);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(order, <String>['build', r'fix:C:\libs\demo:demo', 'scan', 'apply']);
+    expect(find.text('构建完成'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(closedWith, same(report));
+    expect(find.byKey(const Key('buildPackDialog')), findsNothing);
+  });
+
+  testWidgets('头文件引用检查失败不阻断重新映射并在输出面板提示', (tester) async {
+    int scanCount = 0;
+
+    await _pumpDialog(
+      tester,
+      fixIncludes: (String sourcePath, {required String packageName}) async =>
+          throw const FileSystemException(': 目录不可访问'),
+      build: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+      }) async {},
+      scanFiles: (String sourcePath) async {
+        scanCount++;
+        return const <FileModel>[];
+      },
+      onApply: (PackModel pack) async {},
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(scanCount, 1);
+    expect(find.text('构建完成'), findsOneWidget);
+    expect(
+      find.textContaining('头文件引用检查失败', findRichText: true),
+      findsOneWidget,
+    );
+  });
 }
 
 /// 输出面板中某行的关键字颜色（无关键字行取常规文本色）。
@@ -871,6 +966,8 @@ Future<void> _pumpDialog(
   required Future<void> Function(PackModel pack) onApply,
   PackModel? pack,
   bool sourceNone = false,
+  PackHeaderIncludeFixer? fixIncludes,
+  ValueChanged<HeaderIncludeFixReport?>? onResult,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -881,22 +978,27 @@ Future<void> _pumpDialog(
       home: Builder(
         builder: (BuildContext context) => Center(
           child: Button(
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => BuildPackDialog(
-                pack: pack ?? _pack(),
-                sourceNone: sourceNone,
-                build: build,
-                prepare:
-                    prepare ??
-                    (
-                      PackModel pack, {
-                      ToolDownloadProgressCallback? onDownloadProgress,
-                    }) async => _environment(),
-                scanFiles: scanFiles,
-                onApply: onApply,
-              ),
-            ),
+            onPressed: () async {
+              final HeaderIncludeFixReport? result =
+                  await showDialog<HeaderIncludeFixReport>(
+                    context: context,
+                    builder: (_) => BuildPackDialog(
+                      pack: pack ?? _pack(),
+                      sourceNone: sourceNone,
+                      build: build,
+                      prepare:
+                          prepare ??
+                          (
+                            PackModel pack, {
+                            ToolDownloadProgressCallback? onDownloadProgress,
+                          }) async => _environment(),
+                      scanFiles: scanFiles,
+                      onApply: onApply,
+                      fixIncludes: fixIncludes ?? _emptyFixIncludes,
+                    ),
+                  );
+              onResult?.call(result);
+            },
             child: const Text('打开对话框'),
           ),
         ),
@@ -907,3 +1009,8 @@ Future<void> _pumpDialog(
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
 }
+
+Future<HeaderIncludeFixReport> _emptyFixIncludes(
+  String sourcePath, {
+  required String packageName,
+}) async => const HeaderIncludeFixReport();

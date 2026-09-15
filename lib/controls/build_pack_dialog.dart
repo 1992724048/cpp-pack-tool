@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -16,6 +17,9 @@ enum _BuildStage {
   preparing,
   downloading,
   building,
+
+  /// 构建成功后、重新映射扫描前的 `#include` 引用检查与自动修复阶段。
+  fixingIncludes,
 
   /// 预构建配方（`# source: none`）的产物分类阶段（见 [classifyStartMarkerPrefix]）。
   classifying,
@@ -136,6 +140,7 @@ class BuildPackDialog extends StatefulWidget {
     required this.prepare,
     required this.scanFiles,
     required this.onApply,
+    this.fixIncludes = fixHeaderIncludes,
   });
 
   final PackModel pack;
@@ -148,6 +153,9 @@ class BuildPackDialog extends StatefulWidget {
   final BuildPackPrepare prepare;
   final Future<List<FileModel>> Function(String sourcePath) scanFiles;
   final Future<void> Function(PackModel pack) onApply;
+
+  /// 构建成功后、重新映射扫描前的 include 引用检查与自动修复。
+  final PackHeaderIncludeFixer fixIncludes;
 
   @override
   State<BuildPackDialog> createState() => _BuildPackDialogState();
@@ -174,6 +182,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   int _addedCount = 0;
   int _removedCount = 0;
   String? _sourceVersion;
+
+  /// include 引用检查结果：关闭对话框时随 [Navigator.pop] 返回给调用方展示。
+  HeaderIncludeFixReport? _fixReport;
 
   /// 工具下载进度（准备环境阶段）；离开准备阶段时清空。
   ToolDownloadProgress? _downloadProgress;
@@ -235,6 +246,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _showFailure(const PackBuildException('该包缺少源目录信息'));
       return;
     }
+    await _fixIncludes(sourcePath);
+    if (!mounted) {
+      return;
+    }
     setState(() => _stage = _BuildStage.remapping);
 
     final List<FileModel> files;
@@ -267,6 +282,21 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       return;
     }
     setState(() => _stage = _BuildStage.completed);
+  }
+
+  /// 构建成功、重新映射扫描前的 include 引用检查（含自动修复）。
+  ///
+  /// 检查失败不阻断构建成功流程：错误记入输出面板，跳过报告继续重新映射。
+  Future<void> _fixIncludes(String sourcePath) async {
+    setState(() => _stage = _BuildStage.fixingIncludes);
+    try {
+      _fixReport = await widget.fixIncludes(
+        sourcePath,
+        packageName: widget.pack.name,
+      );
+    } catch (error) {
+      _onBuildOutput('头文件引用检查失败：${formatError(error)}');
+    }
   }
 
   void _onBuildStage(PackBuildStage stage) {
@@ -420,7 +450,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       actions: [
         Button(
           key: const Key('buildCloseButton'),
-          onPressed: _isRunning ? null : () => Navigator.pop(context),
+          onPressed: _isRunning
+              ? null
+              : () => Navigator.pop(context, _fixReport),
           child: const Text('关闭'),
         ),
       ],
@@ -431,6 +463,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _stage == _BuildStage.preparing ||
       _stage == _BuildStage.downloading ||
       _stage == _BuildStage.building ||
+      _stage == _BuildStage.fixingIncludes ||
       _stage == _BuildStage.classifying ||
       _stage == _BuildStage.remapping;
 
@@ -608,6 +641,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         return _buildProgressStatus(_downloadingText);
       case _BuildStage.building:
         return _buildProgressStatus(_buildingText);
+      case _BuildStage.fixingIncludes:
+        return _buildProgressStatus('正在检查头文件引用…');
       case _BuildStage.classifying:
         return _buildProgressStatus('正在分类…');
       case _BuildStage.remapping:
