@@ -1160,6 +1160,46 @@ void main() {
     expect(comboX, lessThan(helpX));
   });
 
+  testWidgets('工具栏顺序为打开远程仓库 → 构建 → 运行库 → 版本控件', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => 'v1.0.0',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final double openRepoX = tester
+        .getTopLeft(find.byKey(const Key('openRepoButton')))
+        .dx;
+    final double buttonX = tester
+        .getTopLeft(find.byKey(const Key('buildPackButton')))
+        .dx;
+    final double labelX = tester.getTopLeft(find.text('运行库')).dx;
+    final double comboX = tester
+        .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
+        .dx;
+    final double helpX = tester
+        .getTopLeft(find.byKey(const Key('buildRuntimeHelp')))
+        .dx;
+    final double versionX = tester
+        .getTopLeft(find.byKey(const Key('packRepoVersionLabel')))
+        .dx;
+
+    expect(openRepoX, lessThan(buttonX));
+    expect(buttonX, lessThan(labelX));
+    expect(labelX, lessThan(comboX));
+    expect(comboX, lessThan(helpX));
+    expect(helpX, lessThan(versionX));
+  });
+
   testWidgets('运行库保存值显示为显式项且非法值回退默认项', (tester) async {
     Widget page(PackModel pack) => PackFiles(
       pack: pack,
@@ -1305,7 +1345,7 @@ void main() {
     expect(find.textContaining('运行库（MSVC CRT）'), findsOneWidget);
   });
 
-  testWidgets('选项分区位于版本行上方', (tester) async {
+  testWidgets('选项分区位于工具栏下方', (tester) async {
     final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
 
     await _pumpPage(
@@ -1320,14 +1360,14 @@ void main() {
     );
     await tester.pump();
 
+    final double toolbarY = tester
+        .getTopLeft(find.byKey(const Key('buildPackButton')))
+        .dy;
     final double sectionY = tester
         .getTopLeft(find.byKey(const Key('buildOptionsSection')))
         .dy;
-    final double versionY = tester
-        .getTopLeft(find.byKey(const Key('packRepoVersionLabel')))
-        .dy;
-    expect(sectionY, lessThan(versionY));
-    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(toolbarY, lessThan(sectionY));
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
   });
 
   testWidgets('保存挂起时选项控件与运行库下拉禁用', (tester) async {
@@ -1379,16 +1419,62 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
-    expect(find.text('当前版本：v1.0.0'), findsOneWidget);
-    expect(find.text('最新版本：查询中…'), findsOneWidget);
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('当前')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('v1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('查询中…')),
+      findsOneWidget,
+    );
 
     latest.complete('v2.0.0');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('最新版本：v2.0.0'), findsOneWidget);
-    expect(find.text('最新版本：查询中…'), findsNothing);
+    expect(
+      find.descendant(of: chip, matching: find.text('v2.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('查询中…')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('最新版本高于当前版本时显示前导更新图标', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => 'v2.0.0',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(
+      find.descendant(
+        of: chip,
+        matching: find.byIcon(FluentIcons.update_restore),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('v2.0.0')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('未注入最新版本加载器时显示占位', (tester) async {
@@ -1404,12 +1490,16 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
-    expect(find.text('当前版本：—'), findsOneWidget);
-    expect(find.text('最新版本：—'), findsOneWidget);
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('—')),
+      findsNWidgets(2),
+      reason: '当前与最新均为空占位',
+    );
   });
 
-  testWidgets('无仓库的包不显示版本行', (tester) async {
+  testWidgets('无仓库的包不显示版本控件', (tester) async {
     final PackModel pack = _buildPack('demo');
 
     await _pumpPage(
@@ -1423,6 +1513,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('packRepoVersionLabel')), findsNothing);
+    expect(find.byKey(const Key('openRepoButton')), findsNothing);
   });
 
   testWidgets('最新版本查询失败时显示占位', (tester) async {
@@ -1440,8 +1531,91 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('当前版本：v1.0.0'), findsOneWidget);
-    expect(find.text('最新版本：—'), findsOneWidget);
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(
+      find.descendant(of: chip, matching: find.text('v1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('—')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('有仓库时渲染打开远程仓库按钮并带完整 URL 提示', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('openRepoButton')), findsOneWidget);
+    expect(find.text('打开远程仓库'), findsOneWidget);
+    expect(find.byTooltip('https://example.com/demo'), findsOneWidget);
+  });
+
+  testWidgets('点击打开远程仓库按钮使用规范化 URL', (tester) async {
+    String? openedUrl;
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        openUrl: (String url) async {
+          openedUrl = url;
+          return true;
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('openRepoButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(openedUrl, 'https://example.com/demo');
+    expect(find.text('无法打开链接'), findsNothing);
+  });
+
+  testWidgets('打开远程仓库失败时提示无法打开链接', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        openUrl: (String url) async => false,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('openRepoButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('无法打开链接'), findsOneWidget);
+  });
+
+  testWidgets('仓库不可打开时不渲染打开远程仓库按钮', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async =>
+            const BuildScriptHeader(repo: r'D:\repos\demo'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('openRepoButton')), findsNothing);
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
   });
 }
 

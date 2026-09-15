@@ -16,15 +16,26 @@ class LibraryItem extends PaneItem {
          title: Row(
            mainAxisAlignment: .spaceBetween,
            children: [
-             Text(title),
+             Expanded(
+               child: Text(
+                 title,
+                 maxLines: 1,
+                 overflow: TextOverflow.ellipsis,
+               ),
+             ),
              const SizedBox(width: 8),
              Row(
                mainAxisSize: MainAxisSize.min,
                children: [
-                 if (badge != null) ...[badge, const SizedBox(width: 4)],
                  version != null
-                     ? Tag(text: version, fontSize: 10)
+                     ? Tag(
+                         text: version,
+                         fontSize: 10,
+                         maxWidth: 96,
+                         tooltip: version,
+                       )
                      : const SizedBox(width: 8),
+                 if (badge != null) ...[const SizedBox(width: 4), badge],
                ],
              ),
            ],

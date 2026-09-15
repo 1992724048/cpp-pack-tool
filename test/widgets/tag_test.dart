@@ -26,6 +26,60 @@ void main() {
     expect((container.decoration as BoxDecoration?)?.color, UCColors.accent);
     expect(_textColor(tester), isNotNull);
   });
+
+  testWidgets('未指定 maxWidth 与 tooltip 时保持默认渲染', (tester) async {
+    await _pumpTag(tester, const Tag(text: 'v1.0.0'));
+
+    expect(find.byType(Tooltip), findsNothing);
+    final Text label = tester.widget<Text>(
+      find.descendant(of: find.byType(Tag), matching: find.byType(Text)),
+    );
+    expect(label.maxLines, isNull);
+    expect(label.overflow, isNull);
+  });
+
+  testWidgets('maxWidth 超长文本单行省略截断', (tester) async {
+    await _pumpTag(
+      tester,
+      const Tag(text: 'v2.0.0-beta.1+build.123456789', fontSize: 10, maxWidth: 96),
+    );
+
+    final Text label = tester.widget<Text>(
+      find.descendant(of: find.byType(Tag), matching: find.byType(Text)),
+    );
+    expect(label.maxLines, 1);
+    expect(label.overflow, TextOverflow.ellipsis);
+    expect(tester.getSize(find.text('v2.0.0-beta.1+build.123456789')).width, 96);
+  });
+
+  testWidgets('maxWidth 不放大短文本', (tester) async {
+    await _pumpTag(
+      tester,
+      const Tag(text: 'v1.0.0', fontSize: 10, maxWidth: 96),
+    );
+
+    expect(
+      tester.getSize(find.text('v1.0.0')).width,
+      lessThan(96),
+      reason: '短文本按内容宽度渲染',
+    );
+  });
+
+  testWidgets('tooltip 非空时包裹悬停提示', (tester) async {
+    await _pumpTag(
+      tester,
+      const Tag(
+        text: 'v2.0.0-beta.1+build.123',
+        fontSize: 10,
+        maxWidth: 96,
+        tooltip: 'v2.0.0-beta.1+build.123',
+      ),
+    );
+
+    final Tooltip tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, 'v2.0.0-beta.1+build.123');
+    expect(find.text('v2.0.0-beta.1+build.123'), findsOneWidget);
+  });
 }
 
 const Color _latteGreen = Color(0xFF40A02B);
