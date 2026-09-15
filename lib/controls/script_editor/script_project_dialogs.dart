@@ -122,7 +122,9 @@ Future<bool> showDeleteScriptProjectDialog(
             FilledButton(
               key: const Key('deleteScriptProjectConfirmButton'),
               style: ButtonStyle(
-                backgroundColor: WidgetStatePropertyAll(UCColors.flavor.red),
+                backgroundColor: WidgetStatePropertyAll(
+                  AppColors.critical(FluentTheme.of(dialogContext).brightness),
+                ),
                 foregroundColor: const WidgetStatePropertyAll(Colors.white),
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
@@ -261,7 +263,7 @@ class _CreateScriptProjectDialogState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _fieldLabel('名称'),
+        _fieldLabel(FluentTheme.of(context), '名称'),
         const SizedBox(height: 4),
         TextBox(
           key: const Key('createScriptProjectNameField'),
@@ -271,7 +273,11 @@ class _CreateScriptProjectDialogState
         ),
         if (error != null) ...<Widget>[
           const SizedBox(height: 4),
-          _buildFieldError(const Key('createScriptProjectNameError'), error),
+          _buildFieldError(
+            FluentTheme.of(context),
+            const Key('createScriptProjectNameError'),
+            error,
+          ),
         ],
       ],
     );
@@ -282,7 +288,7 @@ class _CreateScriptProjectDialogState
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _fieldLabel(label),
+        _fieldLabel(FluentTheme.of(context), label),
         const SizedBox(height: 4),
         control,
       ],
@@ -339,7 +345,7 @@ class _RenameScriptProjectDialogState
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          _fieldLabel('名称'),
+          _fieldLabel(FluentTheme.of(context), '名称'),
           const SizedBox(height: 4),
           TextBox(
             key: const Key('renameScriptProjectNameField'),
@@ -349,7 +355,11 @@ class _RenameScriptProjectDialogState
           ),
           if (error != null) ...<Widget>[
             const SizedBox(height: 4),
-            _buildFieldError(const Key('renameScriptProjectNameError'), error),
+            _buildFieldError(
+              FluentTheme.of(context),
+              const Key('renameScriptProjectNameError'),
+              error,
+            ),
           ],
         ],
       ),
@@ -369,23 +379,24 @@ class _RenameScriptProjectDialogState
   }
 }
 
-Widget _fieldLabel(String label) => Text(
+Widget _fieldLabel(FluentThemeData theme, String label) => Text(
   label,
-  style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+  style: TextStyle(
+    fontSize: 12,
+    color: theme.resources.textFillColorSecondary,
+  ),
 );
 
-Widget _buildFieldError(Key key, String message) {
+Widget _buildFieldError(FluentThemeData theme, Key key, String message) {
+  final Color color = AppColors.critical(theme.brightness);
   return Row(
     key: key,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: <Widget>[
-      Icon(FluentIcons.error_badge, size: 12, color: UCColors.flavor.red),
+      Icon(FluentIcons.error_badge, size: 12, color: color),
       const SizedBox(width: 4),
       Expanded(
-        child: Text(
-          message,
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.red),
-        ),
+        child: Text(message, style: TextStyle(fontSize: 12, color: color)),
       ),
     ],
   );

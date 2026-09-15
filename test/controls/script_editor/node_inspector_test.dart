@@ -861,16 +861,19 @@ void main() {
       final PackModel pack = _packWithProjects();
       await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
 
+      final FluentThemeData theme = FluentTheme.of(
+        tester.element(find.byKey(const Key('scriptProjectRow_script_1'))),
+      );
       final BoxDecoration current = _rowDecoration(tester, 'script_1');
-      expect(current.color, UCColors.accent.withValues(alpha: 0.35));
-      expect((current.border! as Border).left.color, UCColors.accent);
+      expect(current.color, theme.accentColor.withValues(alpha: 0.35));
+      expect((current.border! as Border).left.color, theme.accentColor);
       expect((current.border! as Border).left.width, 2);
 
       final BoxDecoration other = _rowDecoration(tester, 'script_2');
       expect(other.color, isNull);
     });
 
-    testWidgets('非当前行悬停时背景变为 surface0，移出恢复', (WidgetTester tester) async {
+    testWidgets('非当前行悬停时背景变为悬停填充色，移出恢复', (WidgetTester tester) async {
       final PackModel pack = _packWithProjects();
       await _pumpInspector(tester, pack: pack, project: pack.scripts.first);
 
@@ -886,7 +889,12 @@ void main() {
       );
       await tester.pump();
 
-      expect(_rowDecoration(tester, 'script_2').color, UCColors.flavor.surface0);
+      expect(
+        _rowDecoration(tester, 'script_2').color,
+        FluentTheme.of(
+          tester.element(find.byKey(const Key('scriptProjectRow_script_2'))),
+        ).resources.controlFillColorSecondary,
+      );
 
       await mouse.moveTo(const Offset(1200, 700));
       await tester.pump();
@@ -948,7 +956,7 @@ void main() {
         find.byKey(const Key('inspectorProjectBuildTag')),
       );
       expect(tag.text, 'ALL');
-      expect(tag.color, UCColors.flavor.blue);
+      expect(tag.color, MarkerColors.blue);
     });
 
     testWidgets('项目名称回车提交：空名与重名显示红字且不回调', (WidgetTester tester) async {

@@ -38,13 +38,14 @@ abstract final class FileScan {
         files.add(FileModel(name: name, path: relativePath, size: stat.size));
         continue;
       }
-      if (entity is Directory && !_shouldSkipDirectory(name)) {
+      if (entity is Directory && !shouldSkipDirectory(name)) {
         await _collectFiles(entity, relativePath, files);
       }
     }
   }
 
-  static bool _shouldSkipDirectory(String name) {
+  /// 扫描/打包一致的目录跳过口径：隐藏目录与 `build`/`out`（构建产物目录）。
+  static bool shouldSkipDirectory(String name) {
     final String lowerName = name.toLowerCase();
     return lowerName.startsWith('.') ||
         lowerName == 'build' ||

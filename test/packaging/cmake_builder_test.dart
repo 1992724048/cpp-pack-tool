@@ -48,6 +48,79 @@ void main() {
       expect(_packagePathOf(plan, 'plain.h'), 'include/mylib/plain.h');
     });
 
+    test('剥离 include 后首段与命名空间同名时不重复叠加', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\gtest')
+        ..files = <FileModel>[
+          FileModel(name: 'gtest.h', path: 'include/gtest/gtest.h', size: 10),
+          FileModel(
+            name: 'gtest-port.h',
+            path: 'include/gtest/internal/gtest-port.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/gtest/gtest.h'),
+        'include/gtest/gtest.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/gtest/internal/gtest-port.h'),
+        'include/gtest/internal/gtest-port.h',
+      );
+    });
+
+    test('首段与命名空间大小写不敏感匹配时不叠加且结果沿文件路径大小写', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\OpenVINO')
+        ..files = <FileModel>[
+          FileModel(
+            name: 'openvino.h',
+            path: 'include/openvino/openvino.h',
+            size: 10,
+          ),
+          FileModel(
+            name: 'extra.h',
+            path: 'include/OPENVINO/extra.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/openvino/openvino.h'),
+        'include/openvino/openvino.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/OPENVINO/extra.h'),
+        'include/OPENVINO/extra.h',
+      );
+    });
+
+    test('异名首段与平铺文件仍叠加命名空间', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mimalloc')
+        ..files = <FileModel>[
+          FileModel(name: 'mimalloc.h', path: 'include/mimalloc.h', size: 10),
+          FileModel(
+            name: 'foo.h',
+            path: 'include/mimalloc-internal/foo.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/mimalloc.h'),
+        'include/mimalloc/mimalloc.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/mimalloc-internal/foo.h'),
+        'include/mimalloc/mimalloc-internal/foo.h',
+      );
+    });
+
     test('源目录缺失或 basename 为空时命名空间回退为包名', () async {
       final PackModel noSource = _pack(name: 'pkg')
         ..files = <FileModel>[
@@ -118,6 +191,30 @@ void main() {
       expect(
         _packagePathOf(plan, 'scripts/build.bat'),
         'files/scripts/build.bat',
+      );
+    });
+
+    test('根级 build.py 不入包且大小写不敏感，子目录保留', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'build.py', path: 'build.py', size: 10),
+          FileModel(name: 'Build.py', path: 'Build.py', size: 20),
+          FileModel(name: 'build.py', path: 'scripts/build.py', size: 30),
+          FileModel(name: 'main.cpp', path: 'main.cpp', size: 40),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final List<String> filePaths = plan.entries
+          .map((PackageEntry entry) => entry.source)
+          .whereType<PackageFileSource>()
+          .map((PackageFileSource source) => source.path)
+          .toList();
+
+      expect(filePaths, isNot(contains('build.py')));
+      expect(filePaths, isNot(contains('Build.py')));
+      expect(
+        _packagePathOf(plan, 'scripts/build.py'),
+        'files/scripts/build.py',
       );
     });
 

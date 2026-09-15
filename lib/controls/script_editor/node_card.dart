@@ -71,18 +71,18 @@ double nodePinRowCenterY(int rowIndex) {
 /// 节点分类色（图标与头部底色，视觉规范 §2.2/§9）。
 Color nodeCategoryColor(ScriptNodeCategory category) {
   return switch (category) {
-    ScriptNodeCategory.flow => UCColors.flavor.mauve,
-    ScriptNodeCategory.file => UCColors.flavor.blue,
-    ScriptNodeCategory.process => UCColors.flavor.peach,
-    ScriptNodeCategory.context => UCColors.flavor.teal,
-    ScriptNodeCategory.value => UCColors.flavor.yellow,
-    ScriptNodeCategory.string => UCColors.flavor.green,
-    ScriptNodeCategory.log => UCColors.flavor.sky,
-    ScriptNodeCategory.logic => UCColors.flavor.maroon,
-    ScriptNodeCategory.math => UCColors.flavor.sapphire,
-    ScriptNodeCategory.crypto => UCColors.flavor.pink,
-    ScriptNodeCategory.system => UCColors.flavor.rosewater,
-    ScriptNodeCategory.variable => UCColors.flavor.lavender,
+    ScriptNodeCategory.flow => MarkerColors.purple,
+    ScriptNodeCategory.file => MarkerColors.blue,
+    ScriptNodeCategory.process => MarkerColors.orange,
+    ScriptNodeCategory.context => MarkerColors.teal,
+    ScriptNodeCategory.value => MarkerColors.gold,
+    ScriptNodeCategory.string => MarkerColors.green,
+    ScriptNodeCategory.log => MarkerColors.cyan,
+    ScriptNodeCategory.logic => MarkerColors.plum,
+    ScriptNodeCategory.math => MarkerColors.indigo,
+    ScriptNodeCategory.crypto => MarkerColors.magenta,
+    ScriptNodeCategory.system => MarkerColors.coral,
+    ScriptNodeCategory.variable => MarkerColors.lavender,
   };
 }
 
@@ -196,7 +196,7 @@ class NodeCard extends StatefulWidget {
   /// 拖拽建连时兼容目标引脚的候选环（2px 类型色 α0.75）。
   final Set<String> candidatePins;
 
-  /// 拖拽悬停不兼容或非法落点红闪的引脚（2px `flavor.red` 外环）。
+  /// 拖拽悬停不兼容或非法落点红闪的引脚（2px `AppColors.critical` 外环）。
   final Set<String> rejectedPins;
 
   /// 拖拽建连期间不可达引脚（整体 α0.35）。
@@ -228,7 +228,7 @@ class _NodeCardState extends State<NodeCard> {
     final ScriptNodeTypeDescriptor? descriptor = widget.descriptor;
     final double height = nodeCardHeight(descriptor);
     final Color categoryColor = descriptor == null
-        ? UCColors.flavor.overlay1
+        ? FluentTheme.of(context).resources.textFillColorDisabled
         : nodeCategoryColor(descriptor.category);
     final IconData icon = nodeTypeIcon(descriptor?.typeKey ?? widget.typeKey);
     final String title = descriptor?.displayName ?? widget.typeKey;
@@ -264,13 +264,16 @@ class _NodeCardState extends State<NodeCard> {
     required Color categoryColor,
     required ScriptNodeTypeDescriptor? descriptor,
   }) {
+    final FluentThemeData theme = FluentTheme.of(context);
     final bool active = widget.selected || widget.dragging;
     final Color background = (_hovered || widget.dragging)
-        ? UCColors.flavor.surface1
-        : UCColors.flavor.surface0;
+        ? theme.resources.controlFillColorSecondary
+        : theme.resources.cardBackgroundFillColorDefault;
     final Color borderColor = active
-        ? UCColors.accent
-        : (_hovered ? UCColors.flavor.overlay1 : UCColors.flavor.overlay0);
+        ? theme.accentColor
+        : (_hovered
+              ? theme.resources.controlStrokeColorDefault
+              : theme.resources.cardStrokeColorDefault);
 
     return MouseRegion(
       cursor: widget.dragging
@@ -355,7 +358,11 @@ class _NodeCardState extends State<NodeCard> {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.14),
-        border: Border(bottom: BorderSide(color: UCColors.flavor.surface2)),
+        border: Border(
+          bottom: BorderSide(
+            color: FluentTheme.of(context).resources.dividerStrokeColorDefault,
+          ),
+        ),
       ),
       child: Row(
         children: <Widget>[
@@ -369,7 +376,9 @@ class _NodeCardState extends State<NodeCard> {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: UCColors.flavor.text,
+                color: FluentTheme.of(
+                  context,
+                ).resources.textFillColorPrimary,
               ),
             ),
           ),
@@ -379,23 +388,29 @@ class _NodeCardState extends State<NodeCard> {
     );
   }
 
-  /// 值条（§5.2 M4.1）：引脚区下方整条高 22，顶边 1px `surface2`、
-  /// 背景 `mantle`；内容为参数汇总，11 `subtext1` 单行 ellipsis。
+  /// 值条（§5.2 M4.1）：引脚区下方整条高 22，顶边 1px `dividerStrokeColorDefault`、
+  /// 背景 `scaffoldBackgroundColor`；内容为参数汇总，11 `textFillColorSecondary` 单行 ellipsis。
   Widget _buildValueStrip(ScriptNodeTypeDescriptor descriptor) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return Container(
       key: Key('nodeValueStrip_${widget.nodeId}'),
       height: nodeValueStripHeight,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
-        color: UCColors.flavor.mantle,
-        border: Border(top: BorderSide(color: UCColors.flavor.surface2)),
+        color: theme.scaffoldBackgroundColor,
+        border: Border(
+          top: BorderSide(color: theme.resources.dividerStrokeColorDefault),
+        ),
       ),
       child: Text(
         nodeValueSummary(descriptor.params, widget.paramValues),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 11, color: UCColors.flavor.subtext1),
+        style: TextStyle(
+          fontSize: 11,
+          color: theme.resources.textFillColorSecondary,
+        ),
       ),
     );
   }
@@ -441,7 +456,10 @@ class _NodeCardState extends State<NodeCard> {
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(fontSize: 11, color: UCColors.flavor.subtext1),
+        style: TextStyle(
+          fontSize: 11,
+          color: FluentTheme.of(context).resources.textFillColorSecondary,
+        ),
       ),
     );
   }
@@ -477,7 +495,8 @@ class _NodeCardState extends State<NodeCard> {
         ? nodeCardOverflow.toDouble()
         : nodeCardOverflow + nodeCardWidth;
     final double anchorY = nodeCardOverflow + nodePinRowCenterY(rowIndex);
-    final Color color = pinStrokeColor(pin.kind, pin.dataType);
+    final FluentThemeData theme = FluentTheme.of(context);
+    final Color color = pinStrokeColor(pin.kind, pin.dataType, theme);
     final bool connected = widget.connectedPins.contains(pin.id);
     final bool error = widget.errorPins.contains(pin.id);
     final bool rejected = !error && widget.rejectedPins.contains(pin.id);
@@ -489,7 +508,7 @@ class _NodeCardState extends State<NodeCard> {
     final List<Widget> widgets = <Widget>[];
     if (error || rejected || candidate) {
       final Color ringColor = error || rejected
-          ? UCColors.flavor.red
+          ? AppColors.critical(theme.brightness)
           : color.withValues(alpha: 0.75);
       final double ringWidth = exec ? _execPinWidth + 6 : _dataPinDiameter + 6;
       final double ringHeight = exec
@@ -595,6 +614,7 @@ class _NodeCardState extends State<NodeCard> {
   }
 
   Widget _buildErrorDot() {
+    final FluentThemeData theme = FluentTheme.of(context);
     return Positioned(
       left: nodeCardOverflow + nodeCardWidth - _errorDotDiameter / 2,
       top: nodeCardOverflow - _errorDotDiameter / 2,
@@ -604,9 +624,11 @@ class _NodeCardState extends State<NodeCard> {
           width: _errorDotDiameter,
           height: _errorDotDiameter,
           decoration: BoxDecoration(
-            color: UCColors.flavor.red,
+            color: AppColors.critical(theme.brightness),
             shape: BoxShape.circle,
-            border: Border.all(color: UCColors.flavor.surface0),
+            border: Border.all(
+              color: theme.resources.cardBackgroundFillColorDefault,
+            ),
           ),
         ),
       ),

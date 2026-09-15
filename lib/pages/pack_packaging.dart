@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/controls/format_selection_dialog.dart';
 import 'package:cpp_nuget_pack/controls/pack_preview_dialog.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
@@ -16,14 +17,18 @@ class PackPackaging extends StatefulWidget {
     this.builders = PackageBuilderRegistry.all,
     this.selectedBuilder,
     this.onBuilderChanged,
+    this.onSave,
   });
 
   final PackModel pack;
   final List<PackageBuilder> builders;
 
-  /// 父级持有的选中格式；为空时回退到本地选择或首个格式。
+  /// 父级持有的选中格式；为空时回退到本地选择或首个启用格式。
   final PackageBuilder? selectedBuilder;
   final ValueChanged<PackageBuilder>? onBuilderChanged;
+
+  /// 启用格式集合保存入口；null 时「修改启用格式…」禁用（测试注入保护）。
+  final Future<bool> Function(PackModel pack)? onSave;
 
   @override
   State<PackPackaging> createState() => _PackPackagingState();
@@ -32,23 +37,17 @@ class PackPackaging extends StatefulWidget {
 class _PackPackagingState extends State<PackPackaging> {
   PackageBuilder? _localBuilder;
   bool _previewing = false;
+  bool _savingFormats = false;
 
   PackageBuilder? get _builder {
-    final PackageBuilder? selected = widget.selectedBuilder;
-    if (selected != null) {
-      final PackageBuilder? matched = _findBuilder(selected.id);
-      if (matched != null) {
-        return matched;
-      }
+    if (widget.builders.isEmpty) {
+      return null;
     }
-    final PackageBuilder? local = _localBuilder;
-    if (local != null) {
-      final PackageBuilder? matched = _findBuilder(local.id);
-      if (matched != null) {
-        return matched;
-      }
-    }
-    return widget.builders.isEmpty ? null : widget.builders.first;
+    return effectivePackagingBuilder(
+      widget.pack,
+      widget.selectedBuilder ?? _localBuilder,
+      all: widget.builders,
+    );
   }
 
   PackageBuilder? _findBuilder(String id) {
@@ -67,6 +66,86 @@ class _PackPackagingState extends State<PackPackaging> {
     }
     setState(() => _localBuilder = builder);
     widget.onBuilderChanged?.call(builder);
+  }
+
+  /// 该包当前启用的格式 id（规范序）；未记录时回退全部。
+  List<String> _enabledFormatIds() => <String>[
+    for (final PackageBuilder builder in enabledBuildersFor(
+      widget.pack,
+      all: widget.builders,
+    ))
+      builder.id,
+  ];
+
+  Future<void> _modifyFormats() async {
+    final Future<bool> Function(PackModel pack)? onSave = widget.onSave;
+    if (_savingFormats || onSave == null) {
+      return;
+    }
+    final List<String>? selected = await showFormatSelectionDialog(
+      context,
+      builders: widget.builders,
+      enabledIds: _enabledFormatIds(),
+    );
+    if (selected == null || !mounted) {
+      return;
+    }
+    setState(() => _savingFormats = true);
+    final bool saved;
+    try {
+      saved = await onSave(_withEnabledFormats(selected));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _savingFormats = false);
+      showFloatingToast(
+        context,
+        '保存失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _savingFormats = false);
+    if (saved) {
+      showFloatingToast(context, '已保存');
+      return;
+    }
+    showFloatingToast(
+      context,
+      '保存失败',
+      type: FloatingToastType.error,
+      duration: const Duration(seconds: 5),
+    );
+  }
+
+  /// 全字段拷贝并仅替换启用格式集合。
+  PackModel _withEnabledFormats(List<String> enabledFormats) {
+    final PackModel pack = widget.pack;
+    return PackModel(
+        name: pack.name,
+        version: pack.version,
+        author: pack.author,
+        description: pack.description,
+        license: pack.license,
+        iconPath: pack.iconPath,
+        sourcePath: pack.sourcePath,
+        sourceVersion: pack.sourceVersion,
+      )
+      ..files = pack.files
+      ..commands = pack.commands
+      ..dependencies = pack.dependencies
+      ..macros = pack.macros
+      ..libDirectories = pack.libDirectories
+      ..libraries = pack.libraries
+      ..history = pack.history
+      ..scripts = pack.scripts
+      ..buildOptions = pack.buildOptions
+      ..enabledFormats = List<String>.of(enabledFormats);
   }
 
   String _descriptionFor(PackageBuilder? builder) {
@@ -140,25 +219,47 @@ class _PackPackagingState extends State<PackPackaging> {
                 ),
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                width: 320,
-                child: FluentTheme(
-                  data: theme.copyWith(visualDensity: comboBoxDensity),
-                  child: ComboBox<String>(
-                    key: const Key('packagingBuilderField'),
-                    value: _builder?.id,
-                    placeholder: const Text('请选择打包格式'),
-                    isExpanded: true,
-                    onChanged: _selectBuilder,
-                    items: <ComboBoxItem<String>>[
-                      for (final PackageBuilder builder in widget.builders)
-                        ComboBoxItem<String>(
-                          value: builder.id,
-                          child: Text(builder.displayName),
-                        ),
-                    ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 320,
+                    child: FluentTheme(
+                      data: theme.copyWith(visualDensity: comboBoxDensity),
+                      child: ComboBox<String>(
+                        key: const Key('packagingBuilderField'),
+                        value: _builder?.id,
+                        placeholder: const Text('请选择打包格式'),
+                        isExpanded: true,
+                        onChanged: _selectBuilder,
+                        items: <ComboBoxItem<String>>[
+                          for (final PackageBuilder builder
+                              in enabledBuildersFor(
+                                widget.pack,
+                                all: widget.builders,
+                              ))
+                            ComboBoxItem<String>(
+                              value: builder.id,
+                              child: Text(builder.displayName),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Button(
+                    key: const Key('modifyEnabledFormatsButton'),
+                    onPressed: widget.onSave == null || _savingFormats
+                        ? null
+                        : _modifyFormats,
+                    child: const Text('修改启用格式…'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '仅列出该包已启用的格式；可点击「修改启用格式…」调整。',
+                style: TextStyle(color: theme.resources.textFillColorSecondary),
               ),
               const SizedBox(height: 16),
               FilledButton(

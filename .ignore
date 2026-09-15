@@ -1,0 +1,4 @@
+# deepwork managed block
+!.slim/deepwork/
+!.slim/deepwork/**
+# end deepwork managed block

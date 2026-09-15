@@ -1,10 +1,10 @@
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
 
 /// CMake find_package 配置包构建器。
 ///
@@ -30,6 +30,9 @@ class CMakePackageBuilder implements PackageBuilder {
   Future<PackagePlan> buildPlan(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
+      if (isBuildScriptPath(file.path)) {
+        continue;
+      }
       final String? packagePath = _packagePath(pack, file);
       if (packagePath == null) {
         continue;
@@ -77,21 +80,20 @@ class CMakePackageBuilder implements PackageBuilder {
       return null;
     }
     return switch (file.type) {
-      FileType.header || FileType.module =>
-        '$_includePrefix/${_includeNamespace(pack)}/'
-            '${_withoutLeadingSegment(path, const <String>['include'])}',
+      FileType.header ||
+      FileType.module => '$_includePrefix/${_includeRelativePath(pack, path)}',
       FileType.lib || FileType.dll || FileType.pdb =>
         '$_libPrefix/${_withoutLeadingSegment(path, const <String>['lib', 'bin'])}',
       _ => '$_filesPrefix/$path',
     };
   }
 
-  /// 头文件顶层命名空间目录：源目录文件夹名，缺失时回退为包名。
-  static String _includeNamespace(PackModel pack) {
-    final String sourcePath = pack.sourcePath ?? '';
-    final String folder = sourcePath.isEmpty ? '' : baseName(sourcePath);
-    return folder.isEmpty ? pack.name : folder;
-  }
+  /// 头文件在源目录命名空间下的包内相对路径（首段同名时不重复叠加）。
+  static String _includeRelativePath(PackModel pack, String path) =>
+      includePackageRelativePath(
+        path,
+        includeNamespaceOf(pack.sourcePath, pack.name),
+      );
 
   static bool _isBinaryType(FileType type) => switch (type) {
     FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,

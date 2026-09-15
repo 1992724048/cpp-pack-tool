@@ -1,4 +1,14 @@
-import 'package:catppuccin_flutter/catppuccin_flutter.dart';
+import 'dart:async';
+
+import 'package:cpp_nuget_pack/build/build_cache.dart';
+import 'package:cpp_nuget_pack/build/build_environment.dart';
+import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/elevated_build.dart';
+import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
+import 'package:cpp_nuget_pack/build/provisioning.dart';
+import 'package:cpp_nuget_pack/build/repo_version.dart';
+import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -11,18 +21,25 @@ import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
+import 'package:cpp_nuget_pack/util/author_rules.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/util/proxy.dart';
+import 'package:cpp_nuget_pack/util/repo_icon.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
+import 'package:cpp_nuget_pack/util/system_entries.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'app_info.dart';
 import 'controls/add_directory_dialog.dart';
+import 'controls/build_pack_dialog.dart';
 import 'controls/delete_pack_dialog.dart';
 import 'controls/dependency_graph_dialog.dart';
+import 'controls/header_include_issues_dialog.dart';
 import 'controls/missing_dependencies_dialog.dart';
 import 'controls/pack_export_dialog.dart';
 import 'controls/pack_history_dialog.dart';
@@ -81,12 +98,8 @@ class _PackToolState extends State<PackTool> {
         ThemeModeSetting.dark => ThemeMode.dark,
         ThemeModeSetting.light => ThemeMode.light,
       },
-      theme: buildTheme(Brightness.light, catppuccin.latte, _settings.accent),
-      darkTheme: buildTheme(
-        Brightness.dark,
-        flavorByName(_settings.darkFlavor),
-        _settings.accent,
-      ),
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
       home: MainLayout(
         store: widget.store,
         settings: _settings,
@@ -98,6 +111,46 @@ class _PackToolState extends State<PackTool> {
 
 Future<void> _noopSaveSettings(SettingsModel settings) async {}
 
+/// 构建环境准备函数：由 MainLayout 注入设置中的编译器优先级与检测缓存，
+/// 缓存缺失/失效并完成重检时经 [onCompilersDetected] 回调新检测结果
+/// （MainLayout 把它写回配置）；[onDownloadProgress] 为工具下载进度回调
+/// （对话框传入）；测试注入以绕过真实检测与工具供给。
+typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
+  PackModel pack, {
+  required List<String> compilerPriority,
+  required List<toolchain.DetectedCompiler> cachedCompilers,
+  required CompilerDetectionCallback onCompilersDetected,
+  ToolDownloadProgressCallback? onDownloadProgress,
+});
+
+/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块；
+/// [proxy] 代理解析注入工具下载与构建子进程环境。
+Future<BuildEnvironment> _preparePackBuildEnvironment(
+  PackModel pack, {
+  required List<String> compilerPriority,
+  required List<toolchain.DetectedCompiler> cachedCompilers,
+  required CompilerDetectionCallback onCompilersDetected,
+  ToolDownloadProgressCallback? onDownloadProgress,
+  ProxyResolution? proxy,
+}) {
+  return preparePackBuildEnvironment(
+    pack,
+    priority: compilerPriority,
+    cachedCompilers: cachedCompilers,
+    onCompilersDetected: onCompilersDetected,
+    onDownloadProgress: onDownloadProgress,
+    proxy: proxy,
+    loadSupportModule: () =>
+        rootBundle.loadString('assets/build/cnp_build_support.py'),
+  );
+}
+
+/// 包构建缓存探测（删除对话框用）；测试注入。
+typedef PackBuildCacheProbe = Future<bool> Function(String packName);
+
+/// 包构建缓存删除；测试注入。
+typedef PackBuildCacheDeleter = Future<void> Function(String packName);
+
 class MainLayout extends StatefulWidget {
   const MainLayout({
     super.key,
@@ -108,7 +161,17 @@ class MainLayout extends StatefulWidget {
     this.onSaveSettings = _noopSaveSettings,
     this.exportPackage = exportNuGetPackage,
     this.exportCmakePackage = cmake_exporter.exportCmakePackage,
+    this.buildPack = runPackBuildStreaming,
+    this.prepareBuildEnv,
+    this.retryElevatedBuild = runElevatedPackBuild,
+    this.detectCompilers = detectCompilersWithControlledTemp,
+    this.loadBuildHeader = loadBuildScriptHeader,
+    this.loadRemoteTags,
+    this.fixIncludes = fixHeaderIncludes,
+    this.loadRepoIcon,
     this.now = DateTime.now,
+    this.hasBuildCache = hasPackBuildCache,
+    this.deleteBuildCache = deletePackBuildCache,
   });
 
   final Future<String?> Function() pickDirectory;
@@ -126,7 +189,36 @@ class MainLayout extends StatefulWidget {
     String outputDirectory,
   )
   exportCmakePackage;
+  final PackBuildRunner buildPack;
+  final PackBuildEnvironmentPreparer? prepareBuildEnv;
+
+  /// 临时目录权限失败时的提权重试入口（缺省 [runElevatedPackBuild]）；
+  /// 测试注入替代实现以避免触发真实 UAC 弹窗。
+  final ElevatedPackBuildRunner retryElevatedBuild;
+
+  final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
+
+  /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
+  final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
+
+  /// 查询仓库远端 tag 列表（懒查询 + 按 URL 会话缓存的底层入口）；测试注入避免触网；
+  /// null 时走默认实现（注入代理解析）。
+  final Future<List<String>?> Function(String repoUrl)? loadRemoteTags;
+
+  /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
+  final PackHeaderIncludeFixer fixIncludes;
+
+  /// 解析并缓存远程仓库头像（磁盘缓存优先）；测试注入避免触网；
+  /// null 时走默认实现（注入代理解析）。
+  final Future<String?> Function(String repoUrl)? loadRepoIcon;
+
   final DateTime Function() now;
+
+  /// 删除包时探测其构建缓存是否存在；测试注入。
+  final PackBuildCacheProbe hasBuildCache;
+
+  /// 删除包时按需删除其构建缓存；测试注入。
+  final PackBuildCacheDeleter deleteBuildCache;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -140,10 +232,49 @@ class _MainLayoutState extends State<MainLayout> {
   int? _selected;
   PackageBuilder _packagingBuilder = PackageBuilderRegistry.all.first;
 
+  /// 包名（小写）→ 远程仓库地址；已解析但无仓库时为 null。
+  final Map<String, String?> _packRepos = <String, String?>{};
+
+  /// 包名（小写）→ 上次解析头部时的源目录/脚本路径指纹，避免重复读取。
+  final Map<String, String> _resolvedHeaderKeys = <String, String>{};
+
+  /// 包名（小写）→ 远程仓库平台；已解析但无远程平台时为 null。
+  final Map<String, RepoPlatform?> _repoPlatforms = <String, RepoPlatform?>{};
+
+  /// 包名（小写）→ 头像文件绝对路径（磁盘缓存命中或获取成功时非空）。
+  final Map<String, String?> _repoIcons = <String, String?>{};
+
+  /// 仓库地址 → 进行中/已完成头像查询（去重同一仓库的并发查询）。
+  final Map<String, Future<String?>> _repoIconQueries = <String, Future<String?>>{};
+
+  /// 仓库地址 → 远端最新 tag 查询 Future（去重同一仓库的并发查询）。
+  final Map<String, Future<String?>> _latestTagQueries =
+      <String, Future<String?>>{};
+
+  /// 仓库地址 → 已完成的远端最新 tag；查询失败/无可用 tag 时为 null。
+  final Map<String, String?> _latestTags = <String, String?>{};
+
+  /// 默认作者批量修正防重入（启动与设置变更可能相邻触发）。
+  bool _fixingAuthors = false;
+
+  /// 代理解析缓存（与设置对象绑定；设置被替换后按需重新解析）。
+  Future<ProxyResolution>? _proxyResolutionFuture;
+  SettingsModel? _proxyResolutionSettings;
+
   @override
   void initState() {
     super.initState();
     _loadPacks();
+  }
+
+  @override
+  void didUpdateWidget(covariant MainLayout oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final String previous = oldWidget.settings.defaultAuthor;
+    final String next = widget.settings.defaultAuthor;
+    if (previous != next && next.trim().isNotEmpty) {
+      unawaited(_fixPlaceholderAuthors());
+    }
   }
 
   Future<void> _loadPacks() async {
@@ -170,11 +301,126 @@ class _MainLayoutState extends State<MainLayout> {
       _sortPacks();
       _selected = _packs.isEmpty ? null : 0;
     });
+    _resolveRepos();
     if (errors.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _showLoadErrorsToast(errors),
       );
     }
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => unawaited(_fixPlaceholderAuthors()),
+    );
+  }
+
+  /// 占位作者批量修正：默认作者非空且自身不是占位值时逐个替换并写盘；
+  /// 单包失败不阻断其余。
+  Future<void> _fixPlaceholderAuthors() async {
+    if (_fixingAuthors) {
+      return;
+    }
+    final String defaultAuthor = widget.settings.defaultAuthor.trim();
+    if (defaultAuthor.isEmpty ||
+        isPlaceholderAuthor(defaultAuthor) ||
+        _packs.isEmpty) {
+      return;
+    }
+    _fixingAuthors = true;
+    int fixed = 0;
+    int failed = 0;
+    try {
+      final List<PackModel> updatedPacks = <PackModel>[];
+      for (final PackModel pack in List<PackModel>.of(_packs)) {
+        if (!isPlaceholderAuthor(pack.author)) {
+          continue;
+        }
+        final PackModel updated = _withAuthor(pack, defaultAuthor);
+        try {
+          await widget.store.savePack(updated);
+        } catch (_) {
+          failed++;
+          continue;
+        }
+        fixed++;
+        updatedPacks.add(updated);
+      }
+      if (updatedPacks.isNotEmpty && mounted) {
+        setState(() {
+          final Map<String, PackModel> replacements = <String, PackModel>{
+            for (final PackModel pack in updatedPacks)
+              pack.name.toLowerCase(): pack,
+          };
+          for (int index = 0; index < _packs.length; index++) {
+            final PackModel? replacement =
+                replacements[_packs[index].name.toLowerCase()];
+            if (replacement != null) {
+              _packs[index] = replacement;
+            }
+          }
+          _sortPacks();
+        });
+      }
+    } finally {
+      _fixingAuthors = false;
+    }
+    if (!mounted || (fixed == 0 && failed == 0)) {
+      return;
+    }
+    if (fixed > 0 && failed > 0) {
+      showFloatingToast(
+        context,
+        '已按默认作者修正 $fixed 个包的作者，$failed 个包保存失败',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (failed > 0) {
+      showFloatingToast(
+        context,
+        '$failed 个包的作者修正保存失败',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    showFloatingToast(
+      context,
+      '已按默认作者修正 $fixed 个包的作者',
+      type: FloatingToastType.info,
+    );
+  }
+
+  /// 全字段拷贝并替换作者（`PackModel.author` 为 final，只能重建）。
+  PackModel _withAuthor(PackModel pack, String author) {
+    return PackModel(
+        name: pack.name,
+        version: pack.version,
+        author: author,
+        description: pack.description,
+        license: pack.license,
+        iconPath: pack.iconPath,
+        sourcePath: pack.sourcePath,
+        sourceVersion: pack.sourceVersion,
+      )
+      ..files = pack.files
+      ..commands = pack.commands
+      ..dependencies = pack.dependencies
+      ..macros = pack.macros
+      ..libDirectories = pack.libDirectories
+      ..libraries = pack.libraries
+      ..history = pack.history
+      ..scripts = pack.scripts
+      ..buildOptions = pack.buildOptions
+      ..enabledFormats = pack.enabledFormats;
+  }
+
+  /// 写盘前的作者兜底：占位作者替换为默认作者（静默）。
+  PackModel _withResolvedAuthor(PackModel pack) {
+    final String resolved = resolveDefaultAuthor(
+      pack.author,
+      widget.settings.defaultAuthor,
+    );
+    return resolved == pack.author ? pack : _withAuthor(pack, resolved);
   }
 
   void _showLoadErrorsToast(List<PackLoadError> errors) {
@@ -203,8 +449,11 @@ class _MainLayoutState extends State<MainLayout> {
     final Future<List<FileModel>> scanFuture = widget.scanFiles(path);
     final PackModel? pack = await showDialog<PackModel>(
       context: context,
-      builder: (_) =>
-          AddDirectoryDialog(directoryPath: path, scanFuture: scanFuture),
+      builder: (_) => AddDirectoryDialog(
+        directoryPath: path,
+        scanFuture: scanFuture,
+        initialAuthor: widget.settings.defaultAuthor,
+      ),
     );
     if (pack == null || !mounted) {
       return;
@@ -225,6 +474,7 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<bool> _savePack(PackModel pack) async {
+    pack = _withResolvedAuthor(pack);
     final PackModel? previous = _findPack(pack.name);
     if (previous != null && previous.version != pack.version) {
       pack.history = appendHistoryEntry(
@@ -280,6 +530,7 @@ class _MainLayoutState extends State<MainLayout> {
         _selected = selected;
       }
     });
+    _resolveRepos();
   }
 
   bool get _hasSelectedPack {
@@ -297,6 +548,151 @@ class _MainLayoutState extends State<MainLayout> {
     return null;
   }
 
+  static String _packRepoKey(PackModel pack) {
+    final FileModel? script = findBuildScript(pack.files);
+    return '${pack.sourcePath ?? ''}\u0000${script?.path ?? ''}';
+  }
+
+  /// 低优先级解析全部包的 build.py 头部（非阻塞）；键未变化时跳过重复读取。
+  void _resolveRepos() {
+    for (final PackModel pack in List<PackModel>.of(_packs)) {
+      unawaited(_resolveRepoFor(pack));
+    }
+  }
+
+  Future<void> _resolveRepoFor(PackModel pack) async {
+    final String name = pack.name.toLowerCase();
+    final String key = _packRepoKey(pack);
+    if (_resolvedHeaderKeys[name] == key) {
+      return;
+    }
+    _resolvedHeaderKeys[name] = key;
+    String? repo;
+    try {
+      final BuildScriptHeader? header = await widget.loadBuildHeader(pack);
+      repo = header?.repo;
+    } catch (_) {
+      repo = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    final String? resolvedRepo = repo;
+    final RepoLocation? location = resolvedRepo == null
+        ? null
+        : parseRepoLocation(resolvedRepo);
+    final String? previousRepo = _packRepos[name];
+    setState(() {
+      _packRepos[name] = resolvedRepo;
+      _repoPlatforms[name] = location?.platform;
+      // 仓库地址变化时先清空旧头像：新头像查询完成前不得沿用上一仓库的图标
+      if (location == null || resolvedRepo != previousRepo) {
+        _repoIcons[name] = null;
+      }
+    });
+    if (resolvedRepo == null) {
+      return;
+    }
+    unawaited(_latestTagFor(resolvedRepo));
+    if (location != null) {
+      unawaited(_resolveRepoAvatar(name, resolvedRepo));
+    }
+  }
+
+  /// 解析并缓存侧栏头像：同一仓库 URL 复用进行中的查询，成功后写入 [_repoIcons]。
+  Future<void> _resolveRepoAvatar(String packName, String repoUrl) async {
+    final Future<String?> query = _repoIconQueries.putIfAbsent(
+      repoUrl,
+      () => _queryRepoIcon(repoUrl),
+    );
+    String? path;
+    try {
+      path = await query;
+    } catch (_) {
+      path = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _repoIcons[packName] = path);
+  }
+
+  Future<String?> _queryRepoIcon(String repoUrl) async {
+    try {
+      final Future<String?> Function(String repoUrl)? loader =
+          widget.loadRepoIcon;
+      if (loader != null) {
+        return await loader(repoUrl);
+      }
+      return await ensureRepoAvatar(repoUrl, proxy: await _proxyResolution());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 当前设置的代理解析（同一设置对象复用；设置变更后重新解析，自动模式读注册表）。
+  Future<ProxyResolution> _proxyResolution() {
+    final SettingsModel settings = widget.settings;
+    final Future<ProxyResolution>? pending = _proxyResolutionFuture;
+    if (pending != null && identical(_proxyResolutionSettings, settings)) {
+      return pending;
+    }
+    _proxyResolutionSettings = settings;
+    final Future<ProxyResolution> resolved = resolveProxyFromSettings(settings);
+    _proxyResolutionFuture = resolved;
+    return resolved;
+  }
+
+  /// 仓库远端最新 tag：命中缓存直接返回，进行中的查询去重复用。
+  Future<String?> _latestTagFor(String repoUrl) {
+    final Future<String?>? pending = _latestTagQueries[repoUrl];
+    if (pending != null) {
+      return pending;
+    }
+    final Future<String?> query = _queryLatestTag(repoUrl);
+    _latestTagQueries[repoUrl] = query;
+    return query;
+  }
+
+  Future<String?> _queryLatestTag(String repoUrl) async {
+    List<String>? tags;
+    try {
+      final Future<List<String>?> Function(String repoUrl)? loader =
+          widget.loadRemoteTags;
+      if (loader != null) {
+        tags = await loader(repoUrl);
+      } else {
+        final ProxyResolution proxy = await _proxyResolution();
+        tags = await listRemoteTags(
+          repoUrl,
+          environment: proxyEnvironmentOverrides(proxy),
+        );
+      }
+    } catch (_) {
+      tags = null;
+    }
+    final String? latest = tags == null ? null : latestTag(tags);
+    if (mounted) {
+      setState(() => _latestTags[repoUrl] = latest);
+    }
+    return latest;
+  }
+
+  RepoBadge? _repoBadgeFor(PackModel pack) {
+    final String? repo = _packRepos[pack.name.toLowerCase()];
+    if (repo == null) {
+      return null;
+    }
+    final String? current = pack.sourceVersion;
+    final String? latest = _latestTags[repo];
+    if (current != null &&
+        latest != null &&
+        compareTagVersions(latest, current) > 0) {
+      return RepoBadge.update;
+    }
+    return RepoBadge.git;
+  }
+
   Future<void> _deleteSelectedPack() async {
     final int? selected = _selected;
     if (selected == null || selected < 0 || selected >= _packs.length) {
@@ -310,12 +706,17 @@ class _MainLayoutState extends State<MainLayout> {
             if (dependency.name.toLowerCase() == pack.name.toLowerCase())
               (name: item.name, version: dependency.version),
     ];
-    final bool confirmed = await showDeletePackDialog(
+    final bool hasCache = await _probeBuildCache(pack.name);
+    if (!mounted) {
+      return;
+    }
+    final DeletePackResult result = await showDeletePackDialog(
       context,
       packName: pack.name,
       dependents: dependents,
+      hasBuildCache: hasCache,
     );
-    if (!confirmed || !mounted) {
+    if (!result.confirmed || !mounted) {
       return;
     }
     try {
@@ -337,13 +738,52 @@ class _MainLayoutState extends State<MainLayout> {
     }
     setState(() {
       _packs.removeAt(selected);
+      final String packKey = pack.name.toLowerCase();
+      final String? deletedRepo = _packRepos[packKey];
+      _packRepos.remove(packKey);
+      _resolvedHeaderKeys.remove(packKey);
+      _repoPlatforms.remove(packKey);
+      _repoIcons.remove(packKey);
+      if (deletedRepo != null) {
+        _repoIconQueries.remove(deletedRepo);
+      }
       if (_packs.isEmpty) {
         _selected = null;
       } else if (selected >= _packs.length) {
         _selected = _packs.length - 1;
       }
     });
+    if (result.deleteCache) {
+      try {
+        await widget.deleteBuildCache(pack.name);
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+        showFloatingToast(
+          context,
+          '已删除包，但构建缓存删除失败：${formatError(error)}',
+          type: FloatingToastType.error,
+          duration: const Duration(seconds: 5),
+        );
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(context, '已删除（含构建缓存）');
+      return;
+    }
     showFloatingToast(context, '已删除');
+  }
+
+  /// 构建缓存探测：异常按无缓存处理（不阻断删除）。
+  Future<bool> _probeBuildCache(String packName) async {
+    try {
+      return await widget.hasBuildCache(packName);
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _remapSelectedPack() async {
@@ -374,6 +814,7 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _applyRemap(PackModel pack) async {
+    pack = _withResolvedAuthor(pack);
     final PackModel? previous = _findPack(pack.name);
     if (previous != null) {
       final Set<String> oldPaths = <String>{
@@ -405,15 +846,194 @@ class _MainLayoutState extends State<MainLayout> {
         );
       }
     }
-    await widget.store.savePack(pack);
+    final PackModel updated = await _syncSystemEntries(pack);
+    // 系统条目与重映射拷贝均为全字段重建：构建流程携带的新版本优先，否则保留原记录
+    updated.sourceVersion = pack.sourceVersion ?? previous?.sourceVersion;
+    await widget.store.savePack(updated);
     if (!mounted) {
       return;
     }
-    _upsertPack(pack);
+    _upsertPack(updated);
+  }
+
+  /// 注册构建管线系统条目（根级 pre/post.bat 命令与 `# depends:` 依赖）。
+  ///
+  /// build.py 缺失或不可读时仍同步脚本命令，不阻断重映射。
+  Future<PackModel> _syncSystemEntries(PackModel pack) async {
+    BuildScriptHeader? header;
+    try {
+      header = await widget.loadBuildHeader(pack);
+    } catch (_) {
+      header = null;
+    }
+    return applySystemEntries(
+      pack,
+      header: header,
+      resolvePackVersion: (String name) => _findPack(name)?.version,
+    ).pack;
   }
 
   void _selectPackagingBuilder(PackageBuilder builder) {
     setState(() => _packagingBuilder = builder);
+  }
+
+  Future<void> _buildPack(PackModel pack) async {
+    final ProxyResolution proxy = await _proxyResolution();
+    if (!mounted) {
+      return;
+    }
+    final PackBuildEnvironmentPreparer prepare =
+        widget.prepareBuildEnv ??
+        (
+          PackModel pack, {
+          required List<String> compilerPriority,
+          required List<toolchain.DetectedCompiler> cachedCompilers,
+          required CompilerDetectionCallback onCompilersDetected,
+          ToolDownloadProgressCallback? onDownloadProgress,
+        }) => _preparePackBuildEnvironment(
+          pack,
+          compilerPriority: compilerPriority,
+          cachedCompilers: cachedCompilers,
+          onCompilersDetected: onCompilersDetected,
+          onDownloadProgress: onDownloadProgress,
+          proxy: proxy,
+        );
+    final bool sourceNone = await _loadSourceNone(pack);
+    if (!mounted) {
+      return;
+    }
+    final BuildDialogResult? result = await showDialog<BuildDialogResult>(
+      context: context,
+      // 关闭必须经对话框内「关闭」按钮回传失败条目/修复报告：Esc 撤走会丢构建历史
+      dismissWithEsc: false,
+      builder: (_) => BuildPackDialog(
+        pack: pack,
+        sourceNone: sourceNone,
+        gitGlobalArguments: proxy.gitGlobalArguments(),
+        build:
+            (
+              PackModel pack,
+              void Function(PackBuildStage) onStage, {
+              Map<String, String>? environment,
+              void Function(String line)? onOutput,
+              void Function(String version)? onSourceVersion,
+              List<String> gitGlobalArguments = const <String>[],
+            }) => widget.buildPack(
+              pack,
+              onStage,
+              environment: environment,
+              onOutput: onOutput,
+              onSourceVersion: onSourceVersion,
+              gitGlobalArguments: gitGlobalArguments,
+            ),
+        prepare:
+            (
+              PackModel pack, {
+              ToolDownloadProgressCallback? onDownloadProgress,
+            }) => prepare(
+              pack,
+              compilerPriority: widget.settings.compilerPriority,
+              cachedCompilers: widget.settings.detectedCompilers,
+              onCompilersDetected: _persistDetectedCompilers,
+              onDownloadProgress: onDownloadProgress,
+            ),
+        scanFiles: widget.scanFiles,
+        onApply: _applyRemap,
+        fixIncludes: widget.fixIncludes,
+        retryElevated: widget.retryElevatedBuild,
+        now: widget.now,
+      ),
+    );
+    if (!mounted || result == null) {
+      return;
+    }
+    final HistoryModel? failureEntry = result.failureEntry;
+    if (failureEntry != null) {
+      await _recordBuildFailure(pack, failureEntry);
+      if (!mounted) {
+        return;
+      }
+    }
+    final HeaderIncludeFixReport? report = result.fixReport;
+    if (report == null) {
+      return;
+    }
+    if (report.fixedCount > 0) {
+      showFloatingToast(context, '已自动修复 ${report.fixedCount} 处头文件引用');
+    }
+    if (report.hasIssues) {
+      await showHeaderIncludeIssuesDialog(context, report: report);
+    }
+  }
+
+  /// 记录构建失败条目（失败会话关闭时落盘一次）；保存失败仅提示、不阻断。
+  Future<void> _recordBuildFailure(
+    PackModel pack,
+    HistoryModel entry,
+  ) async {
+    final PackModel? current = _findPack(pack.name);
+    if (current == null) {
+      return;
+    }
+    current.history = appendHistoryEntry(current.history, entry);
+    try {
+      await widget.store.savePack(current);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '构建记录保存失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    _upsertPack(current);
+  }
+
+  /// build.py 是否声明 `# source: none`（预构建配方）；读取失败按否处理。
+  Future<bool> _loadSourceNone(PackModel pack) async {
+    try {
+      final BuildScriptHeader? header = await widget.loadBuildHeader(pack);
+      return header?.sourceNone ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 把构建准备阶段的新检测结果写回配置（经 [MainLayout.onSaveSettings]）。
+  void _persistDetectedCompilers(List<toolchain.DetectedCompiler> compilers) {
+    final SettingsModel current = widget.settings;
+    final SettingsModel next = SettingsModel(
+      outputDirectory: current.outputDirectory,
+      cmakeOutputDirectory: current.cmakeOutputDirectory,
+      defaultAuthor: current.defaultAuthor,
+      themeMode: current.themeMode,
+      compilerPriority: current.compilerPriority,
+      detectedCompilers: compilers,
+    );
+    unawaited(_saveDetectedCompilers(next));
+  }
+
+  Future<void> _saveDetectedCompilers(SettingsModel settings) async {
+    try {
+      await widget.onSaveSettings(settings);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      showFloatingToast(
+        context,
+        '保存编译器检测结果失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+    }
   }
 
   Future<void> _packSelectedPack() async {
@@ -422,11 +1042,18 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     final PackModel pack = _packs[selected];
-    final String? outputDirectory = widget.settings.outputDirectory;
+    final PackageBuilder builder = effectivePackagingBuilder(
+      pack,
+      _packagingBuilder,
+    );
+    final bool isCmake = builder.id == _cmakeBuilderId;
+    final String? outputDirectory = isCmake
+        ? widget.settings.cmakeOutputDirectory
+        : widget.settings.outputDirectory;
     if (outputDirectory == null || outputDirectory.isEmpty) {
       showFloatingToast(
         context,
-        '请先在设置页配置打包输出目录',
+        isCmake ? '请先在设置页配置 CMake 打包输出目录' : '请先在设置页配置 NuGet 打包输出目录',
         type: FloatingToastType.error,
         duration: const Duration(seconds: 5),
       );
@@ -451,7 +1078,7 @@ class _MainLayoutState extends State<MainLayout> {
         return;
       }
     }
-    final PackagePlan? plan = await _buildPackagingPlan(pack);
+    final PackagePlan? plan = await _buildPackagingPlan(builder, pack);
     if (!mounted) {
       return;
     }
@@ -459,7 +1086,7 @@ class _MainLayoutState extends State<MainLayout> {
         ? const <PackagingIssue>[]
         : collectExecutableWarnings(plan);
     final List<PackagingIssue> issues = <PackagingIssue>[
-      if (plan != null && _packagingBuilder.id == _nugetBuilderId)
+      if (plan != null && builder.id == _nugetBuilderId)
         ...collectPackagingIssues(pack, plan),
       ...executableWarnings,
     ];
@@ -477,7 +1104,7 @@ class _MainLayoutState extends State<MainLayout> {
       PackModel pack,
       String outputDirectory,
     )
-    exportPackage = _packagingBuilder.id == _cmakeBuilderId
+    exportPackage = builder.id == _cmakeBuilderId
         ? widget.exportCmakePackage
         : widget.exportPackage;
     await showDialog<void>(
@@ -491,9 +1118,12 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  Future<PackagePlan?> _buildPackagingPlan(PackModel pack) async {
+  Future<PackagePlan?> _buildPackagingPlan(
+    PackageBuilder builder,
+    PackModel pack,
+  ) async {
     try {
-      return await _packagingBuilder.buildPlan(pack);
+      return await builder.buildPlan(pack);
     } catch (_) {
       // 校验期构建计划失败不阻断导出：导出对话框会以实际错误提示用户
       return null;
@@ -659,8 +1289,19 @@ class _MainLayoutState extends State<MainLayout> {
           _packs,
           onSave: _savePack,
           pickDirectory: widget.pickDirectory,
+          onBuildPack: _buildPack,
           packagingBuilder: _packagingBuilder,
           onPackagingBuilderChanged: _selectPackagingBuilder,
+          loadLatestVersion: _latestTagFor,
+          repoBadgeFor: _repoBadgeFor,
+          repoIconFor: (PackModel pack) {
+            final String name = pack.name.toLowerCase();
+            return (
+              platform: _repoPlatforms[name],
+              avatarPath: _repoIcons[name],
+            );
+          },
+          loadHeader: widget.loadBuildHeader,
         ),
         footerItems: [
           PaneItemSeparator(),
@@ -671,6 +1312,7 @@ class _MainLayoutState extends State<MainLayout> {
               settings: widget.settings,
               onSave: widget.onSaveSettings,
               pickDirectory: widget.pickDirectory,
+              detectCompilers: widget.detectCompilers,
             ),
           ),
           LibraryItem(

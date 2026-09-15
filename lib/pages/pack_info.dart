@@ -1,5 +1,5 @@
+import 'package:cpp_nuget_pack/controls/license_field.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -23,6 +23,7 @@ class _PackInfoState extends State<PackInfo> {
   bool _editing = false;
   bool _saving = false;
   String? _license;
+  bool _licenseValid = true;
 
   @override
   void initState() {
@@ -66,6 +67,7 @@ class _PackInfoState extends State<PackInfo> {
     _licenseController.text = pack.license ?? '';
     _descriptionController.text = pack.description ?? '';
     _license = pack.license;
+    _licenseValid = true;
   }
 
   void _refresh() {
@@ -75,6 +77,7 @@ class _PackInfoState extends State<PackInfo> {
   bool get _canSave {
     return _versionController.text.trim().isNotEmpty &&
         _authorController.text.trim().isNotEmpty &&
+        _licenseValid &&
         _hasChanges;
   }
 
@@ -109,6 +112,7 @@ class _PackInfoState extends State<PackInfo> {
             license: _license,
             iconPath: widget.pack.iconPath,
             sourcePath: widget.pack.sourcePath,
+            sourceVersion: widget.pack.sourceVersion,
           )
           ..files = widget.pack.files
           ..commands = widget.pack.commands
@@ -117,7 +121,9 @@ class _PackInfoState extends State<PackInfo> {
           ..libDirectories = widget.pack.libDirectories
           ..libraries = widget.pack.libraries
           ..history = widget.pack.history
-          ..scripts = widget.pack.scripts;
+          ..scripts = widget.pack.scripts
+          ..buildOptions = widget.pack.buildOptions
+          ..enabledFormats = widget.pack.enabledFormats;
 
     setState(() => _saving = true);
     final bool saved = await widget.onSave(updated);
@@ -264,32 +270,18 @@ class _PackInfoState extends State<PackInfo> {
     }
     return InfoLabel(
       label: '许可证',
-      child: Builder(
-        builder: (BuildContext context) => FluentTheme(
-          data: FluentTheme.of(context)
-              .copyWith(visualDensity: comboBoxDensity),
-          child: ComboBox<String?>(
-            key: const Key('packInfoLicenseField'),
-            value: _license,
-            placeholder: const Text('无'),
-            isExpanded: true,
-            onChanged: (String? value) => setState(() => _license = value),
-            items: _licenseItems(),
-          ),
-        ),
+      child: LicenseField(
+        value: _license,
+        comboBoxKey: const Key('packInfoLicenseField'),
+        customFieldKey: const Key('packInfoLicenseCustomField'),
+        errorKey: const Key('packInfoLicenseCustomError'),
+        onChanged: (String? license, bool isValid) {
+          setState(() {
+            _license = license;
+            _licenseValid = isValid;
+          });
+        },
       ),
     );
-  }
-
-  List<ComboBoxItem<String?>> _licenseItems() {
-    final List<String?> values = <String?>[null, ...licenseOptions];
-    final String? current = widget.pack.license;
-    if (current != null && !values.contains(current)) {
-      values.add(current);
-    }
-    return <ComboBoxItem<String?>>[
-      for (final String? value in values)
-        ComboBoxItem<String?>(value: value, child: Text(value ?? '无')),
-    ];
   }
 }

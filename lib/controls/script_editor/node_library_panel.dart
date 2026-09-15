@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:cpp_nuget_pack/controls/script_editor/node_card.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart'
     show PointerEnterEvent, PointerExitEvent, PointerUpEvent;
@@ -116,7 +115,7 @@ class _NodeLibraryPanelState extends State<NodeLibraryPanel> {
           alignment: Alignment.topCenter,
           child: Text(
             '未找到匹配的节点',
-            style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+            style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorTertiary),
           ),
         ),
       );
@@ -162,7 +161,7 @@ class _NodeLibraryPanelState extends State<NodeLibraryPanel> {
                       ? FluentIcons.chevron_down
                       : FluentIcons.chevron_right,
                   size: 10,
-                  color: UCColors.flavor.subtext1,
+                  color: FluentTheme.of(context).resources.textFillColorSecondary,
                 ),
                 const SizedBox(width: 6),
                 Container(
@@ -179,7 +178,7 @@ class _NodeLibraryPanelState extends State<NodeLibraryPanel> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: UCColors.flavor.subtext1,
+                    color: FluentTheme.of(context).resources.textFillColorSecondary,
                   ),
                 ),
               ],
@@ -247,7 +246,10 @@ class _NodeLibraryItemState extends State<_NodeLibraryItem> {
               descriptor.displayName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: UCColors.flavor.text),
+              style: TextStyle(
+                fontSize: 13,
+                color: FluentTheme.of(context).resources.textFillColorPrimary,
+              ),
             ),
           ),
         ],
@@ -274,12 +276,8 @@ class _NodeLibraryItemState extends State<_NodeLibraryItem> {
 
     return Tooltip(
       message: descriptor.typeKey,
-      style: TooltipThemeData(
-        textStyle: TextStyle(
-          fontFamily: 'Consolas',
-          fontSize: 11,
-          color: UCColors.flavor.base,
-        ),
+      style: const TooltipThemeData(
+        textStyle: TextStyle(fontFamily: 'Consolas', fontSize: 11),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -320,16 +318,17 @@ class _NodeLibraryItemState extends State<_NodeLibraryItem> {
       return Colors.transparent;
     }
     if (_pressed) {
-      return UCColors.flavor.surface1;
+      return FluentTheme.of(context).resources.controlFillColorTertiary;
     }
     if (_hovered) {
-      return UCColors.flavor.surface0;
+      return FluentTheme.of(context).resources.controlFillColorSecondary;
     }
     return Colors.transparent;
   }
 
   /// 拖拽反馈迷你卡 160×34（§4.2）。
   Widget _buildDragFeedback(ScriptNodeTypeDescriptor descriptor) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.grabbing,
       child: Container(
@@ -338,9 +337,11 @@ class _NodeLibraryItemState extends State<_NodeLibraryItem> {
         height: 34,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: UCColors.flavor.surface0.withValues(alpha: 0.9),
+          color: theme.resources.cardBackgroundFillColorDefault.withValues(
+            alpha: 0.9,
+          ),
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: UCColors.accent),
+          border: Border.all(color: theme.accentColor),
         ),
         child: Row(
           children: <Widget>[
@@ -355,7 +356,10 @@ class _NodeLibraryItemState extends State<_NodeLibraryItem> {
                 descriptor.displayName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: UCColors.flavor.text),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: theme.resources.textFillColorPrimary,
+                ),
               ),
             ),
           ],

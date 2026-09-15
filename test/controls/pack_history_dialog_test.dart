@@ -60,6 +60,27 @@ void main() {
     );
   });
 
+  testWidgets('构建条目渲染构建标签与消息', (tester) async {
+    await _pumpDialog(
+      tester,
+      pack: _pack(
+        history: <HistoryModel>[
+          HistoryModel(
+            time: DateTime(2026, 9, 16, 10, 30),
+            type: HistoryType.built,
+            message: '构建成功：耗时 3 分 12 秒，版本已同步 1.0.0 → 1.18.0',
+          ),
+        ],
+      ),
+    );
+
+    expect(find.text('构建'), findsOneWidget);
+    expect(
+      find.text('构建成功：耗时 3 分 12 秒，版本已同步 1.0.0 → 1.18.0'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('删除条目时回传减少后的历史并提示已删除', (tester) async {
     PackModel? saved;
     await _pumpDialog(
@@ -77,7 +98,7 @@ void main() {
             message: '新记录',
           ),
         ],
-      ),
+      )..buildOptions = <String, String>{'tbb': 'on'},
       onSave: (PackModel pack) async {
         saved = pack;
         return true;
@@ -93,6 +114,7 @@ void main() {
     expect(saved!.files, hasLength(1));
     expect(saved!.history, hasLength(1));
     expect(saved!.history.single.message, '旧记录');
+    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('新记录'), findsNothing);
     expect(find.text('已删除'), findsOneWidget);
   });

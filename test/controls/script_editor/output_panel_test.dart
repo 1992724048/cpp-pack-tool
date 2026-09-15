@@ -383,8 +383,11 @@ void main() {
   });
 
   group('诊断计数', () {
-    testWidgets('有错误为红、仅警告为黄、无问题为 subtext0', (WidgetTester tester) async {
-      expect(await _countColorFor(tester, _project()), UCColors.flavor.red);
+    testWidgets('有错误为红、仅警告为黄、无问题为次级色', (WidgetTester tester) async {
+      expect(
+        await _countColorFor(tester, _project()),
+        AppColors.critical(_theme(tester).brightness),
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       expect(
@@ -392,13 +395,13 @@ void main() {
           tester,
           _project(nodes: <ScriptNodeModel>[_node('n1', 'flow.entry')]),
         ),
-        UCColors.flavor.yellow,
+        AppColors.caution(_theme(tester).brightness),
       );
 
       await tester.pumpWidget(const SizedBox.shrink());
       expect(
         await _countColorFor(tester, _validProject()),
-        UCColors.flavor.subtext0,
+        _theme(tester).resources.textFillColorTertiary,
       );
     });
 
@@ -408,14 +411,14 @@ void main() {
       await _pumpPanel(tester, controller: controller);
       await _expand(tester);
 
-      expect(_countColor(tester), UCColors.flavor.red);
+      expect(_countColor(tester), AppColors.critical(_theme(tester).brightness));
       expect(find.text('（1）'), findsOneWidget);
 
       controller.addNode('flow.entry', const Offset(40, 60));
       await tester.pump();
 
       expect(find.text('（1）'), findsOneWidget);
-      expect(_countColor(tester), UCColors.flavor.yellow);
+      expect(_countColor(tester), AppColors.caution(_theme(tester).brightness));
       expect(tester.takeException(), isNull);
     });
 
@@ -586,6 +589,10 @@ Color? _countColor(WidgetTester tester) {
       .widget<Text>(find.byKey(const Key('outputTabDiagnosticsCount')))
       .style
       ?.color;
+}
+
+FluentThemeData _theme(WidgetTester tester) {
+  return FluentTheme.of(tester.element(find.byType(OutputPanel).first));
 }
 
 Future<Color?> _countColorFor(

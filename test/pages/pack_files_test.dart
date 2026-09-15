@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_files.dart';
@@ -5,6 +8,7 @@ import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -34,6 +38,47 @@ void main() {
     expect(_iconAssets(tester), contains(_latte('folder_include')));
     expect(find.byIcon(FluentIcons.chevron_down), findsNothing);
     expect(find.byIcon(FluentIcons.chevron_right), findsNWidgets(2));
+  });
+
+  // 目录节点由文件路径派生，不存在空目录节点（计数恒 ≥1），故无空目录展示口径。
+  testWidgets('目录名称后显示后代文件计数', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'README.md', path: 'README.md', size: 100),
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 2048),
+      FileModel(name: 'bar.h', path: 'include/detail/bar.h', size: 1024),
+      FileModel(name: 'baz.h', path: 'include/detail/baz.h', size: 512),
+      FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 512),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    _expectRowSize('include', '(3 个文件)');
+    _expectRowSize('src', '(1 个文件)');
+    expect(find.text('(2 个文件)'), findsNothing);
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+    _expectRowSize('detail', '(2 个文件)');
+
+    await tester.tap(find.text('detail'));
+    await tester.pump(const Duration(milliseconds: 400));
+    _expectRowSize('foo.h', '2.0 KB');
+    _expectRowSize('bar.h', '1.0 KB');
+  });
+
+  testWidgets('文件行不显示文件计数', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'README.md', path: 'README.md', size: 100),
+      FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+    expect(find.textContaining('个文件'), findsOneWidget);
+
+    await tester.tap(find.text('include'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('foo.h'), findsOneWidget);
+    expect(find.textContaining('个文件'), findsOneWidget);
   });
 
   testWidgets('点击目录行切换展开与折叠', (tester) async {
@@ -331,7 +376,7 @@ void main() {
 
     final Tag tag = tester.widget<Tag>(find.byType(Tag));
     expect(tag.text, releaseBuildLabel);
-    expect(tag.color, UCColors.flavor.green);
+    expect(tag.color, MarkerColors.green);
     expect(tag.fontSize, 10);
   });
 
@@ -348,7 +393,7 @@ void main() {
 
     final Tag tag = tester.widget<Tag>(find.byType(Tag));
     expect(tag.text, debugBuildLabel);
-    expect(tag.color, UCColors.flavor.peach);
+    expect(tag.color, MarkerColors.orange);
   });
 
   testWidgets('构建标签紧贴名称右侧 5px', (tester) async {
@@ -426,6 +471,1157 @@ void main() {
         .toList();
     expect(exeIcons.length, 2);
   });
+
+  testWidgets('根级 build.py 且注入回调时显示构建按钮并回调当前包', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'build.py', path: 'build.py', size: 10),
+      FileModel(name: 'main.cpp', path: 'main.cpp', size: 20),
+    ]);
+    PackModel? built;
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {
+          built = value;
+        },
+      ),
+    );
+
+    final Finder button = find.byKey(const Key('buildPackButton'));
+    expect(button, findsOneWidget);
+    expect(find.text('构建'), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(built, same(pack));
+  });
+
+  testWidgets('无回调时不显示构建按钮', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'Build.py', path: 'Build.py', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+    expect(find.text('构建'), findsNothing);
+    expect(find.text('Build.py'), findsOneWidget);
+  });
+
+  testWidgets('子目录 build.py 不显示构建按钮', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'build.py', path: 'scripts/build.py', size: 10),
+    ]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(pack: pack, onBuildPack: (PackModel value) async {}),
+    );
+
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+  });
+
+  testWidgets('空文件列表不显示构建按钮', (tester) async {
+    final PackModel pack = _pack('demo', <FileModel>[]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(pack: pack, onBuildPack: (PackModel value) async {}),
+    );
+
+    expect(find.text('该包暂无文件'), findsOneWidget);
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+  });
+
+  testWidgets('声明选项时渲染控件且显示默认值', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+    expect(find.text('tbb'), findsOneWidget);
+    final ComboBox<String> combo = _optionCombo(tester, 'tbb');
+    expect(combo.value, 'off');
+    expect(
+      <String>[
+        for (final ComboBoxItem<String> item in combo.items ?? const [])
+          item.value!,
+      ],
+      <String>['off', 'on'],
+    );
+  });
+
+  testWidgets('已保存的选项值优先于默认值', (tester) async {
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'tbb': 'on'};
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(_optionCombo(tester, 'tbb').value, 'on');
+  });
+
+  testWidgets('选择选项后保存全字段拷贝并提示已保存', (tester) async {
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'other': 'keep'};
+    PackModel? saved;
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async {
+          saved = value;
+          return true;
+        },
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(saved, isNotNull);
+    expect(saved, isNot(same(pack)));
+    expect(saved!.buildOptions, <String, String>{'other': 'keep', 'tbb': 'on'});
+    expect(saved!.name, 'demo');
+    expect(saved!.version, '1.0.0');
+    expect(saved!.author, 'tester');
+    expect(saved!.files, same(pack.files));
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('保存失败时提示保存失败', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => false,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(find.text('保存失败'), findsOneWidget);
+    expect(find.text('已保存'), findsNothing);
+  });
+
+  testWidgets('保存抛异常时提示保存失败且不崩溃', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => throw StateError('磁盘写入失败'),
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(find.text('保存失败'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('未声明选项时不渲染选项分区但保留运行库选择器', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(find.byKey(const Key('buildOptionsSection')), findsNothing);
+    expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
+    expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
+    expect(find.byKey(const Key('buildRuntimeHelp')), findsOneWidget);
+  });
+
+  testWidgets('未提供保存回调时不渲染选项分区且运行库下拉禁用', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(find.byKey(const Key('buildOptionsSection')), findsNothing);
+    expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+    expect(_runtimeCombo(tester).onChanged, isNull);
+  });
+
+  testWidgets('头部加载失败时不渲染选项分区且不崩溃', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            throw const FormatException('头部损坏'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
+    expect(find.byKey(const Key('buildOptionsSection')), findsNothing);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('构建脚本路径变化时重新加载选项', (tester) async {
+    int calls = 0;
+    Future<BuildScriptHeader?> loadHeader(PackModel pack) async {
+      calls++;
+      return _header(options: const <BuildScriptOption>[_tbbOption]);
+    }
+
+    Future<bool> onSave(PackModel pack) async => true;
+    Future<void> onBuild(PackModel pack) async {}
+
+    final PackModel before = _pack('demo', <FileModel>[
+      FileModel(name: 'main.cpp', path: 'main.cpp', size: 20),
+    ]);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: before,
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+
+    expect(calls, 1);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+
+    expect(calls, 2);
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+  });
+
+  testWidgets('切换包时按新脚本重新加载选项', (tester) async {
+    int calls = 0;
+    Future<BuildScriptHeader?> loadHeader(PackModel pack) async {
+      calls++;
+      return pack.name == 'demo'
+          ? _header(options: const <BuildScriptOption>[_tbbOption])
+          : _header(
+              options: const <BuildScriptOption>[
+                BuildScriptOption(
+                  name: 'target',
+                  values: <String>['x64', 'x86'],
+                ),
+              ],
+            );
+    }
+
+    Future<bool> onSave(PackModel pack) async => true;
+    Future<void> onBuild(PackModel pack) async {}
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('other'),
+        onBuildPack: onBuild,
+        onSave: onSave,
+        loadHeader: loadHeader,
+      ),
+    );
+    await tester.pump();
+
+    expect(calls, 2);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+    expect(find.byKey(const Key('buildOption_target')), findsOneWidget);
+  });
+
+  testWidgets('构建选项默认展开且可折叠与展开', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildOptionsToggle')), findsOneWidget);
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('buildOptionsToggle')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+    expect(find.byKey(const Key('buildOptionsToggle')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('buildOptionsToggle')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('未声明选项或不提供保存回调时不显示折叠开关', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
+    expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
+  });
+
+  testWidgets('大量构建选项不溢出且可纵向滚动', (tester) async {
+    final List<BuildScriptOption> options = <BuildScriptOption>[
+      for (int index = 0; index < 10; index++)
+        BuildScriptOption(
+          name: 'opt$index',
+          values: const <String>['off', 'on'],
+        ),
+    ];
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(options: options),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('buildOption_opt9')), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const Key('buildOptionsScroll'))).height,
+      lessThanOrEqualTo(168),
+    );
+
+    final ScrollableState scrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const Key('buildOptionsScroll')),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.down,
+        ),
+      ),
+    );
+    expect(scrollable.position.maxScrollExtent, greaterThan(0));
+
+    await tester.drag(
+      find.byKey(const Key('buildOptionsScroll')),
+      const Offset(0, -120),
+    );
+    await tester.pump();
+    expect(scrollable.position.pixels, greaterThan(0));
+  });
+
+  testWidgets('三型选项按声明顺序混排渲染', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(
+          options: const <BuildScriptOption>[
+            _tbbOption,
+            _useNasmOption,
+            _accelOption,
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.widget(find.byKey(const Key('buildOption_tbb'))),
+      isA<ComboBox<String>>(),
+    );
+    expect(
+      tester.widget(find.byKey(const Key('buildOption_use_nasm'))),
+      isA<Checkbox>(),
+    );
+    expect(
+      tester.widget(find.byKey(const Key('buildOption_accel'))),
+      isA<Wrap>(),
+    );
+
+    final double tbbY = tester
+        .getTopLeft(find.byKey(const Key('buildOptionRow_tbb')))
+        .dy;
+    final double nasmY = tester
+        .getTopLeft(find.byKey(const Key('buildOptionRow_use_nasm')))
+        .dy;
+    final double accelY = tester
+        .getTopLeft(find.byKey(const Key('buildOptionRow_accel')))
+        .dy;
+    expect(tbbY, lessThan(nasmY));
+    expect(nasmY, lessThan(accelY));
+  });
+
+  testWidgets('非法保存值显示回退默认值', (tester) async {
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'tbb': 'banana'};
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    expect(_optionCombo(tester, 'tbb').value, 'off');
+  });
+
+  testWidgets('复选框行整行可点击切换并保存勾选值', (tester) async {
+    final List<PackModel> saves = <PackModel>[];
+    Widget page(PackModel pack) => PackFiles(
+      pack: pack,
+      onBuildPack: (PackModel value) async {},
+      onSave: (PackModel value) async {
+        saves.add(value);
+        return true;
+      },
+      loadHeader: (PackModel value) async =>
+          _header(options: const <BuildScriptOption>[_useNasmOption]),
+    );
+
+    PackModel pack = _buildPack('demo');
+    await _pumpPage(tester, page(pack));
+    await tester.pump();
+
+    expect(
+      tester.widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm'))).checked,
+      isTrue,
+      reason: '首值为勾选态（默认 ON）',
+    );
+
+    await tester.tap(find.text('use_nasm'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saves.single.buildOptions, <String, String>{'use_nasm': 'OFF'});
+    expect(find.text('已保存'), findsOneWidget);
+
+    pack = saves.single;
+    await _pumpPage(tester, page(pack));
+    await tester.pump();
+    expect(
+      tester.widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm'))).checked,
+      isFalse,
+    );
+
+    await tester.tap(find.byKey(const Key('buildOption_use_nasm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(saves, hasLength(2));
+    expect(saves.last.buildOptions, <String, String>{'use_nasm': 'ON'});
+  });
+
+  testWidgets('复选框行悬停显示行背景', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_useNasmOption]),
+      ),
+    );
+    await tester.pump();
+
+    final Finder row = find.byKey(const Key('buildOptionRow_use_nasm'));
+    expect(_rowDecoration(tester, row).color, Colors.transparent);
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.text('use_nasm')));
+    await tester.pump();
+    expect(
+      _rowDecoration(tester, row).color,
+      FluentTheme.of(
+        tester.element(row),
+      ).resources.controlFillColorSecondary,
+    );
+
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const Key('buildPackButton'))),
+    );
+    await tester.pump();
+    expect(_rowDecoration(tester, row).color, Colors.transparent);
+  });
+
+  testWidgets('多选组渲染勾选态并按声明序以分号连接保存', (tester) async {
+    final List<PackModel> saves = <PackModel>[];
+    Widget page(PackModel pack) => PackFiles(
+      pack: pack,
+      onBuildPack: (PackModel value) async {},
+      onSave: (PackModel value) async {
+        saves.add(value);
+        return true;
+      },
+      loadHeader: (PackModel value) async =>
+          _header(options: const <BuildScriptOption>[_accelOption]),
+    );
+
+    PackModel pack = _buildPack('demo');
+    await _pumpPage(tester, page(pack));
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<Checkbox>(find.byKey(const Key('buildOptionValue_accel_SSE2')))
+          .checked,
+      isFalse,
+      reason: '未保存时全部未勾选',
+    );
+
+    await tester.tap(find.byKey(const Key('buildOptionValue_accel_AVX2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(saves.single.buildOptions, <String, String>{'accel': 'AVX2'});
+
+    pack = saves.single;
+    await _pumpPage(tester, page(pack));
+    await tester.pump();
+    expect(
+      tester
+          .widget<Checkbox>(find.byKey(const Key('buildOptionValue_accel_AVX2')))
+          .checked,
+      isTrue,
+    );
+
+    await tester.tap(find.byKey(const Key('buildOptionValue_accel_NEON')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(saves.last.buildOptions, <String, String>{'accel': 'AVX2;NEON'});
+
+    pack = saves.last;
+    await _pumpPage(tester, page(pack));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('buildOptionValue_accel_AVX2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(saves.last.buildOptions, <String, String>{'accel': 'NEON'});
+
+    pack = saves.last;
+    await _pumpPage(tester, page(pack));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('buildOptionValue_accel_NEON')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      saves.last.buildOptions,
+      <String, String>{'accel': ''},
+      reason: '多选允许全不选并保存空串',
+    );
+  });
+
+  testWidgets('运行库选择器渲染三项且工具栏顺序正确', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    final ComboBox<String> combo = _runtimeCombo(tester);
+    expect(combo.value, 'default');
+    expect(
+      <String>[
+        for (final ComboBoxItem<String> item in combo.items ?? const [])
+          item.value!,
+      ],
+      <String>['default', 'MD', 'MT'],
+    );
+
+    final double buttonX = tester
+        .getTopLeft(find.byKey(const Key('buildPackButton')))
+        .dx;
+    final double labelX = tester.getTopLeft(find.text('运行库')).dx;
+    final double comboX = tester
+        .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
+        .dx;
+    final double helpX = tester
+        .getTopLeft(find.byKey(const Key('buildRuntimeHelp')))
+        .dx;
+    expect(buttonX, lessThan(labelX));
+    expect(labelX, lessThan(comboX));
+    expect(comboX, lessThan(helpX));
+  });
+
+  testWidgets('工具栏顺序为打开远程仓库 → 构建 → 运行库 → 版本控件', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => 'v1.0.0',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final double openRepoX = tester
+        .getTopLeft(find.byKey(const Key('openRepoButton')))
+        .dx;
+    final double buttonX = tester
+        .getTopLeft(find.byKey(const Key('buildPackButton')))
+        .dx;
+    final double labelX = tester.getTopLeft(find.text('运行库')).dx;
+    final double comboX = tester
+        .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
+        .dx;
+    final double helpX = tester
+        .getTopLeft(find.byKey(const Key('buildRuntimeHelp')))
+        .dx;
+    final double versionX = tester
+        .getTopLeft(find.byKey(const Key('packRepoVersionLabel')))
+        .dx;
+
+    expect(openRepoX, lessThan(buttonX));
+    expect(buttonX, lessThan(labelX));
+    expect(labelX, lessThan(comboX));
+    expect(comboX, lessThan(helpX));
+    expect(helpX, lessThan(versionX));
+  });
+
+  testWidgets('运行库保存值显示为显式项且非法值回退默认项', (tester) async {
+    Widget page(PackModel pack) => PackFiles(
+      pack: pack,
+      onBuildPack: (PackModel value) async {},
+      onSave: (PackModel value) async => true,
+      loadHeader: (PackModel value) async => _header(),
+    );
+
+    await _pumpPage(
+      tester,
+      page(_buildPack('demo')..buildOptions = <String, String>{'runtime': 'MT'}),
+    );
+    await tester.pump();
+    expect(_runtimeCombo(tester).value, 'MT');
+
+    await _pumpPage(
+      tester,
+      page(
+        _buildPack('demo2')
+          ..buildOptions = <String, String>{'runtime': 'gnu'},
+      ),
+    );
+    await tester.pump();
+    expect(_runtimeCombo(tester).value, 'default');
+  });
+
+  testWidgets('选择运行库 MT 后按写入口径保存并提示已保存', (tester) async {
+    PackModel? saved;
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'other': 'keep'};
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async {
+          saved = value;
+          return true;
+        },
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    await _selectComboItem(
+      tester,
+      const Key('buildRuntimeSelector'),
+      'MT（静态运行库）',
+    );
+
+    expect(saved!.buildOptions, <String, String>{
+      'other': 'keep',
+      'runtime': 'MT',
+    });
+    expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('选择运行库默认项时移除保留键', (tester) async {
+    PackModel? saved;
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'runtime': 'MT', 'other': 'keep'};
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async {
+          saved = value;
+          return true;
+        },
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    await _selectComboItem(
+      tester,
+      const Key('buildRuntimeSelector'),
+      '默认（跟随配方）',
+    );
+
+    expect(saved!.buildOptions, <String, String>{'other': 'keep'});
+  });
+
+  testWidgets('选择相同运行库不触发保存', (tester) async {
+    int saveCalls = 0;
+    final PackModel pack = _buildPack('demo')
+      ..buildOptions = <String, String>{'runtime': 'MD'};
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async {
+          saveCalls++;
+          return true;
+        },
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    await _selectComboItem(
+      tester,
+      const Key('buildRuntimeSelector'),
+      'MD（动态运行库）',
+    );
+
+    expect(saveCalls, 0);
+    expect(find.text('已保存'), findsNothing);
+  });
+
+  testWidgets('帮助按钮悬停显示运行库说明', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('MDd'), findsNothing);
+
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const Key('buildRuntimeHelp'))),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(find.textContaining('MDd / MTd'), findsOneWidget);
+    expect(find.textContaining('优先 MD 并随包分发共享 dll'), findsOneWidget);
+    expect(find.textContaining('运行库（MSVC CRT）'), findsOneWidget);
+  });
+
+  testWidgets('选项分区位于工具栏下方', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async =>
+            _header(options: const <BuildScriptOption>[_tbbOption]),
+      ),
+    );
+    await tester.pump();
+
+    final double toolbarY = tester
+        .getTopLeft(find.byKey(const Key('buildPackButton')))
+        .dy;
+    final double sectionY = tester
+        .getTopLeft(find.byKey(const Key('buildOptionsSection')))
+        .dy;
+    expect(toolbarY, lessThan(sectionY));
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
+  });
+
+  testWidgets('保存挂起时选项控件与运行库下拉禁用', (tester) async {
+    final Completer<bool> pending = Completer<bool>();
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) => pending.future,
+        loadHeader: (PackModel value) async => _header(
+          options: const <BuildScriptOption>[_tbbOption, _useNasmOption],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await _selectBuildOption(tester, 'tbb', 'on');
+
+    expect(_optionCombo(tester, 'tbb').onChanged, isNull);
+    expect(_runtimeCombo(tester).onChanged, isNull);
+    expect(
+      tester.widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm'))).onChanged,
+      isNull,
+    );
+
+    pending.complete(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('已保存'), findsOneWidget);
+    expect(_runtimeCombo(tester).onChanged, isNotNull);
+    expect(_optionCombo(tester, 'tbb').onChanged, isNotNull);
+  });
+
+  testWidgets('有仓库时显示当前与最新版本', (tester) async {
+    final Completer<String?> latest = Completer<String?>();
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) => latest.future,
+      ),
+    );
+    await tester.pump();
+
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('当前')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('v1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('查询中…')),
+      findsOneWidget,
+    );
+
+    latest.complete('v2.0.0');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.descendant(of: chip, matching: find.text('v2.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('查询中…')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('最新版本高于当前版本时显示前导更新图标', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => 'v2.0.0',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(
+      find.descendant(
+        of: chip,
+        matching: find.byIcon(FluentIcons.update_restore),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('v2.0.0')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('未注入最新版本加载器时显示占位', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('—')),
+      findsNWidgets(2),
+      reason: '当前与最新均为空占位',
+    );
+  });
+
+  testWidgets('无仓库的包不显示版本控件', (tester) async {
+    final PackModel pack = _buildPack('demo');
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => null,
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsNothing);
+    expect(find.byKey(const Key('openRepoButton')), findsNothing);
+  });
+
+  testWidgets('最新版本查询失败时显示占位', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: pack,
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => null,
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(
+      find.descendant(of: chip, matching: find.text('v1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('—')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('有仓库时渲染打开远程仓库按钮并带完整 URL 提示', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('openRepoButton')), findsOneWidget);
+    expect(find.text('打开远程仓库'), findsOneWidget);
+    expect(find.byTooltip('https://example.com/demo'), findsOneWidget);
+  });
+
+  testWidgets('点击打开远程仓库按钮使用规范化 URL', (tester) async {
+    String? openedUrl;
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        openUrl: (String url) async {
+          openedUrl = url;
+          return true;
+        },
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('openRepoButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(openedUrl, 'https://example.com/demo');
+    expect(find.text('无法打开链接'), findsNothing);
+  });
+
+  testWidgets('打开远程仓库失败时提示无法打开链接', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+        openUrl: (String url) async => false,
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('openRepoButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('无法打开链接'), findsOneWidget);
+  });
+
+  testWidgets('仓库不可打开时不渲染打开远程仓库按钮', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async =>
+            const BuildScriptHeader(repo: r'D:\repos\demo'),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('openRepoButton')), findsNothing);
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
+  });
 }
 
 PackModel _pack(String name, List<FileModel> files, {String? sourcePath}) {
@@ -437,13 +1633,78 @@ PackModel _pack(String name, List<FileModel> files, {String? sourcePath}) {
   )..files = files;
 }
 
+PackModel _buildPack(String name) => _pack(name, <FileModel>[
+  FileModel(name: 'build.py', path: 'build.py', size: 10),
+  FileModel(name: 'main.cpp', path: 'main.cpp', size: 20),
+]);
+
+const BuildScriptOption _tbbOption = BuildScriptOption(
+  name: 'tbb',
+  values: <String>['off', 'on'],
+);
+
+const BuildScriptOption _useNasmOption = BuildScriptOption(
+  name: 'use_nasm',
+  values: <String>['ON', 'OFF'],
+  control: BuildOptionControl.checkbox,
+);
+
+const BuildScriptOption _accelOption = BuildScriptOption(
+  name: 'accel',
+  values: <String>['SSE2', 'AVX2', 'NEON'],
+  control: BuildOptionControl.multiselect,
+);
+
+BuildScriptHeader _header({
+  List<BuildScriptOption> options = const <BuildScriptOption>[],
+}) {
+  return BuildScriptHeader(
+    repo: 'https://example.com/demo.git',
+    options: options,
+  );
+}
+
+ComboBox<String> _optionCombo(WidgetTester tester, String name) =>
+    tester.widget<ComboBox<String>>(find.byKey(Key('buildOption_$name')));
+
+ComboBox<String> _runtimeCombo(WidgetTester tester) =>
+    tester.widget<ComboBox<String>>(
+      find.byKey(const Key('buildRuntimeSelector')),
+    );
+
+BoxDecoration _rowDecoration(WidgetTester tester, Finder row) =>
+    tester.widget<Container>(row).decoration! as BoxDecoration;
+
+Future<void> _selectBuildOption(
+  WidgetTester tester,
+  String name,
+  String value,
+) async {
+  await _selectComboItem(tester, Key('buildOption_$name'), value);
+}
+
+Future<void> _selectComboItem(
+  WidgetTester tester,
+  Key key,
+  String label,
+) async {
+  await tester.tap(find.byKey(key));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(label).last);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
+/// 名称所在行链（目录行内嵌名称+计数行，大小位于外层行）。
 Finder _contentRow(String name) =>
-    find.ancestor(of: find.text(name), matching: find.byType(Row)).first;
+    find.ancestor(of: find.text(name), matching: find.byType(Row));
 
 void _expectRowSize(String name, String size) {
   expect(
     find.descendant(of: _contentRow(name), matching: find.text(size)),
-    findsOneWidget,
+    findsAtLeastNWidgets(1),
+    reason: '「$name」行应显示「$size」',
   );
 }
 

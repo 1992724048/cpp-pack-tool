@@ -1,4 +1,3 @@
-import 'package:catppuccin_flutter/catppuccin_flutter.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
@@ -50,6 +49,54 @@ void main() {
     expect(find.text('版本范围'), findsOneWidget);
     expect(find.text('操作'), findsOneWidget);
     expect(find.byType(Divider), findsNWidgets(2));
+  });
+
+  testWidgets('系统依赖展示系统标记且编辑删除禁用', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..dependencies = <DependencyModel>[
+        const DependencyModel(
+          name: 'libfoo',
+          version: '[1.0.0,)',
+          system: true,
+        ),
+        const DependencyModel(name: 'libbar', version: '2.0'),
+      ];
+
+    await _pumpPage(
+      tester,
+      _page(
+        pack,
+        allPacks: <PackModel>[_pack('demo'), _pack('libfoo'), _pack('libbar')],
+      ),
+    );
+
+    expect(find.text('系统'), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('dependencyEditButton_libfoo')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('dependencyDeleteButton_libfoo')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('dependencyEditButton_libbar')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    expect(find.byTooltip('由构建管线注册，禁止修改/删除'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('表头与两行依赖的列对齐', (tester) async {
@@ -106,7 +153,7 @@ void main() {
         pack,
         allPacks: <PackModel>[_pack('demo'), _pack('libfoo'), _pack('libbar')],
       ),
-      theme: buildTheme(Brightness.light, catppuccin.latte, 'teal'),
+      theme: buildTheme(Brightness.light),
     );
 
     // Divider 外层包裹水平外边距，需取内部绘制层比较实际线体范围
@@ -185,7 +232,8 @@ void main() {
       ..libDirectories = <LibDirModel>[
         const LibDirModel(path: 'third_party/lib'),
       ]
-      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
+      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
+      ..buildOptions = <String, String>{'tbb': 'on'};
     PackModel? saved;
 
     await _pumpPage(
@@ -221,6 +269,7 @@ void main() {
     expect(saved!.macros.single.value, 'MY_MACRO=1');
     expect(saved!.libDirectories.single.path, 'third_party/lib');
     expect(saved!.libraries.single.name, 'mylib.lib');
+    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已添加'), findsOneWidget);
     expect(find.byKey(const Key('dependencyDialog')), findsNothing);
   });

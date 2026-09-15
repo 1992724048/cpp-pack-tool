@@ -130,7 +130,7 @@ class _NodeInspectorState extends State<NodeInspector> {
       return Center(
         child: Text(
           _emptyProjectHint,
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary),
         ),
       );
     }
@@ -291,11 +291,11 @@ class _NodeInspectorState extends State<NodeInspector> {
         descriptor?.params ?? const <ScriptParamDescriptor>[];
     return <Widget>[
       _buildNodeHeader(node, descriptor),
-      _divider(),
+      _divider(FluentTheme.of(context)),
       if (params.isEmpty)
         Text(
           _noParamHint,
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorTertiary),
         )
       else
         for (final ScriptParamDescriptor param in params)
@@ -314,7 +314,7 @@ class _NodeInspectorState extends State<NodeInspector> {
         ? FluentIcons.cube_shape
         : nodeTypeIcon(descriptor.typeKey);
     final Color iconColor = descriptor == null
-        ? UCColors.flavor.subtext0
+        ? FluentTheme.of(context).resources.textFillColorTertiary
         : nodeCategoryColor(descriptor.category);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,7 +331,9 @@ class _NodeInspectorState extends State<NodeInspector> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: UCColors.flavor.text,
+                  color: FluentTheme.of(
+                    context,
+                  ).resources.textFillColorPrimary,
                 ),
               ),
             ),
@@ -343,7 +345,7 @@ class _NodeInspectorState extends State<NodeInspector> {
           style: TextStyle(
             fontFamily: 'Consolas',
             fontSize: 11,
-            color: UCColors.flavor.subtext0,
+            color: FluentTheme.of(context).resources.textFillColorTertiary,
           ),
         ),
       ],
@@ -362,7 +364,7 @@ class _NodeInspectorState extends State<NodeInspector> {
                 param.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+                style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary),
               ),
             ),
             ToggleSwitch(
@@ -380,7 +382,7 @@ class _NodeInspectorState extends State<NodeInspector> {
       children: <Widget>[
         Text(
           param.label,
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary),
         ),
         const SizedBox(height: 4),
         KeyedSubtree(
@@ -389,7 +391,11 @@ class _NodeInspectorState extends State<NodeInspector> {
         ),
         if (error != null) ...<Widget>[
           const SizedBox(height: 4),
-          _buildFieldError(Key('inspectorFieldError_${param.key}'), error),
+          _buildFieldError(
+            FluentTheme.of(context),
+            Key('inspectorFieldError_${param.key}'),
+            error,
+          ),
         ],
       ],
     );
@@ -505,7 +511,7 @@ class _NodeInspectorState extends State<NodeInspector> {
             alignment: Alignment.centerLeft,
             child: Text(
               _noMatchingPathHint,
-              style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+              style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorTertiary),
             ),
           ),
           onChanged: (String text, TextChangedReason reason) =>
@@ -734,6 +740,7 @@ class _ProjectPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -744,7 +751,7 @@ class _ProjectPanel extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: UCColors.flavor.text,
+                color: theme.resources.textFillColorPrimary,
               ),
             ),
             const SizedBox(width: 4),
@@ -753,13 +760,14 @@ class _ProjectPanel extends StatelessWidget {
                 project.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+                style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary),
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
         _labeledField(
+          theme,
           '名称',
           TextBox(
             key: const Key('inspectorProjectName'),
@@ -772,6 +780,7 @@ class _ProjectPanel extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _labeledField(
+          theme,
           '触发时机',
           _denseComboBox(
             context,
@@ -799,6 +808,7 @@ class _ProjectPanel extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         _labeledField(
+          theme,
           '构建标签',
           Row(
             children: <Widget>[
@@ -837,7 +847,7 @@ class _ProjectPanel extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           '脚本 ID',
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary),
         ),
         const SizedBox(height: 4),
         Text(
@@ -845,27 +855,27 @@ class _ProjectPanel extends StatelessWidget {
           style: TextStyle(
             fontFamily: 'Consolas',
             fontSize: 11,
-            color: UCColors.flavor.subtext0,
+            color: FluentTheme.of(context).resources.textFillColorTertiary,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           '导出时决定包内文件名与 Target 名',
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorTertiary),
         ),
-        _divider(),
+        _divider(theme),
         Text(
           '执行顺序',
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: UCColors.flavor.text,
+            color: theme.resources.textFillColorPrimary,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           '同组内按列表顺序执行',
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorTertiary),
         ),
         const SizedBox(height: 8),
         for (int index = 0; index < projects.length; index++)
@@ -889,6 +899,7 @@ class _ProjectPanel extends StatelessWidget {
 }
 
 Widget _labeledField(
+  FluentThemeData theme,
   String label,
   Widget control, {
   String? error,
@@ -899,13 +910,16 @@ Widget _labeledField(
     children: <Widget>[
       Text(
         label,
-        style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext1),
+        style: TextStyle(
+          fontSize: 12,
+          color: theme.resources.textFillColorSecondary,
+        ),
       ),
       const SizedBox(height: 4),
       control,
       if (error != null && errorKey != null) ...<Widget>[
         const SizedBox(height: 4),
-        _buildFieldError(errorKey, error),
+        _buildFieldError(theme, errorKey, error),
       ],
     ],
   );
@@ -943,28 +957,26 @@ List<String> _cleanTextLines(String text) {
   return lines;
 }
 
-Widget _buildFieldError(Key key, String message) {
+Widget _buildFieldError(FluentThemeData theme, Key key, String message) {
+  final Color color = AppColors.critical(theme.brightness);
   return Row(
     key: key,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: <Widget>[
-      Icon(FluentIcons.error_badge, size: 12, color: UCColors.flavor.red),
+      Icon(FluentIcons.error_badge, size: 12, color: color),
       const SizedBox(width: 4),
       Expanded(
-        child: Text(
-          message,
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.red),
-        ),
+        child: Text(message, style: TextStyle(fontSize: 12, color: color)),
       ),
     ],
   );
 }
 
-Widget _divider() {
+Widget _divider(FluentThemeData theme) {
   return Container(
     height: 1,
     margin: const EdgeInsets.symmetric(vertical: 12),
-    color: UCColors.flavor.surface2,
+    color: theme.resources.dividerStrokeColorDefault,
   );
 }
 
@@ -1003,6 +1015,7 @@ class _ProjectOrderRowState extends State<_ProjectOrderRow> {
 
   @override
   Widget build(BuildContext context) {
+    final FluentThemeData theme = FluentTheme.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (PointerEnterEvent event) => setState(() => _hovered = true),
@@ -1016,11 +1029,13 @@ class _ProjectOrderRowState extends State<_ProjectOrderRow> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: widget.current
-                ? UCColors.accent.withValues(alpha: 0.35)
-                : (_hovered ? UCColors.flavor.surface0 : null),
+                ? theme.accentColor.withValues(alpha: 0.35)
+                : (_hovered
+                      ? theme.resources.controlFillColorSecondary
+                      : null),
             borderRadius: BorderRadius.circular(4),
             border: widget.current
-                ? Border(left: BorderSide(color: UCColors.accent, width: 2))
+                ? Border(left: BorderSide(color: theme.accentColor, width: 2))
                 : null,
           ),
           child: Row(
@@ -1035,7 +1050,7 @@ class _ProjectOrderRowState extends State<_ProjectOrderRow> {
                     fontWeight: widget.current
                         ? FontWeight.w600
                         : FontWeight.normal,
-                    color: UCColors.flavor.text,
+                    color: theme.resources.textFillColorPrimary,
                   ),
                 ),
               ),

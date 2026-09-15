@@ -87,13 +87,13 @@ void main() {
     final List<Tag> tags = tester.widgetList<Tag>(find.byType(Tag)).toList();
     expect(tags, hasLength(5));
     expect(tags[0].text, 'ALL');
-    expect(tags[0].color, UCColors.flavor.blue);
+    expect(tags[0].color, MarkerColors.blue);
     expect(tags[1].text, 'Release');
-    expect(tags[1].color, UCColors.flavor.green);
+    expect(tags[1].color, MarkerColors.green);
     expect(tags[2].text, 'ALL');
     expect(tags[3].text, 'ALL');
     expect(tags[4].text, 'Debug');
-    expect(tags[4].color, UCColors.flavor.peach);
+    expect(tags[4].color, MarkerColors.orange);
 
     expect(find.text('暂无宏定义'), findsNothing);
     expect(find.text('构建配置'), findsNWidgets(5));
@@ -103,6 +103,37 @@ void main() {
     expect(find.text('目录路径'), findsOneWidget);
     expect(find.text('库名称'), findsOneWidget);
     expect(find.byType(Divider), findsNWidgets(5));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('系统命令条目展示系统标记且编辑删除禁用', (tester) async {
+    final PackModel pack = _pack('demo')
+      ..commands = <CmdModel>[
+        const CmdModel(
+          command:
+              r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+          type: CmdType.preBuild,
+          system: true,
+        ),
+        const CmdModel(command: 'echo post', type: CmdType.postBuild),
+      ];
+
+    await _pumpPage(tester, _page(pack));
+
+    expect(find.text('系统'), findsOneWidget);
+    final IconButton lockedEdit = tester.widget<IconButton>(
+      find.byKey(const Key('preBuildCmdEditButton_0')),
+    );
+    final IconButton lockedDelete = tester.widget<IconButton>(
+      find.byKey(const Key('preBuildCmdDeleteButton_0')),
+    );
+    final IconButton userEdit = tester.widget<IconButton>(
+      find.byKey(const Key('postBuildCmdEditButton_1')),
+    );
+    expect(lockedEdit.onPressed, isNull);
+    expect(lockedDelete.onPressed, isNull);
+    expect(userEdit.onPressed, isNotNull);
+    expect(find.byTooltip('由构建管线注册，禁止修改/删除'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 
@@ -163,7 +194,8 @@ void main() {
           ]
           ..macros = <MacroModel>[const MacroModel(value: 'OLD=1')]
           ..libDirectories = <LibDirModel>[const LibDirModel(path: 'libs')]
-          ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')];
+          ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')]
+          ..buildOptions = <String, String>{'tbb': 'on'};
     PackModel? saved;
 
     await _pumpPage(
@@ -202,6 +234,7 @@ void main() {
     expect(saved!.macros[1].buildModel, BuildModel.release);
     expect(saved!.libDirectories.single.path, 'libs');
     expect(saved!.libraries.single.name, 'old.lib');
+    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已添加'), findsOneWidget);
   });
 
@@ -598,21 +631,31 @@ void main() {
     final List<Tag> tags = tester.widgetList<Tag>(find.byType(Tag)).toList();
     expect(tags, hasLength(6));
     expect(tags[0].text, '编译前');
-    expect(tags[0].color, UCColors.flavor.sky);
+    expect(tags[0].color, MarkerColors.cyan);
     expect(tags[1].text, 'ALL');
-    expect(tags[1].color, UCColors.flavor.blue);
+    expect(tags[1].color, MarkerColors.blue);
     expect(tags[2].text, '编译后');
-    expect(tags[2].color, UCColors.flavor.lavender);
+    expect(tags[2].color, MarkerColors.purple);
     expect(tags[3].text, 'Release');
-    expect(tags[3].color, UCColors.flavor.green);
+    expect(tags[3].color, MarkerColors.green);
     expect(tags[4].text, '编译前');
-    expect(tags[4].color, UCColors.flavor.sky);
+    expect(tags[4].color, MarkerColors.cyan);
     expect(tags[5].text, 'Debug');
-    expect(tags[5].color, UCColors.flavor.peach);
+    expect(tags[5].color, MarkerColors.orange);
 
-    expect(_statusText(tester, '1 个警告').style?.color, UCColors.flavor.yellow);
-    expect(_statusText(tester, '1 个错误').style?.color, UCColors.flavor.red);
-    expect(_statusText(tester, '正常').style?.color, UCColors.flavor.green);
+    final Brightness brightness = _theme(tester).brightness;
+    expect(
+      _statusText(tester, '1 个警告').style?.color,
+      AppColors.caution(brightness),
+    );
+    expect(
+      _statusText(tester, '1 个错误').style?.color,
+      AppColors.critical(brightness),
+    );
+    expect(
+      _statusText(tester, '正常').style?.color,
+      AppColors.success(brightness),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -698,6 +741,12 @@ Future<void> _pumpPage(WidgetTester tester, PackCompileSettings page) async {
 
   await tester.pumpWidget(FluentApp(home: page));
   await tester.pump();
+}
+
+FluentThemeData _theme(WidgetTester tester) {
+  return FluentTheme.of(
+    tester.element(find.byType(PackCompileSettings).first),
+  );
 }
 
 Future<void> _addEntry(

@@ -23,6 +23,8 @@ const double _triggerColumnWidth = 96;
 const double _statusColumnWidth = 80;
 const double _actionColumnWidth = 80;
 
+const String _systemLockTooltip = '由构建管线注册，禁止修改/删除';
+
 class PackCompileSettings extends StatefulWidget {
   const PackCompileSettings({
     super.key,
@@ -368,6 +370,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         license: pack.license,
         iconPath: pack.iconPath,
         sourcePath: pack.sourcePath,
+        sourceVersion: pack.sourceVersion,
       )
       ..files = pack.files
       ..commands = commands ?? pack.commands
@@ -376,7 +379,9 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       ..libDirectories = libDirectories ?? pack.libDirectories
       ..libraries = libraries ?? pack.libraries
       ..history = pack.history
-      ..scripts = pack.scripts;
+      ..scripts = pack.scripts
+      ..buildOptions = pack.buildOptions
+      ..enabledFormats = pack.enabledFormats;
   }
 
   List<_CompileEntry> _macroEntries() {
@@ -406,6 +411,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
             deleteKey: Key('${keyPrefix}DeleteButton_$index'),
             onEdit: () => _editCommand(index),
             onDelete: () => _removeCommand(index),
+            isSystem: commands[index].system,
           ),
     ];
   }
@@ -664,18 +670,19 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   }
 
   (String, Color) _scriptStatus(ScriptProjectModel script) {
+    final Brightness brightness = FluentTheme.of(context).brightness;
     final List<ScriptDiagnostic> diagnostics = GraphValidator.validate(script);
     final int errors = diagnostics
         .where((ScriptDiagnostic diagnostic) => diagnostic.isError)
         .length;
     final int warnings = diagnostics.length - errors;
     if (errors > 0) {
-      return ('$errors 个错误', UCColors.flavor.red);
+      return ('$errors 个错误', AppColors.critical(brightness));
     }
     if (warnings > 0) {
-      return ('$warnings 个警告', UCColors.flavor.yellow);
+      return ('$warnings 个警告', AppColors.caution(brightness));
     }
-    return ('正常', UCColors.flavor.green);
+    return ('正常', AppColors.success(brightness));
   }
 
   Widget _buildEntryList(List<_CompileEntry> entries, String columnLabel) {
@@ -745,7 +752,25 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          Expanded(child: Text(entry.text, overflow: TextOverflow.ellipsis)),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(entry.text, overflow: TextOverflow.ellipsis),
+                ),
+                if (entry.isSystem) ...[
+                  const SizedBox(width: 5),
+                  Tag(
+                    text: '系统',
+                    color: FluentTheme.of(
+                      context,
+                    ).resources.solidBackgroundFillColorQuarternary,
+                    fontSize: 10,
+                  ),
+                ],
+              ],
+            ),
+          ),
           SizedBox(
             width: _buildModelColumnWidth,
             child: Center(
@@ -762,19 +787,21 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Tooltip(
-                  message: '编辑',
+                  message: entry.isSystem ? _systemLockTooltip : '编辑',
                   child: IconButton(
                     key: entry.editKey,
                     icon: const Icon(FluentIcons.edit, size: 16),
-                    onPressed: _saving ? null : entry.onEdit,
+                    onPressed: _saving || entry.isSystem ? null : entry.onEdit,
                   ),
                 ),
                 Tooltip(
-                  message: '删除',
+                  message: entry.isSystem ? _systemLockTooltip : '删除',
                   child: IconButton(
                     key: entry.deleteKey,
                     icon: const Icon(FluentIcons.delete, size: 16),
-                    onPressed: _saving ? null : entry.onDelete,
+                    onPressed: _saving || entry.isSystem
+                        ? null
+                        : entry.onDelete,
                   ),
                 ),
               ],
@@ -794,6 +821,7 @@ class _CompileEntry {
     required this.deleteKey,
     required this.onEdit,
     required this.onDelete,
+    this.isSystem = false,
   });
 
   final String text;
@@ -802,4 +830,5 @@ class _CompileEntry {
   final Key deleteKey;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final bool isSystem;
 }

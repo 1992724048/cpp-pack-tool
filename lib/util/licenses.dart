@@ -11,6 +11,9 @@ const List<String> licenseOptions = [
   'Unlicense',
 ];
 
+/// 「自定义…」条目：ComboBox 显示项兼哨兵值（绝不写入 YAML）。
+const String customLicenseEntry = '自定义…';
+
 /// fluent_ui 4.16.1 中 ComboBox 上下各有 1px 边框衬距，比单行 TextBox 高 2px；
 /// visualDensity 每 1 单位调整 4px，取垂直 -0.5 恰好抵消，使下拉框与相邻输入框等高。
 const VisualDensity comboBoxDensity = VisualDensity(vertical: -0.5);

@@ -32,6 +32,25 @@ void main() {
     });
   });
 
+  group('parentDirectory', () {
+    test('返回父目录（/ 与 \\ 分隔符均可）', () {
+      expect(
+        parentDirectory(r'C:\msys64\ucrt64\bin\gcc.exe'),
+        r'C:\msys64\ucrt64\bin',
+      );
+      expect(
+        parentDirectory('C:/msys64/ucrt64/bin/gcc.exe'),
+        'C:/msys64/ucrt64/bin',
+      );
+      expect(parentDirectory(r'C:\LLVM\bin/clang-cl.exe'), r'C:\LLVM\bin');
+    });
+
+    test('无分隔符时返回原路径', () {
+      expect(parentDirectory('gcc.exe'), 'gcc.exe');
+      expect(parentDirectory(''), '');
+    });
+  });
+
   group('formatError', () {
     test('FormatException 返回去前缀的消息文本', () {
       expect(
@@ -77,6 +96,29 @@ void main() {
         formatTimestamp(DateTime(2026, 1, 2, 3, 4, 5)),
         '2026-01-02 03:04:05',
       );
+    });
+  });
+
+  group('formatDuration', () {
+    test('不足一分钟显示秒', () {
+      expect(formatDuration(const Duration(seconds: 45)), '45 秒');
+    });
+
+    test('分钟与秒组合显示', () {
+      expect(formatDuration(const Duration(minutes: 3, seconds: 12)), '3 分 12 秒');
+    });
+
+    test('整分钟省略秒', () {
+      expect(formatDuration(const Duration(minutes: 3)), '3 分');
+    });
+
+    test('小时与分钟组合显示', () {
+      expect(formatDuration(const Duration(hours: 1, minutes: 2)), '1 小时 2 分');
+    });
+
+    test('不足 1 秒按下限显示 1 秒', () {
+      expect(formatDuration(Duration.zero), '1 秒');
+      expect(formatDuration(const Duration(milliseconds: 400)), '1 秒');
     });
   });
 }

@@ -1,4 +1,4 @@
-enum HistoryType { created, versionChanged, filesChanged, exported }
+enum HistoryType { created, versionChanged, filesChanged, exported, built }
 
 const int maxHistoryEntries = 100;
 
@@ -7,6 +7,7 @@ const Map<HistoryType, String> historyTypeLabels = <HistoryType, String>{
   HistoryType.versionChanged: '版本',
   HistoryType.filesChanged: '映射',
   HistoryType.exported: '打包',
+  HistoryType.built: '构建',
 };
 
 class HistoryModel {

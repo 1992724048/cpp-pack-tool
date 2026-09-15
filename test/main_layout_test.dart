@@ -2,8 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/app_info.dart';
+import 'package:cpp_nuget_pack/build/build_environment.dart';
+import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
+import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
+import 'package:cpp_nuget_pack/build/provisioning.dart';
+import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -15,6 +22,7 @@ import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/pages/about.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -82,12 +90,18 @@ void main() {
       tester,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+      ],
       onSaveSettings: (SettingsModel settings) async => saved = settings,
     );
 
     await tester.tap(find.text('设置'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('settingCompilerRow_icx')), findsOneWidget);
+    expect(find.text('2026.1.1'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('settingThemeModeField')));
     await tester.pump();
@@ -99,6 +113,103 @@ void main() {
     expect(saved, isNotNull);
     expect(saved!.themeMode, ThemeModeSetting.dark);
     expect(find.text('已保存'), findsOneWidget);
+  });
+
+  testWidgets('设置页无缓存时自动检测并经保存链写回', (tester) async {
+    SettingsModel? saved;
+
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      detectCompilers: () async => <DetectedCompiler>[
+        _compiler(CompilerKind.icx, '2026.1.1'),
+      ],
+      onSaveSettings: (SettingsModel settings) async => saved = settings,
+    );
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.text('2026.1.1'), findsOneWidget);
+    expect(saved, isNotNull);
+    expect(saved!.detectedCompilers, hasLength(1));
+    expect(saved!.detectedCompilers.single.kind, CompilerKind.icx);
+    expect(saved!.detectedCompilers.single.version, '2026.1.1');
+  });
+
+  testWidgets('构建准备透传缓存并经保存链写回新检测结果', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    SettingsModel? saved;
+    List<String>? receivedPriority;
+    List<DetectedCompiler>? receivedCache;
+    final BuildEnvironment prepared = _buildEnvironment();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: SettingsModel(
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'build.py', path: 'build.py', size: 10),
+      ],
+      onSaveSettings: (SettingsModel settings) async => saved = settings,
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) async {
+            receivedPriority = compilerPriority;
+            receivedCache = cachedCompilers;
+            onCompilersDetected(<DetectedCompiler>[
+              _compiler(CompilerKind.icx, '2026.2.0'),
+            ]);
+            return prepared;
+          },
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
+      }) async {},
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(receivedPriority, <String>['icx']);
+    expect(receivedCache?.single.version, '2026.1.0');
+    expect(saved, isNotNull);
+    expect(saved!.compilerPriority, <String>['icx']);
+    expect(saved!.detectedCompilers.single.version, '2026.2.0');
   });
 
   testWidgets('footer 设置页铺满内容区域并带页面背景表面', (tester) async {
@@ -646,6 +757,71 @@ void main() {
     expect(find.text('移除：1 个文件'), findsOneWidget);
   });
 
+  testWidgets('重新映射后自动注册 pre/post.bat 与 build.py 依赖系统条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
+        ),
+        _pack('libfoo', '2.5.0'),
+      ],
+    );
+    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (String path) => completer.future,
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://example.com/demo.git',
+        dependencies: <BuildScriptDependency>[
+          BuildScriptDependency(name: 'libfoo'),
+          BuildScriptDependency(name: 'ghost', version: '[1.0,)'),
+        ],
+      ),
+    );
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    completer.complete(<FileModel>[
+      FileModel(name: 'build.py', path: 'build.py', size: 10),
+      FileModel(name: 'pre.bat', path: 'pre.bat', size: 10),
+      FileModel(name: 'post.bat', path: 'post.bat', size: 10),
+      FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.saveCount, 1);
+    final PackModel saved = store.packs.firstWhere(
+      (PackModel pack) => pack.name == 'demo',
+    );
+    expect(saved.commands, hasLength(2));
+    final CmdModel pre = saved.commands[0];
+    expect(
+      pre.command,
+      r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+    );
+    expect(pre.type, CmdType.preBuild);
+    expect(pre.system, isTrue);
+    expect(saved.commands[1].type, CmdType.postBuild);
+    expect(saved.commands[1].system, isTrue);
+    expect(saved.dependencies, hasLength(2));
+    expect(saved.dependencies[0].name, 'libfoo');
+    expect(saved.dependencies[0].version, '[2.5.0,)');
+    expect(saved.dependencies[0].system, isTrue);
+    expect(saved.dependencies[1].name, 'ghost');
+    expect(saved.dependencies[1].version, '[1.0,)');
+    expect(find.text('重新映射完成'), findsOneWidget);
+  });
+
   testWidgets('缺少源目录信息时提示错误且不弹出对话框', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[_pack('demo', '1.0.0')],
@@ -669,6 +845,412 @@ void main() {
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
   });
 
+  testWidgets('文件管理页点击构建打开对话框并完成重新映射', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'build.py', path: 'build.py', size: 10),
+            FileModel(name: 'old.h', path: 'old/old.h', size: 64),
+          ],
+        ),
+      ],
+    );
+    PackModel? builtPack;
+    final List<PackBuildStage> stages = <PackBuildStage>[];
+    final BuildEnvironment prepared = _buildEnvironment();
+    Map<String, String>? receivedEnvironment;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
+      ],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => prepared,
+      buildPack:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
+          }) async {
+            builtPack = pack;
+            receivedEnvironment = environment;
+            for (final PackBuildStage stage in <PackBuildStage>[
+              PackBuildStage.downloading,
+              PackBuildStage.building,
+            ]) {
+              stages.add(stage);
+              onStage(stage);
+            }
+            onSourceVersion?.call('v9.9.9');
+          },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(builtPack?.name, 'demo');
+    expect(receivedEnvironment, same(prepared.environment));
+    expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
+    expect(find.text('新增：1 个文件'), findsOneWidget);
+    expect(find.text('移除：2 个文件'), findsOneWidget);
+    expect(stages, <PackBuildStage>[
+      PackBuildStage.downloading,
+      PackBuildStage.building,
+    ]);
+    expect(store.saveCount, 1);
+    expect(store.packs.single.files, hasLength(1));
+    expect(store.packs.single.files.single.path, 'new/new.h');
+    expect(store.packs.single.sourceVersion, 'v9.9.9');
+  });
+
+  testWidgets('手动代理设置以 -c http.proxy 参数下发构建', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[
+            FileModel(name: 'build.py', path: 'build.py', size: 10),
+          ],
+        ),
+      ],
+    );
+    List<String>? receivedGitArguments;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: SettingsModel(
+        proxyMode: ProxyModeSetting.manual,
+        proxyHost: '127.0.0.1',
+        proxyPort: 7890,
+        compilerPriority: const <String>['icx'],
+        detectedCompilers: <DetectedCompiler>[
+          _compiler(CompilerKind.icx, '2026.1.0'),
+        ],
+      ),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) async => _buildEnvironment(),
+      buildPack:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
+          }) async {
+            receivedGitArguments = gitGlobalArguments;
+            onStage(PackBuildStage.downloading);
+            onStage(PackBuildStage.building);
+          },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(receivedGitArguments, <String>[
+      '-c',
+      'http.proxy=http://127.0.0.1:7890',
+    ]);
+  });
+
+  testWidgets('默认构建接线使用流式构建执行器', (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      FluentApp(
+        home: MainLayout(
+          pickDirectory: () async => null,
+          scanFiles: (_) async => <FileModel>[],
+          store: _FakePackStore(),
+          detectCompilers: _noCompilers,
+          loadRemoteTags: _noRemoteTags,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final MainLayout layout = tester.widget<MainLayout>(
+      find.byType(MainLayout),
+    );
+    expect(
+      layout.buildPack,
+      runPackBuildStreaming,
+      reason: '生产默认应经 Process.start 流式转发构建输出',
+    );
+  });
+
+  testWidgets('构建对话框透传 sourceNone 与下载进度回调', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    final Completer<BuildEnvironment> prepareGate =
+        Completer<BuildEnvironment>();
+    ToolDownloadProgressCallback? receivedProgress;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://github.com/openvinotoolkit/openvino.git',
+        sourceNone: true,
+      ),
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) {
+            receivedProgress = onDownloadProgress;
+            return prepareGate.future;
+          },
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
+      }) async {},
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('下载'), findsOneWidget);
+    expect(find.text('准备环境'), findsNothing);
+    expect(receivedProgress, isNotNull);
+
+    receivedProgress!(
+      const ToolDownloadProgress(
+        name: 'cmake',
+        receivedBytes: 0,
+        totalBytes: 1024,
+        bytesPerSecond: 0,
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(const Key('buildDownloadProgress')), findsOneWidget);
+
+    prepareGate.complete(_buildEnvironment());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  testWidgets('构建后自动修复头文件引用并以悬浮提示与待处理对话框上报', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    (String, String)? received;
+    const HeaderIncludeFixReport report = HeaderIncludeFixReport(
+      fixed: <HeaderIncludeFix>[
+        HeaderIncludeFix(
+          filePath: 'src/gtest/gtest-all.cc',
+          line: 2,
+          from: 'src/gtest.cc',
+          to: 'gtest.cc',
+        ),
+      ],
+      issues: <HeaderIncludeIssue>[
+        HeaderIncludeIssue(
+          filePath: 'src/gtest/gtest.cc',
+          line: 133,
+          include: 'src/gtest-internal-inl.h',
+          kind: HeaderIncludeIssueKind.crossTree,
+          candidates: <String>['src/gtest/gtest-internal-inl.h'],
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'new.h', path: 'new/new.h', size: 1),
+      ],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => _buildEnvironment(),
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onSourceVersion,
+        List<String> gitGlobalArguments = const <String>[],
+      }) async {},
+      fixIncludes: (String sourcePath, {required String packageName}) async {
+        received = (sourcePath, packageName);
+        return report;
+      },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(received, (r'C:\libs\demo', 'demo'));
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('已自动修复 1 处头文件引用'), findsOneWidget);
+    expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsOneWidget);
+    expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
+    expect(
+      find.text(
+        '"src/gtest-internal-inl.h"：唯一候选打包后与引用文件不同目录：src/gtest/gtest-internal-inl.h',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('headerIncludeIssuesCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsNothing);
+  });
+
+  testWidgets('构建失败后按 Esc 不关闭对话框且关闭按钮仍记录失败条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => null,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+        ToolDownloadProgressCallback? onDownloadProgress,
+      }) async => _buildEnvironment(),
+      buildPack:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+            void Function(String version)? onSourceVersion,
+            List<String> gitGlobalArguments = const <String>[],
+          }) async {
+            throw const PackBuildException('构建失败（退出码 1）');
+          },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('构建失败：构建失败（退出码 1）'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.byKey(const Key('buildPackDialog')),
+      findsOneWidget,
+      reason: '失败态按 Esc 不得撤走对话框：失败条目必须经关闭按钮回传落盘',
+    );
+
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('buildPackDialog')), findsNothing);
+    expect(store.saveCount, 1);
+    expect(store.packs.single.history, hasLength(1));
+    final HistoryModel entry = store.packs.single.history.single;
+    expect(entry.type, HistoryType.built);
+    expect(entry.message, '构建失败：构建失败（退出码 1）');
+  });
+
   testWidgets('无包时打包按钮禁用', (tester) async {
     await _pumpMainLayout(
       tester,
@@ -676,7 +1258,6 @@ void main() {
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
     );
-
     expect(_packButton(tester).onPressed, isNull);
   });
 
@@ -717,7 +1298,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('请先在设置页配置打包输出目录'), findsOneWidget);
+    expect(find.text('请先在设置页配置 NuGet 打包输出目录'), findsOneWidget);
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
     expect(find.byKey(const Key('packExportDialog')), findsNothing);
   });
@@ -1075,12 +1656,10 @@ void main() {
     expect(dialog, findsOneWidget);
     expect(find.text('导出校验'), findsOneWidget);
     expect(
-      find.descendant(
-        of: dialog,
-        matching: find.text('build/native/files/bin/tool.exe'),
-      ),
+      find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
+    expect(find.byTooltip('build/native/files/bin/tool.exe'), findsOneWidget);
     expect(
       find.descendant(of: dialog, matching: find.text('可执行二进制随包分发')),
       findsOneWidget,
@@ -1148,12 +1727,10 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(
-        of: dialog,
-        matching: find.text('build/native/files/bin/tool.exe'),
-      ),
+      find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
+    expect(find.byTooltip('build/native/files/bin/tool.exe'), findsOneWidget);
     // 两类问题并存时仍展示供应链提示
     expect(
       find.descendant(
@@ -1190,7 +1767,10 @@ void main() {
     await _pumpMainLayout(
       tester,
       store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
       exportPackage: (PackModel pack, String outputDirectory) async {
         nugetCalls++;
         return (
@@ -1252,7 +1832,10 @@ void main() {
     await _pumpMainLayout(
       tester,
       store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
       exportPackage: (PackModel pack, String outputDirectory) async {
         nugetCalls++;
         return (
@@ -1292,9 +1875,10 @@ void main() {
     expect(dialog, findsOneWidget);
     expect(find.text('导出校验'), findsOneWidget);
     expect(
-      find.descendant(of: dialog, matching: find.text('files/bin/tool.exe')),
+      find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
+    expect(find.byTooltip('files/bin/tool.exe'), findsOneWidget);
     expect(
       find.descendant(
         of: dialog,
@@ -1326,7 +1910,10 @@ void main() {
     await _pumpMainLayout(
       tester,
       store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
       exportPackage: (PackModel pack, String outputDirectory) async {
         nugetCalls++;
         return (
@@ -1472,7 +2059,7 @@ void main() {
           '1.0.0',
           sourcePath: r'C:\libs\demo',
           files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
-        ),
+        )..buildOptions = <String, String>{'tbb': 'on'},
       ],
     );
     final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
@@ -1497,6 +2084,7 @@ void main() {
     await tester.pump();
 
     expect(store.packs.single.files.single.path, 'new/new.h');
+    expect(store.packs.single.buildOptions, <String, String>{'tbb': 'on'});
     expect(store.packs.single.history, hasLength(1));
     final HistoryModel entry = store.packs.single.history.single;
     expect(entry.type, HistoryType.filesChanged);
@@ -1549,6 +2137,41 @@ void main() {
     expect(store.packs.single.history, hasLength(1));
     expect(store.packs.single.history.single.type, HistoryType.created);
     expect(store.packs.single.history.single.message, '创建包：1 个文件，总大小 128 B');
+  });
+
+  testWidgets('手工重新映射保留已记录的仓库版本', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
+        )..sourceVersion = 'v1.0.0',
+      ],
+    );
+    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (String path) => completer.future,
+    );
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    completer.complete(<FileModel>[
+      FileModel(name: 'new.h', path: 'new/new.h', size: 128),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs.single.sourceVersion, 'v1.0.0');
+    expect(store.packs.single.files.single.path, 'new/new.h');
   });
 
   testWidgets('导出成功后追加打包历史条目', (tester) async {
@@ -1726,6 +2349,582 @@ void main() {
 
     expect(_dependencyGraphButton(tester).onPressed, isNull);
   });
+
+  testWidgets('有仓库的包显示 git 徽标，有新版本时替换为更新徽标', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'alpha',
+          '1.0.0',
+          sourcePath: r'C:\libs\alpha',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v1.0.0',
+        _pack(
+          'beta',
+          '1.0.0',
+          sourcePath: r'C:\libs\beta',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v2.0.0',
+        _pack('gamma', '1.0.0'),
+      ],
+    );
+    int remoteCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => pack.name == 'gamma'
+          ? null
+          : const BuildScriptHeader(repo: 'https://example.com/demo.git'),
+      loadRemoteTags: (String repoUrl) async {
+        remoteCalls++;
+        return <String>['v1.0.0', 'v2.0.0'];
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoUpdateBadge_alpha')), findsOneWidget);
+    expect(find.byKey(const Key('repoBadge_alpha')), findsNothing);
+    expect(find.byKey(const Key('repoBadge_beta')), findsOneWidget);
+    expect(find.byKey(const Key('repoUpdateBadge_beta')), findsNothing);
+    expect(find.byKey(const Key('repoBadge_gamma')), findsNothing);
+    expect(find.byKey(const Key('repoUpdateBadge_gamma')), findsNothing);
+    expect(remoteCalls, 1, reason: '同一仓库 URL 只查询一次（会话缓存）');
+  });
+
+  testWidgets('远端查询失败时仅显示 git 徽标', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v1.0.0',
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async =>
+          const BuildScriptHeader(repo: 'https://example.com/demo.git'),
+      loadRemoteTags: (String repoUrl) async => null,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoBadge_demo')), findsOneWidget);
+    expect(find.byKey(const Key('repoUpdateBadge_demo')), findsNothing);
+  });
+
+  testWidgets('文件管理页显示当前与远端最新版本', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        )..sourceVersion = 'v1.0.0',
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async =>
+          const BuildScriptHeader(repo: 'https://example.com/demo.git'),
+      loadRemoteTags: (String repoUrl) async => <String>['v2.0.0'],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('v1.0.0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chip, matching: find.text('v2.0.0')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('远程头像按仓库 URL 去重解析并落位侧栏', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'alpha',
+          '1.0.0',
+          sourcePath: r'C:\libs\alpha',
+          files: _buildPyFiles(),
+        ),
+        _pack(
+          'beta',
+          '1.0.0',
+          sourcePath: r'C:\libs\beta',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    int iconCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://github.com/madler/zlib.git',
+      ),
+      loadRemoteTags: (String repoUrl) async => <String>['v1.0.0'],
+      loadRepoIcon: (String repoUrl) async {
+        iconCalls++;
+        return r'C:\cache\icons\github\madler.png';
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(iconCalls, 1, reason: '同一仓库 URL 只解析一次（会话缓存）');
+    expect(find.byKey(const Key('repoAvatar_alpha')), findsOneWidget);
+    expect(find.byKey(const Key('repoAvatar_beta')), findsOneWidget);
+    expect(find.byKey(const Key('repoFallbackIcon_alpha')), findsNothing);
+  });
+
+  testWidgets('GitHub 平台在头像缺失时显示平台回退图标', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
+        repo: 'https://github.com/madler/zlib',
+      ),
+      loadRemoteTags: (String repoUrl) async => <String>['v1.0.0'],
+      loadRepoIcon: (String repoUrl) async => null,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoFallbackIcon_demo')), findsOneWidget);
+    expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
+  });
+
+  testWidgets('重新映射换仓库时先清空旧头像', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    final Completer<List<FileModel>> scanCompleter =
+        Completer<List<FileModel>>();
+    final Completer<String?> newIconCompleter = Completer<String?>();
+    int headerCalls = 0;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) => scanCompleter.future,
+      loadBuildHeader: (PackModel pack) async {
+        headerCalls++;
+        return BuildScriptHeader(
+          repo: headerCalls == 1
+              ? 'https://github.com/madler/zlib'
+              : 'https://github.com/facebook/zstd',
+        );
+      },
+      loadRepoIcon: (String repoUrl) async {
+        if (repoUrl.contains('madler')) {
+          return r'C:\cache\icons\github\madler.png';
+        }
+        return newIconCompleter.future;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoAvatar_demo')), findsOneWidget);
+
+    await tester.tap(find.byTooltip('重新映射'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    scanCompleter.complete(<FileModel>[
+      FileModel(name: 'build.py', path: 'sub/build.py', size: 10),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(headerCalls, greaterThan(1));
+    expect(
+      find.byKey(const Key('repoFallbackIcon_demo')),
+      findsOneWidget,
+      reason: '仓库地址变化后、新头像查询完成前不得沿用旧仓库头像',
+    );
+    expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
+
+    newIconCompleter.complete(r'C:\cache\icons\github\zstd.png');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('repoAvatar_demo')), findsOneWidget);
+  });
+
+  testWidgets('删除包时探测构建缓存并可按需删除缓存', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+    String? probedName;
+    String? deletedName;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      hasBuildCache: (String packName) async {
+        probedName = packName;
+        return true;
+      },
+      deleteBuildCache: (String packName) async {
+        deletedName = packName;
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(probedName, 'demo');
+    expect(find.textContaining('cache/build/demo'), findsOneWidget);
+    expect(
+      tester
+          .widget<Checkbox>(find.byKey(const Key('deletePackCacheCheckbox')))
+          .onChanged,
+      isNotNull,
+    );
+
+    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, isEmpty);
+    expect(deletedName, 'demo');
+    expect(find.text('已删除（含构建缓存）'), findsOneWidget);
+  });
+
+  testWidgets('构建缓存删除失败时提示且不阻断包删除', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      hasBuildCache: (String packName) async => true,
+      deleteBuildCache: (String packName) async =>
+          throw const FileSystemException('目录被占用'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, isEmpty);
+    expect(find.textContaining('已删除包，但构建缓存删除失败'), findsOneWidget);
+    expect(find.textContaining('目录被占用'), findsOneWidget);
+    expect(find.text('已删除（含构建缓存）'), findsNothing);
+  });
+
+  testWidgets('未勾选删除缓存时仅删除包并提示已删除', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('demo', '1.0.0')],
+    );
+    String? deletedName;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      hasBuildCache: (String packName) async => true,
+      deleteBuildCache: (String packName) async {
+        deletedName = packName;
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('删除文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs, isEmpty);
+    expect(deletedName, isNull);
+    expect(find.text('已删除'), findsOneWidget);
+  });
+
+  testWidgets('启动后按默认作者批量修正占位作者并提示', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('alpha', '1.0.0', author: '无'),
+        _pack('beta', '1.0.0', author: '未知'),
+        _pack('gamma', '1.0.0', author: 'Alice'),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '张三'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    String authorOf(String name) =>
+        store.packs.firstWhere((PackModel pack) => pack.name == name).author;
+    expect(authorOf('alpha'), '张三');
+    expect(authorOf('beta'), '张三');
+    expect(authorOf('gamma'), 'Alice');
+    expect(find.text('已按默认作者修正 2 个包的作者'), findsOneWidget);
+  });
+
+  testWidgets('默认作者为空时不修正占位作者', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('alpha', '1.0.0', author: '无')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.author, '无');
+    expect(find.textContaining('已按默认作者修正'), findsNothing);
+    expect(store.saveCount, 0);
+  });
+
+  testWidgets('默认作者本身为占位值时跳过批量修正', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[_pack('alpha', '1.0.0', author: '无')],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '未知'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.author, '无');
+    expect(store.saveCount, 0);
+    expect(find.textContaining('已按默认作者修正'), findsNothing);
+  });
+
+  testWidgets('批量修正部分失败时合并提示成功与失败计数', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('alpha', '1.0.0', author: '无'),
+        _pack('beta', '1.0.0', author: '未知'),
+      ],
+    )..failSaveFor.add('alpha');
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '张三'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(find.text('已按默认作者修正 1 个包的作者，1 个包保存失败'), findsOneWidget);
+  });
+
+  testWidgets('新增包的占位作者在保存时静默替换为默认作者', (tester) async {
+    final _FakePackStore store = _FakePackStore();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(defaultAuthor: '张三'),
+      pickDirectory: () async => r'C:\libs\foo',
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('添加文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(find.byKey(const Key('packIdField')), 'demo');
+    await tester.enterText(find.byKey(const Key('packVersionField')), '1.0.0');
+    await tester.enterText(find.byKey(const Key('packAuthorField')), '无');
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.packs.single.author, '张三');
+    expect(store.packs.single.name, 'demo');
+  });
+
+  testWidgets('启用集合仅含 CMake 时按 CMake 目录路由导出', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')
+          ..enabledFormats = <String>['cmake'],
+      ],
+    );
+    int nugetCalls = 0;
+    String? cmakeDirectory;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(
+        outputDirectory: r'D:\out\nuget',
+        cmakeOutputDirectory: r'D:\out\cmake',
+      ),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        nugetCalls++;
+        return (
+          outputPath: r'D:\out\nuget\demo.nupkg',
+          fileCount: 1,
+          packageSize: 1,
+        );
+      },
+      exportCmakePackage: (PackModel pack, String outputDirectory) async {
+        cmakeDirectory = outputDirectory;
+        return (
+          outputPath: r'D:\out\cmake\demo.zip',
+          fileCount: 1,
+          packageSize: 1,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(cmakeDirectory, r'D:\out\cmake');
+    expect(nugetCalls, 0);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(find.text('打包完成'), findsOneWidget);
+  });
+
+  testWidgets('启用集合仅含 CMake 且未设置 CMake 目录时提示对应目录', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')
+          ..enabledFormats = <String>['cmake'],
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out\nuget'),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('请先在设置页配置 CMake 打包输出目录'), findsOneWidget);
+    expect(find.byKey(const Key('packExportDialog')), findsNothing);
+  });
+
+  testWidgets('启用集合仅含 CMake 时导出校验不收集脚本问题', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          scripts: <ScriptProjectModel>[_brokenScript()],
+        )..enabledFormats = <String>['cmake'],
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(cmakeOutputDirectory: r'D:\out\cmake'),
+      exportCmakePackage: (PackModel pack, String outputDirectory) async =>
+          (outputPath: r'D:\out\cmake\demo.zip', fileCount: 1, packageSize: 1),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('打包文件夹'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -1739,7 +2938,16 @@ Future<void> _pumpMainLayout(
   exportPackage,
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportCmakePackage,
+  PackBuildRunner? buildPack,
+  PackBuildEnvironmentPreparer? prepareBuildEnv,
+  Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
+  Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
+  Future<List<String>?> Function(String repoUrl)? loadRemoteTags,
+  Future<String?> Function(String repoUrl)? loadRepoIcon,
+  PackHeaderIncludeFixer? fixIncludes,
+  PackBuildCacheProbe? hasBuildCache,
+  PackBuildCacheDeleter? deleteBuildCache,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -1756,12 +2964,59 @@ Future<void> _pumpMainLayout(
         exportPackage: exportPackage ?? exportNuGetPackage,
         exportCmakePackage:
             exportCmakePackage ?? cmake_exporter.exportCmakePackage,
+        buildPack: buildPack ?? runPackBuild,
+        prepareBuildEnv: prepareBuildEnv,
+        detectCompilers: detectCompilers ?? _noCompilers,
+        loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
+        loadRemoteTags: loadRemoteTags ?? _noRemoteTags,
+        loadRepoIcon: loadRepoIcon ?? _noRepoIcon,
+        fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
+        hasBuildCache: hasBuildCache ?? _noBuildCache,
+        deleteBuildCache: deleteBuildCache ?? _noDeleteBuildCache,
       ),
     ),
   );
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
+}
+
+Future<bool> _noBuildCache(String packName) async => false;
+
+Future<void> _noDeleteBuildCache(String packName) async {}
+
+Future<HeaderIncludeFixReport> _emptyFixIncludes(
+  String sourcePath, {
+  required String packageName,
+}) async => const HeaderIncludeFixReport();
+
+Future<List<DetectedCompiler>> _noCompilers() async =>
+    const <DetectedCompiler>[];
+
+Future<List<String>?> _noRemoteTags(String repoUrl) async => null;
+
+Future<String?> _noRepoIcon(String repoUrl) async => null;
+
+DetectedCompiler _compiler(CompilerKind kind, String version) {
+  return DetectedCompiler(
+    kind: kind,
+    version: version,
+    executablePath: 'C:/fake/${compilerKindId(kind)}.exe',
+    environmentScript: null,
+  );
+}
+
+BuildEnvironment _buildEnvironment() {
+  return BuildEnvironment(
+    compiler: _compiler(CompilerKind.icx, '2026.1.1'),
+    environment: const <String, String>{
+      'CNP_COMPILER_KIND': 'icx',
+      'Path': r'C:\tools\bin',
+    },
+    cmakePath: r'C:\tools\cmake\bin\cmake.exe',
+    ninjaPath: r'C:\tools\ninja\ninja.exe',
+    toolsDir: r'C:\tools',
+  );
 }
 
 Future<void> _fillRequiredFields(
@@ -1824,6 +3079,7 @@ int? _selectedIndex(WidgetTester tester) =>
 PackModel _pack(
   String name,
   String version, {
+  String author = 'tester',
   String? sourcePath,
   List<FileModel>? files,
   List<DependencyModel>? dependencies,
@@ -1833,7 +3089,7 @@ PackModel _pack(
   final PackModel pack = PackModel(
     name: name,
     version: version,
-    author: 'tester',
+    author: author,
     sourcePath: sourcePath,
   );
   if (files != null) {
@@ -1852,24 +3108,17 @@ PackModel _pack(
 }
 
 /// 无节点脚本：图校验必然报错，用于导出前校验三态测试。
-ScriptProjectModel _brokenScript() => ScriptProjectModel(
-  id: 'script_1',
-  name: '坏脚本',
-  trigger: ScriptTrigger.pre,
-);
+ScriptProjectModel _brokenScript() =>
+    ScriptProjectModel(id: 'script_1', name: '坏脚本', trigger: ScriptTrigger.pre);
+
+List<FileModel> _buildPyFiles() => <FileModel>[
+  FileModel(name: 'build.py', path: 'build.py', size: 10),
+];
 
 Finder _pageSurface(WidgetTester tester) {
-  final Color cardColor = FluentTheme.of(tester.element(find.byType(Setting)))
-      .cardColor;
   return find.descendant(
     of: find.byType(Setting),
-    matching: find.byWidgetPredicate((Widget widget) {
-      if (widget is! Container) {
-        return false;
-      }
-      final Decoration? decoration = widget.decoration;
-      return decoration is BoxDecoration && decoration.color == cardColor;
-    }),
+    matching: find.byKey(const Key('settingsPageSurface')),
   );
 }
 
@@ -1885,6 +3134,7 @@ class _FakePackStore extends PackStore {
   int deleteCount = 0;
   bool failSave = false;
   bool failDelete = false;
+  final Set<String> failSaveFor = <String>{};
   final List<String> deletedNames = <String>[];
 
   List<PackModel> get packs => _packs;
@@ -1900,7 +3150,7 @@ class _FakePackStore extends PackStore {
 
   @override
   Future<void> savePack(PackModel pack) async {
-    if (failSave) {
+    if (failSave || failSaveFor.contains(pack.name.toLowerCase())) {
       throw const FileSystemException('磁盘已满');
     }
     saveCount++;

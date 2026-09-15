@@ -139,6 +139,58 @@ void main() {
     expect(result, isTrue);
     expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
   });
+
+  testWidgets('对话框最大宽 560、名称列宽 140（R10）', (tester) async {
+    await _pumpDialog(tester);
+
+    final ContentDialog dialog = tester.widget<ContentDialog>(
+      find.byKey(const Key('packagingIssuesDialog')),
+    );
+    expect(dialog.constraints.maxWidth, 560);
+
+    final SizedBox nameHeaderBox = tester.widget<SizedBox>(
+      find.ancestor(of: find.text('名称'), matching: find.byType(SizedBox)).first,
+    );
+    expect(nameHeaderBox.width, 140);
+  });
+
+  testWidgets('名称含路径分隔符时仅显示末段，Tooltip 保留全路径', (tester) async {
+    await _pumpDialog(
+      tester,
+      issues: const <PackagingIssue>[
+        PackagingIssue(
+          label: 'build/native/files/foo.h',
+          message: '包内路径重复：build/native/files/foo.h',
+        ),
+      ],
+    );
+
+    expect(find.text('foo.h'), findsOneWidget);
+    expect(find.text('build/native/files/foo.h'), findsNothing);
+    expect(find.byTooltip('build/native/files/foo.h'), findsOneWidget);
+  });
+
+  testWidgets('无路径分隔符的名称原样显示', (tester) async {
+    await _pumpDialog(tester);
+
+    expect(find.text('坏脚本'), findsOneWidget);
+    expect(find.byTooltip('坏脚本'), findsOneWidget);
+  });
+
+  testWidgets('问题文本限制两行截断且 Tooltip 保留全文', (tester) async {
+    const String message = '脚本编译失败（共 2 个错误）：缺少入口节点，请打开节点编辑器检查入口与连线';
+    await _pumpDialog(
+      tester,
+      issues: const <PackagingIssue>[
+        PackagingIssue(label: '坏脚本', message: message),
+      ],
+    );
+
+    final Text messageText = tester.widget<Text>(find.text(message));
+    expect(messageText.maxLines, 2);
+    expect(messageText.overflow, TextOverflow.ellipsis);
+    expect(find.byTooltip(message), findsOneWidget);
+  });
 }
 
 Future<void> _pumpDialog(

@@ -1,8 +1,10 @@
+import 'package:cpp_nuget_pack/controls/format_selection_dialog.dart';
+import 'package:cpp_nuget_pack/controls/license_field.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/util/file_image.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class AddDirectoryDialog extends StatefulWidget {
@@ -10,10 +12,18 @@ class AddDirectoryDialog extends StatefulWidget {
     super.key,
     required this.directoryPath,
     required this.scanFuture,
+    this.initialAuthor = '',
+    this.builders = PackageBuilderRegistry.all,
   });
 
   final String directoryPath;
   final Future<List<FileModel>> scanFuture;
+
+  /// 新包作者预填值（全局默认作者）。
+  final String initialAuthor;
+
+  /// 可选的打包格式（测试注入；默认全部注册格式）。
+  final List<PackageBuilder> builders;
 
   @override
   State<AddDirectoryDialog> createState() => _AddDirectoryDialogState();
@@ -26,12 +36,18 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
   final TextEditingController _descriptionController = TextEditingController();
 
   String? _license;
+  bool _licenseValid = true;
+  late final List<String> _enabledFormatIds;
   List<FileModel>? _files;
   Object? _scanError;
 
   @override
   void initState() {
     super.initState();
+    _authorController.text = widget.initialAuthor;
+    _enabledFormatIds = <String>[
+      for (final PackageBuilder builder in widget.builders) builder.id,
+    ];
     _idController.addListener(_refresh);
     _versionController.addListener(_refresh);
     _authorController.addListener(_refresh);
@@ -68,6 +84,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
 
   bool get _canSubmit =>
       _files != null &&
+      _licenseValid &&
       _idController.text.trim().isNotEmpty &&
       _versionController.text.trim().isNotEmpty &&
       _authorController.text.trim().isNotEmpty;
@@ -78,15 +95,33 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
     Navigator.pop(
       context,
       PackModel(
-        name: _idController.text.trim(),
-        version: _versionController.text.trim(),
-        author: _authorController.text.trim(),
-        description: description.isEmpty ? null : description,
-        license: _license,
-        iconPath: icon?.path,
-        sourcePath: widget.directoryPath,
-      )..files = _files ?? const <FileModel>[],
+          name: _idController.text.trim(),
+          version: _versionController.text.trim(),
+          author: _authorController.text.trim(),
+          description: description.isEmpty ? null : description,
+          license: _license,
+          iconPath: icon?.path,
+          sourcePath: widget.directoryPath,
+        )
+        ..files = _files ?? const <FileModel>[]
+        ..enabledFormats = List<String>.of(_enabledFormatIds),
     );
+  }
+
+  Future<void> _pickFormats() async {
+    final List<String>? selected = await showFormatSelectionDialog(
+      context,
+      builders: widget.builders,
+      enabledIds: _enabledFormatIds,
+    );
+    if (selected == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _enabledFormatIds
+        ..clear()
+        ..addAll(selected);
+    });
   }
 
   @override
@@ -203,21 +238,17 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
         const SizedBox(height: 12),
         _buildField(
           label: '许可证',
-          child: FluentTheme(
-            data: FluentTheme.of(context)
-                .copyWith(visualDensity: comboBoxDensity),
-            child: ComboBox<String?>(
-              key: const Key('packLicenseField'),
-              value: _license,
-              placeholder: const Text('无'),
-              isExpanded: true,
-              onChanged: (String? value) => setState(() => _license = value),
-              items: <ComboBoxItem<String?>>[
-                const ComboBoxItem<String?>(value: null, child: Text('无')),
-                for (final String option in licenseOptions)
-                  ComboBoxItem<String?>(value: option, child: Text(option)),
-              ],
-            ),
+          child: LicenseField(
+            value: _license,
+            comboBoxKey: const Key('packLicenseField'),
+            customFieldKey: const Key('packLicenseCustomField'),
+            errorKey: const Key('packLicenseCustomError'),
+            onChanged: (String? license, bool isValid) {
+              setState(() {
+                _license = license;
+                _licenseValid = isValid;
+              });
+            },
           ),
         ),
         const SizedBox(height: 12),
@@ -230,8 +261,43 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
             maxLines: 3,
           ),
         ),
+        const SizedBox(height: 12),
+        _buildFormatField(),
       ],
     );
+  }
+
+  Widget _buildFormatField() {
+    final FluentThemeData theme = FluentTheme.of(context);
+    return _buildField(
+      label: '打包格式',
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              _formatSummary(),
+              key: const Key('addPackFormatSummary'),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: theme.resources.textFillColorSecondary),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Button(
+            key: const Key('addPackFormatButton'),
+            onPressed: _pickFormats,
+            child: const Text('选择…'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSummary() {
+    final List<String> names = <String>[
+      for (final PackageBuilder builder in widget.builders)
+        if (_enabledFormatIds.contains(builder.id)) builder.displayName,
+    ];
+    return names.isEmpty ? '未启用任何格式' : names.join('、');
   }
 
   Widget _buildField({required String label, required Widget child}) {

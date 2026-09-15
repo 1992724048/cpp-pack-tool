@@ -2,6 +2,15 @@
 
 本仓库包含以下第三方作品的副本或衍生内容，其版权归原作者所有。
 
+## GitHub Logos
+
+- 来源：https://brand.github.com/（官方品牌资源包 `GitHub_Logos.zip` 中的 `SVG/GitHub_Invertocat_Black.svg`）
+- 使用范围：`assets/icons/repo_github.svg`（GitHub 官方标志，原文未修改；仅作为侧栏远程仓库平台图标作指示性引用）
+- 版权：Copyright GitHub, Inc.
+- 许可：GitHub 品牌资源使用条款（https://brand.github.com/）
+
+> 侧栏 GitLab 平台图标为项目自绘通用图标（`assets/icons/repo_remote.svg`），未使用 GitLab 官方标志。
+
 ## Catppuccin Icons for VSCode
 
 - 来源：https://github.com/catppuccin/vscode-icons

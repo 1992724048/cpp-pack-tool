@@ -17,6 +17,10 @@ class PackModel {
   final String? iconPath;
   final String? sourcePath;
 
+  /// 上次构建记录的仓库版本（git tag，回退短哈希）；未构建过为 null。
+  /// 构建流程会以 `# source: none` 跳过记录，构建回调在构建完成前原地更新本字段。
+  String? sourceVersion;
+
   List<FileModel> files = [];
   List<CmdModel> commands = [];
   List<DependencyModel> dependencies = [];
@@ -25,6 +29,11 @@ class PackModel {
   List<LibraryModel> libraries = [];
   List<HistoryModel> history = [];
   List<ScriptProjectModel> scripts = [];
+  Map<String, String> buildOptions = <String, String>{};
+
+  /// 启用的打包格式 id（如 `nuget` / `cmake`，规范序 = 注册表序）。
+  /// 空列表 = 未记录（所有格式启用）——旧包缺字段读回即空，行为等同现状。
+  List<String> enabledFormats = <String>[];
 
   static List<PackModel> packs = [];
 
@@ -36,6 +45,7 @@ class PackModel {
     this.license,
     this.iconPath,
     this.sourcePath,
+    this.sourceVersion,
   });
 
   Map<String, Object?> toMap() {
@@ -47,6 +57,7 @@ class PackModel {
       if (license != null) 'license': license,
       if (iconPath != null) 'iconPath': iconPath,
       if (sourcePath != null) 'sourcePath': sourcePath,
+      if (sourceVersion != null) 'sourceVersion': sourceVersion,
       'files': <Map<String, Object?>>[
         for (final FileModel file in files) file.toMap(),
       ],
@@ -73,6 +84,10 @@ class PackModel {
       'scripts': <Map<String, Object?>>[
         for (final ScriptProjectModel script in scripts) script.toMap(),
       ],
+      if (buildOptions.isNotEmpty)
+        'buildOptions': <String, String>{...buildOptions},
+      if (enabledFormats.isNotEmpty)
+        'enabledFormats': <String>[...enabledFormats],
     };
   }
 
@@ -88,6 +103,7 @@ class PackModel {
       license: _optionalString(map, 'license'),
       iconPath: _optionalString(map, 'iconPath'),
       sourcePath: _optionalString(map, 'sourcePath'),
+      sourceVersion: _optionalSourceVersion(map),
     );
 
     pack.files.addAll(<FileModel>[
@@ -135,6 +151,8 @@ class PackModel {
         warnings?.add(_describeScriptError(item, error));
       }
     }
+    pack.buildOptions = _stringStringMap(map, 'buildOptions');
+    pack.enabledFormats = _stringList(map, 'enabledFormats');
     return pack;
   }
 }
@@ -164,6 +182,30 @@ Map<String, Object?> _stringKeyMap(Map<Object?, Object?> map) {
   };
 }
 
+Map<String, String> _stringStringMap(Map<String, Object?> map, String key) {
+  final Object? value = map[key];
+  if (value is! Map) {
+    return <String, String>{};
+  }
+  return <String, String>{
+    for (final MapEntry<Object?, Object?> entry in value.entries)
+      if (entry.key is String && entry.value is String)
+        entry.key as String: entry.value as String,
+  };
+}
+
+/// 容错字符串列表读取：非列表/非字符串项/空串跳过（空结果 = 未记录）。
+List<String> _stringList(Map<String, Object?> map, String key) {
+  final Object? value = map[key];
+  if (value is! List) {
+    return <String>[];
+  }
+  return <String>[
+    for (final Object? item in value)
+      if (item is String && item.isNotEmpty) item,
+  ];
+}
+
 String _requiredString(Map<String, Object?> map, String key) {
   final Object? value = map[key];
   if (value == null || (value is String && value.isEmpty)) {
@@ -184,6 +226,12 @@ String? _optionalString(Map<String, Object?> map, String key) {
     throw FormatException('字段 $key 类型错误，应为字符串');
   }
   return value.isEmpty ? null : value;
+}
+
+/// 记录字段容错读取：非字符串或空串视为未记录（不阻断配置加载）。
+String? _optionalSourceVersion(Map<String, Object?> map) {
+  final Object? value = map['sourceVersion'];
+  return value is String && value.isNotEmpty ? value : null;
 }
 
 String _describeScriptError(Map<String, Object?> item, Object error) {

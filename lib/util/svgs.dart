@@ -1,6 +1,12 @@
 ﻿import 'package:flutter_svg/flutter_svg.dart';
 
 class Svgs {
+  /// GitHub 官方标志（`assets/icons/repo_github.svg`，原文未修改）。
+  static const String repoGithubPath = 'assets/icons/repo_github.svg';
+
+  /// 自绘通用远程仓库图标（GitLab 等平台回退；单色由调用方染色）。
+  static const String repoRemotePath = 'assets/icons/repo_remote.svg';
+
   static final openBox = SvgPicture.asset('assets/icons/open_box.svg', semanticsLabel: '打开文件夹', width: 20, height: 20);
   static final settings = SvgPicture.asset('assets/icons/settings.svg', semanticsLabel: '设置', width: 20, height: 20);
   static final help = SvgPicture.asset('assets/icons/help.svg', semanticsLabel: '帮助', width: 20, height: 20);

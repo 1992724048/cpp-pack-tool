@@ -533,6 +533,172 @@ void main() {
       expect(warnings, hasLength(1));
       expect(warnings.single, contains('script_1'));
     });
+
+    test('buildOptions 默认为空', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.buildOptions, isEmpty);
+    });
+
+    test('toMap 空 buildOptions 省略键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.toMap().containsKey('buildOptions'), isFalse);
+    });
+
+    test('toMap/fromMap 往返保留构建选项', () {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'};
+
+      final Map<String, Object?> map = pack.toMap();
+
+      expect(map['buildOptions'], <String, String>{'tbb': 'on', 'mp': 'off'});
+      final PackModel loaded = PackModel.fromMap(map);
+      expect(loaded.buildOptions, hasLength(2));
+      expect(loaded.buildOptions['tbb'], 'on');
+      expect(loaded.buildOptions['mp'], 'off');
+    });
+
+    test('toMap/fromMap 往返保留空串选项值（多选全不选）', () {
+      final PackModel pack =
+          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+            ..buildOptions = <String, String>{'accel': '', 'tbb': 'on'};
+
+      final Map<String, Object?> map = pack.toMap();
+
+      expect(map['buildOptions'], <String, String>{'accel': '', 'tbb': 'on'});
+      final PackModel loaded = PackModel.fromMap(map);
+      expect(loaded.buildOptions, <String, String>{'accel': '', 'tbb': 'on'});
+    });
+
+    test('fromMap 缺少 buildOptions 时默认为空', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+
+      expect(pack.buildOptions, isEmpty);
+    });
+
+    test('fromMap buildOptions 类型错误时容错为空', () {
+      for (final Object? value in <Object?>['oops', <Object?>[], 42]) {
+        final PackModel pack = PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'buildOptions': value,
+        });
+
+        expect(pack.buildOptions, isEmpty);
+      }
+    });
+
+    test('fromMap buildOptions 丢弃非法键值项', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'buildOptions': <Object?, Object?>{1: 'a', 'k': 7, 'tbb': 'on'},
+      });
+
+      expect(pack.buildOptions, <String, String>{'tbb': 'on'});
+    });
+
+    test('toMap 空 sourceVersion 省略键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.toMap().containsKey('sourceVersion'), isFalse);
+    });
+
+    test('toMap/fromMap 往返保留仓库版本', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+        sourceVersion: 'v1.2.3',
+      );
+
+      final Map<String, Object?> map = pack.toMap();
+
+      expect(map['sourceVersion'], 'v1.2.3');
+      expect(PackModel.fromMap(map).sourceVersion, 'v1.2.3');
+    });
+
+    test('fromMap sourceVersion 缺失或非法时容错为 null', () {
+      final PackModel missing = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+      });
+      expect(missing.sourceVersion, isNull);
+
+      for (final Object? value in <Object?>['', 42, <Object?>[]]) {
+        final PackModel pack = PackModel.fromMap(<String, Object?>{
+          'name': 'demo',
+          'version': '1.0.0',
+          'author': 'tester',
+          'sourceVersion': value,
+        });
+
+        expect(pack.sourceVersion, isNull);
+      }
+    });
+
+    test('enabledFormats 默认空列表（= 全部启用）且空时省略键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.enabledFormats, isEmpty);
+      expect(pack.toMap().containsKey('enabledFormats'), isFalse);
+    });
+
+    test('toMap/fromMap 往返保留启用格式集合', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      )..enabledFormats = <String>['nuget', 'cmake'];
+
+      final Map<String, Object?> map = pack.toMap();
+
+      expect(map['enabledFormats'], <String>['nuget', 'cmake']);
+      expect(PackModel.fromMap(map).enabledFormats, <String>['nuget', 'cmake']);
+    });
+
+    test('fromMap enabledFormats 容错：非列表/坏条目跳过，空结果即空', () {
+      final PackModel nonList = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'enabledFormats': 42,
+      });
+      final PackModel filtered = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'enabledFormats': <Object?>['nuget', 7, '', 'cmake'],
+      });
+
+      expect(nonList.enabledFormats, isEmpty);
+      expect(filtered.enabledFormats, <String>['nuget', 'cmake']);
+    });
   });
 
   group('FileModel 序列化', () {

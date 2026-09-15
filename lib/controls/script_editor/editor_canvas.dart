@@ -10,7 +10,6 @@ import 'package:cpp_nuget_pack/script_editor/graph_editor_controller.dart';
 import 'package:cpp_nuget_pack/script_editor/node_registry.dart';
 import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart' show PointerExitEvent, PointerHoverEvent;
@@ -171,9 +170,10 @@ class _EditorCanvasState extends State<EditorCanvas> {
     );
     final Size sceneSize = _sceneSize(project.nodes);
     final ScriptEdgeModel? hoveredEdge = _validHoveredEdge(project);
+    final FluentThemeData theme = FluentTheme.of(context);
 
     return Container(
-      color: UCColors.flavor.mantle,
+      color: theme.resources.solidBackgroundFillColorBase,
       child: Focus(
         focusNode: _focusNode,
         child: Listener(
@@ -209,7 +209,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                         child: CustomPaint(
                           key: const Key('editorGrid'),
                           painter: EditorGridPainter(
-                            color: UCColors.flavor.overlay0,
+                            color: theme.resources.controlStrokeColorDefault,
                           ),
                         ),
                       ),
@@ -219,6 +219,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                           painter: EdgePainter(
                             edges: _edgeVisuals(project, hoveredEdge),
                             preview: _previewVisual(),
+                            theme: theme,
                           ),
                         ),
                       ),
@@ -766,7 +767,11 @@ class _EditorCanvasState extends State<EditorCanvas> {
     return (
       from: from,
       to: _connectPointerScene ?? from,
-      color: pinStrokeColor(source.pin.kind, source.pin.dataType),
+      color: pinStrokeColor(
+        source.pin.kind,
+        source.pin.dataType,
+        FluentTheme.of(context),
+      ),
       state: state,
     );
   }

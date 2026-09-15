@@ -165,8 +165,14 @@ class OutputPanelState extends State<OutputPanel> {
     return ClipRect(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: UCColors.flavor.base,
-          border: Border(top: BorderSide(color: UCColors.flavor.surface2)),
+          color: FluentTheme.of(context).scaffoldBackgroundColor,
+          border: Border(
+            top: BorderSide(
+              color: FluentTheme.of(
+                context,
+              ).resources.dividerStrokeColorDefault,
+            ),
+          ),
         ),
         child: AnimatedContainer(
           key: const Key('outputPanel'),
@@ -192,7 +198,11 @@ class OutputPanelState extends State<OutputPanel> {
       height: outputPanelCollapsedHeight,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: UCColors.flavor.surface2)),
+        border: Border(
+          bottom: BorderSide(
+            color: FluentTheme.of(context).resources.dividerStrokeColorDefault,
+          ),
+        ),
       ),
       child: _expanded ? _buildExpandedHeader() : _buildCollapsedHeader(),
     );
@@ -207,7 +217,7 @@ class OutputPanelState extends State<OutputPanel> {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: UCColors.flavor.text,
+            color: FluentTheme.of(context).resources.textFillColorPrimary,
           ),
         ),
         if (errors > 0 || warnings > 0) ...<Widget>[
@@ -216,7 +226,7 @@ class OutputPanelState extends State<OutputPanel> {
             _summaryLabel(errors, warnings),
             style: TextStyle(
               fontSize: 12,
-              color: errors > 0 ? UCColors.flavor.red : UCColors.flavor.yellow,
+              color: errors > 0 ? AppColors.critical(FluentTheme.of(context).brightness) : AppColors.caution(FluentTheme.of(context).brightness),
             ),
           ),
         ],
@@ -247,7 +257,7 @@ class OutputPanelState extends State<OutputPanel> {
         const Spacer(),
         Text(
           _statusText(),
-          style: TextStyle(fontSize: 12, color: UCColors.flavor.subtext0),
+          style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorTertiary),
         ),
         const SizedBox(width: 8),
         _buildCopyButton(),
@@ -310,16 +320,18 @@ class OutputPanelState extends State<OutputPanel> {
     if (result == null) {
       return _centeredMessage(
         '点击顶栏「生成预览」生成 PowerShell 5.1 代码',
-        UCColors.flavor.subtext0,
+        FluentTheme.of(context).resources.textFillColorTertiary,
       );
     }
     final String? code = result.code;
     if (code == null) {
-      return _centeredMessage('存在编译错误，未生成代码；请查看「诊断」', UCColors.flavor.red);
+      return _centeredMessage('存在编译错误，未生成代码；请查看「诊断」', AppColors.critical(FluentTheme.of(context).brightness));
     }
     return Container(
       decoration: BoxDecoration(
-        color: UCColors.flavor.surface1,
+        color: FluentTheme.of(
+          context,
+        ).resources.cardBackgroundFillColorSecondary,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: FluentTheme.of(context).resources.cardStrokeColorDefault,
@@ -333,7 +345,7 @@ class OutputPanelState extends State<OutputPanel> {
           padding: const EdgeInsets.all(12),
           child: SelectableText(
             code,
-            style: _monoTextStyle.copyWith(color: UCColors.flavor.text),
+            style: _monoTextStyle.copyWith(color: FluentTheme.of(context).resources.textFillColorPrimary),
           ),
         ),
       ),
@@ -346,7 +358,7 @@ class OutputPanelState extends State<OutputPanel> {
       widget.controller?.diagnostics ?? const <ScriptDiagnostic>[],
     );
     if (diagnostics.isEmpty) {
-      return _centeredMessage('没有发现错误或警告', UCColors.flavor.subtext0);
+      return _centeredMessage('没有发现错误或警告', FluentTheme.of(context).resources.textFillColorTertiary);
     }
     return ListView.builder(
       primary: false,
@@ -423,12 +435,12 @@ class OutputPanelState extends State<OutputPanel> {
   /// 计数着色（§7.1）：有错误 red、仅警告 yellow、无问题 subtext0。
   Color _countColor(int errors, int warnings) {
     if (errors > 0) {
-      return UCColors.flavor.red;
+      return AppColors.critical(FluentTheme.of(context).brightness);
     }
     if (warnings > 0) {
-      return UCColors.flavor.yellow;
+      return AppColors.caution(FluentTheme.of(context).brightness);
     }
-    return UCColors.flavor.subtext0;
+    return FluentTheme.of(context).resources.textFillColorTertiary;
   }
 
   String _summaryLabel(int errors, int warnings) {
@@ -528,8 +540,8 @@ class _TabButtonState extends State<_TabButton> {
   @override
   Widget build(BuildContext context) {
     final Color labelColor = widget.active
-        ? UCColors.flavor.text
-        : UCColors.flavor.subtext1;
+        ? FluentTheme.of(context).resources.textFillColorPrimary
+        : FluentTheme.of(context).resources.textFillColorSecondary;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (PointerEnterEvent event) => setState(() => _hovered = true),
@@ -542,11 +554,13 @@ class _TabButtonState extends State<_TabButton> {
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
             color: _hovered && !widget.active
-                ? UCColors.flavor.surface0
+                ? FluentTheme.of(context).resources.controlFillColorSecondary
                 : Colors.transparent,
             border: Border(
               bottom: BorderSide(
-                color: widget.active ? UCColors.accent : Colors.transparent,
+                color: widget.active
+                    ? FluentTheme.of(context).accentColor
+                    : Colors.transparent,
                 width: 2,
               ),
             ),
@@ -608,7 +622,7 @@ class _DiagnosticRowState extends State<_DiagnosticRow> {
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: Container(
-          color: _hovered ? UCColors.flavor.surface0 : Colors.transparent,
+          color: _hovered ? FluentTheme.of(context).resources.controlFillColorSecondary : Colors.transparent,
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,14 +635,14 @@ class _DiagnosticRowState extends State<_DiagnosticRow> {
                       : FluentIcons.warning,
                   size: 14,
                   color: widget.diagnostic.isError
-                      ? UCColors.flavor.red
-                      : UCColors.flavor.yellow,
+                      ? AppColors.critical(FluentTheme.of(context).brightness)
+                      : AppColors.caution(FluentTheme.of(context).brightness),
                 ),
               ),
               Expanded(
                 child: Text(
                   widget.diagnostic.message,
-                  style: TextStyle(fontSize: 12, color: UCColors.flavor.text),
+                  style: TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorPrimary),
                 ),
               ),
               if (widget.chipLabel != null) ...<Widget>[
@@ -639,14 +653,16 @@ class _DiagnosticRowState extends State<_DiagnosticRow> {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: UCColors.flavor.surface2,
+                    color: FluentTheme.of(
+                      context,
+                    ).resources.solidBackgroundFillColorQuarternary,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     widget.chipLabel!,
                     style: TextStyle(
                       fontSize: 11,
-                      color: UCColors.flavor.subtext1,
+                      color: FluentTheme.of(context).resources.textFillColorSecondary,
                     ),
                   ),
                 ),
