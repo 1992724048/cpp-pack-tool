@@ -86,6 +86,27 @@ void main() {
       await tester.pump();
     });
 
+    testWidgets('可点击卡显示 13px 尾部箭头，普通卡不显示', (tester) async {
+      await _pump(
+        tester,
+        const SettingsCard(key: Key('plainCard'), header: Text('普通')),
+      );
+      expect(find.byIcon(FluentIcons.chevron_right), findsNothing);
+
+      await _pump(
+        tester,
+        SettingsCard(
+          key: const Key('clickCard'),
+          header: const Text('可点击'),
+          onPressed: () {},
+        ),
+      );
+      final Icon chevron = tester.widget<Icon>(
+        find.byIcon(FluentIcons.chevron_right),
+      );
+      expect(chevron.size, SettingsCardTokens.actionIconSize);
+    });
+
     testWidgets('禁用卡背景为禁用填充色且点击不触发', (tester) async {
       var pressed = 0;
       await _pump(
@@ -310,6 +331,8 @@ void main() {
       expect(find.byTooltip('展开设置'), findsOneWidget);
       expect(find.byKey(const Key('expanderToggle')), findsOneWidget);
       expect(find.text('子项'), findsNothing);
+      // 头部卡不叠加尾部箭头（只保留折叠按钮自身的 chevron_down）。
+      expect(find.byIcon(FluentIcons.chevron_right), findsNothing);
       await tester.tap(find.byType(SettingsCard).first);
       await tester.pump();
       expect(find.byTooltip('收起设置'), findsOneWidget);

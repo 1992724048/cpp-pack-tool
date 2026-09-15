@@ -43,6 +43,7 @@ class SettingsCard extends StatefulWidget {
     this.subItem = false,
     this.borderless = false,
     this.padding,
+    this.showChevron = true,
   });
 
   final Widget? header;
@@ -63,6 +64,10 @@ class SettingsCard extends StatefulWidget {
 
   /// 内边距覆盖（null 时按 token：16 全边 / 子项 58,8,44,8）。
   final EdgeInsetsGeometry? padding;
+
+  /// 可点击卡的尾部箭头（13px chevron_right，间距 14）；[onPressed] 非空时生效。
+  /// Expander 头部自带 32×32 折叠按钮，传 false 避免重复箭头。
+  final bool showChevron;
 
   @override
   State<SettingsCard> createState() => _SettingsCardState();
@@ -132,12 +137,8 @@ class _SettingsCardState extends State<SettingsCard> {
     );
 
     if (!_clickable) {
-      return MouseRegion(
-        cursor: MouseCursor.defer,
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
-        child: card,
-      );
+      // 普通卡无悬停态（PowerToys 仅可点击卡有 hover 背景），不追踪指针。
+      return card;
     }
 
     return FocusableActionDetector(
@@ -262,6 +263,18 @@ class _SettingsCardState extends State<SettingsCard> {
           )
         : null;
     final Widget? content = widget.content;
+    final Widget? chevron = widget.showChevron && _clickable
+        ? Padding(
+            padding: const EdgeInsets.only(
+              left: SettingsCardTokens.actionIconSpacing,
+            ),
+            child: Icon(
+              FluentIcons.chevron_right,
+              size: SettingsCardTokens.actionIconSize,
+              color: _foregroundFor(theme),
+            ),
+          )
+        : null;
     if (!wrap) {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -271,7 +284,7 @@ class _SettingsCardState extends State<SettingsCard> {
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(
-                  right: content == null
+                  right: content == null && chevron == null
                       ? 0
                       : SettingsCardTokens.headerContentSpacing,
                 ),
@@ -281,6 +294,7 @@ class _SettingsCardState extends State<SettingsCard> {
           else
             const Spacer(),
           ?content,
+          ?chevron,
         ],
       );
     }
@@ -299,9 +313,16 @@ class _SettingsCardState extends State<SettingsCard> {
                 const Spacer(),
             ],
           ),
-        if (content != null) ...<Widget>[
+        if (content != null || chevron != null) ...<Widget>[
           const SizedBox(height: 8),
-          Align(alignment: Alignment.centerLeft, child: content),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              if (content != null)
+                Flexible(child: Align(alignment: Alignment.centerLeft, child: content)),
+              ?chevron,
+            ],
+          ),
         ],
       ],
     );

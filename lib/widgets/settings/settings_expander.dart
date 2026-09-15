@@ -77,6 +77,8 @@ class _SettingsExpanderState extends State<SettingsExpander> {
                 borderless: true,
                 enabled: widget.enabled,
                 onPressed: _toggle,
+                // 展开器自带 32×32 折叠按钮，头部卡不再重复显示尾部箭头。
+                showChevron: false,
               ),
             ),
             SizedBox(
