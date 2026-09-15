@@ -320,7 +320,7 @@ String _packageDestination(String path, String namespace) {
   };
 }
 
-/// 单个文本文件的 include 扫描状态机（块注释跨行跟踪）。
+/// 单个文本文件的 include 扫描状态机（块注释与 raw string 跨行跟踪）。
 class _FileScanner {
   _FileScanner({required this.filePath, required this.index});
 
@@ -331,8 +331,11 @@ class _FileScanner {
 
   bool _inBlockComment = false;
 
+  /// 当前所在 raw string 的定界符（`R"delim(` 中 `delim`）；不在其中时为 null。
+  String? _rawStringDelimiter;
+
   String fixLine(String line, int lineNumber) {
-    final String masked = _maskBlockComments(line);
+    final String masked = _maskCommentsAndRawStrings(line);
     final RegExpMatch? quoted = _quotedIncludePattern.firstMatch(masked);
     if (quoted != null) {
       return _handleQuoted(line, quoted, lineNumber);
@@ -344,13 +347,16 @@ class _FileScanner {
     return line;
   }
 
-  /// 块注释内的字符替换为等长空格（偏移不变），供 include 匹配使用。
-  String _maskBlockComments(String line) {
+  /// 注释与 raw string 内的字符替换为等长空格（偏移不变），供 include
+  /// 匹配使用；普通字符串原样保留（include 指令自身的字面量即普通字符串），
+  /// 扫描时跳过其内容以免其中的 `/*` 误入注释态。块注释与 raw string 跨行
+  /// 跟踪；普通字符串仅行内跟踪，行尾未闭合按行尾丢弃，避免注释中未配对
+  /// 引号蚕食后续行。
+  String _maskCommentsAndRawStrings(String line) {
     final StringBuffer masked = StringBuffer();
     int index = 0;
-    bool inComment = _inBlockComment;
     while (index < line.length) {
-      if (inComment) {
+      if (_inBlockComment) {
         final int close = line.indexOf('*/', index);
         if (close < 0) {
           masked.write(' ' * (line.length - index));
@@ -358,24 +364,95 @@ class _FileScanner {
         } else {
           masked.write(' ' * (close + 2 - index));
           index = close + 2;
-          inComment = false;
+          _inBlockComment = false;
         }
-      } else {
-        final int open = line.indexOf('/*', index);
-        if (open < 0) {
-          masked.write(line.substring(index));
+        continue;
+      }
+      final String? rawDelimiter = _rawStringDelimiter;
+      if (rawDelimiter != null) {
+        final String terminator = ')$rawDelimiter"';
+        final int close = line.indexOf(terminator, index);
+        if (close < 0) {
+          masked.write(' ' * (line.length - index));
           index = line.length;
         } else {
-          masked
-            ..write(line.substring(index, open))
-            ..write('  ');
-          index = open + 2;
-          inComment = true;
+          final int end = close + terminator.length;
+          masked.write(' ' * (end - index));
+          index = end;
+          _rawStringDelimiter = null;
         }
+        continue;
+      }
+      final int commentOpen = line.indexOf('/*', index);
+      final int quote = line.indexOf('"', index);
+      if (quote >= 0 && (commentOpen < 0 || quote < commentOpen)) {
+        masked.write(line.substring(index, quote));
+        index = _scanString(line, quote, masked);
+        continue;
+      }
+      if (commentOpen >= 0) {
+        masked
+          ..write(line.substring(index, commentOpen))
+          ..write('  ');
+        index = commentOpen + 2;
+        _inBlockComment = true;
+        continue;
+      }
+      masked.write(line.substring(index));
+      index = line.length;
+    }
+    return masked.toString();
+  }
+
+  /// 扫描自 [quote]（`"`）起的字符串字面量并返回其后的扫描下标。普通字符串
+  /// 连同转义序列原样写入 [masked]；`R"delim(` 起始的 raw string 整体掩码并
+  /// 记录跨行状态；行内未闭合时按行尾结束。
+  int _scanString(String line, int quote, StringBuffer masked) {
+    final int? delimiterEnd = _rawStringDelimiterEnd(line, quote);
+    if (delimiterEnd != null) {
+      masked.write(' ' * (delimiterEnd + 1 - quote));
+      _rawStringDelimiter = line.substring(quote + 1, delimiterEnd);
+      return delimiterEnd + 1;
+    }
+    int cursor = quote + 1;
+    while (cursor < line.length) {
+      final int code = line.codeUnitAt(cursor);
+      if (code == 0x5C /* \ */) {
+        cursor += 2;
+        continue;
+      }
+      cursor++;
+      if (code == 0x22 /* " */) {
+        break;
       }
     }
-    _inBlockComment = inComment;
-    return masked.toString();
+    final int end = cursor > line.length ? line.length : cursor;
+    masked.write(line.substring(quote, end));
+    return end;
+  }
+
+  /// `"` 处属于 raw string 起始（`R"delim(`）时返回定界符后 `(` 的下标；
+  /// 非 `R"` 起始或定界符非法/超长（>16）返回 null，按普通字符串处理。
+  int? _rawStringDelimiterEnd(String line, int quote) {
+    if (quote < 1 || line.codeUnitAt(quote - 1) != 0x52 /* R */) {
+      return null;
+    }
+    final int delimiterStart = quote + 1;
+    int cursor = delimiterStart;
+    while (cursor < line.length && cursor - delimiterStart <= 16) {
+      final int code = line.codeUnitAt(cursor);
+      if (code == 0x28 /* ( */) {
+        return cursor;
+      }
+      if (code == 0x22 /* " */ ||
+          code == 0x29 /* ) */ ||
+          code == 0x5C /* \ */ ||
+          code <= 0x20) {
+        return null;
+      }
+      cursor++;
+    }
+    return null;
   }
 
   /// 捕获组字面量的行内范围：两个 include 模式都在捕获组后紧跟一个结束字符
@@ -393,9 +470,14 @@ class _FileScanner {
       return line;
     }
 
-    final List<String> candidates = List<String>.of(
-      index.candidatesFor(baseName(includePath).toLowerCase()),
-    )..sort(_comparePaths);
+    // 排除引用文件自身：同名自引用（如 `foo/bar.h` 引用 `baz/bar.h`）不代表
+    // 存在可改写目标，应归入报告而非自包含改写。
+    final String lowerSelfPath = filePath.toLowerCase();
+    final List<String> candidates = <String>[
+      for (final String candidate
+          in index.candidatesFor(baseName(includePath).toLowerCase()))
+        if (candidate.toLowerCase() != lowerSelfPath) candidate,
+    ]..sort(_comparePaths);
 
     if (candidates.isEmpty) {
       if (!_isForeignQuotedReference(includePath)) {

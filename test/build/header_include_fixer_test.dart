@@ -120,6 +120,36 @@ void main() {
     expect(await readText('src/a/one.cc'), '#include "q/helper.h"\n');
   });
 
+  test('候选排除引用文件自身：自包含引用不再被误改为裸文件名', () async {
+    await writeText('foo/bar.h', '#include "baz/bar.h"\n');
+    await writeText('baz/other.h', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(report.issues.single.kind, HeaderIncludeIssueKind.noCandidate);
+    expect(report.issues.single.filePath, 'foo/bar.h');
+    expect(report.issues.single.include, 'baz/bar.h');
+    expect(await readText('foo/bar.h'), '#include "baz/bar.h"\n');
+  });
+
+  test('候选排除引用文件自身：其他同名文件照常参与判定', () async {
+    await writeText('foo/bar.h', '#include "baz/bar.h"\n');
+    await writeText('x/bar.h', '');
+    await writeText('y/bar.h', '');
+    await writeText('baz/other.h', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(
+      report.issues.single.kind,
+      HeaderIncludeIssueKind.multipleCandidates,
+    );
+    expect(report.issues.single.candidates, <String>['x/bar.h', 'y/bar.h']);
+    expect(await readText('foo/bar.h'), '#include "baz/bar.h"\n');
+  });
+
   test('唯一候选位于其他目录时报 crossTree 且不修改', () async {
     await writeText('src/a/one.cc', '#include "src/helper.cc"\n');
     await writeText('src/b/helper.cc', '');
@@ -280,6 +310,96 @@ void main() {
       '#include "src/gtest.cc"\n'
       '*/\n'
       '/* #include "src/gtest.cc" */\n',
+    );
+  });
+
+  test('普通字符串中的 /* 不进入块注释态，后续行照常检出', () async {
+    await writeText(
+      'src/gtest/gtest-all.cc',
+      'const char* pattern = "/*";\n'
+      '#include "src/gtest.cc"\n'
+      '#include "src/lost.cc"\n',
+    );
+    await writeText('src/gtest/gtest.cc', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 1);
+    expect(report.fixed.single.line, 2);
+    expect(report.fixed.single.to, 'gtest.cc');
+    expect(report.issues.single.kind, HeaderIncludeIssueKind.noCandidate);
+    expect(report.issues.single.include, 'src/lost.cc');
+    expect(
+      await readText('src/gtest/gtest-all.cc'),
+      'const char* pattern = "/*";\n'
+      '#include "gtest.cc"\n'
+      '#include "src/lost.cc"\n',
+    );
+  });
+
+  test('普通字符串含转义引号：字符串内 /* 不误判，后续真实引用照常修复', () async {
+    await writeText(
+      'src/gtest/gtest-all.cc',
+      'const char* quoted = "a\\"/*\\"b";\n'
+      '#include "src/gtest.cc"\n',
+    );
+    await writeText('src/gtest/gtest.cc', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 1);
+    expect(report.fixed.single.line, 2);
+    expect(
+      await readText('src/gtest/gtest-all.cc'),
+      'const char* quoted = "a\\"/*\\"b";\n'
+      '#include "gtest.cc"\n',
+    );
+  });
+
+  test('raw string 内以 #include 开头的行不改写，其后真实引用照常修复', () async {
+    await writeText(
+      'src/gtest/a.cc',
+      'const char* sample = R"(\n'
+      '#include "sub/b.cc"\n'
+      ')";\n'
+      '#include "sub/b.cc"\n',
+    );
+    await writeText('src/gtest/b.cc', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 1);
+    expect(report.fixed.single.line, 4);
+    expect(report.fixed.single.to, 'b.cc');
+    expect(
+      await readText('src/gtest/a.cc'),
+      'const char* sample = R"(\n'
+      '#include "sub/b.cc"\n'
+      ')";\n'
+      '#include "b.cc"\n',
+    );
+  });
+
+  test('自定义分隔符 raw string 同样隔离', () async {
+    await writeText(
+      'src/gtest/a.cc',
+      'const char* sample = R"cpp(\n'
+      '#include "sub/b.cc"\n'
+      ')cpp";\n'
+      '#include "sub/b.cc"\n',
+    );
+    await writeText('src/gtest/b.cc', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 1);
+    expect(report.fixed.single.line, 4);
+    expect(
+      await readText('src/gtest/a.cc'),
+      'const char* sample = R"cpp(\n'
+      '#include "sub/b.cc"\n'
+      ')cpp";\n'
+      '#include "b.cc"\n',
     );
   });
 
