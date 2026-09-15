@@ -122,8 +122,15 @@ void main() {
       );
       expect(launcherContent.contains('"py" -3 -u "build.py"'), isTrue);
       expect(
-        launcherContent.contains('if errorlevel 9009 goto :fallback_python'),
+        launcherContent.contains(
+          'if %ERRORLEVEL% EQU 9009 goto :fallback_python',
+        ),
         isTrue,
+      );
+      expect(
+        launcherContent.contains('if errorlevel 9009'),
+        isFalse,
+        reason: '「errorlevel N」为 ≥ 语义，≥9009 的脚本退出码会被误判并二次运行',
       );
       expect(launcherContent.contains('python -u "build.py"'), isTrue);
 
@@ -193,6 +200,37 @@ void main() {
       final LogTailDecoder decoder = LogTailDecoder();
       expect(decoder.add(utf8.encode('a\n\nb')), <String>['a', '']);
       expect(decoder.flush(), 'b');
+    });
+
+    test('跨块切开的 CRLF 不产生多余空行', () {
+      final LogTailDecoder decoder = LogTailDecoder();
+      expect(decoder.add(utf8.encode('foo\r')), <String>['foo']);
+      expect(decoder.add(utf8.encode('\nbar\n')), <String>['bar']);
+      expect(decoder.flush(), isNull);
+    });
+
+    test('块尾 CR 后随非 LF 不退让（空行语义保留）', () {
+      final LogTailDecoder decoder = LogTailDecoder();
+      expect(decoder.add(utf8.encode('a\r')), <String>['a']);
+      expect(decoder.add(utf8.encode('\rb')), <String>['']);
+      expect(decoder.flush(), 'b');
+    });
+
+    test('任意块切分结果与 LineSplitter 口径一致', () {
+      const String full = 'alpha\r\nbeta\rgamma\ndelta\r\n';
+      final List<String> expected = const LineSplitter().convert(full);
+      for (int split = 0; split <= full.length; split++) {
+        final LogTailDecoder decoder = LogTailDecoder();
+        final List<String> actual = <String>[
+          ...decoder.add(utf8.encode(full.substring(0, split))),
+          ...decoder.add(utf8.encode(full.substring(split))),
+        ];
+        final String? rest = decoder.flush();
+        if (rest != null) {
+          actual.add(rest);
+        }
+        expect(actual, expected, reason: '块切分位置 $split');
+      }
     });
   });
 
@@ -318,7 +356,44 @@ void main() {
           isA<PackBuildException>().having(
             (e) => e.message,
             'message',
-            '已取消以管理员身份重试（UAC 授权被拒绝）',
+            '已取消以管理员身份重试（UAC 授权被拒绝）'
+                '：The operation was canceled by the user.',
+          ),
+        ),
+      );
+    });
+
+    test('1223 且非用户取消：附带启动器诊断信息（不误报为纯 UAC 取消）', () async {
+      final Directory root = await _tempDirectory();
+
+      await expectLater(
+        runElevatedPackBuild(
+          _pack(),
+          (_) {},
+          buildEnvironment: _buildEnvironment(root.path),
+          prepareSource: _fakePrepareSource(),
+          launcherStarter:
+              (
+                String executable,
+                List<String> arguments, {
+                String? workingDirectory,
+                Map<String, String>? environment,
+              }) async => ProcessResult(
+                1,
+                elevationCancelledExitCode,
+                '',
+                'This command cannot be run due to the error: '
+                    '系统找不到指定的文件。',
+              ),
+          pollInterval: const Duration(milliseconds: 1),
+        ),
+        throwsA(
+          isA<PackBuildException>().having(
+            (e) => e.message,
+            'message',
+            '已取消以管理员身份重试（UAC 授权被拒绝）'
+                '：This command cannot be run due to the error: '
+                '系统找不到指定的文件。',
           ),
         ),
       );
@@ -460,15 +535,43 @@ void main() {
     final Directory root = await _tempDirectory();
     final Directory source = Directory(joinPath(root.path, '中文 目录'));
     await source.create(recursive: true);
-    await File(joinPath(source.path, 'build_ok.py'))
-        .writeAsString("print('CNP-SMOKE-OK')\n");
+    await File(joinPath(source.path, 'build_ok.py')).writeAsString(
+      "print('CNP-SMOKE-OK')\n"
+      "open('runs.txt', 'a', encoding='utf-8').write('run\\n')\n",
+    );
     await File(joinPath(source.path, 'build_fail.py'))
         .writeAsString("import sys\nprint('CNP-SMOKE-FAIL')\nsys.exit(7)\n");
+    await File(joinPath(source.path, 'build_9009.py')).writeAsString(
+      "import sys\n"
+      "open('runs.txt', 'a', encoding='utf-8').write('run\\n')\n"
+      "sys.exit(9009)\n",
+    );
+    await File(joinPath(source.path, 'build_max.py')).writeAsString(
+      "import sys\n"
+      "open('runs.txt', 'a', encoding='utf-8').write('run\\n')\n"
+      "sys.exit(2147483647)\n",
+    );
 
     final String logPath = joinPath(root.path, 'smoke.log');
     final String exitPath = joinPath(root.path, 'smoke.exit');
+    final String runsPath = joinPath(source.path, 'runs.txt');
 
-    Future<int> runLauncher(String scriptName) async {
+    Future<int> lineCount(String path) async {
+      final File file = File(path);
+      if (!await file.exists()) {
+        return 0;
+      }
+      return (await file.readAsString())
+          .split('\n')
+          .where((String line) => line.trim().isNotEmpty)
+          .length;
+    }
+
+    Future<int> runLauncher(
+      String scriptName, {
+      String? executable,
+      bool? usesLauncher,
+    }) async {
       final String launcherPath = joinPath(
         root.path,
         elevatedBuildLauncherFileName,
@@ -477,8 +580,8 @@ void main() {
         buildElevatedLauncher(
           sourcePath: source.path,
           scriptRelativePath: scriptName,
-          pythonExecutable: python.executable,
-          pythonUsesLauncher: python.launcher,
+          pythonExecutable: executable ?? python.executable,
+          pythonUsesLauncher: usesLauncher ?? python.launcher,
           environment: <String, String>{'TMP': root.path, 'TEMP': root.path},
           logPath: logPath,
           exitCodePath: exitPath,
@@ -505,6 +608,41 @@ void main() {
     final String failureLog = await File(logPath).readAsString();
     print('[evidence] failure log=${failureLog.trim()}');
     expect(failureLog, contains('CNP-SMOKE-FAIL'));
+
+    final bool alternateAvailable = python.launcher
+        ? _interpreterAvailable('python', const <String>['--version'])
+        : _interpreterAvailable('py', const <String>['-3', '--version']);
+
+    // 精确 9009：脚本自身以 >9009 退出不得触发回退（EQU 语义回归锁）。
+    await File(runsPath).writeAsString('');
+    expect(await runLauncher('build_max.py'), 2147483647, reason: '大退出码应原样透传');
+    expect(
+      await lineCount(runsPath),
+      1,
+      reason: '退出码 2147483647 ≥9009 但 ≠9009，不得二次运行构建脚本',
+    );
+
+    // 恰好 9009 仍按「命令未找到」惯例回退（备用解释器可用时验证确实重跑）。
+    await File(runsPath).writeAsString('');
+    expect(await runLauncher('build_9009.py'), 9009);
+    if (alternateAvailable) {
+      expect(await lineCount(runsPath), 2, reason: '恰好 9009 触发备用解释器重跑构建脚本');
+    } else {
+      print('[skip] 备用解释器不可用，跳过 9009 回退双跑断言');
+    }
+
+    // 真实「命令未找到」（裸命令名不在 PATH，cmd 惯例 9009）：回退到备用命令且脚本只跑一次。
+    await File(runsPath).writeAsString('');
+    expect(
+      await runLauncher(
+        'build_ok.py',
+        executable: 'cnp-missing-python',
+        usesLauncher: !python.launcher,
+      ),
+      0,
+      reason: '主解释器不存在（9009）时应回退到备用命令',
+    );
+    expect(await lineCount(runsPath), 1, reason: '脚本仅经回退解释器执行一次');
 
     // 提权启动脚本语法校验：Windows PowerShell 5.1 仅解析（不执行、不触发 UAC）。
     final String starterPath = joinPath(root.path, 'elevated_starter.ps1');
@@ -543,29 +681,24 @@ Future<String> _readMarker(String path) async {
 }
 
 ({String executable, bool launcher})? _probePython() {
-  final List<({String executable, List<String> arguments, bool launcher})>
-  candidates = <({String executable, List<String> arguments, bool launcher})>[
-    (executable: 'python', arguments: <String>['--version'], launcher: false),
-    (executable: 'py', arguments: <String>['-3', '--version'], launcher: true),
-  ];
-  for (final ({String executable, List<String> arguments, bool launcher})
-      candidate
-      in candidates) {
-    try {
-      final ProcessResult result = Process.runSync(
-        candidate.executable,
-        candidate.arguments,
-      );
-      final String versionText = '${result.stdout}\n${result.stderr}'
-          .toLowerCase();
-      if (result.exitCode == 0 && versionText.contains('python')) {
-        return (executable: candidate.executable, launcher: candidate.launcher);
-      }
-    } on ProcessException {
-      continue;
-    }
+  if (_interpreterAvailable('python', const <String>['--version'])) {
+    return (executable: 'python', launcher: false);
+  }
+  if (_interpreterAvailable('py', const <String>['-3', '--version'])) {
+    return (executable: 'py', launcher: true);
   }
   return null;
+}
+
+/// 单个 Python 启动命令是否可用（版本输出含 `python` 且退出码为 0）。
+bool _interpreterAvailable(String executable, List<String> arguments) {
+  try {
+    final ProcessResult result = Process.runSync(executable, arguments);
+    return result.exitCode == 0 &&
+        '${result.stdout}\n${result.stderr}'.toLowerCase().contains('python');
+  } on ProcessException {
+    return false;
+  }
 }
 
 /// 提权启动器替身：直接写入日志与退出码标记（不启动任何提权进程）。

@@ -66,10 +66,14 @@ typedef ElevatedPackBuildRunner = Future<void> Function(
 ///
 /// 与既有流式口径一致：按 `\r\n` / `\r` / `\n` 切分（git 进度行经 `\r` 刷新）、
 /// 无效 UTF-8 字节按替换字符容错；跨块的不完整 UTF-8 序列与未终结片段留在内部，
-/// 由后续块或 [flush] 补齐。
+/// 由后续块或 [flush] 补齐；`\r\n` 恰好被块边界切开时不产生多余空行
+/// （`\r` 已作为换行出行为空、下一字符为 LF 时静默跳过）。
 class LogTailDecoder {
   final List<int> _pendingBytes = <int>[];
   final StringBuffer _pendingText = StringBuffer();
+
+  /// 上一块末尾的 `\r` 是否已作为换行发出（跨块 CRLF 去重状态）。
+  bool _lastWasCr = false;
 
   /// 追加字节块，返回本次可确定的完整行（不含行尾符）。
   List<String> add(List<int> chunk) {
@@ -86,16 +90,27 @@ class LogTailDecoder {
 
     final List<String> lines = <String>[];
     int start = 0;
-    for (int index = 0; index < text.length; index++) {
+    if (_lastWasCr && text.isNotEmpty) {
+      if (text.codeUnitAt(0) == 0x0A) {
+        start = 1;
+      }
+      _lastWasCr = false;
+    }
+    for (int index = start; index < text.length; index++) {
       final int codeUnit = text.codeUnitAt(index);
       if (codeUnit != 0x0A && codeUnit != 0x0D) {
         continue;
       }
       lines.add(text.substring(start, index));
-      if (codeUnit == 0x0D &&
-          index + 1 < text.length &&
-          text.codeUnitAt(index + 1) == 0x0A) {
-        index++;
+      if (codeUnit == 0x0D) {
+        if (index + 1 < text.length) {
+          if (text.codeUnitAt(index + 1) == 0x0A) {
+            index++;
+          }
+        } else {
+          // 块尾 CR 的换行已生效；下一块开头的 LF 属同一 CRLF，需跨块去重。
+          _lastWasCr = true;
+        }
       }
       start = index + 1;
     }
@@ -155,8 +170,10 @@ class LogTailDecoder {
 /// - 全部插值文本把 `%` 转义为 `%%`（批处理解析期展开一次）；`set` 值额外
 ///   去掉 `"`（值内的引号会破坏 `set "K=V"` 的引号配对，PATH 等值语义不受影响）。
 /// - 覆盖写入 [environment] 全部变量（提权进程不依赖环境继承），再执行
-///   `python -u <脚本>`（`pythonUsesLauncher` 为真时用 `py -3`）；找不到解释器
-///   （errorlevel 9009）回退另一个启动命令。
+///   `python -u <脚本>`（`pythonUsesLauncher` 为真时用 `py -3`）；解释器退出码
+///   恰为 9009（cmd 的「命令未找到」惯例）时回退另一个启动命令——用
+///   `%ERRORLEVEL% EQU 9009` 精确比较而非 `if errorlevel`（后者为「≥」语义，
+///   构建脚本自身以 ≥9009 退出会被误判为找不到解释器而二次运行）。
 /// - 末行把 `%ERRORLEVEL%` 写入 [exitCodePath]（完成检测与退出码事实源）。
 String buildElevatedLauncher({
   required String sourcePath,
@@ -188,7 +205,7 @@ String buildElevatedLauncher({
   output.write(
     '"${_batchText(pythonExecutable)}" $launcherArguments-u "$script"\r\n',
   );
-  output.write('if errorlevel 9009 goto :fallback_python\r\n');
+  output.write('if %ERRORLEVEL% EQU 9009 goto :fallback_python\r\n');
   output.write('exit /b %ERRORLEVEL%\r\n');
   output.write(':fallback_python\r\n');
   output.write(
@@ -384,7 +401,7 @@ PackBuildException _starterFailure(
   final String detail = _firstDiagnosticLine(result);
   final String suffix = detail.isEmpty ? '' : '：$detail';
   if (code == elevationCancelledExitCode) {
-    return const PackBuildException('已取消以管理员身份重试（UAC 授权被拒绝）');
+    return PackBuildException('已取消以管理员身份重试（UAC 授权被拒绝）$suffix');
   }
   if (code == elevationFailedExitCode) {
     return PackBuildException('无法创建提权构建进程$suffix');
