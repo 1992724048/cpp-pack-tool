@@ -3,7 +3,7 @@
 把 C++ 头文件、源码与库可视化为原生 NuGet 包的 Windows 桌面工具。通过图形界面完成包信息编辑、目录映射、依赖与编译设置，并一键导出 Visual Studio C++ 工程可直接引用的 `.nupkg`，或供 CMake `find_package` 消费的配置包。
 
 - 平台：仅 Windows 桌面
-- 界面：全中文、Win11 风格（fluent_ui）、Catppuccin 配色
+- 界面：全中文、Win11 风格（fluent_ui）、Fluent 默认配色（浅色/深色两族，跟随系统）
 - 数据：配置保存在程序目录下的 `config/`，便携、无需安装
 
 ## 功能特性
@@ -18,7 +18,7 @@
 | 打包设置 | 选择打包格式（NuGet / CMake）；预览包内文件树与文本内容；按所选格式导出（缺失依赖时弹窗提醒，可继续；导出前校验节点脚本与包内可执行二进制，提示后仍可继续/取消） |
 | 历史记录 | 时间线记录创建、版本变更、重新映射、打包导出四类事件（上限 100 条，可删除） |
 | 依赖关系图 | 全部包的依赖关系可视化：可拖拽平移、滚轮缩放；缺失依赖红色标注，当前包高亮 |
-| 设置 | 打包输出目录；编译器优先级（ICX/clang-cl/MSVC/MinGW，检测本机版本、可排序与重新检测；检测结果缓存至 `detectedCompilers`，有缓存时免检测直接显示、「重新检测」刷新并写回）；SKILL.md 生成（内置模板写出，供分发给 AI 插件）；主题模式（系统/深色/浅色）、深色配色（Frappe/Macchiato/Mocha）与强调色，即时生效并持久化 |
+| 设置 | 打包输出目录；编译器优先级（ICX/clang-cl/MSVC/MinGW，检测本机版本、可排序与重新检测；检测结果缓存至 `detectedCompilers`，有缓存时免检测直接显示、「重新检测」刷新并写回）；SKILL.md 生成（内置模板写出，供分发给 AI 插件）；主题模式（系统/深色/浅色），即时生效并持久化 |
 
 ## 打包产物
 
@@ -145,7 +145,6 @@ config/
 | Flutter / Dart | 应用框架（仅 Windows 桌面） |
 | [fluent_ui](https://pub.dev/packages/fluent_ui) | Win11 风格控件 |
 | [flutter_svg](https://pub.dev/packages/flutter_svg) | SVG 图标渲染 |
-| [catppuccin_flutter](https://pub.dev/packages/catppuccin_flutter) | Catppuccin 配色方案 |
 | [yaml](https://pub.dev/packages/yaml) / [yaml_edit](https://pub.dev/packages/yaml_edit) | YAML 配置解析与生成 |
 | [archive](https://pub.dev/packages/archive) | `.nupkg` / CMake 配置包（ZIP）组装 |
 | [file_selector](https://pub.dev/packages/file_selector) | 系统原生目录选择 / 保存位置对话框 |
