@@ -565,6 +565,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     final TextStyle style = _headerTextStyle();
     return Card(
       margin: const .fromLTRB(0, 0, 0, 2),
+      padding: const .fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
           Expanded(child: Text('名称', style: style)),

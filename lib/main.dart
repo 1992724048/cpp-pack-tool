@@ -1109,36 +1109,46 @@ class _MainLayoutState extends State<MainLayout> {
       pane: NavigationPane(
         selected: _selected,
         onChanged: (int newIndex) => setState(() => _selected = newIndex),
-        header: Row(
-          mainAxisAlignment: MainAxisAlignment.start,
+        header: Column(
+          mainAxisSize: .min,
+          spacing: 0,
           children: [
-            Tooltip(
-              message: '添加文件夹',
-              child: IconButton(icon: Svgs.addFolder, onPressed: _addFolder),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Tooltip(
+                  message: '添加文件夹',
+                  child: IconButton(icon: Svgs.addFolder, onPressed: _addFolder),
+                ),
+                Tooltip(
+                  message: '删除文件夹',
+                  child: IconButton(icon: Svgs.deleteFolder, onPressed: _hasSelectedPack ? _deleteSelectedPack : null),
+                ),
+                Tooltip(
+                  message: '重新映射',
+                  child: IconButton(icon: Svgs.mapAsDrive, onPressed: _hasSelectedPack ? _remapSelectedPack : null),
+                ),
+                Tooltip(
+                  message: '打包文件夹',
+                  child: IconButton(icon: Svgs.moveToFolder, onPressed: _hasSelectedPack ? _packSelectedPack : null),
+                ),
+                Tooltip(
+                  message: '历史记录',
+                  child: IconButton(
+                    icon: Svgs.historyFolder,
+                    onPressed: _hasSelectedPack ? _historySelectedPack : null,
+                  ),
+                ),
+                Tooltip(
+                  message: '依赖关系图',
+                  child: IconButton(
+                    icon: Svgs.internetConnection,
+                    onPressed: _hasSelectedPack ? _openDependencyGraph : null,
+                  ),
+                ),
+              ],
             ),
-            Tooltip(
-              message: '删除文件夹',
-              child: IconButton(icon: Svgs.deleteFolder, onPressed: _hasSelectedPack ? _deleteSelectedPack : null),
-            ),
-            Tooltip(
-              message: '重新映射',
-              child: IconButton(icon: Svgs.mapAsDrive, onPressed: _hasSelectedPack ? _remapSelectedPack : null),
-            ),
-            Tooltip(
-              message: '打包文件夹',
-              child: IconButton(icon: Svgs.moveToFolder, onPressed: _hasSelectedPack ? _packSelectedPack : null),
-            ),
-            Tooltip(
-              message: '历史记录',
-              child: IconButton(icon: Svgs.historyFolder, onPressed: _hasSelectedPack ? _historySelectedPack : null),
-            ),
-            Tooltip(
-              message: '依赖关系图',
-              child: IconButton(
-                icon: Svgs.internetConnection,
-                onPressed: _hasSelectedPack ? _openDependencyGraph : null,
-              ),
-            ),
+            Divider(style: DividerThemeData(horizontalMargin: .fromLTRB(0, 4, 8, 0)),),
           ],
         ),
         displayMode: PaneDisplayMode.expanded,
