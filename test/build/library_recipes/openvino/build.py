@@ -1,6 +1,6 @@
 # https://github.com/openvinotoolkit/openvino.git
 # source: none
-# option: tbb = off | on
+# checkbox: tbb = off | on
 #
 # OpenVINO 预构建配方（P3 L6）
 #

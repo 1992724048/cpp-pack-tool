@@ -37,22 +37,19 @@ class Setting extends StatefulWidget {
 }
 
 class _SettingState extends State<Setting> {
-  static const Map<ThemeModeSetting, String> _themeModeLabels =
-      <ThemeModeSetting, String>{
-        ThemeModeSetting.system: '系统',
-        ThemeModeSetting.dark: '深色',
-        ThemeModeSetting.light: '浅色',
-      };
+  static const Map<ThemeModeSetting, String> _themeModeLabels = <ThemeModeSetting, String>{
+    ThemeModeSetting.system: '系统',
+    ThemeModeSetting.dark: '深色',
+    ThemeModeSetting.light: '浅色',
+  };
 
-  static const Map<ProxyModeSetting, String> _proxyModeLabels =
-      <ProxyModeSetting, String>{
-        ProxyModeSetting.off: '关闭（直连）',
-        ProxyModeSetting.auto: '自动检测',
-        ProxyModeSetting.manual: '手动设置',
-      };
+  static const Map<ProxyModeSetting, String> _proxyModeLabels = <ProxyModeSetting, String>{
+    ProxyModeSetting.off: '关闭',
+    ProxyModeSetting.auto: '自动检测',
+    ProxyModeSetting.manual: '手动设置',
+  };
 
-  List<toolchain.DetectedCompiler> _detected =
-      const <toolchain.DetectedCompiler>[];
+  List<toolchain.DetectedCompiler> _detected = const <toolchain.DetectedCompiler>[];
   bool _detecting = true;
   late final TextEditingController _defaultAuthorController;
   late final FocusNode _defaultAuthorFocusNode;
@@ -65,20 +62,13 @@ class _SettingState extends State<Setting> {
   @override
   void initState() {
     super.initState();
-    _defaultAuthorController = TextEditingController(
-      text: widget.settings.defaultAuthor,
-    );
+    _defaultAuthorController = TextEditingController(text: widget.settings.defaultAuthor);
     _defaultAuthorFocusNode = FocusNode()..addListener(_onAuthorFocusChanged);
-    _proxyHostController = TextEditingController(
-      text: widget.settings.proxyHost,
-    );
+    _proxyHostController = TextEditingController(text: widget.settings.proxyHost);
     _proxyHostFocusNode = FocusNode()..addListener(_onProxyHostFocusChanged);
-    _proxyPortController = TextEditingController(
-      text: widget.settings.proxyPort?.toString() ?? '',
-    );
+    _proxyPortController = TextEditingController(text: widget.settings.proxyPort?.toString() ?? '');
     _proxyPortFocusNode = FocusNode()..addListener(_onProxyPortFocusChanged);
-    final List<toolchain.DetectedCompiler> cached =
-        widget.settings.detectedCompilers;
+    final List<toolchain.DetectedCompiler> cached = widget.settings.detectedCompilers;
     if (cached.isEmpty) {
       _detectCompilers(showLoading: false);
     } else {
@@ -90,16 +80,13 @@ class _SettingState extends State<Setting> {
   @override
   void didUpdateWidget(covariant Setting oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.settings.defaultAuthor != widget.settings.defaultAuthor &&
-        !_defaultAuthorFocusNode.hasFocus) {
+    if (oldWidget.settings.defaultAuthor != widget.settings.defaultAuthor && !_defaultAuthorFocusNode.hasFocus) {
       _defaultAuthorController.text = widget.settings.defaultAuthor;
     }
-    if (oldWidget.settings.proxyHost != widget.settings.proxyHost &&
-        !_proxyHostFocusNode.hasFocus) {
+    if (oldWidget.settings.proxyHost != widget.settings.proxyHost && !_proxyHostFocusNode.hasFocus) {
       _proxyHostController.text = widget.settings.proxyHost;
     }
-    if (oldWidget.settings.proxyPort != widget.settings.proxyPort &&
-        !_proxyPortFocusNode.hasFocus) {
+    if (oldWidget.settings.proxyPort != widget.settings.proxyPort && !_proxyPortFocusNode.hasFocus) {
       _proxyPortController.text = widget.settings.proxyPort?.toString() ?? '';
     }
   }
@@ -245,21 +232,13 @@ class _SettingState extends State<Setting> {
     showFloatingToast(context, '已保存');
   }
 
-  SettingsModel _directorySettings({
-    required String? outputDirectory,
-    required String? cmakeOutputDirectory,
-  }) {
-    return widget.settings.copyWith(
-      outputDirectory: outputDirectory,
-      cmakeOutputDirectory: cmakeOutputDirectory,
-    );
+  SettingsModel _directorySettings({required String? outputDirectory, required String? cmakeOutputDirectory}) {
+    return widget.settings.copyWith(outputDirectory: outputDirectory, cmakeOutputDirectory: cmakeOutputDirectory);
   }
 
-  SettingsModel _defaultAuthorSettings(String defaultAuthor) =>
-      widget.settings.copyWith(defaultAuthor: defaultAuthor);
+  SettingsModel _defaultAuthorSettings(String defaultAuthor) => widget.settings.copyWith(defaultAuthor: defaultAuthor);
 
-  SettingsModel _themeSettings({ThemeModeSetting? themeMode}) =>
-      widget.settings.copyWith(themeMode: themeMode);
+  SettingsModel _themeSettings({ThemeModeSetting? themeMode}) => widget.settings.copyWith(themeMode: themeMode);
 
   SettingsModel _compilerSettings(List<String> compilerPriority) =>
       widget.settings.copyWith(compilerPriority: compilerPriority);
@@ -268,9 +247,7 @@ class _SettingState extends State<Setting> {
       widget.settings.copyWith(detectedCompilers: detected);
 
   void _moveCompiler(int index, int offset) {
-    final List<String> priority = List<String>.of(
-      widget.settings.compilerPriority,
-    );
+    final List<String> priority = List<String>.of(widget.settings.compilerPriority);
     final int target = index + offset;
     if (target < 0 || target >= priority.length) {
       return;
@@ -285,40 +262,22 @@ class _SettingState extends State<Setting> {
     if (path == null || !mounted) {
       return;
     }
-    await _apply(
-      _directorySettings(
-        outputDirectory: path,
-        cmakeOutputDirectory: widget.settings.cmakeOutputDirectory,
-      ),
-    );
+    await _apply(_directorySettings(outputDirectory: path, cmakeOutputDirectory: widget.settings.cmakeOutputDirectory));
   }
 
-  Future<void> _clearDirectory() => _apply(
-    _directorySettings(
-      outputDirectory: null,
-      cmakeOutputDirectory: widget.settings.cmakeOutputDirectory,
-    ),
-  );
+  Future<void> _clearDirectory() =>
+      _apply(_directorySettings(outputDirectory: null, cmakeOutputDirectory: widget.settings.cmakeOutputDirectory));
 
   Future<void> _pickCmakeDirectory() async {
     final String? path = await widget.pickDirectory();
     if (path == null || !mounted) {
       return;
     }
-    await _apply(
-      _directorySettings(
-        outputDirectory: widget.settings.outputDirectory,
-        cmakeOutputDirectory: path,
-      ),
-    );
+    await _apply(_directorySettings(outputDirectory: widget.settings.outputDirectory, cmakeOutputDirectory: path));
   }
 
-  Future<void> _clearCmakeDirectory() => _apply(
-    _directorySettings(
-      outputDirectory: widget.settings.outputDirectory,
-      cmakeOutputDirectory: null,
-    ),
-  );
+  Future<void> _clearCmakeDirectory() =>
+      _apply(_directorySettings(outputDirectory: widget.settings.outputDirectory, cmakeOutputDirectory: null));
 
   Future<void> _generateSkill() async {
     final String? path = await widget.pickSaveFile(_skillFileName);
@@ -348,13 +307,10 @@ class _SettingState extends State<Setting> {
 
   @override
   Widget build(BuildContext context) {
-    final bool manualProxy =
-        widget.settings.proxyMode == ProxyModeSetting.manual;
+    final bool manualProxy = widget.settings.proxyMode == ProxyModeSetting.manual;
     return SettingsPage(
       title: '设置',
-      description: const Text(
-        '配置打包输出目录、默认作者、外观、编译器优先级、网络代理与 AI 技能输出。',
-      ),
+      description: const Text('配置打包输出目录、默认作者、外观、编译器优先级、网络代理与 AI 技能输出。'),
       children: <Widget>[
         SettingsGroup(
           header: '打包',
@@ -378,29 +334,14 @@ class _SettingState extends State<Setting> {
             ),
           ],
         ),
-        SettingsGroup(
-          header: '新包默认值',
-          children: <Widget>[_buildDefaultAuthorCard()],
-        ),
-        SettingsGroup(
-          header: '外观',
-          children: <Widget>[_buildThemeModeCard()],
-        ),
-        SettingsGroup(
-          header: '编译器',
-          children: <Widget>[_buildCompilerCard()],
-        ),
+        SettingsGroup(header: '新包默认值', children: <Widget>[_buildDefaultAuthorCard()]),
+        SettingsGroup(header: '外观', children: <Widget>[_buildThemeModeCard()]),
+        SettingsGroup(header: '编译器', children: <Widget>[_buildCompilerCard()]),
         SettingsGroup(
           header: '网络',
-          children: <Widget>[
-            _buildProxyModeCard(),
-            if (manualProxy) _buildProxyManualCard(),
-          ],
+          children: <Widget>[_buildProxyModeCard(), if (manualProxy) _buildProxyManualCard()],
         ),
-        SettingsGroup(
-          header: 'AI 技能',
-          children: <Widget>[_buildSkillCard()],
-        ),
+        SettingsGroup(header: 'AI 技能', children: <Widget>[_buildSkillCard()]),
       ],
     );
   }
@@ -414,14 +355,9 @@ class _SettingState extends State<Setting> {
     required VoidCallback onClear,
   }) {
     return SettingsCard(
+      padding: const .fromLTRB(8, 8, 8, 8),
       header: Text(header),
-      content: _buildPathControls(
-        path: path,
-        pickKey: pickKey,
-        clearKey: clearKey,
-        onPick: onPick,
-        onClear: onClear,
-      ),
+      content: _buildPathControls(path: path, pickKey: pickKey, clearKey: clearKey, onPick: onPick, onClear: onClear),
     );
   }
 
@@ -451,21 +387,16 @@ class _SettingState extends State<Setting> {
           ),
         ),
         Button(key: pickKey, onPressed: onPick, child: const Text('选择目录…')),
-        Button(
-          key: clearKey,
-          onPressed: path == null ? null : onClear,
-          child: const Text('清除'),
-        ),
+        Button(key: clearKey, onPressed: path == null ? null : onClear, child: const Text('清除')),
       ],
     );
   }
 
   Widget _buildDefaultAuthorCard() {
     return SettingsCard(
+      padding: const .fromLTRB(8, 8, 8, 8),
       header: const Text('默认作者'),
-      description: const Text(
-        '新包将预填此值；作者为空或占位（「无」「未知」等）的包将自动替换为默认作者。',
-      ),
+      description: const Text('新包将预填此值；作者为空或占位（「无」「未知」等）的包将自动替换为默认作者。'),
       content: SizedBox(
         width: 320,
         child: TextBox(
@@ -481,6 +412,7 @@ class _SettingState extends State<Setting> {
   Widget _buildThemeModeCard() {
     return SettingsCard(
       header: const Text('主题模式'),
+      padding: const .fromLTRB(8, 8, 8, 8),
       content: _comboBoxField(
         width: 160,
         child: ComboBox<ThemeModeSetting>(
@@ -494,10 +426,7 @@ class _SettingState extends State<Setting> {
           },
           items: <ComboBoxItem<ThemeModeSetting>>[
             for (final ThemeModeSetting mode in ThemeModeSetting.values)
-              ComboBoxItem<ThemeModeSetting>(
-                value: mode,
-                child: Text(_themeModeLabels[mode]!),
-              ),
+              ComboBoxItem<ThemeModeSetting>(value: mode, child: Text(_themeModeLabels[mode]!)),
           ],
         ),
       ),
@@ -506,6 +435,7 @@ class _SettingState extends State<Setting> {
 
   Widget _buildProxyModeCard() {
     return SettingsCard(
+      padding: const .fromLTRB(8, 8, 8, 8),
       header: const Text('代理模式'),
       description: const Text(
         '自动检测：使用 Windows 系统代理设置，不可用时自动直连。'
@@ -524,10 +454,7 @@ class _SettingState extends State<Setting> {
           },
           items: <ComboBoxItem<ProxyModeSetting>>[
             for (final ProxyModeSetting mode in ProxyModeSetting.values)
-              ComboBoxItem<ProxyModeSetting>(
-                value: mode,
-                child: Text(_proxyModeLabels[mode]!),
-              ),
+              ComboBoxItem<ProxyModeSetting>(value: mode, child: Text(_proxyModeLabels[mode]!)),
           ],
         ),
       ),
@@ -537,6 +464,7 @@ class _SettingState extends State<Setting> {
   Widget _buildProxyManualCard() {
     final FluentThemeData theme = FluentTheme.of(context);
     return SettingsCard(
+      padding: const .fromLTRB(8, 8, 8, 8),
       header: const Text('手动设置'),
       description: const Text(
         '服务器地址支持 host:port 或 http://host:port，端口留空时使用地址中声明的端口'
@@ -578,10 +506,7 @@ class _SettingState extends State<Setting> {
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   _proxyPortError!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.critical(theme.brightness),
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.critical(theme.brightness)),
                 ),
               ),
           ],
@@ -594,6 +519,7 @@ class _SettingState extends State<Setting> {
     final List<String> priority = widget.settings.compilerPriority;
     final bool hideRows = _detecting && _detected.isEmpty;
     return SettingsCard(
+      padding: const .fromLTRB(8, 8, 8, 8),
       header: const Text('编译器优先级'),
       description: const Text('优先使用的编译器（自上而下）'),
       content: SizedBox(
@@ -605,27 +531,20 @@ class _SettingState extends State<Setting> {
             Row(
               children: <Widget>[
                 if (_detecting) ...<Widget>[
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: ProgressRing(strokeWidth: 2),
-                  ),
+                  const SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2)),
                   const SizedBox(width: 12),
                   const Text('正在检测编译器…'),
                 ],
                 const Spacer(),
                 Button(
                   key: const Key('settingCompilerRefreshButton'),
-                  onPressed: _detecting
-                      ? null
-                      : () => _detectCompilers(showLoading: true),
+                  onPressed: _detecting ? null : () => _detectCompilers(showLoading: true),
                   child: const Text('重新检测'),
                 ),
               ],
             ),
             if (!hideRows)
-              for (var index = 0; index < priority.length; index++)
-                _buildCompilerRow(priority[index], index),
+              for (var index = 0; index < priority.length; index++) _buildCompilerRow(priority[index], index),
           ],
         ),
       ),
@@ -646,9 +565,7 @@ class _SettingState extends State<Setting> {
             child: Text(
               compiler?.version ?? '未检测到',
               overflow: TextOverflow.ellipsis,
-              style: compiler == null
-                  ? TextStyle(color: theme.resources.textFillColorSecondary)
-                  : null,
+              style: compiler == null ? TextStyle(color: theme.resources.textFillColorSecondary) : null,
             ),
           ),
           _buildMoveButton(
@@ -661,9 +578,7 @@ class _SettingState extends State<Setting> {
             key: Key('settingCompilerMoveDown_$id'),
             icon: FluentIcons.chevron_down,
             tooltip: '下移',
-            onPressed: index < widget.settings.compilerPriority.length - 1
-                ? () => _moveCompiler(index, 1)
-                : null,
+            onPressed: index < widget.settings.compilerPriority.length - 1 ? () => _moveCompiler(index, 1) : null,
           ),
         ],
       ),
@@ -699,21 +614,16 @@ class _SettingState extends State<Setting> {
       child: SizedBox(
         width: 24,
         height: 24,
-        child: IconButton(
-          key: key,
-          icon: Icon(icon, size: 14),
-          onPressed: onPressed,
-        ),
+        child: IconButton(key: key, icon: Icon(icon, size: 14), onPressed: onPressed),
       ),
     );
   }
 
   Widget _buildSkillCard() {
     return SettingsCard(
+      padding: const .fromLTRB(8, 8, 8, 8),
       header: const Text('SKILL.md'),
-      description: const Text(
-        '生成 build.py 编写技能文档（SKILL.md），可放入 AI 插件的技能目录使用。',
-      ),
+      description: const Text('生成 build.py 编写技能文档（SKILL.md），可放入 AI 插件的技能目录使用。'),
       content: Button(
         key: const Key('settingGenerateSkillButton'),
         onPressed: _generateSkill,
@@ -737,11 +647,8 @@ const String _skillFileName = 'SKILL.md';
 const String _skillAssetPath = 'assets/build/SKILL.md';
 
 Future<String?> _pickSkillSaveLocation(String suggestedName) async {
-  final FileSaveLocation? location = await getSaveLocation(
-    suggestedName: suggestedName,
-  );
+  final FileSaveLocation? location = await getSaveLocation(suggestedName: suggestedName);
   return location?.path;
 }
 
-Future<String> _loadSkillTemplateAsset() =>
-    rootBundle.loadString(_skillAssetPath);
+Future<String> _loadSkillTemplateAsset() => rootBundle.loadString(_skillAssetPath);

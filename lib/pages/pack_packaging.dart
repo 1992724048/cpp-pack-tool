@@ -43,11 +43,7 @@ class _PackPackagingState extends State<PackPackaging> {
     if (widget.builders.isEmpty) {
       return null;
     }
-    return effectivePackagingBuilder(
-      widget.pack,
-      widget.selectedBuilder ?? _localBuilder,
-      all: widget.builders,
-    );
+    return effectivePackagingBuilder(widget.pack, widget.selectedBuilder ?? _localBuilder, all: widget.builders);
   }
 
   PackageBuilder? _findBuilder(String id) {
@@ -70,11 +66,7 @@ class _PackPackagingState extends State<PackPackaging> {
 
   /// 该包当前启用的格式 id（规范序）；未记录时回退全部。
   List<String> _enabledFormatIds() => <String>[
-    for (final PackageBuilder builder in enabledBuildersFor(
-      widget.pack,
-      all: widget.builders,
-    ))
-      builder.id,
+    for (final PackageBuilder builder in enabledBuildersFor(widget.pack, all: widget.builders)) builder.id,
   ];
 
   Future<void> _modifyFormats() async {
@@ -115,12 +107,7 @@ class _PackPackagingState extends State<PackPackaging> {
       showFloatingToast(context, '已保存');
       return;
     }
-    showFloatingToast(
-      context,
-      '保存失败',
-      type: FloatingToastType.error,
-      duration: const Duration(seconds: 5),
-    );
+    showFloatingToast(context, '保存失败', type: FloatingToastType.error, duration: const Duration(seconds: 5));
   }
 
   /// 全字段拷贝并仅替换启用格式集合。
@@ -212,11 +199,7 @@ class _PackPackagingState extends State<PackPackaging> {
             children: [
               Text(
                 '打包格式',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: theme.typography.body?.color,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: theme.typography.body?.color),
               ),
               const SizedBox(height: 8),
               Row(
@@ -233,34 +216,23 @@ class _PackPackagingState extends State<PackPackaging> {
                         isExpanded: true,
                         onChanged: _selectBuilder,
                         items: <ComboBoxItem<String>>[
-                          for (final PackageBuilder builder
-                              in enabledBuildersFor(
-                                widget.pack,
-                                all: widget.builders,
-                              ))
-                            ComboBoxItem<String>(
-                              value: builder.id,
-                              child: Text(builder.displayName),
-                            ),
+                          for (final PackageBuilder builder in enabledBuildersFor(widget.pack, all: widget.builders))
+                            ComboBoxItem<String>(value: builder.id, child: Text(builder.displayName)),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Button(
                     key: const Key('modifyEnabledFormatsButton'),
-                    onPressed: widget.onSave == null || _savingFormats
-                        ? null
-                        : _modifyFormats,
-                    child: const Text('修改启用格式…'),
+                    onPressed: widget.onSave == null || _savingFormats ? null : _modifyFormats,
+                    child: SizedBox(height: 22, child: const Text('修改启用格式…'),),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-              Text(
-                '仅列出该包已启用的格式；可点击「修改启用格式…」调整。',
-                style: TextStyle(color: theme.resources.textFillColorSecondary),
-              ),
+              Text('仅列出该包已启用的格式；可点击「修改启用格式…」调整。',
+                  style: TextStyle(color: theme.resources.textFillColorSecondary)),
               const SizedBox(height: 16),
               FilledButton(
                 key: const Key('packPreviewButton'),
@@ -268,15 +240,10 @@ class _PackPackagingState extends State<PackPackaging> {
                 child: const Text('预览打包内容'),
               ),
               const SizedBox(height: 16),
-              Text(
-                _descriptionFor(_builder),
-                style: TextStyle(color: theme.resources.textFillColorSecondary),
-              ),
+              Text(_descriptionFor(_builder), style: TextStyle(color: theme.resources.textFillColorSecondary)),
               const SizedBox(height: 8),
-              Text(
-                '点击「预览打包内容」可查看包内完整文件列表与文件内容。',
-                style: TextStyle(color: theme.resources.textFillColorSecondary),
-              ),
+              Text('点击「预览打包内容」可查看包内完整文件列表与文件内容。',
+                  style: TextStyle(color: theme.resources.textFillColorSecondary)),
             ],
           ),
         ),

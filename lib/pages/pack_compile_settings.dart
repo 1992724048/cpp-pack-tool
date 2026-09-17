@@ -45,11 +45,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   bool _saving = false;
 
   Future<void> _addMacro() async {
-    final CompileEntryResult? result = await _openEntryDialog(
-      title: '添加宏定义',
-      label: '宏定义',
-      hintText: 'MY_MACRO=1',
-    );
+    final CompileEntryResult? result = await _openEntryDialog(title: '添加宏定义', label: '宏定义', hintText: 'MY_MACRO=1');
     if (result == null || !mounted) {
       return;
     }
@@ -82,10 +78,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         pack,
         macros: <MacroModel>[
           for (int i = 0; i < pack.macros.length; i++)
-            if (i == index)
-              MacroModel(value: result.text, buildModel: result.buildModel)
-            else
-              pack.macros[i],
+            if (i == index) MacroModel(value: result.text, buildModel: result.buildModel) else pack.macros[i],
         ],
       ),
       '已保存',
@@ -121,11 +114,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         pack,
         commands: <CmdModel>[
           ...pack.commands,
-          CmdModel(
-            command: result.text,
-            type: type,
-            buildModel: result.buildModel,
-          ),
+          CmdModel(command: result.text, type: type, buildModel: result.buildModel),
         ],
       ),
       '已添加',
@@ -152,11 +141,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         commands: <CmdModel>[
           for (int i = 0; i < pack.commands.length; i++)
             if (i == index)
-              CmdModel(
-                command: result.text,
-                type: command.type,
-                buildModel: result.buildModel,
-              )
+              CmdModel(command: result.text, type: command.type, buildModel: result.buildModel)
             else
               pack.commands[i],
         ],
@@ -218,10 +203,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         pack,
         libDirectories: <LibDirModel>[
           for (int i = 0; i < pack.libDirectories.length; i++)
-            if (i == index)
-              LibDirModel(path: result.text, buildModel: result.buildModel)
-            else
-              pack.libDirectories[i],
+            if (i == index) LibDirModel(path: result.text, buildModel: result.buildModel) else pack.libDirectories[i],
         ],
       ),
       '已保存',
@@ -242,11 +224,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   }
 
   Future<void> _addLibrary() async {
-    final CompileEntryResult? result = await _openEntryDialog(
-      title: '添加附加库',
-      label: '库名称',
-      hintText: 'mylib.lib',
-    );
+    final CompileEntryResult? result = await _openEntryDialog(title: '添加附加库', label: '库名称', hintText: 'mylib.lib');
     if (result == null || !mounted) {
       return;
     }
@@ -279,10 +257,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
         pack,
         libraries: <LibraryModel>[
           for (int i = 0; i < pack.libraries.length; i++)
-            if (i == index)
-              LibraryModel(name: result.text, buildModel: result.buildModel)
-            else
-              pack.libraries[i],
+            if (i == index) LibraryModel(name: result.text, buildModel: result.buildModel) else pack.libraries[i],
         ],
       ),
       '已保存',
@@ -335,10 +310,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     ];
   }
 
-  Future<void> _persist(
-    PackModel Function(PackModel pack) update,
-    String message,
-  ) async {
+  Future<void> _persist(PackModel Function(PackModel pack) update, String message) async {
     if (_saving) {
       return;
     }
@@ -450,11 +422,13 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   Widget build(BuildContext context) {
     return SizedBox.expand(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Divider(),
+              SizedBox(height: 5),
               _buildSection(
                 title: '宏定义',
                 columnLabel: '宏定义',
@@ -518,14 +492,8 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   }) {
     return _buildSectionFrame(
       title: title,
-      action: FilledButton(
-        key: addKey,
-        onPressed: _saving ? null : onAdd,
-        child: const Text('添加'),
-      ),
-      body: entries.isEmpty
-          ? _buildEmptyText(emptyText)
-          : _buildEntryList(entries, columnLabel),
+      action: Button(key: addKey, onPressed: _saving ? null : onAdd, child: const Text('添加')),
+      body: _buildEntryList(entries, columnLabel),
     );
   }
 
@@ -534,62 +502,52 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     return _buildSectionFrame(
       sectionKey: const Key('nodeScriptsSection'),
       title: '节点脚本',
-      action: FilledButton(
+      action: Button(
         key: const Key('openScriptEditorButton'),
         onPressed: _saving ? null : _openScriptEditor,
         child: const Text('打开节点编辑器'),
       ),
-      body: scripts.isEmpty
-          ? _buildEmptyText('暂无节点脚本')
-          : _buildScriptList(scripts),
+      body: _buildScriptList(scripts),
     );
   }
 
-  Widget _buildSectionFrame({
-    required String title,
-    required Widget action,
-    required Widget body,
-    Key? sectionKey,
-  }) {
+  Widget _buildSectionFrame({required String title, required Widget action, required Widget body, Key? sectionKey}) {
     return Column(
-      key: sectionKey,
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: FluentTheme.of(context).typography.body?.color,
-                ),
+        Padding(
+          padding: .fromLTRB(0, 8, 0, 0),
+          child: Column(
+            key: sectionKey,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: FluentTheme.of(context).typography.body?.color,
+                      ),
+                    ),
+                  ),
+                  action,
+                ],
               ),
-            ),
-            action,
-          ],
+            ],
+          ),
         ),
-        const SizedBox(height: 4),
+        SizedBox(height: 5),
         body,
       ],
-    );
-  }
-
-  Widget _buildEmptyText(String text) {
-    return Text(
-      text,
-      style: TextStyle(
-        color: FluentTheme.of(context).resources.textFillColorSecondary,
-      ),
     );
   }
 
   void _openScriptEditor() {
     Navigator.of(context).push<void>(
       FluentPageRoute(
-        builder: (_) =>
-            ScriptEditorPage(pack: widget.pack, onSave: widget.onSave),
+        builder: (_) => ScriptEditorPage(pack: widget.pack, onSave: widget.onSave),
       ),
     );
   }
@@ -597,17 +555,17 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   Widget _buildScriptList(List<ScriptProjectModel> scripts) {
     return _buildTable(
       header: _buildScriptHeaderRow(),
-      rows: <Widget>[
-        for (final ScriptProjectModel script in scripts)
-          _buildScriptRow(script),
-      ],
+      rows: scripts.isEmpty
+          ? [SizedBox.shrink()]
+          : <Widget>[for (final ScriptProjectModel script in scripts) _buildScriptRow(script)],
     );
   }
 
   Widget _buildScriptHeaderRow() {
     final TextStyle style = _headerTextStyle();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return Card(
+      margin: const .fromLTRB(0, 0, 0, 2),
+      padding: const .fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
           Expanded(child: Text('名称', style: style)),
@@ -630,8 +588,9 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
 
   Widget _buildScriptRow(ScriptProjectModel script) {
     final (String statusText, Color statusColor) = _scriptStatus(script);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return Card(
+      margin: const .fromLTRB(0, 0, 0, 2),
+      padding: const .fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
           Expanded(child: Text(script.name, overflow: TextOverflow.ellipsis)),
@@ -658,10 +617,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
           SizedBox(
             width: _statusColumnWidth,
             child: Center(
-              child: Text(
-                statusText,
-                style: TextStyle(fontSize: 12, color: statusColor),
-              ),
+              child: Text(statusText, style: TextStyle(fontSize: 12, color: statusColor)),
             ),
           ),
         ],
@@ -672,9 +628,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   (String, Color) _scriptStatus(ScriptProjectModel script) {
     final Brightness brightness = FluentTheme.of(context).brightness;
     final List<ScriptDiagnostic> diagnostics = GraphValidator.validate(script);
-    final int errors = diagnostics
-        .where((ScriptDiagnostic diagnostic) => diagnostic.isError)
-        .length;
+    final int errors = diagnostics.where((ScriptDiagnostic diagnostic) => diagnostic.isError).length;
     final int warnings = diagnostics.length - errors;
     if (errors > 0) {
       return ('$errors 个错误', AppColors.critical(brightness));
@@ -688,42 +642,21 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   Widget _buildEntryList(List<_CompileEntry> entries, String columnLabel) {
     return _buildTable(
       header: _buildHeaderRow(columnLabel),
-      rows: <Widget>[
-        for (final _CompileEntry entry in entries) _buildEntryRow(entry),
-      ],
+      rows: entries.isEmpty
+          ? [SizedBox.shrink()]
+          : <Widget>[for (final _CompileEntry entry in entries) _buildEntryRow(entry)],
     );
   }
 
   Widget _buildTable({required Widget header, required List<Widget> rows}) {
-    final FluentThemeData theme = FluentTheme.of(context);
-    final DividerThemeData dividerTheme = theme.dividerTheme;
-    return FluentTheme(
-      data: theme.copyWith(
-        // 全局分割线自带 8px 水平边距，覆盖为 0 使线与列表内容同宽
-        dividerTheme: DividerThemeData(
-          decoration: dividerTheme.decoration,
-          verticalMargin: dividerTheme.verticalMargin,
-          horizontalMargin: EdgeInsets.zero,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          header,
-          const Divider(),
-          for (int index = 0; index < rows.length; index++) ...[
-            if (index > 0) const Divider(),
-            rows[index],
-          ],
-        ],
-      ),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [header, ...rows]);
   }
 
   Widget _buildHeaderRow(String columnLabel) {
     final TextStyle style = _headerTextStyle();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return Card(
+      margin: const .fromLTRB(0, 0, 0, 2),
+      padding: const .fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
           Expanded(child: Text(columnLabel, style: style)),
@@ -741,30 +674,24 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
   }
 
   TextStyle _headerTextStyle() {
-    return TextStyle(
-      fontSize: 12,
-      color: FluentTheme.of(context).resources.textFillColorSecondary,
-    );
+    return TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary);
   }
 
   Widget _buildEntryRow(_CompileEntry entry) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return Card(
+      margin: const .fromLTRB(0, 0, 0, 2),
+      padding: const .fromLTRB(8, 2, 8, 2),
       child: Row(
         children: [
           Expanded(
             child: Row(
               children: [
-                Flexible(
-                  child: Text(entry.text, overflow: TextOverflow.ellipsis),
-                ),
+                Flexible(child: Text(entry.text, overflow: TextOverflow.ellipsis)),
                 if (entry.isSystem) ...[
                   const SizedBox(width: 5),
                   Tag(
                     text: '系统',
-                    color: FluentTheme.of(
-                      context,
-                    ).resources.solidBackgroundFillColorQuarternary,
+                    color: FluentTheme.of(context).resources.solidBackgroundFillColorBaseAlt,
                     fontSize: 10,
                   ),
                 ],
@@ -794,14 +721,13 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                     onPressed: _saving || entry.isSystem ? null : entry.onEdit,
                   ),
                 ),
+                SizedBox(width: 2),
                 Tooltip(
                   message: entry.isSystem ? _systemLockTooltip : '删除',
                   child: IconButton(
                     key: entry.deleteKey,
                     icon: const Icon(FluentIcons.delete, size: 16),
-                    onPressed: _saving || entry.isSystem
-                        ? null
-                        : entry.onDelete,
+                    onPressed: _saving || entry.isSystem ? null : entry.onDelete,
                   ),
                 ),
               ],

@@ -4,13 +4,13 @@ import 'package:fluent_ui/fluent_ui.dart';
 /// PowerToys SettingsPageControl token：标题 28 Semibold、模块描述 14 Secondary、
 /// 内容最大宽 1000、水平内边距 16、底部滚动留白 48。
 abstract final class SettingsPageTokens {
-  static const double titleFontSize = 28;
+  static const double titleFontSize = 24;
   static const double descriptionFontSize = 14;
   static const double contentMaxWidth = 1000;
-  static const double horizontalPadding = 16;
-  static const double bottomPadding = 48;
+  static const double horizontalPadding = 8;
+  static const double bottomPadding = 32;
   static const double descriptionSpacing = 8;
-  static const double contentSpacing = 24;
+  static const double contentSpacing = 0;
 }
 
 /// 设置页模板：标题 → 模块描述 → 内容（左对齐、最大宽 1000、可滚动）。
@@ -36,7 +36,6 @@ class SettingsPage extends StatelessWidget {
     return SizedBox.expand(
       child: Container(
         key: const Key('settingsPageSurface'),
-        decoration: BoxDecoration(color: theme.cardColor),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
             SettingsPageTokens.horizontalPadding,
@@ -52,9 +51,7 @@ class SettingsPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Padding(
-                    padding: const EdgeInsets.only(
-                      top: SettingsPageTokens.horizontalPadding,
-                    ),
+                    padding: const EdgeInsets.only(top: SettingsPageTokens.horizontalPadding),
                     child: Text(
                       title,
                       style: TextStyle(
@@ -66,9 +63,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                   if (description != null)
                     Padding(
-                      padding: const EdgeInsets.only(
-                        top: SettingsPageTokens.descriptionSpacing,
-                      ),
+                      padding: const EdgeInsets.only(top: SettingsPageTokens.descriptionSpacing),
                       child: DefaultTextStyle.merge(
                         style: TextStyle(
                           fontSize: SettingsPageTokens.descriptionFontSize,

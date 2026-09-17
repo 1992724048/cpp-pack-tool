@@ -2,17 +2,14 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
 
-/// CommunityToolkit（PowerToys）SettingsCard XAML token；组件与测试共用，
-/// 避免魔法数在实现与断言间漂移。
 abstract final class SettingsCardTokens {
-  static const double minHeight = 68;
-  static const double subItemMinHeight = 52;
+  static const double minHeight = 0;
+  static const double subItemMinHeight = 0;
   static const double minWidth = 148;
   static const double cornerRadius = 4;
   static const EdgeInsets padding = EdgeInsets.all(16);
 
-  /// 子项（SettingsExpander 内部）内边距：左 58 为展开层级缩进。
-  static const EdgeInsets subItemPadding = EdgeInsets.fromLTRB(58, 8, 44, 8);
+  static const EdgeInsets subItemPadding = EdgeInsets.fromLTRB(48, 8, 44, 8);
 
   static const double headerIconSize = 20;
   static const double headerIconSpacing = 20;
@@ -25,12 +22,6 @@ abstract final class SettingsCardTokens {
   static const Duration backgroundTransition = Duration(milliseconds: 83);
 }
 
-/// 组设置卡：左侧头部（图标 + 标题 + 描述）与右侧内容区。
-///
-/// 严格照 Toolkit token：最小高 68（子项 52）、内边距 16（子项 58,8,44,8）、
-/// 1px 描边 + 圆角 4（子项无圆角、仅顶部 1px 分隔线）；窄窗（< 476）内容换行到
-/// 头部下方，更窄（< 286）隐藏头部图标。悬停/按下背景过渡 83ms；仅
-/// [onPressed] 非空（且启用）的卡有 hover/按下态与焦点环。
 class SettingsCard extends StatefulWidget {
   const SettingsCard({
     super.key,
@@ -62,7 +53,6 @@ class SettingsCard extends StatefulWidget {
   /// 无边框变体（SettingsExpander 头部：透明底、无描边、无圆角）。
   final bool borderless;
 
-  /// 内边距覆盖（null 时按 token：16 全边 / 子项 58,8,44,8）。
   final EdgeInsetsGeometry? padding;
 
   /// 可点击卡的尾部箭头（13px chevron_right，间距 14）；[onPressed] 非空时生效。
@@ -99,10 +89,7 @@ class _SettingsCardState extends State<SettingsCard> {
     if (widget.borderless) {
       border = Border.all(color: Colors.transparent, width: 1);
     } else if (_focused && _clickable) {
-      border = Border.all(
-        color: theme.resources.focusStrokeColorOuter,
-        width: 2,
-      );
+      border = Border.all(color: theme.resources.focusStrokeColorOuter, width: 2);
     } else if (widget.subItem) {
       border = Border(top: BorderSide(color: borderColor));
     } else {
@@ -119,20 +106,10 @@ class _SettingsCardState extends State<SettingsCard> {
       duration: SettingsCardTokens.backgroundTransition,
       constraints: BoxConstraints(
         minWidth: SettingsCardTokens.minWidth,
-        minHeight: widget.subItem
-            ? SettingsCardTokens.subItemMinHeight
-            : SettingsCardTokens.minHeight,
+        minHeight: widget.subItem ? SettingsCardTokens.subItemMinHeight : SettingsCardTokens.minHeight,
       ),
-      padding:
-          widget.padding ??
-          (widget.subItem
-              ? SettingsCardTokens.subItemPadding
-              : SettingsCardTokens.padding),
-      decoration: BoxDecoration(
-        color: background,
-        border: border,
-        borderRadius: radius,
-      ),
+      padding: widget.padding ?? (widget.subItem ? SettingsCardTokens.subItemPadding : SettingsCardTokens.padding),
+      decoration: BoxDecoration(color: background, border: border, borderRadius: radius),
       child: card,
     );
 
@@ -206,29 +183,19 @@ class _SettingsCardState extends State<SettingsCard> {
     return AppColors.stroke(theme);
   }
 
-  Widget _buildBody(
-    BuildContext context,
-    BoxConstraints constraints,
-    FluentThemeData theme,
-  ) {
+  Widget _buildBody(BuildContext context, BoxConstraints constraints, FluentThemeData theme) {
     final bool wrap = constraints.maxWidth < SettingsCardTokens.wrapThreshold;
-    final bool hideIcon =
-        constraints.maxWidth < SettingsCardTokens.wrapNoIconThreshold;
+    final bool hideIcon = constraints.maxWidth < SettingsCardTokens.wrapNoIconThreshold;
     final Widget? icon = hideIcon ? null : widget.headerIcon;
     final Widget? iconView = icon == null
         ? null
         : Padding(
-            padding: const EdgeInsets.only(
-              right: SettingsCardTokens.headerIconSpacing,
-            ),
+            padding: const EdgeInsets.only(right: SettingsCardTokens.headerIconSpacing),
             child: SizedBox(
               width: SettingsCardTokens.headerIconSize,
               height: SettingsCardTokens.headerIconSize,
               child: IconTheme.merge(
-                data: IconThemeData(
-                  size: SettingsCardTokens.headerIconSize,
-                  color: _foregroundFor(theme),
-                ),
+                data: IconThemeData(size: SettingsCardTokens.headerIconSize, color: _foregroundFor(theme)),
                 child: Center(child: icon),
               ),
             ),
@@ -241,11 +208,7 @@ class _SettingsCardState extends State<SettingsCard> {
             children: <Widget>[
               if (widget.header != null)
                 DefaultTextStyle.merge(
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    color: _foregroundFor(theme),
-                  ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: _foregroundFor(theme)),
                   child: widget.header!,
                 ),
               if (widget.description != null)
@@ -265,9 +228,7 @@ class _SettingsCardState extends State<SettingsCard> {
     final Widget? content = widget.content;
     final Widget? chevron = widget.showChevron && _clickable
         ? Padding(
-            padding: const EdgeInsets.only(
-              left: SettingsCardTokens.actionIconSpacing,
-            ),
+            padding: const EdgeInsets.only(left: SettingsCardTokens.actionIconSpacing),
             child: Icon(
               FluentIcons.chevron_right,
               size: SettingsCardTokens.actionIconSize,
@@ -284,9 +245,7 @@ class _SettingsCardState extends State<SettingsCard> {
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(
-                  right: content == null && chevron == null
-                      ? 0
-                      : SettingsCardTokens.headerContentSpacing,
+                  right: content == null && chevron == null ? 0 : SettingsCardTokens.headerContentSpacing,
                 ),
                 child: headerColumn,
               ),
@@ -307,10 +266,7 @@ class _SettingsCardState extends State<SettingsCard> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
               ?iconView,
-              if (headerColumn != null)
-                Expanded(child: headerColumn)
-              else
-                const Spacer(),
+              if (headerColumn != null) Expanded(child: headerColumn) else const Spacer(),
             ],
           ),
         if (content != null || chevron != null) ...<Widget>[
@@ -319,7 +275,9 @@ class _SettingsCardState extends State<SettingsCard> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
               if (content != null)
-                Flexible(child: Align(alignment: Alignment.centerLeft, child: content)),
+                Flexible(
+                  child: Align(alignment: Alignment.centerLeft, child: content),
+                ),
               ?chevron,
             ],
           ),
@@ -366,15 +324,8 @@ class SettingsCardToggle extends StatelessWidget {
     return SizedBox(
       height: 36,
       child: ToggleSwitchTheme(
-        data: const ToggleSwitchThemeData(
-          padding: EdgeInsets.zero,
-          margin: EdgeInsets.zero,
-        ),
-        child: ToggleSwitch(
-          checked: checked,
-          onChanged: enabled ? onChanged : null,
-          semanticLabel: semanticLabel,
-        ),
+        data: const ToggleSwitchThemeData(padding: EdgeInsets.zero, margin: EdgeInsets.zero),
+        child: ToggleSwitch(checked: checked, onChanged: enabled ? onChanged : null, semanticLabel: semanticLabel),
       ),
     );
   }

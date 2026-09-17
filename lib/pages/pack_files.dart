@@ -49,6 +49,7 @@ class PackFiles extends StatefulWidget {
 
 class _PackFilesState extends State<PackFiles> {
   static const double _treeIconSize = 18;
+
   // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
   static const double _treeRowContentMinHeight = 26;
   static const Set<FileType> _buildLabelTypes = <FileType>{
@@ -56,6 +57,7 @@ class _PackFilesState extends State<PackFiles> {
     FileType.dll,
     FileType.pdb,
     FileType.executable,
+    FileType.source
   };
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
@@ -90,8 +92,7 @@ class _PackFilesState extends State<PackFiles> {
     if (before.name != after.name || before.sourcePath != after.sourcePath) {
       return true;
     }
-    return findBuildScript(before.files)?.path !=
-        findBuildScript(after.files)?.path;
+    return findBuildScript(before.files)?.path != findBuildScript(after.files)?.path;
   }
 
   Future<void> _refreshHeader() async {
@@ -112,8 +113,7 @@ class _PackFilesState extends State<PackFiles> {
 
   Future<void> _refreshLatestVersion() async {
     final String? repo = _header?.repo;
-    final Future<String?> Function(String repoUrl)? loader =
-        widget.loadLatestVersion;
+    final Future<String?> Function(String repoUrl)? loader = widget.loadLatestVersion;
     final int loadId = ++_latestLoadId;
     if (repo == null) {
       setState(() {
@@ -148,10 +148,8 @@ class _PackFilesState extends State<PackFiles> {
     });
   }
 
-  static List<String> _pathSegments(String path) => path
-      .split(_pathSeparator)
-      .where((String segment) => segment.isNotEmpty)
-      .toList();
+  static List<String> _pathSegments(String path) =>
+      path.split(_pathSeparator).where((String segment) => segment.isNotEmpty).toList();
 
   static int _compareNames(String first, String second) {
     final int insensitive = first.toLowerCase().compareTo(second.toLowerCase());
@@ -171,13 +169,8 @@ class _PackFilesState extends State<PackFiles> {
       }
       _DirNode parent = root;
       for (final String segment in segments.take(segments.length - 1)) {
-        final String childPath = parent.path.isEmpty
-            ? segment
-            : '${parent.path}/$segment';
-        parent = parent.children.putIfAbsent(
-          segment,
-          () => _DirNode(name: segment, path: childPath),
-        );
+        final String childPath = parent.path.isEmpty ? segment : '${parent.path}/$segment';
+        parent = parent.children.putIfAbsent(segment, () => _DirNode(name: segment, path: childPath));
         parent.size += file.size;
         parent.fileCount += 1;
       }
@@ -189,51 +182,33 @@ class _PackFilesState extends State<PackFiles> {
   List<TreeViewItem> _buildTreeItems(_DirNode node, Color sizeColor) {
     final List<TreeViewItem> items = <TreeViewItem>[];
     final List<_DirNode> dirs = node.children.values.toList()
-      ..sort(
-        (_DirNode first, _DirNode second) =>
-            _compareNames(first.name, second.name),
-      );
+      ..sort((_DirNode first, _DirNode second) => _compareNames(first.name, second.name));
     for (final _DirNode dir in dirs) {
       final bool expanded = _expandedDirs.contains(dir.path);
       items.add(
         TreeViewItem(
           value: dir.path,
-          leading: _buildIcon(
-            dir.name,
-            isDirectory: true,
-            isExpanded: expanded,
-          ),
+          leading: _buildIcon(dir.name, isDirectory: true, isExpanded: expanded),
           expanded: expanded,
           content: _buildRow(
             dir.name,
             formatBytes(dir.size),
             sizeColor,
-            label: Text(
-              '(${dir.fileCount} 个文件)',
-              style: TextStyle(color: sizeColor),
-            ),
+            label: Text('(${dir.fileCount} 个文件)', style: TextStyle(color: sizeColor)),
           ),
           children: _buildTreeItems(dir, sizeColor),
         ),
       );
     }
     final List<FileModel> files = node.files.toList()
-      ..sort(
-        (FileModel first, FileModel second) =>
-            _compareNames(first.name, second.name),
-      );
+      ..sort((FileModel first, FileModel second) => _compareNames(first.name, second.name));
     for (final FileModel file in files) {
       items.add(
         TreeViewItem(
           leading: _buildIcon(file.name),
           content: GestureDetector(
             onDoubleTap: () => _openFile(file),
-            child: _buildRow(
-              file.name,
-              formatBytes(file.size),
-              sizeColor,
-              label: _buildBuildLabel(file),
-            ),
+            child: _buildRow(file.name, formatBytes(file.size), sizeColor, label: _buildBuildLabel(file)),
           ),
         ),
       );
@@ -241,29 +216,17 @@ class _PackFilesState extends State<PackFiles> {
     return items;
   }
 
-  Widget _buildIcon(
-    String name, {
-    bool isDirectory = false,
-    bool isExpanded = false,
-  }) {
+  Widget _buildIcon(String name, {bool isDirectory = false, bool isExpanded = false}) {
     return SvgPicture.asset(
-      iconAssetFor(
-        brightness: FluentTheme.of(context).brightness,
-        name: name,
-        isDirectory: isDirectory,
-        isExpanded: isExpanded,
-      ),
+      iconAssetFor(brightness: FluentTheme
+          .of(context)
+          .brightness, name: name, isDirectory: isDirectory, isExpanded: isExpanded),
       width: _treeIconSize,
       height: _treeIconSize,
     );
   }
 
-  static Widget _buildRow(
-    String name,
-    String size,
-    Color sizeColor, {
-    Widget? label,
-  }) {
+  static Widget _buildRow(String name, String size, Color sizeColor, {Widget? label}) {
     final Widget nameText = Text(name, overflow: TextOverflow.ellipsis);
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: _treeRowContentMinHeight),
@@ -283,6 +246,7 @@ class _PackFilesState extends State<PackFiles> {
             ),
           const SizedBox(width: 8),
           Text(size, style: TextStyle(color: sizeColor)),
+          const SizedBox(width: 16),
         ],
       ),
     );
@@ -296,24 +260,14 @@ class _PackFilesState extends State<PackFiles> {
     if (label == null) {
       return null;
     }
-    return Tag(
-      text: label,
-      color: label == releaseBuildLabel
-          ? MarkerColors.green
-          : MarkerColors.orange,
-      fontSize: 10,
-    );
+    return Tag(text: label, color: label == releaseBuildLabel ? MarkerColors.green : MarkerColors.orange, fontSize: 10);
   }
 
   Future<void> _openFile(FileModel file) async {
     final String? sourcePath = widget.pack.sourcePath;
     if (sourcePath == null) {
-      showFloatingToast(
-        context,
-        '该包缺少源目录信息，无法打开文件',
-        type: FloatingToastType.error,
-        duration: const Duration(seconds: 5),
-      );
+      showFloatingToast(context, '该包缺少源目录信息，无法打开文件', type: FloatingToastType.error,
+          duration: const Duration(seconds: 5));
       return;
     }
     final bool opened = await widget.openFile(joinPath(sourcePath, file.path));
@@ -322,18 +276,11 @@ class _PackFilesState extends State<PackFiles> {
     }
     if (!opened) {
       showFloatingToast(
-        context,
-        '无法打开文件：${file.name}',
-        type: FloatingToastType.error,
-        duration: const Duration(seconds: 5),
-      );
+          context, '无法打开文件：${file.name}', type: FloatingToastType.error, duration: const Duration(seconds: 5));
     }
   }
 
-  Future<void> _onItemInvoked(
-    TreeViewItem item,
-    TreeViewItemInvokeReason reason,
-  ) async {
+  Future<void> _onItemInvoked(TreeViewItem item, TreeViewItemInvokeReason reason) async {
     if (reason != TreeViewItemInvokeReason.pressed) {
       return;
     }
@@ -360,28 +307,29 @@ class _PackFilesState extends State<PackFiles> {
     }
   }
 
-  Widget _buildToolbar({
-    required String? openRepoUrl,
-    required bool canBuild,
-    required bool showVersionChip,
-  }) {
+  Widget _buildToolbar({required String? openRepoUrl, required bool canBuild, required bool showVersionChip}) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: <Widget>[
-          if (openRepoUrl != null) _buildOpenRepoButton(openRepoUrl),
-          if (canBuild)
-            FilledButton(
-              key: const Key('buildPackButton'),
-              onPressed: () => widget.onBuildPack!(widget.pack),
-              child: const Text('构建'),
+      padding: const EdgeInsets.fromLTRB(8, 3, 8, 0),
+      child: Card(
+        padding: EdgeInsetsGeometry.all(5),
+        child: Row(
+          children: [
+            Wrap(
+              spacing: 5,
+              runSpacing: 0,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <Widget>[
+                if (canBuild) FilledButton(key: const Key('buildPackButton'),
+                    onPressed: () => widget.onBuildPack!(widget.pack),
+                    child: const Text('构建')),
+                if (openRepoUrl != null) _buildOpenRepoButton(openRepoUrl),
+                if (canBuild) _buildRuntimeGroup(),
+              ],
             ),
-          if (canBuild) _buildRuntimeGroup(),
-          if (showVersionChip) _buildVersionChip(),
-        ],
+            Spacer(),
+            if (showVersionChip) ...[_buildVersionChip()],
+          ],
+        ),
       ),
     );
   }
@@ -389,18 +337,7 @@ class _PackFilesState extends State<PackFiles> {
   Widget _buildOpenRepoButton(String url) {
     return Tooltip(
       message: url,
-      child: Button(
-        key: const Key('openRepoButton'),
-        onPressed: () => _openRepo(url),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(FluentIcons.open_in_new_window, size: 14),
-            SizedBox(width: 6),
-            Text('打开远程仓库'),
-          ],
-        ),
-      ),
+      child: Button(key: const Key('openRepoButton'), onPressed: () => _openRepo(url), child: Text('远程仓库')),
     );
   }
 
@@ -410,12 +347,7 @@ class _PackFilesState extends State<PackFiles> {
       return;
     }
     if (!opened) {
-      showFloatingToast(
-        context,
-        '无法打开链接',
-        type: FloatingToastType.error,
-        duration: const Duration(seconds: 5),
-      );
+      showFloatingToast(context, '无法打开链接', type: FloatingToastType.error, duration: const Duration(seconds: 5));
     }
   }
 
@@ -424,14 +356,6 @@ class _PackFilesState extends State<PackFiles> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(
-          '运行库',
-          style: TextStyle(
-            fontSize: 12,
-            color: FluentTheme.of(context).resources.textFillColorSecondary,
-          ),
-        ),
-        const SizedBox(width: 8),
         RuntimeLibrarySelector(
           value: runtimeValue,
           enabled: widget.onSave != null && !_savingOption,
@@ -441,30 +365,23 @@ class _PackFilesState extends State<PackFiles> {
             }
           },
         ),
-        const SizedBox(width: 6),
-        const RuntimeLibraryHelpButton(),
       ],
     );
   }
 
   /// 运行库保存值（`MD` / `MT` 大写归一）；缺失或非法显示「默认（跟随配方）」。
   String? _savedRuntimeLibrary() {
-    final String? normalized = normalizeRuntimeLibrary(
-      widget.pack.buildOptions[runtimeOptionName],
-    );
+    final String? normalized = normalizeRuntimeLibrary(widget.pack.buildOptions[runtimeOptionName]);
     return normalized?.toUpperCase();
   }
 
   /// 版本胶囊：纯展示（不可点击、不参与 Tab 序），四态见设计规格 §5.3。
   Widget _buildVersionChip() {
-    final String current = widget.pack.sourceVersion ?? '—';
+    final String current = widget.pack.sourceVersion ?? '不可用';
     final bool querying = !_latestLoaded;
     final String? latestVersion = _latestVersion;
-    final String latestText = querying ? '查询中…' : (latestVersion ?? '—');
-    final bool hasUpdate =
-        !querying &&
-        latestVersion != null &&
-        compareTagVersions(latestVersion, current) > 0;
+    final String latestText = querying ? '查询中…' : (latestVersion ?? '不可用');
+    final bool hasUpdate = !querying && latestVersion != null && compareTagVersions(latestVersion, current) > 0;
     final String latestTooltip;
     if (querying) {
       latestTooltip = '最新版本：查询中…';
@@ -473,65 +390,38 @@ class _PackFilesState extends State<PackFiles> {
     } else if (latestVersion != null) {
       latestTooltip = '最新版本：$latestText（已是最新）';
     } else {
-      latestTooltip = '最新版本：—';
+      latestTooltip = '最新版本：不可用';
     }
     final FluentThemeData theme = FluentTheme.of(context);
     final Color valueColor = theme.resources.textFillColorPrimary;
     final Color placeholderColor = theme.resources.textFillColorTertiary;
-    final TextStyle labelStyle = TextStyle(
-      fontSize: 12,
-      color: theme.resources.textFillColorSecondary,
-    );
+    final TextStyle labelStyle = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
     return Container(
       key: const Key('packRepoVersionLabel'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: theme.resources.solidBackgroundFillColorQuarternary,
-        borderRadius: BorderRadius.circular(999),
-      ),
+          color: theme.resources.solidBackgroundFillColorSecondary, borderRadius: BorderRadius.circular(999)),
       child: Tooltip(
         message: '当前版本：$current\n$latestTooltip',
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (hasUpdate) ...<Widget>[
-              const Icon(
-                FluentIcons.update_restore,
-                size: 12,
-                color: MarkerColors.green,
-              ),
-              const SizedBox(width: 6),
+              const Icon(FluentIcons.update_restore, size: 12, color: MarkerColors.green),
+              const SizedBox(width: 6)
             ],
             Text('当前', style: labelStyle),
             const SizedBox(width: 4),
-            Text(
-              current,
-              style: TextStyle(
-                fontSize: 12,
-                color: widget.pack.sourceVersion == null
-                    ? placeholderColor
-                    : valueColor,
-              ),
-            ),
+            Text(current, style: TextStyle(
+                fontSize: 12, color: widget.pack.sourceVersion == null ? placeholderColor : valueColor)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(
-                FluentIcons.chevron_right,
-                size: 12,
-                color: placeholderColor,
-              ),
+              child: Icon(FluentIcons.chevron_right, size: 12, color: placeholderColor),
             ),
             Text('最新', style: labelStyle),
             const SizedBox(width: 4),
-            Text(
-              latestText,
-              style: TextStyle(
-                fontSize: 12,
-                color: querying || latestVersion == null
-                    ? placeholderColor
-                    : valueColor,
-              ),
-            ),
+            Text(latestText, style: TextStyle(
+                fontSize: 12, color: querying || latestVersion == null ? placeholderColor : valueColor)),
           ],
         ),
       ),
@@ -560,60 +450,44 @@ class _PackFilesState extends State<PackFiles> {
     if (saved) {
       showFloatingToast(context, '已保存');
     } else {
-      showFloatingToast(
-        context,
-        '保存失败',
-        type: FloatingToastType.error,
-        duration: const Duration(seconds: 5),
-      );
+      showFloatingToast(context, '保存失败', type: FloatingToastType.error, duration: const Duration(seconds: 5));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool canBuild =
-        widget.onBuildPack != null &&
-        findBuildScript(widget.pack.files) != null;
+    final bool canBuild = widget.onBuildPack != null && findBuildScript(widget.pack.files) != null;
     final String? openRepoUrl = openableRepoWebUrl(_header?.repo ?? '');
     final bool showVersionChip = _header?.repo != null;
-    final List<BuildScriptOption> options = canBuild && widget.onSave != null
-        ? (_header?.options ?? const <BuildScriptOption>[])
-        : const <BuildScriptOption>[];
-    final Color sizeColor = FluentTheme.of(context)
+    final List<BuildScriptOption> options = canBuild && widget.onSave != null ? (_header?.options ??
+        const <BuildScriptOption>[]) : const <BuildScriptOption>[];
+    final Color sizeColor = FluentTheme
+        .of(context)
         .resources
         .textFillColorSecondary;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (openRepoUrl != null || canBuild || showVersionChip)
-          _buildToolbar(
-            openRepoUrl: openRepoUrl,
-            canBuild: canBuild,
-            showVersionChip: showVersionChip,
-          ),
+        Divider(),
+        if (openRepoUrl != null || canBuild || showVersionChip) _buildToolbar(
+            openRepoUrl: openRepoUrl, canBuild: canBuild, showVersionChip: showVersionChip),
         if (options.isNotEmpty)
           BuildOptionsPanel(
             options: options,
             values: widget.pack.buildOptions,
             expanded: _optionsExpanded,
-            onToggleExpanded: () =>
-                setState(() => _optionsExpanded = !_optionsExpanded),
+            onToggleExpanded: () => setState(() => _optionsExpanded = !_optionsExpanded),
             saving: _savingOption,
             onChange: _changeBuildOption,
           ),
         Expanded(
           child: widget.pack.files.isEmpty
               ? const Center(child: Text('该包暂无文件'))
-              : TreeView(
-                  items: _buildTreeItems(
-                    _buildTree(widget.pack.files),
-                    sizeColor,
-                  ),
-                  onItemInvoked: _onItemInvoked,
-                  onItemExpandToggle: _onExpandToggle,
-                  shrinkWrap: false,
-                  scrollPrimary: false,
-                ),
+              : TreeView(items: _buildTreeItems(_buildTree(widget.pack.files), sizeColor),
+              onItemInvoked: _onItemInvoked,
+              onItemExpandToggle: _onExpandToggle,
+              shrinkWrap: false,
+              scrollPrimary: false),
         ),
       ],
     );
