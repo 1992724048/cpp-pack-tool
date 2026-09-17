@@ -690,7 +690,7 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                   const SizedBox(width: 5),
                   Tag(
                     text: '系统',
-                    color: FluentTheme.of(context).resources.solidBackgroundFillColorQuarternary,
+                    color: FluentTheme.of(context).resources.solidBackgroundFillColorBaseAlt,
                     fontSize: 10,
                   ),
                 ],
