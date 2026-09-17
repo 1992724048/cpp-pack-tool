@@ -34,56 +34,53 @@ class _AboutState extends State<About> {
     final Color secondaryColor = theme.resources.textFillColorSecondary;
     return SizedBox.expand(
       key: const Key('aboutPage'),
-      child: Container(
-        decoration: BoxDecoration(color: theme.cardColor),
-        child: Center(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SvgPicture.asset(
-                  'assets/icons/cardboard_box.svg',
-                  width: 64,
-                  height: 64,
+      child: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SvgPicture.asset(
+                'assets/icons/cardboard_box.svg',
+                width: 64,
+                height: 64,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                appName,
+                style: theme.typography.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  appName,
-                  style: theme.typography.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Tag(text: 'v$appVersion', fontSize: 11),
+              const SizedBox(height: 16),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Text(
+                  appDescription,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: secondaryColor),
                 ),
-                const SizedBox(height: 8),
-                Tag(text: 'v$appVersion', fontSize: 11),
-                const SizedBox(height: 16),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: Text(
-                    appDescription,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: secondaryColor),
-                  ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                key: const Key('aboutRepoButton'),
+                onPressed: _openRepository,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Svgs.openBox,
+                    const SizedBox(width: 8),
+                    const Text('项目主页'),
+                  ],
                 ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  key: const Key('aboutRepoButton'),
-                  onPressed: _openRepository,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Svgs.openBox,
-                      const SizedBox(width: 8),
-                      const Text('项目主页'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  '第三方组件许可见仓库 THIRD_PARTY_NOTICES.md',
-                  style: TextStyle(color: secondaryColor, fontSize: 12),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '第三方组件许可见仓库 THIRD_PARTY_NOTICES.md',
+                style: TextStyle(color: secondaryColor, fontSize: 12),
+              ),
+            ],
           ),
         ),
       ),

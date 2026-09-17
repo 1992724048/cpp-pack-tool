@@ -62,7 +62,7 @@ class _FloatingToast extends StatefulWidget {
 class _FloatingToastState extends State<_FloatingToast>
     with SingleTickerProviderStateMixin {
   static const Duration _animationDuration = Duration(milliseconds: 180);
-  static const Offset _slideFrom = Offset(0.18, 0);
+  static const Offset _slideFrom = Offset(1, 0);
 
   late final AnimationController _controller;
   late final CurvedAnimation _curve;

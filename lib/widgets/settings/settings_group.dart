@@ -4,7 +4,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 /// PowerToys SettingsGroup token：组标题 14 Semibold、上边距 32（首个 8）、
 /// 卡容器上距 8、卡间距 2。
 abstract final class SettingsGroupTokens {
-  static const double headerSpacing = 32;
+  static const double headerSpacing = 8;
   static const double firstHeaderSpacing = 8;
   static const double containerSpacing = 8;
   static const double cardSpacing = 2;

@@ -37,16 +37,8 @@ class PackModel {
 
   static List<PackModel> packs = [];
 
-  PackModel({
-    required this.name,
-    required this.version,
-    required this.author,
-    this.description,
-    this.license,
-    this.iconPath,
-    this.sourcePath,
-    this.sourceVersion,
-  });
+  PackModel(
+      {required this.name, required this.version, required this.author, this.description, this.license, this.iconPath, this.sourcePath, this.sourceVersion});
 
   Map<String, Object?> toMap() {
     return <String, Object?>{
@@ -58,43 +50,22 @@ class PackModel {
       if (iconPath != null) 'iconPath': iconPath,
       if (sourcePath != null) 'sourcePath': sourcePath,
       if (sourceVersion != null) 'sourceVersion': sourceVersion,
-      'files': <Map<String, Object?>>[
-        for (final FileModel file in files) file.toMap(),
-      ],
-      'dependencies': <Map<String, Object?>>[
-        for (final DependencyModel dependency in dependencies)
-          dependency.toMap(),
-      ],
-      'commands': <Map<String, Object?>>[
-        for (final CmdModel command in commands) command.toMap(),
-      ],
-      'macros': <Map<String, Object?>>[
-        for (final MacroModel macro in macros) macro.toMap(),
-      ],
+      'files': <Map<String, Object?>>[for (final FileModel file in files) file.toMap()],
+      'dependencies': <Map<String, Object?>>[for (final DependencyModel dependency in dependencies) dependency.toMap()],
+      'commands': <Map<String, Object?>>[for (final CmdModel command in commands) command.toMap()],
+      'macros': <Map<String, Object?>>[for (final MacroModel macro in macros) macro.toMap()],
       'libDirectories': <Map<String, Object?>>[
-        for (final LibDirModel libDirectory in libDirectories)
-          libDirectory.toMap(),
+        for (final LibDirModel libDirectory in libDirectories) libDirectory.toMap()
       ],
-      'libraries': <Map<String, Object?>>[
-        for (final LibraryModel library in libraries) library.toMap(),
-      ],
-      'history': <Map<String, Object?>>[
-        for (final HistoryModel entry in history) entry.toMap(),
-      ],
-      'scripts': <Map<String, Object?>>[
-        for (final ScriptProjectModel script in scripts) script.toMap(),
-      ],
-      if (buildOptions.isNotEmpty)
-        'buildOptions': <String, String>{...buildOptions},
-      if (enabledFormats.isNotEmpty)
-        'enabledFormats': <String>[...enabledFormats],
+      'libraries': <Map<String, Object?>>[for (final LibraryModel library in libraries) library.toMap()],
+      'history': <Map<String, Object?>>[for (final HistoryModel entry in history) entry.toMap()],
+      'scripts': <Map<String, Object?>>[for (final ScriptProjectModel script in scripts) script.toMap()],
+      if (buildOptions.isNotEmpty) 'buildOptions': <String, String>{...buildOptions},
+      if (enabledFormats.isNotEmpty) 'enabledFormats': <String>[...enabledFormats],
     };
   }
 
-  factory PackModel.fromMap(
-    Map<String, Object?> map, {
-    List<String>? warnings,
-  }) {
+  factory PackModel.fromMap(Map<String, Object?> map, {List<String>? warnings}) {
     final PackModel pack = PackModel(
       name: _requiredString(map, 'name'),
       version: _requiredString(map, 'version'),
@@ -106,42 +77,27 @@ class PackModel {
       sourceVersion: _optionalSourceVersion(map),
     );
 
-    pack.files.addAll(<FileModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'files'))
-        FileModel.fromMap(item),
-    ]);
+    pack.files.addAll(
+        <FileModel>[for (final Map<String, Object?> item in _mapList(map, 'files')) FileModel.fromMap(item)]);
     pack.dependencies.addAll(<DependencyModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'dependencies'))
-        DependencyModel.fromMap(item),
+      for (final Map<String, Object?> item in _mapList(map, 'dependencies')) DependencyModel.fromMap(item)
     ]);
-    pack.commands.addAll(<CmdModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'commands'))
-        CmdModel.fromMap(item),
-    ]);
-    pack.macros.addAll(<MacroModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'macros'))
-        MacroModel.fromMap(item),
-    ]);
+    pack.commands.addAll(
+        <CmdModel>[for (final Map<String, Object?> item in _mapList(map, 'commands')) CmdModel.fromMap(item)]);
+    pack.macros.addAll(
+        <MacroModel>[for (final Map<String, Object?> item in _mapList(map, 'macros')) MacroModel.fromMap(item)]);
     pack.libDirectories.addAll(<LibDirModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'libDirectories'))
-        LibDirModel.fromMap(item),
+      for (final Map<String, Object?> item in _mapList(map, 'libDirectories')) LibDirModel.fromMap(item)
     ]);
-    pack.libraries.addAll(<LibraryModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'libraries'))
-        LibraryModel.fromMap(item),
-    ]);
-    pack.history.addAll(<HistoryModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'history'))
-        HistoryModel.fromMap(item),
-    ]);
+    pack.libraries.addAll(
+        <LibraryModel>[for (final Map<String, Object?> item in _mapList(map, 'libraries')) LibraryModel.fromMap(item)]);
+    pack.history.addAll(
+        <HistoryModel>[for (final Map<String, Object?> item in _mapList(map, 'history')) HistoryModel.fromMap(item)]);
 
     final Set<String> scriptIds = <String>{};
     for (final Map<String, Object?> item in _mapList(map, 'scripts')) {
       try {
-        final ScriptProjectModel script = ScriptProjectModel.fromMap(
-          item,
-          warnings: warnings,
-        );
+        final ScriptProjectModel script = ScriptProjectModel.fromMap(item, warnings: warnings);
         if (!scriptIds.add(script.id)) {
           warnings?.add('脚本 id 重复，已丢弃：${script.id}');
           continue;
@@ -189,8 +145,7 @@ Map<String, String> _stringStringMap(Map<String, Object?> map, String key) {
   }
   return <String, String>{
     for (final MapEntry<Object?, Object?> entry in value.entries)
-      if (entry.key is String && entry.value is String)
-        entry.key as String: entry.value as String,
+      if (entry.key is String && entry.value is String) entry.key as String: entry.value as String,
   };
 }
 

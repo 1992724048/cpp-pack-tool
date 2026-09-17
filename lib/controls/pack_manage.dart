@@ -171,10 +171,7 @@ class _PackManageState extends State<PackManage> {
     return Builder(
       builder: (BuildContext context) {
         final theme = FluentTheme.of(context);
-        return Container(
-          decoration: BoxDecoration(color: theme.cardColor),
-          child: child,
-        );
+        return child;
       },
     );
   }
