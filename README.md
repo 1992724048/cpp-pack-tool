@@ -1,7 +1,7 @@
 ﻿<div align="center">
 <picture><source media="(prefers-color-scheme: dark)" srcset="./logo/logo.png"><source media="(prefers-color-scheme: light)" srcset="./logo/logo.png"><img alt="HWOPT" src="./logo/logo.png" width="128"></picture>
 
-# CCPPP — C++ 包管理工具
+# CCPPP — C/C++ 包管理工具
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Status](https://img.shields.io/badge/Status-WIP-yellow)
