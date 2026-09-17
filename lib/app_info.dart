@@ -1,4 +1,4 @@
-const String appName = 'CPPP';
+const String appName = 'CCPPP';
 
 /// 与 pubspec.yaml 的 version 同步（去掉 +build 与末尾 .0，如 26.1.0+1 → 26.1）；不一致时 test/app_info_test.dart 会失败。
 const String appVersion = '26.3 WIP';
