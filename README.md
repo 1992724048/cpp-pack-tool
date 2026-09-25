@@ -34,7 +34,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 内容 | 包内路径 | 说明 |
 | ---- | -------- | ---- |
 | 头文件 / 模块 | `build/native/include/<源目录名>/...` | 剥离开头 `include/` 后套源目录命名空间；首段已同名时不再叠加。 |
-| `lib` / `dll` / `pdb` | `build/native/lib/...` | 剥离开头 `lib` 或 `bin`。 |
+| `lib` / `dll` / `pdb` / `.a` | `build/native/lib/...` | 剥离开头 `lib` 或 `bin`；`.a` 是通用静态归档，一并归入库目录。 |
 | 其余源文件 | `build/native/files/...` | 保留相对路径；根级 `build.py` 不入包。 |
 | NuGet 清单 | `<包ID>.nuspec` | 由应用生成，记录版本、作者、许可证、依赖和图标引用。 |
 | MSBuild 集成 | `build/native/<包ID>.targets` | 由应用生成，供消费者工程导入。 |
@@ -50,13 +50,13 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 内容 | 包内路径 |
 | ---- | -------- |
 | 头文件 / 模块 | `include/<源目录名>/...` |
-| `lib` / `dll` / `pdb` | `lib/...` |
+| `lib` / `dll` / `pdb` / `.a` | `lib/...` |
 | 其余源文件 | `files/...` |
 | CMake 配置 | `lib/cmake/<包名>/<包名>Config.cmake` |
 | CMake 目标 | `lib/cmake/<包名>/<包名>Targets.cmake` |
 | 版本文件 | `lib/cmake/<包名>/<包名>ConfigVersion.cmake`（版本为数字点分时生成） |
 
-解压后把包根加入 `CMAKE_PREFIX_PATH`，即可使用 `find_package(<包名> CONFIG REQUIRED)`，并链接 `<包名>::<包名>`。CMake 格式不包含节点脚本，根级 `build.py` 同样排除。
+解压后把包根加入 `CMAKE_PREFIX_PATH`，即可使用 `find_package(<包名> CONFIG REQUIRED)`，并链接 `<包名>::<包名>`。两种格式都把 `.a` 视为通用静态归档：与 `.lib` 一样归入库目录并保留 `release`/`debug` 路径段（CMake 格式中按配置分组写入链接列表）。CMake 格式不包含节点脚本，根级 `build.py` 同样排除。
 
 ## 远程构建与 SKILL.md
 
@@ -65,6 +65,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 - 第一行必须是 `# <git仓库地址>`；其后连续的 `#` 行可声明 `# tool`、`# option`、`# checkbox`、`# multiselect`、`# runtime`、`# source: none` 和 `# depends` 指令。
 - 默认流程是准备构建环境、拉取或复用源码缓存、对齐版本、执行 `python -u build.py`、检查头文件引用并自动重新映射。
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链与选项变量以及 `PYTHONIOENCODING=utf-8`。
+- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。运行库家族经 `CNP_RUNTIME_LIBRARY` 下发 `md` / `mt`。
 - `assets/build/cnp_build_support.py` 会在构建前释放到 `tools/`，供配方统一处理 CMake/Ninja、编译参数、产物分层、许可证和预构建归档分类。
 - 设置页的「生成 SKILL.md…」会写出内置模板 `assets/build/SKILL.md`，其用途是指导 AI 为远程仓库编写兼容本工具的 `build.py`，不是直接生成一个包。
 
@@ -108,7 +109,7 @@ config/
 | `cmakeOutputDirectory` | CMake 配置包输出目录。 |
 | `defaultAuthor` | 新包默认作者，并用于替换占位作者。 |
 | `themeMode` | `system`、`dark` 或 `light`。 |
-| `compilerPriority` / `detectedCompilers` | 编译器优先级和检测缓存。 |
+| `compilerPriority` / `detectedCompilers` | 编译器优先级（默认 `ICX > clang-cl > MSVC`）与检测缓存（ICX / clang-cl / MSVC）。 |
 | `proxyMode` / `proxyHost` / `proxyPort` | 系统代理设置；端口范围为 1–65535。 |
 
 每个 `packs/<包ID>.yaml` 保存一个包：
