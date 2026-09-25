@@ -218,9 +218,9 @@ ScriptProjectModel _stringAndProcessFixture() {
   );
 }
 
-/// M4.2 节点家族夹具：file 硬链接 → readHex→writeHex 往返 → crypto
+/// 节点家族夹具：file 硬链接 → readHex→writeHex 往返 → crypto
 /// （fileHash crc32 → Base64 解码 → AES 加密 → 代码签名）执行链，穿插
-/// math.arithmetic 与 string.upperCase，触发全部 M4.2 新 helper
+/// math.arithmetic 与 string.upperCase，触发全部新 helper
 /// （ConvertFrom-CnpHex、Get-CnpFileHash + crc32 块、Invoke-CnpAesTransform、
 /// Invoke-CnpSignFile）。
 ScriptProjectModel _nodeFamiliesFixture() {
@@ -323,7 +323,7 @@ ScriptProjectModel _nodeFamiliesFixture() {
   );
 }
 
-/// M4.3 变量系统夹具：数值变量累加（set → while 条件重估 → 循环内 set）
+/// 变量系统夹具：数值变量累加（set → while 条件重估 → 循环内 set）
 /// + 文本变量写入/读回，触发顶部 `vars` 初始化块（count → 0、status → ''）。
 ScriptProjectModel _variablesFixture() {
   return _project(
@@ -388,7 +388,7 @@ ScriptProjectModel _variablesFixture() {
   );
 }
 
-/// M4.4 系统与网络夹具：上传（显式 POST）→ 下载 → 查找工具（含带引号候选）
+/// 系统与网络夹具：上传（显式 POST）→ 下载 → 查找工具（含带引号候选）
 /// → 分支消费 found、日志消费 path。
 ScriptProjectModel _systemFixture() {
   return _project(
@@ -446,7 +446,7 @@ ScriptProjectModel _systemFixture() {
   );
 }
 
-/// M4.4 包内脚本夹具：`context.scriptFile` → 目录名（工作目录）与日志消息；
+/// 包内脚本夹具：`context.scriptFile` → 目录名（工作目录）与日志消息；
 /// `process.runScript`（ps1、abortOnFailure false、多行参数）执行后接日志。
 ScriptProjectModel _runScriptFixture() {
   return _project(

@@ -18,18 +18,15 @@ String buildModelLabel(BuildModel buildModel) {
   };
 }
 
-/// 构建标签着色（视觉规范 §2.2）：ALL 蓝 / Release 绿 / Debug 橙。
 Color buildModelColor(BuildModel buildModel) => switch (buildModel) {
   BuildModel.all => MarkerColors.blue,
   BuildModel.release => MarkerColors.green,
   BuildModel.debug => MarkerColors.orange,
 };
 
-/// 触发时机标签（视觉规范 §2.2）。
 String scriptTriggerLabel(ScriptTrigger trigger) =>
     trigger == ScriptTrigger.pre ? '编译前' : '编译后';
 
-/// 触发时机着色（视觉规范 §2.2）：编译前 cyan / 编译后 purple。
 Color scriptTriggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
     ? MarkerColors.cyan
     : MarkerColors.purple;

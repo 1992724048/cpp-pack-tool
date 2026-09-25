@@ -89,7 +89,7 @@ ScriptEdgeModel _edge(
   );
 }
 
-/// while 累加器图（M4.3 同款）：count = 0 → while (count < 5) { count += 1 } →
+/// while 累加器图：count = 0 → while (count < 5) { count += 1 } →
 /// 输出 count；真实执行后 stdout 恰为 `5`。
 ScriptProjectModel _whileAccumulatorProject() {
   final ScriptProjectModel project = ScriptProjectModel(
@@ -175,7 +175,7 @@ ScriptProjectModel _fileHashProject(String filePath) {
   return project;
 }
 
-/// 运行包内脚本图（M4.4）：entry → `process.runScript` → log 收尾；
+/// 运行包内脚本图：entry → `process.runScript` → log 收尾；
 /// `script` 为包内相对路径（解析经 `$env:CNP_PackageRoot`），`arguments`
 /// 由 value.text 按行供应（每行一参）。
 ScriptProjectModel _runScriptProject({

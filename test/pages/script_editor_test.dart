@@ -197,7 +197,6 @@ void main() {
     await tester.tap(find.byKey(const Key('retrySaveButton')));
     await tester.pump();
     await tester.pump();
-    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
     await tester.pump(const Duration(milliseconds: 150));
 
     expect(find.text('已保存'), findsOneWidget);
@@ -827,7 +826,6 @@ void main() {
           .text,
       '脚本 2',
     );
-    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
     await tester.pump(const Duration(milliseconds: 150));
     expect(tester.takeException(), isNull);
   });
@@ -911,7 +909,7 @@ void main() {
       },
     );
 
-    // 视口防抖窗内矩阵领先模型（等价于 fling 惯性期 / T9 居中尾段）。
+    // 视口防抖窗内矩阵领先模型。
     final TransformationController transformation = _editorTransformation(
       tester,
     );
@@ -1005,7 +1003,6 @@ void main() {
     expect(saved, isNotEmpty);
     expect(saved.last.scripts.single.viewX, closeTo(60, 1e-9));
     expect(saved.last.scripts.single.viewY, closeTo(30, 1e-9));
-    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
     await tester.pump(const Duration(milliseconds: 150));
     expect(tester.takeException(), isNull);
   });
@@ -1064,7 +1061,6 @@ void main() {
       <String>['script_1', 'script_2', 'script_3'],
     );
     expect(_projectCombo(tester).value!.id, 'script_2');
-    // fluent_ui 悬停按钮在点击后启动 100ms 内部计时，推进以免测试收尾挂起。
     await tester.pump(const Duration(milliseconds: 150));
     expect(tester.takeException(), isNull);
   });

@@ -2,21 +2,18 @@ import 'package:cpp_nuget_pack/script_editor/node_type.dart';
 
 const String _emptySummary = '—';
 
-/// 日志级别 → 中文标签（检查器 ComboBox 与值条共用）。
 const Map<String, String> logLevelLabels = <String, String>{
   'info': '信息',
   'warn': '警告',
   'error': '错误',
 };
 
-/// 字符串运算符 → 中文标签（检查器 ComboBox 与值条共用）。
 const Map<String, String> stringOperatorLabels = <String, String>{
   'eq': '等于',
   'ne': '不等于',
   'contains': '包含',
 };
 
-/// 算术运算符 → 中文标签（检查器 ComboBox 与值条共用）。
 const Map<String, String> mathOperatorLabels = <String, String>{
   'add': '加',
   'subtract': '减',
@@ -25,7 +22,6 @@ const Map<String, String> mathOperatorLabels = <String, String>{
   'modulo': '取模',
 };
 
-/// 位运算符 → 中文标签（检查器 ComboBox 与值条共用）。
 const Map<String, String> bitwiseOperatorLabels = <String, String>{
   'and': '与',
   'or': '或',
@@ -34,7 +30,6 @@ const Map<String, String> bitwiseOperatorLabels = <String, String>{
   'shiftRight': '右移',
 };
 
-/// 数值比较运算符 → 符号标签（检查器 ComboBox 与值条共用）。
 const Map<String, String> numberOperatorLabels = <String, String>{
   'lt': '<',
   'le': '≤',
@@ -44,7 +39,6 @@ const Map<String, String> numberOperatorLabels = <String, String>{
   'ne': '≠',
 };
 
-/// 哈希算法 → 显示名（检查器 ComboBox 与值条共用）。
 const Map<String, String> hashAlgorithmLabels = <String, String>{
   'sha256': 'SHA256',
   'sha1': 'SHA1',

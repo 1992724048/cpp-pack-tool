@@ -219,10 +219,6 @@ void main() {
       expect(paramValueText(_param(ScriptParamType.number), '5'), '5');
       expect(paramValueText(_param(ScriptParamType.boolean), 'true'), '否');
     });
-
-    // ScriptParamType 为封闭枚举，`paramValueText` 的 switch 已按全部枚举值
-    // 穷尽（编译期强制），未知类型值无法构造；「未识别值回退原文」用例覆盖
-    // 值不在已知集合时的运行时兜底。
   });
 
   group('公共标签 map', () {

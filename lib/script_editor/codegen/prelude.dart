@@ -2,7 +2,7 @@
 ///
 /// 生成器仅输出已注册的键。`crc32` 与 `vars` 为动态内容键，不在
 /// [preludeLibrary] 中：`crc32` 由注册方传入 [crc32Prelude]，`vars` 由
-/// M4.3 的变量初始化块提供。
+/// 变量初始化块提供。
 const List<String> preludeOrder = <String>[
   'ConvertFrom-CnpHex',
   'Find-CnpTool',

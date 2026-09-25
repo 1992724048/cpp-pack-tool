@@ -250,7 +250,6 @@ void main() {
     SettingsModel? saved;
     await _pumpSetting(
       tester,
-      // 有检测缓存，页面打开时不自动检测写回，便于隔离目录取消行为。
       settings: SettingsModel(
         compilerPriority: const <String>['icx'],
         detectedCompilers: <DetectedCompiler>[
@@ -367,7 +366,6 @@ void main() {
     SettingsModel? saved;
     await _pumpSetting(
       tester,
-      // 有检测缓存，页面打开时不自动检测写回，便于隔离默认作者行为。
       settings: SettingsModel(
         compilerPriority: const <String>['icx'],
         detectedCompilers: <DetectedCompiler>[

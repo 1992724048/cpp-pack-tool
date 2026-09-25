@@ -41,8 +41,7 @@ class PowerShell5Generator implements ScriptCodeGenerator {
     return _compileProject(project, packName: packName);
   }
 
-  /// 测试入口：编译前经 [preludeCollector] 调用真实注册 API 预注册片段
-  /// （生产路径由节点发射按需注册（T5–T7 已接入））。
+  /// 测试入口：编译前经 [preludeCollector] 调用真实注册 API 预注册片段。
   @visibleForTesting
   ScriptCompileResult compileWithPrelude(
     ScriptProjectModel project, {
@@ -153,7 +152,7 @@ class _PowerShellEmitter {
   void emitEntryChain() {
     final ScriptNodeModel? entry = _index.firstNodeOfType(entryTypeKey);
     if (entry == null) {
-      return; // 校验保证恰好一个入口；此处仅防御
+      return;
     }
     _emitChain(_index.execTarget(entry.id, defaultExecPinId));
   }
@@ -183,7 +182,7 @@ class _PowerShellEmitter {
     while (nodeId != null) {
       final ScriptNodeModel? node = _index.nodeById[nodeId];
       if (node == null) {
-        return; // 校验保证边指向存在的节点；此处仅防御
+        return;
       }
       _emitNode(node);
       nodeId = _continuationNodeId(node);
@@ -246,7 +245,6 @@ class _PowerShellEmitter {
       case 'flow.while':
         _emitWhile(node);
       default:
-        // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的代码生成尚未实现');
     }
   }
@@ -375,8 +373,8 @@ class _PowerShellEmitter {
     return passwordEnv.isEmpty ? null : '\$env:$passwordEnv';
   }
 
-  /// 变量写入（exec 语句）：`$var_<name> = <value 表达式>`；名称直接取
-  /// 参数文本（正则与同名同类型校验由校验器负责），发射期登记用于初始化。
+  /// 变量写入（exec 语句）：`$var_<name> = <value 表达式>`；
+  /// 发射期登记用于初始化。
   void _emitVariableSet(
     ScriptNodeModel node, {
     required ScriptDataType dataType,
@@ -394,8 +392,7 @@ class _PowerShellEmitter {
   }
 
   /// 登记变量并返回其显示名：名称按 PowerShell 语义大小写不敏感
-  /// （lower-key 归并），首见书写形式决定全图引用与初始化行（发射序）；
-  /// 同名同类型由校验器保证。
+  /// （lower-key 归并），首见书写形式决定全图引用与初始化行（发射序）。
   String _registerVariable(ScriptNodeModel node, ScriptDataType dataType) {
     final String name = _textParam(node, 'name');
     return _variables
@@ -569,7 +566,6 @@ class _PowerShellEmitter {
       case 'value.boolean':
         return _param(node, 'value') == true ? r'$true' : r'$false';
       case 'value.number':
-        // 数值参数校验已阻断生成，此处防直接调用：非 num 或非有限值回退 0。
         final Object? value = _param(node, 'value');
         return numberLiteral(value is num && value.isFinite ? value : 0);
       case 'file.list':
@@ -640,7 +636,6 @@ class _PowerShellEmitter {
       case 'variable.getString':
         return _variableReadExpression(node, ScriptDataType.string);
       default:
-        // 校验器已拒绝未知类型；此处仅防御未登记的节点类型
         throw UnsupportedError('节点类型「${node.type}」的表达式生成尚未实现');
     }
   }
@@ -760,7 +755,8 @@ class _PowerShellEmitter {
     }
   }
 
-  /// `textLines` 值 → PowerShell 数组字面量：`@('l1','l2')`；空 → `@()`。
+  /// `findTool.candidates` 值 → PowerShell 数组字面量：`@('l1','l2')`；
+  /// 空 → `@()`。
   String _candidatesLiteral(Object? value) {
     final List<String> candidates = value is List
         ? value.whereType<String>().toList(growable: false)

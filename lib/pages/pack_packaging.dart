@@ -64,7 +64,6 @@ class _PackPackagingState extends State<PackPackaging> {
     widget.onBuilderChanged?.call(builder);
   }
 
-  /// 该包当前启用的格式 id（规范序）；未记录时回退全部。
   List<String> _enabledFormatIds() => <String>[
     for (final PackageBuilder builder in enabledBuildersFor(widget.pack, all: widget.builders)) builder.id,
   ];
@@ -110,7 +109,6 @@ class _PackPackagingState extends State<PackPackaging> {
     showFloatingToast(context, '保存失败', type: FloatingToastType.error, duration: const Duration(seconds: 5));
   }
 
-  /// 全字段拷贝并仅替换启用格式集合。
   PackModel _withEnabledFormats(List<String> enabledFormats) {
     final PackModel pack = widget.pack;
     return PackModel(

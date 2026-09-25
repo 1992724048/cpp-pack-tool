@@ -1258,9 +1258,9 @@ class NodeRegistry {
             ),
           ],
         ),
-        // 变量读写共用一个名称参数；名称正则与同名同类型校验由校验器负责
-        // （M4.3 T2），生成器直接取参数文本发射 `$var_<name>`。自动初始化
-        // 保证 get 在 set 之前执行时也不为 $null（生成器收集变量名后注入）。
+        // 变量读写共用一个名称参数；名称正则与同名同类型校验由校验器负责。
+        // 生成器直接取参数文本发射 `$var_<name>`。自动初始化保证 get 在 set
+        // 之前执行时也不为 $null（生成器收集变量名后注入）。
         ScriptNodeTypeDescriptor(
           typeKey: 'variable.setNumber',
           displayName: '写入数值变量',

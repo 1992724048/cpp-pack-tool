@@ -17,7 +17,6 @@ Future<bool> openWithDefaultApp(String filePath) async {
     return false;
   }
   try {
-    // explorer 成功时退出码也恒为 1，因此不检查退出码。
     await Process.run('explorer', <String>[explorerPath(file)]);
     return true;
   } on ProcessException {
@@ -34,7 +33,7 @@ Future<bool> revealInExplorer(String filePath) async {
     return false;
   }
   try {
-    // `/select,` 与路径必须是两个独立参数；explorer 成功时退出码也恒为 1。
+    // `/select,` 与路径必须是两个独立参数。
     await Process.run('explorer', <String>['/select,', explorerPath(file)]);
     return true;
   } on ProcessException {
@@ -50,7 +49,6 @@ Future<bool> openExternalUrl(String url) async {
     return false;
   }
   try {
-    // explorer 可打开 URL；成功时退出码也恒为 1，因此不检查退出码。
     await Process.run('explorer', <String>[url]);
     return true;
   } on ProcessException {

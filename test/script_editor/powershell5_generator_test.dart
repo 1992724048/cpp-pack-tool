@@ -516,7 +516,7 @@ ScriptProjectModel _variableGetOnlyGraph() {
   );
 }
 
-/// while 累加器 TC 范例：count = 0 → while (count < 5) { count = count + 1 }
+/// while 累加器：count = 0 → while (count < 5) { count = count + 1 }
 /// → 输出 count。
 ScriptProjectModel _whileAccumulatorGraph() {
   return _project(
@@ -3001,7 +3001,6 @@ void main() {
   });
 
   group('prelude 机制（M4.2 T2）', () {
-    // T4 入口归一（PSModulePath 加固行）定稿后重定的零变化基线。
     const String zeroChangeGolden =
         '\uFEFF'
         '# 由 cpp_nuget_pack 生成 — demo / 生成版本头。请使用节点编辑器修改，勿手工编辑本文件。\n'

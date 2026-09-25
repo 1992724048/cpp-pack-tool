@@ -185,9 +185,8 @@ class ScriptPackaging {
       r'$(MSBuildThisFileDirectory)files\scripts\'
       '${_scriptFileName(script)}"';
 
-  /// 包内脚本文件名：`id` 本身为 ASCII 安全格式（spec §2.1 `script_N`），
-  /// 直接取 `<id>.ps1`，避免再套前缀得到 `script_script_1.ps1`
-  /// （spec §5.2 示例与 M3 计划 Task 4 断言均为 `script_1.ps1`）。
+  /// 包内脚本文件名直接取 `<id>.ps1`；`id` 已含 `script_` 前缀，避免生成
+  /// `script_script_1.ps1`。
   static String _scriptFileName(ScriptProjectModel script) =>
       '${script.id}.ps1';
 

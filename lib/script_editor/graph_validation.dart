@@ -171,7 +171,6 @@ class GraphValidator {
         }
         return '参数「${param.label}」不能为空';
       case ScriptParamType.textLines:
-        // 多行列表清洗在写入侧（检查器控件）完成，无参数级错误规则。
         return null;
       case ScriptParamType.text:
         if (param.key != 'name') {

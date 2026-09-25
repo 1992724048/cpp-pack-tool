@@ -268,7 +268,6 @@ String? _optionalString(Object? value) {
   return value;
 }
 
-/// 容错字符串读取：非字符串视为空串，读回 trim。
 String _trimmedString(Object? value) {
   if (value is! String) {
     return '';
