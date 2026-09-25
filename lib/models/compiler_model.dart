@@ -24,7 +24,7 @@ CompilerKind? compilerKindFromId(String id) {
 /// clang-cl（`clang-cl.exe`），标识 `clang-cl`。
 ///
 /// 仅供配置迁移识别：R23 缓存条目指向 GNU 驱动，与 clang-cl 旗标体系不兼容
-/// （`-mavx2`/`-O3` 等 GNU 风参数会被 clang-cl 拒绝），读回时必须丢弃并重检，
+/// （GNU 风格编译旗标会被 clang-cl 拒绝），读回时必须丢弃并重检，
 /// 不得映射为 [CompilerKind.clangCl]。
 const String legacyGnuClangKindId = 'clang';
 

@@ -75,6 +75,119 @@ void _expectNoTokens(
   }
 }
 
+/// 全仓扫描覆盖的文本扩展名：Dart 源码、辅助模块脚本与 Markdown 文档。
+const List<String> _scannedExtensions = <String>['.dart', '.md', '.py'];
+
+/// 全仓扫描的目录根（相对包根），确保生产代码、测试与资产脚本三类都在扫描面内。
+const List<String> _scanRoots = <String>['assets', 'lib', 'test'];
+
+/// 全部已删除口径（工具链术语 + GNU 编译旗标），供全仓扫描逐 token 比对。
+const List<String> _allRetiredTokens = <String>[
+  ..._retiredToolchainTerms,
+  ..._retiredGnuTerms,
+];
+
+/// 允许保留已删除口径的文件：`相对路径 → (允许的 token, 保留理由)`。
+///
+/// 登记理由只有两类：保护性负向夹具（含负向断言）与旧配置迁移识别；
+/// 生产代码的活跃链路与用户文档一律不得登记。
+const Map<String, ({List<String> tokens, String reason})> _allowedResidues =
+    <String, ({List<String> tokens, String reason})>{
+      'lib/models/settings_model.dart': (
+        tokens: <String>['mingw'],
+        reason: '生产代码唯一例外：检测缓存与优先级的旧种类迁移识别（整表作废并等待重检）',
+      ),
+      'test/build/build_environment_test.dart': (
+        tokens: <String>['windres'],
+        reason: '负向夹具：断言不推导资源编译器、同目录存在该工具也不下发',
+      ),
+      'test/build/build_support_module_test.dart': (
+        tokens: <String>['mingw'],
+        reason: '负向断言：辅助模块输出不得出现已删除编译器种类',
+      ),
+      'test/build/detect_compilers_real_smoke_test.dart': (
+        tokens: <String>['mingw'],
+        reason: '负向断言：真实探测仅覆盖受支持的三种编译器种类',
+      ),
+      'test/build/build_environment_real_smoke_test.dart': (
+        tokens: <String>['mingw'],
+        reason: '负向断言：真实环境准备仅覆盖受支持的三种编译器种类',
+      ),
+      'test/build/toolchain_test.dart': (
+        tokens: <String>[
+          'msys2',
+          'msys2_root',
+          'msys64',
+          'ucrt64',
+          'mingw',
+          '-dumpmachine',
+        ],
+        reason: '负向夹具：断言不读取旧安装根（含其环境变量）、不启动已删除的 GNU 驱动探测子进程',
+      ),
+      'test/util/format_test.dart': (
+        tokens: <String>['msys64', 'ucrt64'],
+        reason: '负向无关夹具：仅作为多级目录的父目录解析路径样本，不表达工具链语义',
+      ),
+      'test/models/settings_model_test.dart': (
+        tokens: <String>['mingw', 'mingw64', 'msys64', 'ucrt64'],
+        reason: '迁移测试：旧检测缓存与旧优先级读回时被丢弃并等待重检',
+      ),
+      'test/config/pack_store_test.dart': (
+        tokens: <String>['mingw', 'msys64', 'ucrt64'],
+        reason: '迁移测试：旧配置文件加载后相关条目被丢弃',
+      ),
+      'test/build/mingw_removal_contract_test.dart': (
+        tokens: _allRetiredTokens,
+        reason: '本文件即负向 token 的载体：表格与用例名必须写出字面量才能断言',
+      ),
+    };
+
+/// 读取全仓扫描范围内的文本文件，返回 `相对路径（正斜杠） → 小写归一正文`。
+///
+/// 目录根缺失即以具名断言失败，避免递归枚举为空时扫描静默恒真。
+Map<String, String> _scanRepositoryText() {
+  final Map<String, String> texts = <String, String>{};
+  for (final String root in _scanRoots) {
+    final Directory directory = Directory(root);
+    expect(
+      directory.existsSync(),
+      isTrue,
+      reason: '扫描根 $root 不存在，全仓扫描会静默漏扫该目录',
+    );
+    for (final FileSystemEntity entity in directory.listSync(recursive: true)) {
+      if (entity is! File) {
+        continue;
+      }
+      final String path = entity.path.replaceAll('\\', '/');
+      if (!_scannedExtensions.any(path.endsWith)) {
+        continue;
+      }
+      texts[path] = File(entity.path).readAsStringSync().toLowerCase();
+    }
+  }
+  for (final String path in _projectDocuments) {
+    final File file = File(path);
+    expect(file.existsSync(), isTrue, reason: '项目文档 $path 不存在，全仓扫描会静默漏扫');
+    texts[path] = file.readAsStringSync().toLowerCase();
+  }
+  return texts;
+}
+
+/// 汇总每个文件实际命中的已删除口径 token。
+Map<String, List<String>> _collectResidues(Map<String, String> texts) {
+  final Map<String, List<String>> residues = <String, List<String>>{};
+  for (final MapEntry<String, String> file in texts.entries) {
+    final List<String> hits = <String>[
+      for (final String token in _allRetiredTokens)
+        if (file.value.contains(token)) token,
+    ];
+    if (hits.isNotEmpty) {
+      residues[file.key] = hits;
+    }
+  }
+  return residues;
+}
+
 void main() {
   test('删除 MinGW 后只保留 icx、clang-cl、msvc 三种编译器种类', () {
     expect(CompilerKind.values, <CompilerKind>[
@@ -231,6 +344,79 @@ void main() {
         );
         expect(text, contains('`md`'), reason: '$path 缺少 md 说明');
         expect(text, contains('`mt`'), reason: '$path 缺少 mt 说明');
+      }
+    });
+  });
+
+  group('全仓残留扫描', () {
+    test('扫描面覆盖三个目录根与全部项目文档', () {
+      final Map<String, String> texts = _scanRepositoryText();
+      for (final String root in _scanRoots) {
+        expect(
+          texts.keys.any((String path) => path.startsWith('$root/')),
+          isTrue,
+          reason: '扫描根 $root 未贡献任何文本文件，扫描面存在缺口',
+        );
+      }
+      for (final String path in _projectDocuments) {
+        expect(texts.keys, contains(path), reason: '项目文档 $path 未被扫描');
+      }
+      expect(
+        texts.length,
+        greaterThan(100),
+        reason: '扫描到的文本文件过少，全仓扫描可能因路径口径错误而空转',
+      );
+    });
+
+    test('全仓仅在显式登记处保留已删除口径', () {
+      final Map<String, List<String>> residues = _collectResidues(
+        _scanRepositoryText(),
+      );
+      expect(residues, isNotEmpty, reason: '允许残留表无实际命中，扫描或 token 表可能已失效');
+      for (final MapEntry<String, List<String>> entry in residues.entries) {
+        final ({List<String> tokens, String reason})? allowed =
+            _allowedResidues[entry.key];
+        expect(
+          allowed,
+          isNotNull,
+          reason: '${entry.key} 残留已删除口径 ${entry.value.join('、')}，'
+              '但未登记保留理由；生产代码与用户文档一律禁止，'
+              '仅负向夹具与旧配置迁移测试可登记',
+        );
+        final Set<String> undeclared = entry.value.toSet().difference(
+          allowed!.tokens.toSet(),
+        );
+        expect(
+          undeclared,
+          isEmpty,
+          reason: '${entry.key} 出现未登记的已删除口径 ${undeclared.join('、')}',
+        );
+      }
+    });
+
+    test('允许残留表无过期或空理由条目', () {
+      expect(_allowedResidues, isNotEmpty, reason: '允许残留表为空，登记机制形同虚设');
+      final Map<String, String> texts = _scanRepositoryText();
+      for (final MapEntry<String, ({List<String> tokens, String reason})> entry
+          in _allowedResidues.entries) {
+        expect(
+          entry.value.reason.trim(),
+          isNotEmpty,
+          reason: '${entry.key} 的保留理由为空，登记失去意义',
+        );
+        final String? text = texts[entry.key];
+        expect(
+          text,
+          isNotNull,
+          reason: '允许残留表登记的 ${entry.key} 已不在扫描范围内，请移除该条目',
+        );
+        for (final String token in entry.value.tokens) {
+          expect(
+            text,
+            contains(token),
+            reason: '允许残留表已过期：${entry.key} 不再含 $token，请移除该登记',
+          );
+        }
       }
     });
   });
