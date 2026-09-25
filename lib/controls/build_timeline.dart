@@ -3,41 +3,19 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-/// 时间线步骤 ID（稳定标识：用于 `buildTimelineStep_<id>` Key 与步骤表）。
 enum BuildTimelineStepId { prepare, download, build, includes, classify, remap, done }
 
-/// 时间线步骤状态。
-enum BuildTimelineStepStatus {
-  /// 未开始：弱化圆点。
-  pending,
+enum BuildTimelineStepStatus { pending, active, done, failed, skipped }
 
-  /// 进行中：16px ProgressRing。
-  active,
-
-  /// 已完成：16px 对勾图标。
-  done,
-
-  /// 失败：16px 错误图标 + 错误文本。
-  failed,
-
-  /// 跳过：当前流程未执行该步骤（弱化空点）。
-  skipped,
-}
-
-/// 时间线会话状态。
 enum BuildTimelineSessionState { running, completed, failed }
 
-/// 时间线详情行（进行中步骤的过程信息 / 完成步骤的结果摘要）。
 class BuildTimelineDetail {
   const BuildTimelineDetail(this.text, {this.key});
 
   final String text;
-
-  /// 可选 Key（如工具下载进度的 `buildDownloadProgress`）。
   final Key? key;
 }
 
-/// 时间线步骤（视图模型）。
 class BuildTimelineStep {
   const BuildTimelineStep({
     required this.id,
@@ -51,12 +29,9 @@ class BuildTimelineStep {
   final String label;
   final BuildTimelineStepStatus status;
   final List<BuildTimelineDetail> details;
-
-  /// 失败文本（仅 [BuildTimelineStepStatus.failed] 时非空；展示 ≤ 3 行）。
   final String? error;
 }
 
-/// 常规构建的步骤表。
 const List<BuildTimelineStepId> normalTimelineOrder = <BuildTimelineStepId>[
   BuildTimelineStepId.prepare,
   BuildTimelineStepId.download,
@@ -66,7 +41,6 @@ const List<BuildTimelineStepId> normalTimelineOrder = <BuildTimelineStepId>[
   BuildTimelineStepId.done,
 ];
 
-/// 预构建配方（`# source: none`）的步骤表。
 const List<BuildTimelineStepId> sourceNoneTimelineOrder = <BuildTimelineStepId>[
   BuildTimelineStepId.download,
   BuildTimelineStepId.classify,
@@ -75,11 +49,7 @@ const List<BuildTimelineStepId> sourceNoneTimelineOrder = <BuildTimelineStepId>[
   BuildTimelineStepId.done,
 ];
 
-/// 步骤展示标签（`下载源码` 在预构建配方下为 `下载`）。
-String buildTimelineStepLabel(
-  BuildTimelineStepId id, {
-  bool sourceNone = false,
-}) {
+String buildTimelineStepLabel(BuildTimelineStepId id, {bool sourceNone = false}) {
   return switch (id) {
     BuildTimelineStepId.prepare => '准备环境',
     BuildTimelineStepId.download => sourceNone ? '下载' : '下载源码',
@@ -91,13 +61,6 @@ String buildTimelineStepLabel(
   };
 }
 
-/// 组装时间线步骤（纯函数，便于单测）：
-///
-/// - [activeStep] 为当前进行中步骤；失败会话传失败所在步骤；
-/// - [visitedSteps] 为已实际执行过的步骤：位于活动步骤之前但未执行过的步骤
-///   显示为「跳过」（如预构建配方未打印分类标记时的 `分类` 步骤）；
-/// - 失败会话仅保留到失败步骤为止（其后步骤隐藏），失败文本显示在该步骤下方；
-/// - 完成会话的活动步骤（`完成`）展示 [doneDetails] 结果摘要。
 List<BuildTimelineStep> buildTimelineSteps({
   required BuildTimelineStepId activeStep,
   required BuildTimelineSessionState sessionState,
@@ -107,9 +70,7 @@ List<BuildTimelineStep> buildTimelineSteps({
   List<BuildTimelineDetail> doneDetails = const <BuildTimelineDetail>[],
   String? failureText,
 }) {
-  final List<BuildTimelineStepId> order = sourceNone
-      ? sourceNoneTimelineOrder
-      : normalTimelineOrder;
+  final List<BuildTimelineStepId> order = sourceNone ? sourceNoneTimelineOrder : normalTimelineOrder;
   final int found = order.indexOf(activeStep);
   final int activeIndex = found < 0 ? 0 : found;
   final bool failed = sessionState == BuildTimelineSessionState.failed;
@@ -134,9 +95,7 @@ List<BuildTimelineStep> buildTimelineSteps({
         details = activeDetails;
       }
     } else if (index < activeIndex) {
-      status = visitedSteps.contains(id)
-          ? BuildTimelineStepStatus.done
-          : BuildTimelineStepStatus.skipped;
+      status = visitedSteps.contains(id) ? BuildTimelineStepStatus.done : BuildTimelineStepStatus.skipped;
     } else {
       status = BuildTimelineStepStatus.pending;
     }
@@ -153,11 +112,6 @@ List<BuildTimelineStep> buildTimelineSteps({
   return steps;
 }
 
-/// 进行中步骤的过程详情（纯函数）：
-///
-/// - 准备环境阶段（[preparing]）展示工具下载进度（Key `buildDownloadProgress`）；
-/// - 预构建配方（[sourceNone]）的下载步骤展示 `已下载 NN%`；
-/// - 管理员重试（[elevatedRetry]）期间下载/构建步骤切管理员文案。
 List<BuildTimelineDetail> buildActiveStepDetails({
   required BuildTimelineStepId step,
   required bool preparing,
@@ -169,15 +123,10 @@ List<BuildTimelineDetail> buildActiveStepDetails({
   final List<BuildTimelineDetail> details = <BuildTimelineDetail>[];
   if (preparing && downloadProgress != null) {
     details.add(
-      BuildTimelineDetail(
-        formatToolDownloadProgress(downloadProgress),
-        key: const Key('buildDownloadProgress'),
-      ),
+      BuildTimelineDetail(formatToolDownloadProgress(downloadProgress), key: const Key('buildDownloadProgress')),
     );
   }
-  if (sourceNone &&
-      step == BuildTimelineStepId.download &&
-      buildProgressPercent != null) {
+  if (sourceNone && step == BuildTimelineStepId.download && buildProgressPercent != null) {
     details.add(BuildTimelineDetail('已下载 $buildProgressPercent%'));
   }
   if (!sourceNone && step == BuildTimelineStepId.download && elevatedRetry) {
@@ -189,7 +138,6 @@ List<BuildTimelineDetail> buildActiveStepDetails({
   return details;
 }
 
-/// 完成步骤的结果摘要详情（文件数量 / 总大小 / 新增 / 移除 + 版本同步）。
 List<BuildTimelineDetail> buildCompletionDetails({
   required int fileCount,
   required int totalSize,
@@ -202,16 +150,10 @@ List<BuildTimelineDetail> buildCompletionDetails({
     BuildTimelineDetail('总大小：${formatBytes(totalSize)}'),
     BuildTimelineDetail('新增：$addedCount 个文件'),
     BuildTimelineDetail('移除：$removedCount 个文件'),
-    if (syncedVersion != null)
-      BuildTimelineDetail(
-        '已自动同步版本：$syncedVersion',
-        key: const Key('buildSyncedVersion'),
-      ),
+    if (syncedVersion != null) BuildTimelineDetail('已自动同步版本：$syncedVersion', key: const Key('buildSyncedVersion')),
   ];
 }
 
-/// 阶段时间线视图：24 宽指示器列（圆点 / ProgressRing / 对勾 / 错误图标）
-/// + 连接线 + 标签与详情行。
 class BuildTimeline extends StatelessWidget {
   const BuildTimeline({super.key, required this.steps});
 
@@ -236,18 +178,13 @@ class BuildTimeline extends StatelessWidget {
   Widget _buildConnector(FluentThemeData theme) {
     return Padding(
       padding: const EdgeInsets.only(left: 11.5),
-      child: SizedBox(
-        width: 1,
-        height: 8,
-        child: ColoredBox(color: theme.resources.dividerStrokeColorDefault),
-      ),
+      child: SizedBox(width: 1, height: 8, child: ColoredBox(color: theme.resources.dividerStrokeColorDefault)),
     );
   }
 
   Widget _buildStep(FluentThemeData theme, BuildTimelineStep step) {
     final Color labelColor = switch (step.status) {
-      BuildTimelineStepStatus.pending ||
-      BuildTimelineStepStatus.skipped => theme.resources.textFillColorTertiary,
+      BuildTimelineStepStatus.pending || BuildTimelineStepStatus.skipped => theme.resources.textFillColorTertiary,
       BuildTimelineStepStatus.active ||
       BuildTimelineStepStatus.done ||
       BuildTimelineStepStatus.failed => theme.resources.textFillColorPrimary,
@@ -258,30 +195,20 @@ class BuildTimeline extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: Center(child: _buildIndicator(theme, step.status)),
-          ),
+          SizedBox(width: 24, height: 24, child: Center(child: _buildIndicator(theme, step.status))),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(
-                  step.label,
-                  style: TextStyle(fontSize: 13, color: labelColor),
-                ),
+                Text(step.label, style: TextStyle(fontSize: 13, color: labelColor)),
                 for (final BuildTimelineDetail detail in step.details)
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
                       detail.text,
                       key: detail.key,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.resources.textFillColorSecondary,
-                      ),
+                      style: TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary),
                     ),
                   ),
                 if (step.error != null)
@@ -291,10 +218,7 @@ class BuildTimeline extends StatelessWidget {
                       step.error!,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.critical(theme.brightness),
-                      ),
+                      style: TextStyle(fontSize: 12, color: AppColors.critical(theme.brightness)),
                     ),
                   ),
               ],
@@ -315,29 +239,15 @@ class BuildTimeline extends StatelessWidget {
           height: 10,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(
-              color: theme.resources.controlStrongFillColorDefault,
-            ),
+            border: Border.all(color: theme.resources.controlStrongFillColorDefault),
           ),
         );
       case BuildTimelineStepStatus.active:
-        return const SizedBox(
-          width: 16,
-          height: 16,
-          child: ProgressRing(strokeWidth: 2),
-        );
+        return const SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2));
       case BuildTimelineStepStatus.done:
-        return Icon(
-          FluentIcons.check_mark,
-          size: 16,
-          color: AppColors.success(theme.brightness),
-        );
+        return Icon(FluentIcons.check_mark, size: 16, color: AppColors.success(theme.brightness));
       case BuildTimelineStepStatus.failed:
-        return Icon(
-          FluentIcons.error,
-          size: 16,
-          color: AppColors.critical(theme.brightness),
-        );
+        return Icon(FluentIcons.error, size: 16, color: AppColors.critical(theme.brightness));
     }
   }
 
@@ -350,8 +260,6 @@ class BuildTimeline extends StatelessWidget {
   }
 }
 
-/// 构建对话框左栏：信息区（包名 / 源目录 / 编译器 / 运行库）+ 阶段时间线；
-/// 提供 [onRetryElevated] 时在时间线下方追加提权重试入口。
 class BuildStatusColumn extends StatelessWidget {
   const BuildStatusColumn({
     super.key,
@@ -364,19 +272,10 @@ class BuildStatusColumn extends StatelessWidget {
   });
 
   final String packName;
-
-  /// 源目录（单行省略 + Tooltip 全量）。
   final String sourcePath;
-
-  /// 运行库展示（`MD（动态）` / `MT（静态）` / `跟随配方`）。
   final String runtimeLabel;
-
   final List<BuildTimelineStep> steps;
-
-  /// 编译器展示（`编译器：<名称> <版本>`）；环境未就绪时为 null 不显示。
   final String? compilerLabel;
-
-  /// 提权重试回调；null 时不显示重试入口。
   final VoidCallback? onRetryElevated;
 
   @override
@@ -388,11 +287,7 @@ class BuildStatusColumn extends StatelessWidget {
         const SizedBox(height: 4),
         Tooltip(
           message: sourcePath,
-          child: Text(
-            '源目录：$sourcePath',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text('源目录：$sourcePath', maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
         if (compilerLabel != null) ...<Widget>[
           const SizedBox(height: 4),
@@ -402,23 +297,13 @@ class BuildStatusColumn extends StatelessWidget {
         Text('运行库：$runtimeLabel', key: const Key('buildRuntimeLabel')),
         const SizedBox(height: 12),
         Expanded(
-          child: SingleChildScrollView(
-            child: BuildTimeline(steps: steps),
-          ),
+          child: SingleChildScrollView(child: BuildTimeline(steps: steps)),
         ),
         if (onRetryElevated != null) ...<Widget>[
           const SizedBox(height: 8),
-          const Text(
-            '检测到临时目录权限问题（可能由内存盘等原因引起），可尝试以管理员身份重试。',
-            key: Key('buildElevatedRetryHint'),
-            style: TextStyle(fontSize: 12),
-          ),
+          const Text('检测到临时目录权限问题，可尝试以管理员身份重试。', key: Key('buildElevatedRetryHint'), style: TextStyle(fontSize: 12)),
           const SizedBox(height: 8),
-          Button(
-            key: const Key('buildElevatedRetryButton'),
-            onPressed: onRetryElevated,
-            child: const Text('以管理员身份重试'),
-          ),
+          Button(key: const Key('buildElevatedRetryButton'), onPressed: onRetryElevated, child: const Text('以管理员身份重试')),
         ],
       ],
     );
