@@ -1166,7 +1166,7 @@ void main() {
     expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
   });
 
-  testWidgets('工具栏顺序为构建 → 远程仓库 → 运行库 → 版本控件', (tester) async {
+  testWidgets('工具栏顺序为构建 → 远程仓库 → 分隔线 → 运行库 → 版本控件', (tester) async {
     final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
 
     await _pumpPage(
@@ -1182,25 +1182,84 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    final double buttonX = tester
-        .getTopLeft(find.byKey(const Key('buildPackButton')))
-        .dx;
-    final double openRepoX = tester
-        .getTopLeft(find.byKey(const Key('openRepoButton')))
-        .dx;
-    final double comboX = tester
-        .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
-        .dx;
-    final double versionX = tester
-        .getTopLeft(find.byKey(const Key('packRepoVersionLabel')))
-        .dx;
+    final Finder buttonFinder = find.byKey(const Key('buildPackButton'));
+    final Finder openRepoFinder = find.byKey(const Key('openRepoButton'));
+    final Finder separatorFinder = find.byKey(
+      const Key('packRepoRuntimeSeparator'),
+    );
+    final Finder comboFinder = find.byKey(const Key('buildRuntimeSelector'));
+    final Finder versionFinder = find.byKey(const Key('packRepoVersionLabel'));
+    final Rect buttonRect = tester.getRect(buttonFinder);
+    final Rect openRepoRect = tester.getRect(openRepoFinder);
+    final Rect separatorRect = tester.getRect(separatorFinder);
+    final Rect comboRect = tester.getRect(comboFinder);
+    final Rect versionRect = tester.getRect(versionFinder);
+    final Finder runtimeGroup = find
+        .ancestor(of: separatorFinder, matching: find.byType(Row))
+        .first;
 
-    expect(buttonX, lessThan(openRepoX));
-    expect(openRepoX, lessThan(comboX));
-    expect(comboX, lessThan(versionX));
+    expect(separatorFinder, findsOneWidget);
+    expect(tester.getSize(separatorFinder), const Size(1, 20));
+    expect(buttonRect.left, lessThan(openRepoRect.left));
+    expect(openRepoRect.left, lessThan(separatorRect.left));
+    expect(separatorRect.left, lessThan(comboRect.left));
+    expect(comboRect.left, lessThan(versionRect.left));
+    expect(separatorRect.center.dy, closeTo(comboRect.center.dy, 0.001));
+    expect(comboRect.left - separatorRect.right, closeTo(4, 0.001));
+    expect(
+      find.descendant(of: runtimeGroup, matching: comboFinder),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<Container>(separatorFinder).color,
+      FluentTheme.of(tester.element(separatorFinder))
+          .resources
+          .dividerStrokeColorDefault,
+    );
     expect(find.text('远程仓库'), findsOneWidget);
     expect(find.text('运行库'), findsNothing);
     expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('窄窗口下分隔线与运行库同行且无布局异常', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    tester.view.physicalSize = const Size(480, 800);
+    await tester.pump();
+
+    final Finder separatorFinder = find.byKey(
+      const Key('packRepoRuntimeSeparator'),
+    );
+    final Rect separatorRect = tester.getRect(separatorFinder);
+    final Rect comboRect = tester.getRect(
+      find.byKey(const Key('buildRuntimeSelector')),
+    );
+
+    expect(separatorFinder, findsOneWidget);
+    expect(separatorRect.center.dy, closeTo(comboRect.center.dy, 0.001));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('无运行库时仓库按钮存在但不显示分隔线', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('openRepoButton')), findsOneWidget);
+    expect(find.byKey(const Key('buildRuntimeSelector')), findsNothing);
+    expect(find.byKey(const Key('packRepoRuntimeSeparator')), findsNothing);
   });
 
   testWidgets('运行库保存值显示为显式项且非法值回退默认项', (tester) async {
@@ -1517,6 +1576,8 @@ void main() {
 
     expect(find.byKey(const Key('packRepoVersionLabel')), findsNothing);
     expect(find.byKey(const Key('openRepoButton')), findsNothing);
+    expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
+    expect(find.byKey(const Key('packRepoRuntimeSeparator')), findsNothing);
   });
 
   testWidgets('最新版本查询失败时显示占位', (tester) async {

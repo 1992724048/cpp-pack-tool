@@ -323,7 +323,8 @@ class _PackFilesState extends State<PackFiles> {
                     onPressed: () => widget.onBuildPack!(widget.pack),
                     child: const Text('构建')),
                 if (openRepoUrl != null) _buildOpenRepoButton(openRepoUrl),
-                if (canBuild) _buildRuntimeGroup(),
+                if (canBuild)
+                  _buildRuntimeGroup(showSeparator: openRepoUrl != null),
               ],
             ),
             Spacer(),
@@ -351,11 +352,21 @@ class _PackFilesState extends State<PackFiles> {
     }
   }
 
-  Widget _buildRuntimeGroup() {
+  Widget _buildRuntimeGroup({required bool showSeparator}) {
     final String? runtimeValue = _savedRuntimeLibrary();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        if (showSeparator) ...<Widget>[
+          const SizedBox(width: 4),
+          Container(
+            key: const Key('packRepoRuntimeSeparator'),
+            width: 1,
+            height: 20,
+            color: FluentTheme.of(context).resources.dividerStrokeColorDefault,
+          ),
+          const SizedBox(width: 4),
+        ],
         RuntimeLibrarySelector(
           value: runtimeValue,
           enabled: widget.onSave != null && !_savingOption,
