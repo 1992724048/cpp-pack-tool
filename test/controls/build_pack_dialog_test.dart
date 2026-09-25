@@ -1421,7 +1421,7 @@ void main() {
     expect(_closeButton(tester).onPressed, isNotNull);
   });
 
-  testWidgets('未命中特征或未提供提权入口时不显示按钮', (tester) async {
+  testWidgets('未命中临时目录权限特征时不显示提权按钮', (tester) async {
     await _pumpDialog(
       tester,
       retryElevated: _noopElevatedRunner(),
@@ -1445,9 +1445,16 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
+    expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
+    expect(
+      find.textContaining('error: cannot find file foo.h', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('buildElevatedRetryButton')), findsNothing);
     expect(find.byKey(const Key('buildElevatedRetryHint')), findsNothing);
+  });
 
+  testWidgets('命中临时目录权限特征但未提供提权入口时不显示按钮', (tester) async {
     await _pumpDialog(
       tester,
       build: _permissionFailureBuild(),
@@ -1457,6 +1464,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
+    expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
+    expect(
+      find.textContaining(
+        'icx: error #10026: error generating temporary file',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const Key('buildElevatedRetryButton')),
       findsNothing,
@@ -1814,7 +1829,7 @@ Future<void> _pumpDialog(
       ),
     ),
   );
-  await tester.tap(find.text('打开对话框'));
+  await tester.tap(find.text('打开对话框').hitTestable());
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
 }
