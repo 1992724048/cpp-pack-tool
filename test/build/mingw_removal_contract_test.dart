@@ -275,6 +275,32 @@ void main() {
       }
     });
 
+    test('AGENTS.md 记录检测缓存整表作废并等待重检的核心不变量', () {
+      final String agents = _readProjectDocuments()['AGENTS.md']!;
+      // 以紧随其后的 `proxyMode` 字段为右锚：描述内部含 `kind/version` 等斜杠，
+      // 不能用首个 `/` 截断，否则断言作用域会落在描述开头而恒不命中。
+      final RegExpMatch? segment = RegExp(
+        r'`detectedCompilers`（.*?）/`proxyMode`',
+        dotAll: true,
+      ).firstMatch(agents);
+      expect(
+        segment,
+        isNotNull,
+        reason: 'AGENTS.md 的 SettingsModel 段未找到 detectedCompilers 描述',
+      );
+      final String cache = segment!.group(0)!;
+      expect(
+        cache,
+        contains('整表作废'),
+        reason: 'AGENTS.md 未记录含已退役编译器标识或 GNU clang 标识的检测缓存整表作废语义',
+      );
+      expect(
+        cache,
+        contains('等待重检'),
+        reason: 'AGENTS.md 未记录检测缓存整表作废后等待重新检测的语义',
+      );
+    });
+
     test('AGENTS.md 记录的 helper 版本与辅助模块源码一致', () {
       final String helper = File('assets/build/cnp_build_support.py')
           .readAsStringSync();
