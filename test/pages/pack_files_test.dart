@@ -1194,9 +1194,8 @@ void main() {
     final Rect separatorRect = tester.getRect(separatorFinder);
     final Rect comboRect = tester.getRect(comboFinder);
     final Rect versionRect = tester.getRect(versionFinder);
-    final Finder runtimeGroup = find
-        .ancestor(of: separatorFinder, matching: find.byType(Row))
-        .first;
+    final Finder runtimeGroup = _nearestAncestorRow(tester, separatorFinder);
+    final Rect runtimeGroupRect = tester.getRect(runtimeGroup);
 
     expect(separatorFinder, findsOneWidget);
     expect(tester.getSize(separatorFinder), const Size(1, 20));
@@ -1205,6 +1204,7 @@ void main() {
     expect(separatorRect.left, lessThan(comboRect.left));
     expect(comboRect.left, lessThan(versionRect.left));
     expect(separatorRect.center.dy, closeTo(comboRect.center.dy, 0.001));
+    expect(separatorRect.left - runtimeGroupRect.left, closeTo(4, 0.001));
     expect(comboRect.left - separatorRect.right, closeTo(4, 0.001));
     expect(
       find.descendant(of: runtimeGroup, matching: comboFinder),
@@ -1222,27 +1222,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('窄窗口下分隔线与运行库同行且无布局异常', (tester) async {
+  testWidgets('窄窗口下远程仓库与运行库组换行且组内保持同行', (tester) async {
+    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+
     await _pumpPage(
       tester,
       PackFiles(
-        pack: _buildPack('demo'),
+        pack: pack,
         onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
         loadHeader: (PackModel value) async => _header(),
+        loadLatestVersion: (String repoUrl) async => 'v1.0.0',
       ),
     );
-    tester.view.physicalSize = const Size(480, 800);
+    tester.view.physicalSize = const Size(400, 800);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
+    final Finder openRepoFinder = find.byKey(const Key('openRepoButton'));
     final Finder separatorFinder = find.byKey(
       const Key('packRepoRuntimeSeparator'),
     );
+    final Finder comboFinder = find.byKey(const Key('buildRuntimeSelector'));
+    final Finder runtimeGroup = _nearestAncestorRow(tester, separatorFinder);
+    final Rect openRepoRect = tester.getRect(openRepoFinder);
     final Rect separatorRect = tester.getRect(separatorFinder);
-    final Rect comboRect = tester.getRect(
-      find.byKey(const Key('buildRuntimeSelector')),
-    );
+    final Rect comboRect = tester.getRect(comboFinder);
+    final Rect runtimeGroupRect = tester.getRect(runtimeGroup);
 
-    expect(separatorFinder, findsOneWidget);
+    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
+    expect(_runtimeCombo(tester).onChanged, isNotNull);
+    expect(
+      openRepoRect.center.dy,
+      isNot(closeTo(runtimeGroupRect.center.dy, 0.001)),
+      reason: '有限宽度应迫使远程仓库与运行库组进入不同 run',
+    );
+    expect(
+      separatorRect.center.dy,
+      closeTo(runtimeGroupRect.center.dy, 0.001),
+    );
     expect(separatorRect.center.dy, closeTo(comboRect.center.dy, 0.001));
     expect(tester.takeException(), isNull);
   });
@@ -1679,6 +1697,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('openRepoButton')), findsNothing);
+    expect(find.byKey(const Key('packRepoRuntimeSeparator')), findsNothing);
     expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
   });
 }
@@ -1721,6 +1740,24 @@ BuildScriptHeader _header({
     repo: 'https://example.com/demo.git',
     options: options,
   );
+}
+
+Finder _nearestAncestorRow(WidgetTester tester, Finder descendant) {
+  Finder? result;
+  tester.element(descendant).visitAncestorElements((Element ancestor) {
+    if (result != null) {
+      return true;
+    }
+    if (ancestor.widget is Row) {
+      final Widget row = ancestor.widget;
+      result = find.byWidgetPredicate(
+        (Widget widget) => identical(widget, row),
+      );
+      return true;
+    }
+    return false;
+  });
+  return result ?? (throw StateError('未找到祖先 Row'));
 }
 
 ComboBox<String> _optionCombo(WidgetTester tester, String name) =>

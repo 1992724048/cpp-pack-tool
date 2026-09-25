@@ -314,20 +314,21 @@ class _PackFilesState extends State<PackFiles> {
         padding: EdgeInsetsGeometry.all(5),
         child: Row(
           children: [
-            Wrap(
-              spacing: 5,
-              runSpacing: 0,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[
-                if (canBuild) FilledButton(key: const Key('buildPackButton'),
-                    onPressed: () => widget.onBuildPack!(widget.pack),
-                    child: const Text('构建')),
-                if (openRepoUrl != null) _buildOpenRepoButton(openRepoUrl),
-                if (canBuild)
-                  _buildRuntimeGroup(showSeparator: openRepoUrl != null),
-              ],
+            Expanded(
+              child: Wrap(
+                spacing: 5,
+                runSpacing: 0,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  if (canBuild) FilledButton(key: const Key('buildPackButton'),
+                      onPressed: () => widget.onBuildPack!(widget.pack),
+                      child: const Text('构建')),
+                  if (openRepoUrl != null) _buildOpenRepoButton(openRepoUrl),
+                  if (canBuild)
+                    _buildRuntimeGroup(showSeparator: openRepoUrl != null),
+                ],
+              ),
             ),
-            Spacer(),
             if (showVersionChip) ...[_buildVersionChip()],
           ],
         ),
