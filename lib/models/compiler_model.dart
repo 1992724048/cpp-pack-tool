@@ -51,16 +51,14 @@ class DetectedCompiler {
 
   final CompilerKind kind;
 
-  /// MinGW 条目的版本串附带 MSYS2 子环境标注（如 `14.2.0（UCRT64）`、
-  /// `14.2.0（MINGW64，已弃用）`），供设置页与构建对话框识别具体环境；
-  /// 其余种类为纯版本号。
+  /// 编译器版本号。
   final String version;
 
   final String executablePath;
 
-  /// 为 null 时复用 [executablePath]。ICX / clang-cl / MSVC 单驱动即双语言；
-  /// MinGW 分设 `gcc.exe` / `g++.exe`（或 `clang.exe` / `clang++.exe`），
-  /// C++ 目标必须用 C++ 驱动，否则链接阶段不会带上 C++ 标准库。
+  /// 为 null 时复用 [executablePath]。ICX / clang-cl / MSVC 均为单驱动即双语言，
+  /// 留空；分设 C/C++ 驱动的条目须显式给出 C++ 驱动，否则 C++ 目标会缺少
+  /// C++ 标准库。
   final String? cxxExecutablePath;
 
   /// `setvars.bat` / `vcvars64.bat` 路径；无需初始化环境时为 null。
