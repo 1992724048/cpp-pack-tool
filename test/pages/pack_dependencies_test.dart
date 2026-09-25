@@ -48,7 +48,8 @@ void main() {
     expect(find.text('包名'), findsOneWidget);
     expect(find.text('版本范围'), findsOneWidget);
     expect(find.text('操作'), findsOneWidget);
-    expect(find.byType(Divider), findsNWidgets(2));
+    expect(find.byType(Card), findsNWidgets(3));
+    expect(find.byType(Divider), findsOneWidget);
   });
 
   testWidgets('系统依赖展示系统标记且编辑删除禁用', (tester) async {
@@ -118,8 +119,11 @@ void main() {
     final Rect secondName = tester.getRect(find.text('libbar'));
     final Rect firstVersion = tester.getRect(find.text('[1.0,2.0)'));
     final Rect secondVersion = tester.getRect(find.text('2.0'));
+    final Rect packageHeader = tester.getRect(find.text('包名'));
     final Rect versionHeader = tester.getRect(find.text('版本范围'));
     final Rect actionHeader = tester.getRect(find.text('操作'));
+    final Rect headerCard = tester.getRect(find.byType(Card).first);
+    final Rect firstRowCard = tester.getRect(find.byType(Card).at(1));
     final Rect firstEdit = tester.getRect(
       find.byKey(const Key('dependencyEditButton_libfoo')),
     );
@@ -132,15 +136,19 @@ void main() {
 
     expect(firstName.left, secondName.left);
     expect(firstVersion.left, secondVersion.left);
+    expect(
+      packageHeader.left - headerCard.left,
+      firstName.left - firstRowCard.left,
+    );
     expect(firstVersion.left, versionHeader.left);
     expect(firstEdit.left, secondEdit.left);
     expect(
       (firstEdit.center.dx + firstDelete.center.dx) / 2,
-      actionHeader.center.dx,
+      closeTo(actionHeader.center.dx, 0.01),
     );
   });
 
-  testWidgets('分隔线水平范围与列表内容区对齐', (tester) async {
+  testWidgets('表头与依赖卡保持紧凑列表的水平边界', (tester) async {
     final PackModel pack = _pack('demo')
       ..dependencies = <DependencyModel>[
         const DependencyModel(name: 'libfoo', version: '1.0'),
@@ -156,29 +164,18 @@ void main() {
       theme: buildTheme(Brightness.light),
     );
 
-    // Divider 外层包裹水平外边距，需取内部绘制层比较实际线体范围
-    final int dividerCount = tester.widgetList(find.byType(Divider)).length;
-    final List<Rect> lineRects = <Rect>[
-      for (int index = 0; index < dividerCount; index++)
-        tester.getRect(
-          find
-              .descendant(
-                of: find.byType(Divider).at(index),
-                matching: find.byType(DecoratedBox),
-              )
-              .first,
-        ),
-    ];
-    final Rect listRect = tester.getRect(find.byType(ListView));
-
-    expect(lineRects, hasLength(2));
-    for (final Rect lineRect in lineRects) {
-      expect(lineRect.left, listRect.left);
-      expect(lineRect.right, listRect.right);
+    final Finder cards = find.byType(Card);
+    expect(cards, findsNWidgets(3));
+    for (final Finder card in <Finder>[cards.at(0), cards.at(1), cards.at(2)]) {
+      final Rect rect = tester.getRect(card);
+      expect(rect.left, 8);
+      expect(rect.right, 1272);
     }
+    expect(find.byType(Divider), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
-  testWidgets('单条依赖仅渲染表头分隔线', (tester) async {
+  testWidgets('单条依赖仅渲染表头卡与一张条目卡', (tester) async {
     final PackModel pack = _pack('demo')
       ..dependencies = <DependencyModel>[
         const DependencyModel(name: 'libfoo', version: '1.0'),
@@ -189,6 +186,7 @@ void main() {
       _page(pack, allPacks: <PackModel>[_pack('libfoo')]),
     );
 
+    expect(find.byType(Card), findsNWidgets(2));
     expect(find.byType(Divider), findsOneWidget);
   });
 

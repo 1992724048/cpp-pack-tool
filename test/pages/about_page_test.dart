@@ -45,7 +45,7 @@ void main() {
     expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
   });
 
-  testWidgets('宽松约束下铺满可用区域且带页面背景表面', (tester) async {
+  testWidgets('宽松约束下铺满可用区域且无布局异常', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -64,10 +64,8 @@ void main() {
       find.byKey(const Key('aboutLooseBox')),
     );
     expect(tester.getSize(find.byType(About)), available);
-
-    final Finder surface = _pageSurface(tester);
-    expect(surface, findsOneWidget);
-    expect(tester.getSize(surface), available);
+    expect(find.byKey(const Key('aboutPage')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 
@@ -81,19 +79,4 @@ Future<void> _pumpAbout(
 
   await tester.pumpWidget(FluentApp(home: About(openUrl: openUrl)));
   await tester.pump();
-}
-
-Finder _pageSurface(WidgetTester tester) {
-  final Color cardColor = FluentTheme.of(tester.element(find.byType(About)))
-      .cardColor;
-  return find.descendant(
-    of: find.byType(About),
-    matching: find.byWidgetPredicate((Widget widget) {
-      if (widget is! Container) {
-        return false;
-      }
-      final Decoration? decoration = widget.decoration;
-      return decoration is BoxDecoration && decoration.color == cardColor;
-    }),
-  );
 }

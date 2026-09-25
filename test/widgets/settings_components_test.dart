@@ -274,7 +274,9 @@ void main() {
       final double card1Bottom = tester
           .getBottomLeft(find.byKey(const Key('card1')))
           .dy;
-      final double card2Top = tester.getTopLeft(find.byKey(const Key('card2'))).dy;
+      final double card2Top = tester
+          .getTopLeft(find.byKey(const Key('card2')))
+          .dy;
       expect(card2Top - card1Bottom, SettingsGroupTokens.cardSpacing);
     });
   });
@@ -379,7 +381,7 @@ void main() {
   });
 
   group('SettingsPage', () {
-    testWidgets('标题 28 Semibold、内容最大宽 1000、底部留白 48', (tester) async {
+    testWidgets('标题 24 Semibold、内容最大宽 1000、底部留白 32', (tester) async {
       tester.view.physicalSize = const Size(1600, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -401,22 +403,18 @@ void main() {
       );
 
       final Text title = tester.widget<Text>(find.text('设置'));
-      expect(title.style?.fontSize, 28);
+      expect(title.style?.fontSize, 24);
       expect(title.style?.fontWeight, FontWeight.w600);
 
       expect(tester.getSize(find.byKey(const Key('page'))).width, 1600);
       final double cardRight = tester
           .getBottomRight(find.byType(SettingsCard).first)
           .dx;
-      expect(
-        cardRight,
-        SettingsPageTokens.horizontalPadding +
-            SettingsPageTokens.contentMaxWidth,
-      );
+      expect(cardRight, 8 + 1000);
       final Size page = tester.getSize(find.byKey(const Key('page')));
       expect(
         page.height - tester.getBottomLeft(find.byType(SettingsCard)).dy,
-        greaterThanOrEqualTo(SettingsPageTokens.bottomPadding),
+        greaterThanOrEqualTo(32),
       );
     });
   });

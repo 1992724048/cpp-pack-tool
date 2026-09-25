@@ -65,7 +65,7 @@ void main() {
     expect(find.byKey(const Key('settingProxyPortField')), findsOneWidget);
     expect(find.text('已保存'), findsOneWidget);
 
-    await _selectCombo(tester, const Key('settingProxyModeField'), '关闭（直连）');
+    await _selectCombo(tester, const Key('settingProxyModeField'), '关闭');
     expect(saved!.proxyMode, ProxyModeSetting.off);
     expect(find.byKey(const Key('settingProxyHostField')), findsNothing);
   });
@@ -839,7 +839,7 @@ void main() {
     expect(normalizedSource, contains('description: Use when'));
   });
 
-  testWidgets('宽松约束下铺满可用区域且带页面背景表面', (tester) async {
+  testWidgets('宽松约束下铺满可用区域且页面表面无背景装饰', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -865,16 +865,15 @@ void main() {
       find.byKey(const Key('settingLooseBox')),
     );
     expect(tester.getSize(find.byType(Setting)), available);
+    expect(find.text('设置'), findsOneWidget);
+    expect(find.textContaining('配置打包输出目录'), findsOneWidget);
 
     final Finder surface = _pageSurface(tester);
     expect(surface, findsOneWidget);
     expect(tester.getSize(surface), available);
     final Container surfaceBox = tester.widget<Container>(surface);
-    final BoxDecoration decoration = surfaceBox.decoration! as BoxDecoration;
-    expect(
-      decoration.color,
-      FluentTheme.of(tester.element(find.byType(Setting))).cardColor,
-    );
+    expect(surfaceBox.decoration, isNull);
+    expect(tester.takeException(), isNull);
   });
 }
 

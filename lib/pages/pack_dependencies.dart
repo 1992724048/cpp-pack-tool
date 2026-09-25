@@ -12,7 +12,12 @@ const double _actionColumnWidth = 80;
 const String _systemLockTooltip = '由构建管线注册，禁止修改/删除';
 
 class PackDependencies extends StatefulWidget {
-  const PackDependencies({super.key, required this.pack, required this.allPacks, required this.onSave});
+  const PackDependencies({
+    super.key,
+    required this.pack,
+    required this.allPacks,
+    required this.onSave,
+  });
 
   final PackModel pack;
   final List<PackModel> allPacks;
@@ -28,11 +33,14 @@ class _PackDependenciesState extends State<PackDependencies> {
   List<PackModel> get _candidates {
     final String self = widget.pack.name.toLowerCase();
     final Set<String> added = <String>{
-      for (final DependencyModel dependency in widget.pack.dependencies) dependency.name.toLowerCase(),
+      for (final DependencyModel dependency in widget.pack.dependencies)
+        dependency.name.toLowerCase(),
     };
     return <PackModel>[
       for (final PackModel pack in widget.allPacks)
-        if (pack.name.toLowerCase() != self && !added.contains(pack.name.toLowerCase())) pack,
+        if (pack.name.toLowerCase() != self &&
+            !added.contains(pack.name.toLowerCase()))
+          pack,
     ];
   }
 
@@ -44,7 +52,10 @@ class _PackDependenciesState extends State<PackDependencies> {
     if (result == null || !mounted) {
       return;
     }
-    await _persist(<DependencyModel>[...widget.pack.dependencies, result], '已添加');
+    await _persist(<DependencyModel>[
+      ...widget.pack.dependencies,
+      result,
+    ], '已添加');
   }
 
   Future<void> _edit(DependencyModel dependency) async {
@@ -57,7 +68,9 @@ class _PackDependenciesState extends State<PackDependencies> {
     }
     final List<DependencyModel> updated = <DependencyModel>[
       for (final DependencyModel item in widget.pack.dependencies)
-        item.name.toLowerCase() == dependency.name.toLowerCase() ? result : item,
+        item.name.toLowerCase() == dependency.name.toLowerCase()
+            ? result
+            : item,
     ];
     await _persist(updated, '已保存');
   }
@@ -70,7 +83,10 @@ class _PackDependenciesState extends State<PackDependencies> {
     await _persist(updated, '已删除');
   }
 
-  Future<void> _persist(List<DependencyModel> dependencies, String message) async {
+  Future<void> _persist(
+    List<DependencyModel> dependencies,
+    String message,
+  ) async {
     if (_saving) {
       return;
     }
@@ -104,7 +120,11 @@ class _PackDependenciesState extends State<PackDependencies> {
                   onPressed: _saving ? null : _add,
                   child: const Row(
                     mainAxisSize: .min,
-                    children: [Icon(FluentIcons.add), SizedBox(width: 5), Text('添加依赖')],
+                    children: [
+                      Icon(FluentIcons.add),
+                      SizedBox(width: 5),
+                      Text('添加依赖'),
+                    ],
                   ),
                 ),
                 Spacer(),
@@ -112,15 +132,17 @@ class _PackDependenciesState extends State<PackDependencies> {
             ),
           ),
           const SizedBox(height: 5),
-          Expanded(child: widget.pack.dependencies.isEmpty ? _buildEmptyGuide() : _buildDependencyList()),
+          Expanded(
+            child: widget.pack.dependencies.isEmpty
+                ? _buildEmptyGuide()
+                : _buildDependencyList(),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildDependencyList() {
-    final FluentThemeData theme = FluentTheme.of(context);
-    final DividerThemeData dividerTheme = theme.dividerTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -128,7 +150,8 @@ class _PackDependenciesState extends State<PackDependencies> {
         Expanded(
           child: ListView.builder(
             itemCount: widget.pack.dependencies.length,
-            itemBuilder: (BuildContext context, int index) => _buildRow(context, widget.pack.dependencies[index]),
+            itemBuilder: (BuildContext context, int index) =>
+                _buildRow(context, widget.pack.dependencies[index]),
           ),
         ),
       ],
@@ -136,10 +159,14 @@ class _PackDependenciesState extends State<PackDependencies> {
   }
 
   Widget _buildHeaderRow() {
-    final TextStyle style = TextStyle(fontSize: 12, color: FluentTheme.of(context).resources.textFillColorSecondary);
+    final TextStyle style = TextStyle(
+      fontSize: 12,
+      color: FluentTheme.of(context).resources.textFillColorSecondary,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
       child: Card(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           children: [
             Expanded(child: Text('包名', style: style)),
@@ -159,14 +186,18 @@ class _PackDependenciesState extends State<PackDependencies> {
 
   Widget _buildEmptyGuide() {
     return const Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [Text('暂无依赖'), SizedBox(height: 6), Text('点击「添加依赖」开始')]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [Text('暂无依赖'), SizedBox(height: 6), Text('点击「添加依赖」开始')],
+      ),
     );
   }
 
   Widget _buildRow(BuildContext context, DependencyModel dependency) {
     final FluentThemeData theme = FluentTheme.of(context);
     final bool missing = !widget.allPacks.any(
-      (PackModel pack) => pack.name.toLowerCase() == dependency.name.toLowerCase(),
+      (PackModel pack) =>
+          pack.name.toLowerCase() == dependency.name.toLowerCase(),
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
@@ -177,12 +208,25 @@ class _PackDependenciesState extends State<PackDependencies> {
             Expanded(
               child: Row(
                 children: [
-                  Flexible(child: Text(dependency.name, overflow: TextOverflow.ellipsis)),
+                  Flexible(
+                    child: Text(
+                      dependency.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   if (dependency.system) ...[
                     const SizedBox(width: 5),
-                    Tag(text: '系统', color: theme.resources.solidBackgroundFillColorQuarternary, fontSize: 10),
+                    Tag(
+                      text: '系统',
+                      color:
+                          theme.resources.solidBackgroundFillColorQuarternary,
+                      fontSize: 10,
+                    ),
                   ],
-                  if (missing) ...[const SizedBox(width: 5), Tag(text: '缺失', color: MarkerColors.red, fontSize: 10)],
+                  if (missing) ...[
+                    const SizedBox(width: 5),
+                    Tag(text: '缺失', color: MarkerColors.red, fontSize: 10),
+                  ],
                 ],
               ),
             ),
@@ -204,7 +248,9 @@ class _PackDependenciesState extends State<PackDependencies> {
                     child: IconButton(
                       key: Key('dependencyEditButton_${dependency.name}'),
                       icon: const Icon(FluentIcons.edit, size: 16),
-                      onPressed: _saving || dependency.system ? null : () => _edit(dependency),
+                      onPressed: _saving || dependency.system
+                          ? null
+                          : () => _edit(dependency),
                     ),
                   ),
                   SizedBox(width: 3),
@@ -213,7 +259,9 @@ class _PackDependenciesState extends State<PackDependencies> {
                     child: IconButton(
                       key: Key('dependencyDeleteButton_${dependency.name}'),
                       icon: const Icon(FluentIcons.delete, size: 16),
-                      onPressed: _saving || dependency.system ? null : () => _remove(dependency),
+                      onPressed: _saving || dependency.system
+                          ? null
+                          : () => _remove(dependency),
                     ),
                   ),
                 ],
@@ -226,7 +274,10 @@ class _PackDependenciesState extends State<PackDependencies> {
   }
 }
 
-PackModel _withDependencies(PackModel pack, List<DependencyModel> dependencies) {
+PackModel _withDependencies(
+  PackModel pack,
+  List<DependencyModel> dependencies,
+) {
   return PackModel(
       name: pack.name,
       version: pack.version,

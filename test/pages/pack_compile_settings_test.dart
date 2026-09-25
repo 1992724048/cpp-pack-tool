@@ -16,18 +16,51 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('5 个分区空态渲染标题、添加按钮与引导文案', (tester) async {
+  testWidgets('5 个空分区渲染紧凑标题、卡片表头与添加按钮', (tester) async {
     await _pumpPage(tester, _page(_pack('demo')));
 
-    for (final String title in <String>[
-      '宏定义',
-      '编译前命令',
-      '编译后命令',
-      '附加库目录',
-      '附加库',
-    ]) {
-      expect(find.text(title), findsOneWidget);
+    final List<({String title, String columnLabel, Key addKey})>
+    sections = <({String title, String columnLabel, Key addKey})>[
+      (title: '宏定义', columnLabel: '宏定义', addKey: const Key('addMacroButton')),
+      (
+        title: '编译前命令',
+        columnLabel: '命令',
+        addKey: const Key('addPreBuildCmdButton'),
+      ),
+      (
+        title: '编译后命令',
+        columnLabel: '命令',
+        addKey: const Key('addPostBuildCmdButton'),
+      ),
+      (
+        title: '附加库目录',
+        columnLabel: '目录路径',
+        addKey: const Key('addLibDirButton'),
+      ),
+      (title: '附加库', columnLabel: '库名称', addKey: const Key('addLibraryButton')),
+    ];
+
+    for (final ({String title, String columnLabel, Key addKey}) section
+        in sections) {
+      final Finder scope = _sectionScope(tester, section.title);
+      expect(scope, findsOneWidget, reason: '缺少分区：${section.title}');
+      expect(_sectionTitle(tester, section.title), findsOneWidget);
+      expect(_sectionHeader(scope, section.columnLabel), findsOneWidget);
+      expect(_sectionHeader(scope, '构建配置'), findsOneWidget);
+      expect(_sectionHeader(scope, '操作'), findsOneWidget);
+      expect(
+        find.descendant(of: scope, matching: find.byKey(section.addKey)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: scope, matching: find.byType(Card)),
+        findsOneWidget,
+      );
     }
+
+    expect(find.byType(Card), findsNWidgets(6));
+    expect(find.text('添加'), findsNWidgets(5));
+    expect(find.byType(Divider), findsOneWidget);
     for (final String empty in <String>[
       '暂无宏定义',
       '暂无编译前命令',
@@ -35,19 +68,8 @@ void main() {
       '暂无附加库目录',
       '暂无附加库',
     ]) {
-      expect(find.text(empty), findsOneWidget);
+      expect(find.text(empty), findsNothing);
     }
-    for (final Key key in <Key>[
-      const Key('addMacroButton'),
-      const Key('addPreBuildCmdButton'),
-      const Key('addPostBuildCmdButton'),
-      const Key('addLibDirButton'),
-      const Key('addLibraryButton'),
-    ]) {
-      expect(find.byKey(key), findsOneWidget);
-    }
-    expect(find.text('添加'), findsNWidgets(5));
-    expect(find.byType(Divider), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -95,14 +117,33 @@ void main() {
     expect(tags[4].text, 'Debug');
     expect(tags[4].color, MarkerColors.orange);
 
+    final List<({String title, String columnLabel, int entryCount})> sections =
+        <({String title, String columnLabel, int entryCount})>[
+          (title: '宏定义', columnLabel: '宏定义', entryCount: 1),
+          (title: '编译前命令', columnLabel: '命令', entryCount: 1),
+          (title: '编译后命令', columnLabel: '命令', entryCount: 1),
+          (title: '节点脚本', columnLabel: '名称', entryCount: 0),
+          (title: '附加库目录', columnLabel: '目录路径', entryCount: 1),
+          (title: '附加库', columnLabel: '库名称', entryCount: 1),
+        ];
+    for (final ({String title, String columnLabel, int entryCount}) section
+        in sections) {
+      final Finder scope = _sectionScope(tester, section.title);
+      expect(scope, findsOneWidget, reason: '缺少分区：${section.title}');
+      expect(_sectionTitle(tester, section.title), findsOneWidget);
+      expect(_sectionHeader(scope, section.columnLabel), findsOneWidget);
+      expect(
+        find.descendant(of: scope, matching: find.byType(Card)),
+        findsNWidgets(section.entryCount + 1),
+      );
+      if (section.title != '节点脚本') {
+        expect(_sectionHeader(scope, '构建配置'), findsOneWidget);
+        expect(_sectionHeader(scope, '操作'), findsOneWidget);
+      }
+    }
+
     expect(find.text('暂无宏定义'), findsNothing);
-    expect(find.text('构建配置'), findsNWidgets(5));
-    expect(find.text('操作'), findsNWidgets(5));
-    expect(find.text('宏定义'), findsNWidgets(2));
-    expect(find.text('命令'), findsNWidgets(2));
-    expect(find.text('目录路径'), findsOneWidget);
-    expect(find.text('库名称'), findsOneWidget);
-    expect(find.byType(Divider), findsNWidgets(5));
+    expect(find.byType(Divider), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -146,12 +187,17 @@ void main() {
 
     await _pumpPage(tester, _page(pack));
 
+    final Finder scope = _sectionScope(tester, '宏定义');
+    final Finder sectionTags = find.descendant(
+      of: scope,
+      matching: find.byType(Tag),
+    );
     final Rect firstText = tester.getRect(find.text('A=1'));
     final Rect secondText = tester.getRect(find.text('B=2'));
-    final Rect firstTag = tester.getRect(find.byType(Tag).first);
-    final Rect secondTag = tester.getRect(find.byType(Tag).last);
-    final Rect buildHeader = tester.getRect(find.text('构建配置'));
-    final Rect actionHeader = tester.getRect(find.text('操作'));
+    final Rect firstTag = tester.getRect(sectionTags.first);
+    final Rect secondTag = tester.getRect(sectionTags.last);
+    final Rect buildHeader = tester.getRect(_sectionHeader(scope, '构建配置'));
+    final Rect actionHeader = tester.getRect(_sectionHeader(scope, '操作'));
     final Rect firstEdit = tester.getRect(
       find.byKey(const Key('macroEditButton_0')),
     );
@@ -515,7 +561,7 @@ void main() {
     expect(find.text('已删除'), findsOneWidget);
   });
 
-  testWidgets('两条目分区渲染表头与行间两条分隔线', (tester) async {
+  testWidgets('两条目宏分区渲染同宽表头卡与条目卡', (tester) async {
     final PackModel pack = _pack('demo')
       ..macros = <MacroModel>[
         const MacroModel(value: 'A=1'),
@@ -524,7 +570,21 @@ void main() {
 
     await _pumpPage(tester, _page(pack));
 
-    expect(find.byType(Divider), findsNWidgets(2));
+    final Finder cards = find.descendant(
+      of: _sectionScope(tester, '宏定义'),
+      matching: find.byType(Card),
+    );
+    expect(cards, findsNWidgets(3));
+    final List<Rect> cardRects = <Rect>[
+      for (int index = 0; index < 3; index++) tester.getRect(cards.at(index)),
+    ];
+    for (final Rect cardRect in cardRects) {
+      expect(cardRect.left, cardRects.first.left);
+      expect(cardRect.right, cardRects.first.right);
+    }
+    expect(cardRects[1].top, greaterThanOrEqualTo(cardRects[0].bottom));
+    expect(cardRects[2].top, greaterThanOrEqualTo(cardRects[1].bottom));
+    expect(find.byType(Divider), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -593,7 +653,15 @@ void main() {
 
     expect(find.byKey(const Key('nodeScriptsSection')), findsOneWidget);
     expect(find.text('节点脚本'), findsOneWidget);
-    expect(find.text('暂无节点脚本'), findsOneWidget);
+    final Finder scope = _sectionScope(tester, '节点脚本');
+    expect(
+      find.descendant(of: scope, matching: find.text('暂无节点脚本')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: scope, matching: find.byType(Card)),
+      findsOneWidget,
+    );
     expect(find.byKey(const Key('openScriptEditorButton')), findsOneWidget);
     expect(find.text('打开节点编辑器'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -743,10 +811,36 @@ Future<void> _pumpPage(WidgetTester tester, PackCompileSettings page) async {
   await tester.pump();
 }
 
-FluentThemeData _theme(WidgetTester tester) {
-  return FluentTheme.of(
-    tester.element(find.byType(PackCompileSettings).first),
+Finder _sectionTitle(WidgetTester tester, String title) {
+  return find.descendant(
+    of: find.byType(PackCompileSettings),
+    matching: find.byWidgetPredicate((Widget widget) {
+      return widget is Text &&
+          widget.data == title &&
+          widget.style?.fontSize == 16;
+    }),
   );
+}
+
+Finder _sectionScope(WidgetTester tester, String title) {
+  return find
+      .ancestor(of: _sectionTitle(tester, title), matching: find.byType(Column))
+      .at(1);
+}
+
+Finder _sectionHeader(Finder scope, String text) {
+  return find.descendant(
+    of: scope,
+    matching: find.byWidgetPredicate((Widget widget) {
+      return widget is Text &&
+          widget.data == text &&
+          widget.style?.fontSize == 12;
+    }),
+  );
+}
+
+FluentThemeData _theme(WidgetTester tester) {
+  return FluentTheme.of(tester.element(find.byType(PackCompileSettings).first));
 }
 
 Future<void> _addEntry(
