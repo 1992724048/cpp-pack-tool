@@ -188,6 +188,8 @@ try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release', ['-DEXTRA=1'])
     icx_release = list(captured[-1])
 
+    # 已移除的 GNU 种类标识属非法值：回退按编译器路径推断（icx-cl.exe → icx），
+    # 不再映射为任何 GNU 优化旗标。
     os.environ['CNP_COMPILER_KIND'] = 'gcc'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     inferred_release = list(captured[-1])
@@ -203,31 +205,23 @@ try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
     msvc_debug = list(captured[-1])
 
-    # MinGW：GNU 风格旗标、不写 MSVC 运行库变量、mt 链接期静态运行库、
-    # RC 编译器注入与保守 IPO（enable_ipo=True 可强制）。
-    os.environ['CNP_COMPILER_KIND'] = 'mingw'
-    os.environ['CNP_C_COMPILER'] = 'C:/msys64/ucrt64/bin/gcc.exe'
-    os.environ['CNP_CXX_COMPILER'] = 'C:/msys64/ucrt64/bin/g++.exe'
+    # 已移除的 gcc/g++ 路径：CNP_COMPILER_KIND 缺失时不再推断任何优化旗标，
+    # 但 MSVC 运行库变量仍无条件写入（三种保留编译器种类的共同行为）。
+    os.environ.pop('CNP_COMPILER_KIND', None)
+    os.environ['CNP_C_COMPILER'] = 'C:/compiler/gcc/bin/gcc.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/gcc/bin/g++.exe'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    mingw_release = list(captured[-1])
-    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
-    mingw_debug = list(captured[-1])
-    os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
-    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    mingw_static = list(captured[-1])
-    os.environ.pop('CNP_RUNTIME_LIBRARY', None)
-    os.environ['CNP_RC_COMPILER'] = 'C:/msys64/ucrt64/bin/windres.exe'
-    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    mingw_rc = list(captured[-1])
-    os.environ.pop('CNP_RC_COMPILER', None)
-    cnp_build_support.cmake_configure(
-        'C:/src', 'C:/build', 'Release', [], enable_ipo=True)
-    mingw_forced_ipo = list(captured[-1])
+    gnu_path_release = list(captured[-1])
+    os.environ['CNP_COMPILER_KIND'] = 'icx'
 
-    # 路径推断：CNP_COMPILER_KIND 非法时 gcc/g++ → mingw。
-    os.environ['CNP_COMPILER_KIND'] = 'unknown'
+    # 显式 RC 编译器透传（不经自动探测）。
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_RC_COMPILER'] = 'C:/tools/llvm/bin/llvm-rc.exe'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    gcc_inferred = list(captured[-1])
+    rc_passthrough = list(captured[-1])
+    os.environ.pop('CNP_RC_COMPILER', None)
 
     os.environ['CNP_COMPILER_KIND'] = 'msvc'
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
@@ -306,27 +300,15 @@ print('preset_opt_cxx=%s' % option(preset_release, 'CMAKE_CXX_FLAGS_RELEASE'))
 print('preset_opt_c=%s' % option(preset_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('preset_ipo=%s' % option(
     preset_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('mingw_avx2=%s' % option(mingw_release, 'CMAKE_C_FLAGS'))
-print('mingw_opt=%s' % option(mingw_release, 'CMAKE_C_FLAGS_RELEASE'))
-print('mingw_opt_cxx=%s' % option(mingw_release, 'CMAKE_CXX_FLAGS_RELEASE'))
-print('mingw_msvc_runtime=%s' % option(
-    mingw_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
-print('mingw_ipo=%s' % option(
-    mingw_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('mingw_cxx=%s' % [item for item in mingw_release
-                        if item.startswith('-DCMAKE_CXX_COMPILER=')][0])
-print('mingw_debug_opt=%s' % option(mingw_debug, 'CMAKE_C_FLAGS_RELEASE'))
-print('mingw_md_shared=%s' % option(mingw_rc, 'CMAKE_SHARED_LINKER_FLAGS'))
-print('mingw_static_shared=%s' % option(
-    mingw_static, 'CMAKE_SHARED_LINKER_FLAGS'))
-print('mingw_static_exe=%s' % option(mingw_static, 'CMAKE_EXE_LINKER_FLAGS'))
-print('mingw_static_module=%s' % option(
-    mingw_static, 'CMAKE_MODULE_LINKER_FLAGS'))
-print('mingw_rc=%s' % option(mingw_rc, 'CMAKE_RC_COMPILER'))
-print('mingw_forced_ipo=%s' % option(
-    mingw_forced_ipo, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('gcc_inferred_avx2=%s' % option(gcc_inferred, 'CMAKE_C_FLAGS'))
-print('gcc_inferred_opt=%s' % option(gcc_inferred, 'CMAKE_C_FLAGS_RELEASE'))
+print('version=%s' % cnp_build_support.VERSION)
+print('icx_runtime=%s' % option(icx_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
+print('gnu_path_avx2=%s' % option(gnu_path_release, 'CMAKE_C_FLAGS'))
+print('gnu_path_opt=%s' % option(gnu_path_release, 'CMAKE_C_FLAGS_RELEASE'))
+print('gnu_path_runtime=%s' % option(
+    gnu_path_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
+print('gnu_path_cxx=%s' % [item for item in gnu_path_release
+                           if item.startswith('-DCMAKE_CXX_COMPILER=')][0])
+print('rc_compiler=%s' % option(rc_passthrough, 'CMAKE_RC_COMPILER'))
 
 command = captured[0]
 print('generator=%s' % command[command.index('-G') + 1])
@@ -473,8 +455,8 @@ print('dir_count=%d' % count_a)
 print('file_count=%d' % count_b)
 ''';
 
-/// stage_binaries：Release/Debug 双目录布局、MinGW `.a`/`.dll.a` 落点、
-/// 中间目录跳过与同名去重。
+/// stage_binaries：Release/Debug 双目录布局、`.a` 通用归档（静态库与导入库
+/// 均落 lib）、中间目录跳过与同名去重。
 const String _binariesDriver = r'''
 import os
 
@@ -513,7 +495,7 @@ print('debug_copied=%d debug_lib=%d debug_bin=%d debug_skipped=%d' % (
 ''';
 
 /// stage_binaries reset：段重置（残留消失、另一段保留）、默认旧语义与双跑不累积
-/// （含 MinGW `.a`/`.dll.a` 产物落点）。
+/// （含 `.a`/`.dll.a` 归档产物落点）。
 const String _binariesResetDriver = r'''
 import os
 
@@ -757,7 +739,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "8"'));
+      expect(source, contains('VERSION = "9"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -826,7 +808,7 @@ void main() {
         contains('clang_opt_cxx=/O2 /Ob2 /Oi /Ot /GF /Gy -DNDEBUG'),
       );
       expect(stdout, contains('clang_ipo=ON'));
-      // clang-cl 不注入 GNU 风链接旗标（GNU clang 驱动已移除）。
+      // clang-cl 不注入链接器旗标（不写 CMAKE_*_LINKER_FLAGS）。
       expect(stdout, contains('clang_cl_ld=none'));
       // msvc：/O2 /Ob2 /Oi /Ot /GF /Gy + IPO。
       expect(stdout, contains('msvc_opt=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'));
@@ -866,49 +848,36 @@ void main() {
         contains('preset_opt_c=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'),
       );
       expect(stdout, contains('preset_ipo=OFF'));
-      // MinGW：GNU 旗标、不写 CMAKE_MSVC_RUNTIME_LIBRARY、mt 链接期静态运行库、
-      // RC 编译器注入、IPO 保守关闭（enable_ipo=True 可强制）、gcc/g++ 路径推断。
-      expect(stdout, contains('mingw_avx2=-mavx2'));
+      // 辅助模块版本已升 9（删除 GNU 分支后的版本契约）。
+      expect(stdout, contains('version=9'));
+      // 三编译器矩阵收敛后，icx 无条件写入 MSVC 运行库变量。
       expect(
         stdout,
-        contains('mingw_opt=-O3 -ffunction-sections -fdata-sections -DNDEBUG'),
+        contains(
+          'icx_runtime=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL',
+        ),
+      );
+      // 已移除的 gcc/g++ 路径不再推断任何优化旗标，但仍透传 C++ 编译器
+      // 并写入 MSVC 运行库变量（与保留种类一致）。
+      expect(stdout, contains('gnu_path_avx2=none'));
+      expect(stdout, contains('gnu_path_opt=none'));
+      expect(
+        stdout,
+        contains(
+          'gnu_path_runtime=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL',
+        ),
       );
       expect(
         stdout,
         contains(
-          'mingw_opt_cxx=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
+          'gnu_path_cxx=-DCMAKE_CXX_COMPILER=C:/compiler/gcc/bin/g++.exe',
         ),
       );
-      expect(stdout, contains('mingw_msvc_runtime=none'));
-      expect(stdout, contains('mingw_ipo=none'));
-      expect(
-        stdout,
-        contains('mingw_cxx=-DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe'),
-      );
-      expect(stdout, contains('mingw_debug_opt=none'));
-      expect(stdout, contains('mingw_md_shared=none'));
-      expect(
-        stdout,
-        contains('mingw_static_shared=-static-libgcc -static-libstdc++'),
-      );
-      expect(
-        stdout,
-        contains('mingw_static_exe=-static-libgcc -static-libstdc++'),
-      );
-      expect(
-        stdout,
-        contains('mingw_static_module=-static-libgcc -static-libstdc++'),
-      );
-      expect(stdout, contains('mingw_rc=C:/msys64/ucrt64/bin/windres.exe'));
-      expect(stdout, contains('mingw_forced_ipo=ON'));
-      expect(stdout, contains('ipo=off reason=mingw-conservative'));
-      expect(stdout, contains('gcc_inferred_avx2=-mavx2'));
-      expect(
-        stdout,
-        contains(
-          'gcc_inferred_opt=-O3 -ffunction-sections -fdata-sections -DNDEBUG',
-        ),
-      );
+      // 显式 RC 编译器透传（不新增自动探测）。
+      expect(stdout, contains('rc_compiler=C:/tools/llvm/bin/llvm-rc.exe'));
+      // 编译器种类收敛为 icx/clang-cl/msvc：输出中不再出现 GNU/MinGW 旗标。
+      expect(stdout, isNot(contains('mingw')));
+      expect(stdout, isNot(contains('gcc_inferred')));
       // 证据行。
       expect(
         stdout,
@@ -1029,7 +998,7 @@ void main() {
         _readText(_join(_join(_join(outRelease, 'release'), 'bin'), 'foo.pdb')),
         'pdb-a',
       );
-      // MinGW：静态库与导入库均以 `.a` 结尾 → lib（而非 bin）。
+      // `.a` 通用归档：静态库与导入库均以 `.a` 结尾 → lib（而非 bin）。
       expect(
         _readText(_join(_join(_join(outRelease, 'release'), 'lib'), 'libz.a')),
         'z-a',
@@ -1122,7 +1091,7 @@ void main() {
         _readText(_join(_join(_join(out, 'release'), 'lib'), 'libz.lib')),
         'fresh-lib',
       );
-      // MinGW 静态库与导入库：整段重置后为本次 staging 内容。
+      // `.a` 通用归档：整段重置后为本次 staging 内容。
       expect(
         _readText(_join(_join(_join(out, 'release'), 'lib'), 'libz.a')),
         'fresh-static',
