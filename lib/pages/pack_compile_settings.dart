@@ -362,26 +362,12 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     List<LibDirModel>? libDirectories,
     List<LibraryModel>? libraries,
   }) {
-    return PackModel(
-        name: pack.name,
-        version: pack.version,
-        author: pack.author,
-        description: pack.description,
-        license: pack.license,
-        iconPath: pack.iconPath,
-        sourcePath: pack.sourcePath,
-        sourceVersion: pack.sourceVersion,
-      )
-      ..files = pack.files
-      ..commands = commands ?? pack.commands
-      ..dependencies = pack.dependencies
-      ..macros = macros ?? pack.macros
-      ..libDirectories = libDirectories ?? pack.libDirectories
-      ..libraries = libraries ?? pack.libraries
-      ..history = pack.history
-      ..scripts = pack.scripts
-      ..buildOptions = pack.buildOptions
-      ..enabledFormats = pack.enabledFormats;
+    return pack.copyWith(
+      commands: commands,
+      macros: macros,
+      libDirectories: libDirectories,
+      libraries: libraries,
+    );
   }
 
   List<_CompileEntry> _macroEntries() {

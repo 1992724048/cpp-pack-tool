@@ -1,5 +1,6 @@
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -109,7 +110,10 @@ void main() {
               ),
             ]
             ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'}
-            ..enabledFormats = <String>['nuget'];
+            ..enabledFormats = <String>['nuget']
+            ..compilerProfile = const CompilerProfile(
+              release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+            );
       final List<FileModel> files = <FileModel>[
         FileModel(name: 'logo.svg', path: 'assets/logo.svg', size: 128),
         FileModel(name: 'foo.h', path: 'include/foo.h', size: 256),
@@ -126,6 +130,7 @@ void main() {
       expect(updated.sourcePath, r'D:\src');
       expect(updated.sourceVersion, 'v2.3.4');
       expect(updated.iconPath, 'assets/logo.svg');
+      expect(updated.compilerProfile, same(pack.compilerProfile));
       expect(updated.files, same(files));
       expect(updated.commands, same(pack.commands));
       expect(updated.dependencies, same(pack.dependencies));
@@ -163,6 +168,33 @@ void main() {
       final PackModel updated = copyPackWithFiles(pack, const <FileModel>[]);
 
       expect(updated.buildOptions, isEmpty);
+    });
+  });
+
+  group('copyPackWithVersion', () {
+    test('仅替换版本并保留 compilerProfile 与全部列表', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      )
+        ..files = <FileModel>[
+          FileModel(name: 'a.h', path: 'include/a.h', size: 10),
+        ]
+        ..buildOptions = <String, String>{'tbb': 'on'}
+        ..enabledFormats = <String>['nuget']
+        ..compilerProfile = const CompilerProfile(
+          debug: CompilerConfigProfile(runtime: CompilerRuntimeChoice.md),
+        );
+
+      final PackModel updated = copyPackWithVersion(pack, '2.0.0');
+
+      expect(updated.version, '2.0.0');
+      expect(updated.compilerProfile, same(pack.compilerProfile));
+      expect(updated.files, same(pack.files));
+      expect(updated.buildOptions, same(pack.buildOptions));
+      expect(updated.enabledFormats, same(pack.enabledFormats));
+      expect(pack.version, '1.0.0');
     });
   });
 }

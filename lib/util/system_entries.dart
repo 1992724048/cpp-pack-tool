@@ -177,24 +177,8 @@ PackModel _copyPack(
   required List<CmdModel> commands,
   required List<DependencyModel> dependencies,
 }) {
-  return PackModel(
-      name: pack.name,
-      version: pack.version,
-      author: pack.author,
-      description: pack.description,
-      license: pack.license,
-      iconPath: pack.iconPath,
-      sourcePath: pack.sourcePath,
-      sourceVersion: pack.sourceVersion,
-    )
-    ..files = pack.files
-    ..commands = commands
-    ..dependencies = dependencies
-    ..macros = pack.macros
-    ..libDirectories = pack.libDirectories
-    ..libraries = pack.libraries
-    ..history = pack.history
-    ..scripts = pack.scripts
-    ..buildOptions = pack.buildOptions
-    ..enabledFormats = pack.enabledFormats;
+  return pack.copyWith(
+    commands: commands,
+    dependencies: dependencies,
+  );
 }

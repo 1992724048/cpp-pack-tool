@@ -1,6 +1,7 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -267,7 +268,10 @@ void main() {
           ),
         ]
         ..sourceVersion = 'v5.6.7'
-        ..enabledFormats = <String>['nuget'];
+        ..enabledFormats = <String>['nuget']
+        ..compilerProfile = const CompilerProfile(
+          release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+        );
       const BuildScriptHeader header = BuildScriptHeader(
         repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
@@ -299,6 +303,7 @@ void main() {
       expect(updated.sourceVersion, 'v5.6.7');
       expect(updated.buildOptions, <String, String>{'tbb': 'on'});
       expect(updated.enabledFormats, <String>['nuget']);
+      expect(updated.compilerProfile, same(pack.compilerProfile));
       // 不修改入参：原包列表保持原样
       expect(pack.commands, isEmpty);
       expect(pack.dependencies, hasLength(1));

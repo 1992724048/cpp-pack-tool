@@ -360,28 +360,7 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   /// 全字段拷贝并替换作者（`PackModel.author` 为 final，只能重建）。
-  PackModel _withAuthor(PackModel pack, String author) {
-    return PackModel(
-        name: pack.name,
-        version: pack.version,
-        author: author,
-        description: pack.description,
-        license: pack.license,
-        iconPath: pack.iconPath,
-        sourcePath: pack.sourcePath,
-        sourceVersion: pack.sourceVersion,
-      )
-      ..files = pack.files
-      ..commands = pack.commands
-      ..dependencies = pack.dependencies
-      ..macros = pack.macros
-      ..libDirectories = pack.libDirectories
-      ..libraries = pack.libraries
-      ..history = pack.history
-      ..scripts = pack.scripts
-      ..buildOptions = pack.buildOptions
-      ..enabledFormats = pack.enabledFormats;
-  }
+  PackModel _withAuthor(PackModel pack, String author) => pack.copyWith(author: author);
 
   /// 写盘前的作者兜底：占位作者替换为默认作者（静默）。
   PackModel _withResolvedAuthor(PackModel pack) {

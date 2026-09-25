@@ -110,27 +110,9 @@ class _PackPackagingState extends State<PackPackaging> {
   }
 
   PackModel _withEnabledFormats(List<String> enabledFormats) {
-    final PackModel pack = widget.pack;
-    return PackModel(
-        name: pack.name,
-        version: pack.version,
-        author: pack.author,
-        description: pack.description,
-        license: pack.license,
-        iconPath: pack.iconPath,
-        sourcePath: pack.sourcePath,
-        sourceVersion: pack.sourceVersion,
-      )
-      ..files = pack.files
-      ..commands = pack.commands
-      ..dependencies = pack.dependencies
-      ..macros = pack.macros
-      ..libDirectories = pack.libDirectories
-      ..libraries = pack.libraries
-      ..history = pack.history
-      ..scripts = pack.scripts
-      ..buildOptions = pack.buildOptions
-      ..enabledFormats = List<String>.of(enabledFormats);
+    return widget.pack.copyWith(
+      enabledFormats: List<String>.of(enabledFormats),
+    );
   }
 
   String _descriptionFor(PackageBuilder? builder) {

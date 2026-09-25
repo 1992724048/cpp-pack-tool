@@ -43,9 +43,7 @@ PackFilesDiff comparePackFiles(
 
 /// 以 [files] 替换文件列表的整包拷贝：图标按新快照重新识别，其余字段原样保留。
 PackModel copyPackWithFiles(PackModel pack, List<FileModel> files) {
-  return _rebuildPack(
-    pack,
-    version: pack.version,
+  return pack.copyWith(
     files: files,
     iconPath: findIconFile(files)?.path,
   );
@@ -53,38 +51,5 @@ PackModel copyPackWithFiles(PackModel pack, List<FileModel> files) {
 
 /// 以 [version] 替换版本号的整包拷贝（`PackModel.version` 为 final，只能重建）。
 PackModel copyPackWithVersion(PackModel pack, String version) {
-  return _rebuildPack(
-    pack,
-    version: version,
-    files: pack.files,
-    iconPath: pack.iconPath,
-  );
-}
-
-PackModel _rebuildPack(
-  PackModel pack, {
-  required String version,
-  required List<FileModel> files,
-  required String? iconPath,
-}) {
-  return PackModel(
-      name: pack.name,
-      version: version,
-      author: pack.author,
-      description: pack.description,
-      license: pack.license,
-      iconPath: iconPath,
-      sourcePath: pack.sourcePath,
-      sourceVersion: pack.sourceVersion,
-    )
-    ..files = files
-    ..commands = pack.commands
-    ..dependencies = pack.dependencies
-    ..macros = pack.macros
-    ..libDirectories = pack.libDirectories
-    ..libraries = pack.libraries
-    ..history = pack.history
-    ..scripts = pack.scripts
-    ..buildOptions = pack.buildOptions
-    ..enabledFormats = pack.enabledFormats;
+  return pack.copyWith(version: version);
 }

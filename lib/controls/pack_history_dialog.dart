@@ -70,26 +70,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
   }
 
   PackModel _updatedPack(List<HistoryModel> history) {
-    return PackModel(
-        name: widget.pack.name,
-        version: widget.pack.version,
-        author: widget.pack.author,
-        description: widget.pack.description,
-        license: widget.pack.license,
-        iconPath: widget.pack.iconPath,
-        sourcePath: widget.pack.sourcePath,
-        sourceVersion: widget.pack.sourceVersion,
-      )
-      ..files = widget.pack.files
-      ..commands = widget.pack.commands
-      ..dependencies = widget.pack.dependencies
-      ..macros = widget.pack.macros
-      ..libDirectories = widget.pack.libDirectories
-      ..libraries = widget.pack.libraries
-      ..history = history
-      ..scripts = widget.pack.scripts
-      ..buildOptions = widget.pack.buildOptions
-      ..enabledFormats = widget.pack.enabledFormats;
+    return widget.pack.copyWith(history: history);
   }
 
   @override

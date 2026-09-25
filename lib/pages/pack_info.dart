@@ -103,27 +103,12 @@ class _PackInfoState extends State<PackInfo> {
     }
     final String originName = widget.pack.name;
     final String description = _descriptionController.text.trim();
-    final PackModel updated =
-        PackModel(
-            name: widget.pack.name,
-            version: _versionController.text.trim(),
-            author: _authorController.text.trim(),
-            description: description.isEmpty ? null : description,
-            license: _license,
-            iconPath: widget.pack.iconPath,
-            sourcePath: widget.pack.sourcePath,
-            sourceVersion: widget.pack.sourceVersion,
-          )
-          ..files = widget.pack.files
-          ..commands = widget.pack.commands
-          ..dependencies = widget.pack.dependencies
-          ..macros = widget.pack.macros
-          ..libDirectories = widget.pack.libDirectories
-          ..libraries = widget.pack.libraries
-          ..history = widget.pack.history
-          ..scripts = widget.pack.scripts
-          ..buildOptions = widget.pack.buildOptions
-          ..enabledFormats = widget.pack.enabledFormats;
+    final PackModel updated = widget.pack.copyWith(
+      version: _versionController.text.trim(),
+      author: _authorController.text.trim(),
+      description: description.isEmpty ? null : description,
+      license: _license,
+    );
 
     setState(() => _saving = true);
     final bool saved = await widget.onSave(updated);

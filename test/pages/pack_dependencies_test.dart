@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
@@ -231,7 +232,10 @@ void main() {
         const LibDirModel(path: 'third_party/lib'),
       ]
       ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
-      ..buildOptions = <String, String>{'tbb': 'on'};
+      ..buildOptions = <String, String>{'tbb': 'on'}
+      ..compilerProfile = const CompilerProfile(
+        release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+      );
     PackModel? saved;
 
     await _pumpPage(
@@ -268,6 +272,7 @@ void main() {
     expect(saved!.libDirectories.single.path, 'third_party/lib');
     expect(saved!.libraries.single.name, 'mylib.lib');
     expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
+    expect(saved!.compilerProfile, same(pack.compilerProfile));
     expect(find.text('已添加'), findsOneWidget);
     expect(find.byKey(const Key('dependencyDialog')), findsNothing);
   });

@@ -525,24 +525,5 @@ PackModel _withBuildOption(PackModel pack, String name, String? value) {
   } else {
     options[name] = value;
   }
-  return PackModel(
-      name: pack.name,
-      version: pack.version,
-      author: pack.author,
-      description: pack.description,
-      license: pack.license,
-      iconPath: pack.iconPath,
-      sourcePath: pack.sourcePath,
-      sourceVersion: pack.sourceVersion,
-    )
-    ..files = pack.files
-    ..commands = pack.commands
-    ..dependencies = pack.dependencies
-    ..macros = pack.macros
-    ..libDirectories = pack.libDirectories
-    ..libraries = pack.libraries
-    ..history = pack.history
-    ..scripts = pack.scripts
-    ..buildOptions = options
-    ..enabledFormats = pack.enabledFormats;
+  return pack.copyWith(buildOptions: options);
 }

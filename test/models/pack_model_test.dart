@@ -12,6 +12,85 @@ import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('PackModel.copyWith', () {
+    test('copyWith 覆盖单字段时保留 compilerProfile 与所有列表', () {
+      final PackModel source = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+        ..compilerProfile = const CompilerProfile(
+          release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+        );
+
+      final PackModel changed = source.copyWith(version: '1.0.1');
+
+      expect(changed.version, '1.0.1');
+      expect(changed.compilerProfile, same(source.compilerProfile));
+      expect(changed.files, same(source.files));
+      expect(changed.dependencies, same(source.dependencies));
+      expect(changed.commands, same(source.commands));
+      expect(changed.macros, same(source.macros));
+      expect(changed.libDirectories, same(source.libDirectories));
+      expect(changed.libraries, same(source.libraries));
+      expect(changed.history, same(source.history));
+      expect(changed.scripts, same(source.scripts));
+      expect(changed.buildOptions, same(source.buildOptions));
+      expect(changed.enabledFormats, same(source.enabledFormats));
+      expect(changed.name, 'demo');
+      expect(changed.author, 'tester');
+    });
+
+    test('copyWith 显式传 null 才清空可空字段', () {
+      final PackModel source = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+        description: '说明',
+        license: 'MIT',
+        iconPath: 'icon.png',
+        sourcePath: r'D:\src',
+        sourceVersion: 'v1.2.3',
+      );
+
+      final PackModel cleared = source.copyWith(description: null);
+
+      expect(cleared.description, isNull);
+      expect(cleared.license, 'MIT');
+      expect(cleared.iconPath, 'icon.png');
+      expect(cleared.sourcePath, r'D:\src');
+      expect(cleared.sourceVersion, 'v1.2.3');
+
+      final PackModel replaced = source.copyWith(description: '新说明');
+      expect(replaced.description, '新说明');
+    });
+
+    test('copyWith 显式传 null 清空 compilerProfile，未传时保留原值', () {
+      final PackModel source = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+        ..compilerProfile = const CompilerProfile();
+
+      expect(source.copyWith().compilerProfile, same(source.compilerProfile));
+      expect(source.copyWith(compilerProfile: null).compilerProfile, isNull);
+      expect(
+        source
+            .copyWith(
+              compilerProfile: const CompilerProfile(
+                release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.md),
+              ),
+            )
+            .compilerProfile!
+            .release
+            .runtime,
+        CompilerRuntimeChoice.md,
+      );
+    });
+
+    test('copyWith 保留 buildOptions 中的旧 runtime 键', () {
+      final PackModel source = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
+        ..buildOptions = <String, String>{'runtime': 'MT', 'tbb': 'on'};
+
+      final PackModel changed = source.copyWith(version: '2.0.0');
+
+      expect(changed.buildOptions, <String, String>{'runtime': 'MT', 'tbb': 'on'});
+    });
+  });
+
   group('PackModel 序列化', () {
     test('toMap/fromMap 往返保留全部字段与文件列表', () {
       final PackModel pack =

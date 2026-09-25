@@ -851,26 +851,7 @@ class _ScriptEditorPageState extends State<ScriptEditorPage> {
 
   PackModel _buildUpdatedPack() {
     final ScriptProjectModel? current = _controller?.project;
-    return PackModel(
-        name: widget.pack.name,
-        version: widget.pack.version,
-        author: widget.pack.author,
-        description: widget.pack.description,
-        license: widget.pack.license,
-        iconPath: widget.pack.iconPath,
-        sourcePath: widget.pack.sourcePath,
-        sourceVersion: widget.pack.sourceVersion,
-      )
-      ..files = widget.pack.files
-      ..commands = widget.pack.commands
-      ..dependencies = widget.pack.dependencies
-      ..macros = widget.pack.macros
-      ..libDirectories = widget.pack.libDirectories
-      ..libraries = widget.pack.libraries
-      ..history = widget.pack.history
-      ..scripts = _scriptsWithCurrent(current)
-      ..buildOptions = widget.pack.buildOptions
-      ..enabledFormats = widget.pack.enabledFormats;
+    return widget.pack.copyWith(scripts: _scriptsWithCurrent(current));
   }
 
   List<ScriptProjectModel> _scriptsWithCurrent(ScriptProjectModel? current) {

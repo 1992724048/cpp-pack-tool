@@ -9,6 +9,9 @@ import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
+/// `copyWith` 的「未传入」哨兵：与显式传入 `null`（清空）区分。
+const Object _unset = Object();
+
 class PackModel {
   final String name;
   final String version;
@@ -62,6 +65,57 @@ class PackModel {
 
   PackModel(
       {required this.name, required this.version, required this.author, this.description, this.license, this.iconPath, this.sourcePath, this.sourceVersion});
+
+  /// 全字段拷贝：未传入的可空字段保留原值（显式传 `null` 才清空），
+  /// 未传入的列表/映射保持原引用（既有 identity 断言依赖此语义）。
+  PackModel copyWith({
+    String? name,
+    String? version,
+    String? author,
+    Object? description = _unset,
+    Object? license = _unset,
+    Object? iconPath = _unset,
+    Object? sourcePath = _unset,
+    Object? sourceVersion = _unset,
+    Object? compilerProfile = _unset,
+    List<FileModel>? files,
+    List<CmdModel>? commands,
+    List<DependencyModel>? dependencies,
+    List<MacroModel>? macros,
+    List<LibDirModel>? libDirectories,
+    List<LibraryModel>? libraries,
+    List<HistoryModel>? history,
+    List<ScriptProjectModel>? scripts,
+    Map<String, String>? buildOptions,
+    List<String>? enabledFormats,
+  }) {
+    final PackModel next = PackModel(
+      name: name ?? this.name,
+      version: version ?? this.version,
+      author: author ?? this.author,
+      description: identical(description, _unset) ? this.description : description as String?,
+      license: identical(license, _unset) ? this.license : license as String?,
+      iconPath: identical(iconPath, _unset) ? this.iconPath : iconPath as String?,
+      sourcePath: identical(sourcePath, _unset) ? this.sourcePath : sourcePath as String?,
+      sourceVersion: identical(sourceVersion, _unset)
+          ? this.sourceVersion
+          : sourceVersion as String?,
+    );
+    next.compilerProfile = identical(compilerProfile, _unset)
+        ? this.compilerProfile
+        : compilerProfile as CompilerProfile?;
+    next.files = files ?? this.files;
+    next.commands = commands ?? this.commands;
+    next.dependencies = dependencies ?? this.dependencies;
+    next.macros = macros ?? this.macros;
+    next.libDirectories = libDirectories ?? this.libDirectories;
+    next.libraries = libraries ?? this.libraries;
+    next.history = history ?? this.history;
+    next.scripts = scripts ?? this.scripts;
+    next.buildOptions = buildOptions ?? this.buildOptions;
+    next.enabledFormats = enabledFormats ?? this.enabledFormats;
+    return next;
+  }
 
   Map<String, Object?> toMap() {
     return <String, Object?>{
