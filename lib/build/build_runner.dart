@@ -72,7 +72,7 @@ class PackSourcePreparation {
   final Directory target;
 }
 
-/// 源码准备函数（与 [preparePackSource] 同形）：提权重试路径与测试注入替代实现。
+/// 源码准备函数：提权重试路径与测试注入替代实现。
 typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {

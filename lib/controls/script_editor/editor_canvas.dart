@@ -31,7 +31,7 @@ const double _pinHitRadiusMax = 22;
 /// （视觉规范 §5.1/§5.2/§5.7/§10.1/§10.2）、右键菜单与画布快捷键（§5.6/§10.3）。
 ///
 /// [controller] 是图状态的唯一来源；[transformationController] 与 [focusNode]
-/// 可注入（T9 视口定位 / T12 键盘复用），为 null 时由本组件创建并负责释放。
+/// 可注入，为 null 时由本组件创建并负责释放。
 /// 拖动期间的位移只做视图层跟随，释放时才写回 `moveNode`。
 class EditorCanvas extends StatefulWidget {
   const EditorCanvas({
@@ -322,7 +322,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   /// 模型视口被外部直接写入时（页面防抖写回等），同步到变换矩阵。
   ///
-  /// T9 诊断居中只直接改写注入的 [TransformationController]；模型写回由页面
+  /// 诊断居中只直接改写注入的 [TransformationController]；模型写回由页面
   /// 防抖完成，届时仍经此比对（矩阵与模型一致，故无视觉变化）。以「模型值 vs
   /// 上次同步缓存」判断，而非与当前矩阵比较：
   /// fling 的 `onInteractionEnd` 在惯性动画开始前触发，惯性会令矩阵领先于
@@ -412,7 +412,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
     final ScriptNodeModel? node = _findNode(nodeId);
     final ScriptPinDescriptor? pin = node == null ? null : _pinOf(node, pinId);
     if (pin == null || pin.isInput) {
-      return; // v1 仅支持从输出引脚拖出
+      return; // 仅支持从输出引脚拖出
     }
     setState(() {
       _connectSource = (nodeId: nodeId, pinId: pinId, pin: pin);

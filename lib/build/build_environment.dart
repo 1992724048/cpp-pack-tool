@@ -21,7 +21,7 @@ class BuildPreparationException implements Exception {
 
 final RegExp _lineSeparator = RegExp(r'\r?\n');
 
-/// 构建设备释放到 `tools/` 的分类辅助模块文件名。
+/// 构建辅助模块释放到 `tools/` 的文件名。
 const String _supportModuleFileName = 'cnp_build_support.py';
 
 /// 受控构建临时目录的父目录（相对 [toolsRoot]）；每次调用在其下创建独立子目录，

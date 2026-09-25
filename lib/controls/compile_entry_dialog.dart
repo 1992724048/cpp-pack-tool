@@ -209,7 +209,6 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
     return _wrapDenseComboBox(
       ComboBox<FileModel>(
         key: const Key('compileEntryScriptField'),
-        // 值恒为 null：选中仅插入文本并复位下拉
         value: null,
         placeholder: const Text('请选择脚本'),
         isExpanded: true,
@@ -233,7 +232,6 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
     return _wrapDenseComboBox(
       ComboBox<String>(
         key: const Key('compileEntryMacroField'),
-        // 值恒为 null：选中仅插入文本并复位下拉
         value: null,
         placeholder: const Text('请选择宏'),
         isExpanded: true,

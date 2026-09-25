@@ -31,7 +31,7 @@ const String _noParamHint = '该节点没有可编辑参数';
 ///
 /// 节点参数按注册表声明序渲染并按 [ScriptParamType] 选择控件，编辑即时经
 /// [GraphEditorController.updateNodeParam] 写回模型。项目属性中的选中、重命名、
-/// 触发时机、构建模型与排序经回调上报页面（保存队列 T10 与项目排序 T11 接入）。
+/// 触发时机、构建模型与排序经回调上报页面。
 class NodeInspector extends StatefulWidget {
   const NodeInspector({
     super.key,
@@ -662,7 +662,7 @@ class _NodeInspectorState extends State<NodeInspector> {
     final void Function(ScriptProjectModel, String)? onRename =
         widget.onRenameProject;
     if (onRename == null) {
-      // 回调未接入（T11 前）：还原显示，避免界面与模型不一致。
+      // 回调未接入：还原显示，避免界面与模型不一致。
       setState(() {
         _nameError = null;
         _nameEditor.text = project.name;

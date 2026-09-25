@@ -56,7 +56,6 @@ Widget _buildIssuesTable(
   );
   return FluentTheme(
     data: theme.copyWith(
-      // 全局分割线自带 8px 水平边距，覆盖为 0 使线与表格内容同宽
       dividerTheme: DividerThemeData(
         decoration: dividerTheme.decoration,
         verticalMargin: dividerTheme.verticalMargin,

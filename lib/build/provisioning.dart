@@ -9,7 +9,7 @@ import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/proxy.dart';
 
-/// 工具包下载器：返回 zip 字节，失败时抛异常。
+/// 工具包下载器：返回 zip/tar 归档字节，失败时抛异常。
 typedef ToolFetcher = Future<Uint8List> Function(Uri uri);
 
 /// 工具下载进度快照。

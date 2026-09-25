@@ -58,7 +58,7 @@ class OutputPanel extends StatefulWidget {
   /// 代码生成器；null 时回退 [PowerShell5Generator]。
   final ScriptCodeGenerator? generator;
 
-  /// 画布变换控制器；诊断行居中时改写其变换矩阵（T5 支持注入）。
+  /// 画布变换控制器；诊断行居中时改写其变换矩阵。
   final TransformationController? transformationController;
 
   /// 画布可视视口尺寸读取器；面板高度动画不触发页面重建，故惰性读取
@@ -489,7 +489,7 @@ class OutputPanelState extends State<OutputPanel> {
   /// 诊断行点击的视口居中（§7.3/§10.9）：节点中心对齐视口中心，缩放不变。
   ///
   /// §7.3 公式以「视口左上角场景坐标」表达；本仓 `TransformationController`
-  /// 的平移分量为屏幕空间偏移（T5 约定），换算后实际实现：
+  /// 的平移分量为屏幕空间偏移，换算后实际实现：
   /// `平移 = 视口尺寸 / 2 − 节点中心 × scale`。
   void _centerNode(ScriptNodeModel node) {
     final TransformationController? transformation =
