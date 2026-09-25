@@ -126,14 +126,12 @@ class _PackManageState extends State<PackManage> {
   Widget _body(Widget child) {
     return Builder(
       builder: (BuildContext context) {
-        final theme = FluentTheme.of(context);
         return child;
       },
     );
   }
 
   List<Tab> _buildTabs(BuildContext context) {
-    final accent = FluentTheme.of(context).accentColor;
     return <Tab>[
       Tab(
         icon: Svgs.showPermitCard,

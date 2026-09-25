@@ -1,8 +1,8 @@
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-/// PowerToys SettingsPageControl token：标题 28 Semibold、模块描述 14 Secondary、
-/// 内容最大宽 1000、水平内边距 16、底部滚动留白 48。
+/// PowerToys SettingsPageControl token：标题 24 Semibold、模块描述 14 Secondary、
+/// 内容最大宽 1000、水平内边距 8、底部滚动留白 32。
 abstract final class SettingsPageTokens {
   static const double titleFontSize = 24;
   static const double descriptionFontSize = 14;
@@ -15,7 +15,7 @@ abstract final class SettingsPageTokens {
 
 /// 设置页模板：标题 → 模块描述 → 内容（左对齐、最大宽 1000、可滚动）。
 ///
-/// 页面背景沿用 `cardColor`，与 Tab 页保持一致；底部留白 48。
+/// 页面背景透明；底部留白 32。
 class SettingsPage extends StatelessWidget {
   const SettingsPage({
     super.key,

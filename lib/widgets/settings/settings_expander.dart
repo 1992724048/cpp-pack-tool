@@ -128,7 +128,7 @@ class _SettingsExpanderState extends State<SettingsExpander> {
   }
 }
 
-/// Expander 子项：无圆角、左缩进 58、最小高 52、顶部 1px 分隔线的设置卡。
+/// Expander 子项：无圆角、左缩进 48、顶部 1px 分隔线的紧凑设置卡。
 class SettingsExpanderItem extends StatelessWidget {
   const SettingsExpanderItem({
     super.key,

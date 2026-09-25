@@ -1,7 +1,7 @@
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-/// PowerToys SettingsGroup token：组标题 14 Semibold、上边距 32（首个 8）、
+/// PowerToys SettingsGroup token：组标题 14 Semibold、上边距 8、
 /// 卡容器上距 8、卡间距 2。
 abstract final class SettingsGroupTokens {
   static const double headerSpacing = 8;
@@ -25,7 +25,7 @@ class SettingsGroup extends StatelessWidget {
   final String header;
   final Widget? description;
 
-  /// 页面首个分组：上边距 8（其余 32）。
+  /// 页面首个分组标记。
   final bool first;
 
   final List<Widget> children;

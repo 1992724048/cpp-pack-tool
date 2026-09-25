@@ -47,7 +47,7 @@ class SettingsCard extends StatefulWidget {
 
   final bool enabled;
 
-  /// 子项变体（SettingsExpander 子项专用）：无圆角、左缩进、最小高 52。
+  /// 子项变体（SettingsExpander 子项专用）：无圆角、左缩进 48。
   final bool subItem;
 
   /// 无边框变体（SettingsExpander 头部：透明底、无描边、无圆角）。
@@ -304,7 +304,7 @@ class _SettingsCardState extends State<SettingsCard> {
   }
 }
 
-/// 卡内容便捷子组件：紧凑 ToggleSwitch（MinWidth 0、高 36、右对齐）。
+/// 卡内容便捷子组件：紧凑 ToggleSwitch（高 36）。
 class SettingsCardToggle extends StatelessWidget {
   const SettingsCardToggle({
     super.key,
