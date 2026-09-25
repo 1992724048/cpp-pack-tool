@@ -1,5 +1,6 @@
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -612,6 +613,117 @@ void main() {
       });
 
       expect(pack.buildOptions, <String, String>{'tbb': 'on'});
+    });
+
+    test('compilerProfile 默认为 null 且空时省略键', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
+
+      expect(pack.compilerProfile, isNull);
+      expect(pack.toMap().containsKey('compilerProfile'), isFalse);
+    });
+
+    test('toMap/fromMap 往返保留编译器 Profile 四字段', () {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      )..compilerProfile = const CompilerProfile(
+          release: CompilerConfigProfile(
+            runtime: CompilerRuntimeChoice.mt,
+            instructionSet: CompilerInstructionSetChoice.avx2,
+            optimization: CompilerOptimizationChoice.maximum,
+            ipo: CompilerIpoChoice.on,
+          ),
+          debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
+        );
+
+      final Map<String, Object?> map = pack.toMap();
+      final PackModel loaded = PackModel.fromMap(map);
+
+      expect(loaded.compilerProfile, isNotNull);
+      expect(loaded.compilerProfile!.version, 1);
+      expect(loaded.compilerProfile!.release.runtime, CompilerRuntimeChoice.mt);
+      expect(
+        loaded.compilerProfile!.release.instructionSet,
+        CompilerInstructionSetChoice.avx2,
+      );
+      expect(
+        loaded.compilerProfile!.release.optimization,
+        CompilerOptimizationChoice.maximum,
+      );
+      expect(loaded.compilerProfile!.release.ipo, CompilerIpoChoice.on);
+      expect(loaded.compilerProfile!.debug.ipo, CompilerIpoChoice.off);
+    });
+
+    test('fromMap 非法 compilerProfile 产生警告且有效 Profile 全 follow', () {
+      final List<String> warnings = <String>[];
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'compilerProfile': 'oops',
+      }, warnings: warnings);
+
+      expect(pack.compilerProfile, isNotNull);
+      expect(pack.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.follow);
+      expect(pack.effectiveCompilerProfile.debug.ipo, CompilerIpoChoice.follow);
+      expect(warnings.single, contains('compilerProfile'));
+    });
+
+    test('旧 buildOptions.runtime 懒迁移且原键与其它选项保持不变', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'buildOptions': <String, Object?>{
+          legacyRuntimeOptionName: 'MT',
+          'tbb': 'on',
+        },
+      });
+
+      expect(pack.compilerProfile, isNull);
+      expect(pack.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.mt);
+      expect(pack.effectiveCompilerProfile.debug.runtime, CompilerRuntimeChoice.mt);
+      expect(pack.effectiveCompilerProfile.release.instructionSet,
+          CompilerInstructionSetChoice.follow);
+      expect(pack.buildOptions[legacyRuntimeOptionName], 'MT');
+      expect(pack.buildOptions['tbb'], 'on');
+    });
+
+    test('旧 buildOptions.runtime 非法值产生警告并按 follow 处理', () {
+      final List<String> warnings = <String>[];
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'buildOptions': <String, Object?>{legacyRuntimeOptionName: 'gnu'},
+      }, warnings: warnings);
+
+      expect(pack.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.follow);
+      expect(pack.effectiveCompilerProfile.debug.runtime, CompilerRuntimeChoice.follow);
+      expect(warnings.single, contains(legacyRuntimeOptionName));
+    });
+
+    test('显式 compilerProfile 优先于旧 runtime 迁移值', () {
+      final List<String> warnings = <String>[];
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'buildOptions': <String, Object?>{legacyRuntimeOptionName: 'MT'},
+        'compilerProfile': <String, Object?>{
+          'version': 1,
+          'release': <String, Object?>{'runtime': 'md'},
+        },
+      }, warnings: warnings);
+
+      expect(pack.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.md);
+      expect(pack.effectiveCompilerProfile.debug.runtime, CompilerRuntimeChoice.follow);
+      expect(warnings, isEmpty);
     });
 
     test('toMap 空 sourceVersion 省略键', () {

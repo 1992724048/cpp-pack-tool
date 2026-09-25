@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/compiler_model.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -272,6 +273,104 @@ void main() {
       expect(result.errors, hasLength(1));
       expect(result.errors.single.fileName, 'warned.yaml');
       expect(result.errors.single.message, contains('脚本'));
+    });
+
+    test('compilerProfile 写入 YAML 并可往返读回', () async {
+      final PackModel pack = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      )..compilerProfile = const CompilerProfile(
+          release: CompilerConfigProfile(
+            runtime: CompilerRuntimeChoice.mt,
+            instructionSet: CompilerInstructionSetChoice.baseline,
+            optimization: CompilerOptimizationChoice.standard,
+            ipo: CompilerIpoChoice.on,
+          ),
+          debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
+        );
+
+      await store.savePack(pack);
+      final YamlMap document =
+          loadYaml(File('${tempDir.path}/packs/demo.yaml').readAsStringSync())
+              as YamlMap;
+      final YamlMap profile = document['compilerProfile'] as YamlMap;
+
+      expect(profile['version'], 1);
+      expect((profile['release'] as YamlMap)['runtime'], 'mt');
+      expect((profile['release'] as YamlMap)['ipo'], true);
+      expect((profile['debug'] as YamlMap)['ipo'], false);
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.errors, isEmpty);
+      final CompilerProfile loaded = result.packs.single.compilerProfile!;
+      expect(loaded.release.runtime, CompilerRuntimeChoice.mt);
+      expect(loaded.release.instructionSet, CompilerInstructionSetChoice.baseline);
+      expect(loaded.release.optimization, CompilerOptimizationChoice.standard);
+      expect(loaded.release.ipo, CompilerIpoChoice.on);
+      expect(loaded.debug.ipo, CompilerIpoChoice.off);
+    });
+
+    test('非法 compilerProfile 回退 follow 并经包加载警告通道上报', () async {
+      await store.ensureConfigExist();
+      File('${tempDir.path}/packs/profile_warned.yaml').writeAsStringSync(
+        'name: profile_warned\nversion: 1.0.0\nauthor: tester\n'
+        'compilerProfile:\n'
+        '  version: 2\n'
+        '  release:\n'
+        '    runtime: bogus\n',
+      );
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.packs, hasLength(1));
+      expect(
+        result.packs.single.effectiveCompilerProfile.release.runtime,
+        CompilerRuntimeChoice.follow,
+      );
+      expect(result.errors, hasLength(2));
+      expect(
+        result.errors.every((PackLoadError error) =>
+            error.fileName == 'profile_warned.yaml'),
+        isTrue,
+      );
+      expect(
+        result.errors.any((PackLoadError error) =>
+            error.message.contains('compilerProfile.version')),
+        isTrue,
+      );
+      expect(
+        result.errors.any((PackLoadError error) =>
+            error.message.contains('release.runtime')),
+        isTrue,
+      );
+    });
+
+    test('旧 buildOptions.runtime 经包加载参与有效 Profile 且原键保留', () async {
+      await store.ensureConfigExist();
+      File('${tempDir.path}/packs/legacy_runtime.yaml').writeAsStringSync(
+        'name: legacy_runtime\nversion: 1.0.0\nauthor: tester\n'
+        'buildOptions:\n'
+        '  runtime: MT\n'
+        '  tbb: "on"\n',
+      );
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.errors, isEmpty);
+      final PackModel loaded = result.packs.single;
+      expect(loaded.compilerProfile, isNull);
+      expect(
+        loaded.effectiveCompilerProfile.release.runtime,
+        CompilerRuntimeChoice.mt,
+      );
+      expect(
+        loaded.effectiveCompilerProfile.debug.runtime,
+        CompilerRuntimeChoice.mt,
+      );
+      expect(loaded.buildOptions[legacyRuntimeOptionName], 'MT');
+      expect(loaded.buildOptions['tbb'], 'on');
     });
   });
 
