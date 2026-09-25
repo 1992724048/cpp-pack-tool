@@ -537,6 +537,40 @@ void main() {
       expect(r'FOO.LIB'.allMatches(targets).length, 0);
     });
 
+    test('仅含 .a 的包不派生附加库目录与附加库且不生成运行时二进制部署', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'rel.a', path: 'lib/release/rel.a', size: 10),
+          FileModel(name: 'libz.dll.a', path: 'lib/debug/libz.dll.a', size: 20),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String targets = _targetsOf(plan);
+
+      expect(
+        _packagePathOf(plan, 'lib/release/rel.a'),
+        'build/native/lib/release/rel.a',
+      );
+      expect(
+        _packagePathOf(plan, 'lib/debug/libz.dll.a'),
+        'build/native/lib/debug/libz.dll.a',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        ),
+      );
+      expect(targets, isNot(contains('<AdditionalLibraryDirectories>')));
+      expect(targets, isNot(contains('<AdditionalDependencies>')));
+      expect(targets, isNot(contains(r'lib\release')));
+      expect(targets, isNot(contains(r'lib\debug')));
+      expect(targets, isNot(contains('rel.a')));
+      expect(targets, isNot(contains('libz.dll.a')));
+      expect(targets, isNot(contains('<PkgRuntimeBinary')));
+      expect(targets, isNot(contains('DeployPkgRuntimeBinaries')));
+    });
+
     test('附加库按构建配置分组', () async {
       final PackModel pack = _pack()
         ..libraries = <LibraryModel>[
