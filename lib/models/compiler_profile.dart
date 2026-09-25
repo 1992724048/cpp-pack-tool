@@ -49,7 +49,7 @@ class CompilerConfigProfile {
   factory CompilerConfigProfile.fromMap(
     Map<Object?, Object?> map, {
     List<String>? warnings,
-    String path = 'release',
+    required String path,
   }) {
     const Set<String> knownKeys = <String>{
       'runtime',
@@ -150,13 +150,18 @@ class CompilerProfile {
     if (rawDebug != null && rawDebug is! Map) {
       warnings?.add('compilerProfile.debug 类型错误，已按全 follow 处理');
     }
+    // 版本受支持才采用分区解析结果；否则照常解析以保留未知/非法字段告警，再丢弃取值。
+    final bool versionSupported =
+        rawVersion is int && rawVersion == compilerProfileVersion;
+    final CompilerConfigProfile release = rawRelease is Map
+        ? CompilerConfigProfile.fromMap(rawRelease, warnings: warnings, path: 'release')
+        : const CompilerConfigProfile();
+    final CompilerConfigProfile debug = rawDebug is Map
+        ? CompilerConfigProfile.fromMap(rawDebug, warnings: warnings, path: 'debug')
+        : const CompilerConfigProfile();
     return CompilerProfile(
-      release: rawRelease is Map
-          ? CompilerConfigProfile.fromMap(rawRelease, warnings: warnings, path: 'release')
-          : const CompilerConfigProfile(),
-      debug: rawDebug is Map
-          ? CompilerConfigProfile.fromMap(rawDebug, warnings: warnings, path: 'debug')
-          : const CompilerConfigProfile(),
+      release: versionSupported ? release : const CompilerConfigProfile(),
+      debug: versionSupported ? debug : const CompilerConfigProfile(),
     );
   }
 
