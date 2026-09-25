@@ -8,12 +8,7 @@ void main() {
 
     expect(settings.outputDirectory, isNull);
     expect(settings.themeMode, ThemeModeSetting.system);
-    expect(settings.compilerPriority, <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
+    expect(settings.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
     expect(settings.detectedCompilers, isEmpty);
   });
 
@@ -22,31 +17,21 @@ void main() {
 
     expect(map.containsKey('outputDirectory'), isFalse);
     expect(map['themeMode'], 'system');
-    expect(map['compilerPriority'], <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
+    expect(map['compilerPriority'], <String>['icx', 'clang-cl', 'msvc']);
   });
 
   test('往返保留全部字段', () {
     const SettingsModel settings = SettingsModel(
       outputDirectory: r'D:\nuget\out',
       themeMode: ThemeModeSetting.dark,
-      compilerPriority: <String>['msvc', 'icx', 'clang-cl', 'mingw'],
+      compilerPriority: <String>['msvc', 'icx', 'clang-cl'],
     );
 
     final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
 
     expect(loaded.outputDirectory, r'D:\nuget\out');
     expect(loaded.themeMode, ThemeModeSetting.dark);
-    expect(loaded.compilerPriority, <String>[
-      'msvc',
-      'icx',
-      'clang-cl',
-      'mingw',
-    ]);
+    expect(loaded.compilerPriority, <String>['msvc', 'icx', 'clang-cl']);
   });
 
   test('未知枚举与非法值回退默认，旧主题键读取后自然消失', () {
@@ -68,12 +53,7 @@ void main() {
 
     expect(loaded.themeMode, ThemeModeSetting.system);
     expect(loaded.outputDirectory, isNull);
-    expect(loaded.compilerPriority, <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
+    expect(loaded.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
   });
 
   test('编译器优先级容错：非列表、空列表回退默认，非法项过滤', () {
@@ -87,24 +67,13 @@ void main() {
       'compilerPriority': <Object?>['msvc', 42, '', '  ', 'icx'],
     });
 
-    expect(nonList.compilerPriority, <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
-    expect(empty.compilerPriority, <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
-    expect(filtered.compilerPriority, <String>[
-      'msvc',
-      'icx',
-      'clang-cl',
-      'mingw',
-    ], reason: '缺失的已支持种类按声明序补到末尾（旧配置自动获得 MinGW）');
+    expect(nonList.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(empty.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(
+      filtered.compilerPriority,
+      <String>['msvc', 'icx', 'clang-cl'],
+      reason: '缺失的已支持种类按声明序补到末尾',
+    );
   });
 
   test('优先级 R23 回退迁移：GNU clang 标识改写为 clang-cl 并按首见去重', () {
@@ -115,18 +84,20 @@ void main() {
       'compilerPriority': <Object?>['clang', 'clang-cl', 'icx'],
     });
 
-    expect(legacy.compilerPriority, <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
-    expect(mixed.compilerPriority, <String>[
-      'clang-cl',
-      'icx',
-      'msvc',
-      'mingw',
-    ], reason: 'R23 的 GNU clang 标识迁移后与既有 clang-cl 视为同项，只保留首个；缺失种类补末');
+    expect(legacy.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
+    expect(
+      mixed.compilerPriority,
+      <String>['clang-cl', 'icx', 'msvc'],
+      reason: 'R23 的 GNU clang 标识迁移后与既有 clang-cl 视为同项，只保留首个；缺失种类补末',
+    );
+  });
+
+  test('优先级读回丢弃 mingw 并按声明序补齐有效种类', () {
+    final SettingsModel settings = SettingsModel.fromMap(<String, Object?>{
+      'compilerPriority': <Object?>['icx', 'mingw', 'msvc'],
+    });
+
+    expect(settings.compilerPriority, <String>['icx', 'msvc', 'clang-cl']);
   });
 
   test('空字符串输出目录视为未设置', () {
@@ -154,12 +125,12 @@ void main() {
           environmentScript: null,
         ),
         DetectedCompiler(
-          kind: CompilerKind.mingw,
-          version: '14.2.0（UCRT64）',
-          executablePath: r'C:\msys64\ucrt64\bin\gcc.exe',
-          cxxExecutablePath: r'C:\msys64\ucrt64\bin\g++.exe',
-          environmentScript: null,
-          extraPathEntries: <String>[r'C:\msys64\ucrt64\bin'],
+          kind: CompilerKind.clangCl,
+          version: '23.1.1',
+          executablePath: r'C:\LLVM\bin\clang-cl.exe',
+          cxxExecutablePath: r'C:\LLVM\bin\clang-cl.exe',
+          environmentScript: r'C:\VS\vcvars64.bat',
+          extraPathEntries: <String>[r'C:\LLVM\bin'],
         ),
       ],
     );
@@ -185,17 +156,12 @@ void main() {
     expect(loaded.detectedCompilers[1].kind, CompilerKind.msvc);
     expect(loaded.detectedCompilers[1].environmentScript, isNull);
     expect(loaded.detectedCompilers[1].extraPathEntries, isEmpty);
-    expect(loaded.detectedCompilers[2].kind, CompilerKind.mingw);
-    expect(loaded.detectedCompilers[2].version, '14.2.0（UCRT64）');
+    expect(loaded.detectedCompilers[2].kind, CompilerKind.clangCl);
+    expect(loaded.detectedCompilers[2].cxxExecutablePath, isNotNull);
     expect(
-      loaded.detectedCompilers[2].cxxExecutablePath,
-      r'C:\msys64\ucrt64\bin\g++.exe',
+      loaded.detectedCompilers[2].extraPathEntries,
+      <String>[r'C:\LLVM\bin'],
     );
-    expect(
-      loaded.detectedCompilers[2].cxxCompilerPath,
-      r'C:\msys64\ucrt64\bin\g++.exe',
-    );
-    expect(loaded.detectedCompilers[2].environmentScript, isNull);
   });
 
   test('空缓存不写入映射，缺失/非列表视为无缓存', () {
@@ -284,6 +250,43 @@ void main() {
     );
   });
 
+  test('检测缓存含 mingw 时整表丢弃等待重检', () {
+    final SettingsModel settings = SettingsModel.fromMap(<String, Object?>{
+      'detectedCompilers': <Object?>[
+        <String, Object?>{
+          'kind': 'mingw',
+          'version': '14.2.0（UCRT64）',
+          'executablePath': r'C:\msys64\ucrt64\bin\gcc.exe',
+        },
+      ],
+    });
+
+    expect(settings.detectedCompilers, isEmpty);
+  });
+
+  test('检测缓存混入 mingw 时连同其余条目整表作废', () {
+    final SettingsModel settings = SettingsModel.fromMap(<String, Object?>{
+      'detectedCompilers': <Object?>[
+        <String, Object?>{
+          'kind': 'msvc',
+          'version': '14.44.35207',
+          'executablePath': r'C:\VS\cl.exe',
+        },
+        <String, Object?>{
+          'kind': 'MINGW',
+          'version': '14.2.0',
+          'executablePath': r'C:\msys64\mingw64\bin\gcc.exe',
+        },
+      ],
+    });
+
+    expect(
+      settings.detectedCompilers,
+      isEmpty,
+      reason: '已删除的编译器种类不可复用，整表作废交设置页/构建重检',
+    );
+  });
+
   test('检测缓存保留 clang-cl 条目（R23 回退后为当前驱动，不触发作废）', () {
     final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
       'detectedCompilers': <Object?>[
@@ -312,12 +315,7 @@ void main() {
       ],
     });
 
-    expect(loaded.compilerPriority, <String>[
-      'msvc',
-      'icx',
-      'clang-cl',
-      'mingw',
-    ]);
+    expect(loaded.compilerPriority, <String>['msvc', 'icx', 'clang-cl']);
     expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
   });
 
@@ -457,5 +455,20 @@ void main() {
     expect(cleared.proxyPort, isNull);
     expect(cleared.proxyMode, ProxyModeSetting.auto);
     expect(cleared.defaultAuthor, '张三');
+  });
+
+  test('copyWith 覆盖检测结果时保留代理设置', () {
+    const SettingsModel base = SettingsModel(
+      outputDirectory: r'D:\out',
+      proxyMode: ProxyModeSetting.manual,
+      proxyHost: '127.0.0.1',
+      proxyPort: 7890,
+    );
+    final SettingsModel next = base.copyWith(detectedCompilers: <DetectedCompiler>[]);
+
+    expect(next.outputDirectory, r'D:\out');
+    expect(next.proxyMode, ProxyModeSetting.manual);
+    expect(next.proxyHost, '127.0.0.1');
+    expect(next.proxyPort, 7890);
   });
 }

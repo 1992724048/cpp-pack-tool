@@ -9,7 +9,6 @@ const List<String> _defaultCompilerPriority = <String>[
   'icx',
   'clang-cl',
   'msvc',
-  'mingw',
 ];
 
 /// `copyWith` 的可空字段哨兵：区分「未传」（保持原值）与「传 null」（清空）。
@@ -39,7 +38,7 @@ class SettingsModel {
 
   final ThemeModeSetting themeMode;
 
-  /// 编译器优先级（`icx` / `clang-cl` / `msvc` / `mingw`，自高到低）。
+  /// 编译器优先级（`icx` / `clang-cl` / `msvc`，自高到低）。
   final List<String> compilerPriority;
 
   /// 上次编译器检测结果缓存；空表示无缓存（设置页与构建据此重检）。
@@ -163,16 +162,16 @@ Map<String, Object?> _detectedCompilerToMap(DetectedCompiler compiler) {
 
 /// 缓存列表容错：非列表或损坏条目视为无缓存/跳过，不抛异常。
 ///
-/// R23 回退迁移：缓存含 GNU clang（`kind: clang`）条目时整表作废（返回空 = 无缓存），
-/// 由设置页与构建触发一次重检。R23 条目指向 `clang.exe` GNU 驱动、与恢复后的
-/// clang-cl 旗标体系不兼容，不能复用；若仅丢弃该条目而保留其余缓存，优先级中
-/// `clang-cl` 将无条目可匹配而回落到 `msvc`——整表作废可保证首次选择仍按用户
-/// 优先级重检。
+/// 已删除编译器种类与 R23 回退迁移的整表作废：缓存含 MinGW（`kind: mingw`）或 GNU
+/// clang（`kind: clang`）条目时整表作废（返回空 = 无缓存），由设置页与构建触发一次
+/// 重检。这两类条目指向的工具链驱动与已删除/已恢复的旗标体系均不兼容，不能复用；
+/// 若仅丢弃该条目而保留其余缓存，优先级中对应种类将无条目可匹配而回落到其它编译器
+/// ——整表作废可保证首次选择仍按用户优先级重检。
 List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   if (value is! List) {
     return const <DetectedCompiler>[];
   }
-  if (value.any(_isLegacyGnuClangEntry)) {
+  if (value.any(_isLegacyMingwEntry) || value.any(_isLegacyGnuClangEntry)) {
     return const <DetectedCompiler>[];
   }
   final List<DetectedCompiler> compilers = <DetectedCompiler>[];
@@ -183,6 +182,16 @@ List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
     }
   }
   return compilers;
+}
+
+/// 历史 MinGW 稳定标识（大小写不敏感、容忍首尾空白）；只为配置迁移识别，
+/// 不对应任何 [CompilerKind]（[compilerKindFromId] 对其返回 null）。
+bool _isLegacyMingwEntry(Object? value) {
+  if (value is! Map) {
+    return false;
+  }
+  final Object? kindValue = value['kind'];
+  return kindValue is String && kindValue.trim().toLowerCase() == 'mingw';
 }
 
 bool _isLegacyGnuClangEntry(Object? value) {
@@ -233,10 +242,11 @@ List<String> _stringList(Object? value) {
   ];
 }
 
-/// 优先级读回：R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见
-/// 顺序去重）；随后把「已支持但列表缺失」的种类按声明序补到末尾——新编译器
-/// 种类（如 MinGW）随版本升级自动进入旧配置，且置末不改变既有选择；设置页只
-/// 支持排序、不支持增删，补入是旧配置触达新种类的唯一路径。
+/// 优先级读回：先按有效标识过滤（已删除的编译器种类如 MinGW 及其历史遗留值一律
+/// 丢弃），R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见顺序
+/// 去重）；随后把「已支持但列表缺失」的种类按声明序补到末尾——新编译器种类随版本
+/// 升级自动进入旧配置，且置末不改变既有选择；设置页只支持排序、不支持增删，补入
+/// 是旧配置触达新种类的唯一路径。
 List<String> _compilerPriorityFrom(Object? value) {
   if (value is! List) {
     return _defaultCompilerPriority;
@@ -248,7 +258,7 @@ List<String> _compilerPriorityFrom(Object? value) {
       continue;
     }
     final String id = isLegacyCompilerKindId(item) ? 'clang-cl' : item.trim();
-    if (seen.add(id)) {
+    if (compilerKindFromId(id) != null && seen.add(id)) {
       entries.add(id);
     }
   }

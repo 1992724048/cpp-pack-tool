@@ -445,12 +445,7 @@ void main() {
       expect(yaml, contains('kind: icx'));
 
       final SettingsModel loaded = await store.loadSettings();
-      expect(loaded.compilerPriority, <String>[
-        'icx',
-        'msvc',
-        'clang-cl',
-        'mingw',
-      ]);
+      expect(loaded.compilerPriority, <String>['icx', 'msvc', 'clang-cl']);
       expect(loaded.detectedCompilers, hasLength(1));
       expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
       expect(loaded.detectedCompilers.single.version, '2026.1.0');
@@ -473,6 +468,29 @@ void main() {
       expect(settings.themeMode, ThemeModeSetting.dark);
       expect(settings.detectedCompilers, hasLength(1));
       expect(settings.detectedCompilers.single.kind, CompilerKind.msvc);
+    });
+
+    test('旧 mingw 优先级与检测缓存加载后被丢弃', () async {
+      File('${tempDir.path}/config.yaml').createSync(recursive: true);
+      File('${tempDir.path}/config.yaml').writeAsStringSync(
+        'version: 1\n'
+        'compilerPriority:\n'
+        '  - icx\n'
+        '  - mingw\n'
+        '  - msvc\n'
+        'detectedCompilers:\n'
+        '  - kind: msvc\n'
+        '    version: 14.44.35207\n'
+        '    executablePath: C:\\\\VC\\\\cl.exe\n'
+        '  - kind: mingw\n'
+        '    version: 14.2.0\n'
+        '    executablePath: C:\\\\msys64\\\\ucrt64\\\\bin\\\\gcc.exe\n',
+      );
+
+      final SettingsModel settings = await store.loadSettings();
+
+      expect(settings.compilerPriority, <String>['icx', 'msvc', 'clang-cl']);
+      expect(settings.detectedCompilers, isEmpty);
     });
   });
 

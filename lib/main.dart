@@ -917,15 +917,7 @@ class _MainLayoutState extends State<MainLayout> {
 
   /// 把构建准备阶段的新检测结果写回配置（经 [MainLayout.onSaveSettings]）。
   void _persistDetectedCompilers(List<toolchain.DetectedCompiler> compilers) {
-    final SettingsModel current = widget.settings;
-    final SettingsModel next = SettingsModel(
-      outputDirectory: current.outputDirectory,
-      cmakeOutputDirectory: current.cmakeOutputDirectory,
-      defaultAuthor: current.defaultAuthor,
-      themeMode: current.themeMode,
-      compilerPriority: current.compilerPriority,
-      detectedCompilers: compilers,
-    );
+    final SettingsModel next = widget.settings.copyWith(detectedCompilers: compilers);
     unawaited(_saveDetectedCompilers(next));
   }
 

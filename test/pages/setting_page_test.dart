@@ -531,12 +531,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(saved, isNotNull);
-    expect(saved!.compilerPriority, <String>[
-      'clang-cl',
-      'icx',
-      'msvc',
-      'mingw',
-    ]);
+    expect(saved!.compilerPriority, <String>['clang-cl', 'icx', 'msvc']);
     expect(saved!.outputDirectory, r'D:\nuget\out');
     expect(saved!.themeMode, ThemeModeSetting.dark);
     expect(find.text('已保存'), findsOneWidget);
@@ -545,12 +540,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(saved!.compilerPriority, <String>[
-      'icx',
-      'clang-cl',
-      'msvc',
-      'mingw',
-    ]);
+    expect(saved!.compilerPriority, <String>['icx', 'clang-cl', 'msvc']);
   });
 
   testWidgets('编译器首行上移与末行下移禁用', (tester) async {
@@ -558,30 +548,30 @@ void main() {
 
     expect(_moveUpButton(tester, 'icx').onPressed, isNull);
     expect(_moveDownButton(tester, 'icx').onPressed, isNotNull);
-    expect(_moveUpButton(tester, 'mingw').onPressed, isNotNull);
-    expect(_moveDownButton(tester, 'mingw').onPressed, isNull);
+    expect(_moveUpButton(tester, 'msvc').onPressed, isNotNull);
+    expect(_moveDownButton(tester, 'msvc').onPressed, isNull);
   });
 
-  testWidgets('MinGW 行展示标签与环境标注版本', (tester) async {
+  testWidgets('编译器行按优先级自上而下展示标签与版本', (tester) async {
     await _pumpSetting(
       tester,
-      settings: const SettingsModel(compilerPriority: <String>['icx', 'mingw']),
+      settings: const SettingsModel(compilerPriority: <String>['icx', 'clang-cl']),
       onSave: (_) async {},
       detectCompilers: () async => <DetectedCompiler>[
         _compiler(CompilerKind.icx, '2026.1.1'),
-        _compiler(CompilerKind.mingw, '14.2.0（UCRT64）'),
+        _compiler(CompilerKind.clangCl, '23.1.1'),
       ],
     );
 
-    expect(find.text('MinGW'), findsOneWidget);
-    expect(find.text('14.2.0（UCRT64）'), findsOneWidget);
+    expect(find.text('clang-cl'), findsOneWidget);
+    expect(find.text('23.1.1'), findsOneWidget);
     final double icxTop = tester
         .getTopLeft(find.byKey(const Key('settingCompilerRow_icx')))
         .dy;
-    final double mingwTop = tester
-        .getTopLeft(find.byKey(const Key('settingCompilerRow_mingw')))
+    final double clangClTop = tester
+        .getTopLeft(find.byKey(const Key('settingCompilerRow_clang-cl')))
         .dy;
-    expect(icxTop, lessThan(mingwTop));
+    expect(icxTop, lessThan(clangClTop));
   });
 
   testWidgets('重新检测刷新编译器版本', (tester) async {
