@@ -1036,7 +1036,42 @@ void main() {
       expect(compilers, isEmpty);
     });
   });
+
+  group('门控真实环境冒烟', () {
+    test('不构造 MinGW/GNU 驱动夹具，且显式声明三种受支持种类', () {
+      for (final String path in _gatedSmokePaths) {
+        final String source = File(path).readAsStringSync();
+
+        for (final String token in const <String>['MSYS2', 'gcc', 'mingw']) {
+          expect(source, isNot(contains(token)), reason: '$path 仍引用 $token');
+        }
+
+        for (final String kindConstant in const <String>[
+          'CompilerKind.icx',
+          'CompilerKind.clangCl',
+          'CompilerKind.msvc',
+        ]) {
+          expect(
+            source,
+            contains(kindConstant),
+            reason: '$path 未声明 $kindConstant 的真实覆盖',
+          );
+        }
+
+        expect(
+          source,
+          contains('CNP_REAL_ENV_SMOKE'),
+          reason: '$path 的真实探测用例须保留既有门控，避免误跑真实网络/构建',
+        );
+      }
+    });
+  });
 }
+
+const List<String> _gatedSmokePaths = <String>[
+  'test/build/detect_compilers_real_smoke_test.dart',
+  'test/build/build_environment_real_smoke_test.dart',
+];
 
 DetectedCompiler _compiler(CompilerKind kind) {
   return DetectedCompiler(

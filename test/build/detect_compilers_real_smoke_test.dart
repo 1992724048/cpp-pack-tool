@@ -16,7 +16,18 @@ import 'package:flutter_test/flutter_test.dart';
 const String _skipReason =
     '设置 CNP_REAL_ENV_SMOKE=1 运行（真实探测本机编译器，重放设置页/构建共用的检测链路）';
 
+/// 真实冒烟覆盖的受支持编译器种类：删除 MinGW 后仅余 icx / clang-cl / msvc。
+const List<CompilerKind> expectedKinds = <CompilerKind>[
+  CompilerKind.icx,
+  CompilerKind.clangCl,
+  CompilerKind.msvc,
+];
+
 void main() {
+  test('期望种类覆盖全部编译器种类（新增种类时强制复核真实冒烟）', () {
+    expect(expectedKinds, CompilerKind.values);
+  });
+
   test(
     '真实环境冒烟：受控 TMP 检测清单与条目有效性',
     () async {
@@ -62,6 +73,13 @@ void main() {
         reason: '受控 TMP 检测链路应至少检出本机 MSVC；空列表说明检测链路整体失效',
       );
       for (final DetectedCompiler compiler in compilers) {
+        expect(
+          expectedKinds,
+          contains(compiler.kind),
+          reason:
+              '真实检测只应产出受支持种类，实际为 '
+              '${compilerKindId(compiler.kind)}',
+        );
         expect(
           File(compiler.executablePath).existsSync(),
           isTrue,

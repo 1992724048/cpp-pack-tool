@@ -12,7 +12,18 @@ import 'package:flutter_test/flutter_test.dart';
 const String _skipReason =
     '设置 CNP_REAL_ENV_SMOKE=1 运行（真实检测编译器、捕获编译器环境、联网下载 CMake/Ninja 到 tools/）';
 
+/// 真实冒烟覆盖的受支持编译器种类：删除 MinGW 后仅余 icx / clang-cl / msvc。
+const List<CompilerKind> expectedKinds = <CompilerKind>[
+  CompilerKind.icx,
+  CompilerKind.clangCl,
+  CompilerKind.msvc,
+];
+
 void main() {
+  test('期望种类覆盖全部编译器种类（新增种类时强制复核真实冒烟）', () {
+    expect(expectedKinds, CompilerKind.values);
+  });
+
   test(
     '真实环境冒烟：检测编译器、捕获编译器环境、供给 CMake/Ninja',
     () async {
@@ -40,7 +51,11 @@ void main() {
       print('[evidence] ninjaMarker=${_markerState(env.toolsDir, 'ninja')}');
 
       expect(env.environment['CNP_C_COMPILER'], isNotEmpty);
-      expect(env.environment['CNP_COMPILER_KIND'], isNotEmpty);
+      expect(
+        env.environment['CNP_COMPILER_KIND'],
+        isIn(expectedKinds.map(compilerKindId).toList()),
+        reason: '下发给构建子进程的编译器种类必须是受支持种类之一',
+      );
       expect(env.cmakePath, isNotEmpty);
       expect(env.ninjaPath, isNotEmpty);
       expect(
@@ -112,7 +127,7 @@ void main() {
     '真实环境冒烟：运行库家族下发至 CMakeCache（md/mt）',
     () async {
       final BuildEnvironment env = await prepareBuildEnvironment(
-        priority: const <String>['icx', 'clang-cl', 'msvc'],
+        priority: expectedKinds.map(compilerKindId).toList(),
         supportModule: File(
           'assets/build/cnp_build_support.py',
         ).readAsStringSync(),
