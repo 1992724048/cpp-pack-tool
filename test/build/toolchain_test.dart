@@ -1041,18 +1041,19 @@ void main() {
     test('不构造 MinGW/GNU 驱动夹具，且显式声明三种受支持种类', () {
       for (final String path in _gatedSmokePaths) {
         final String source = File(path).readAsStringSync();
+        final String code = _dartCodeWithoutComments(source).toLowerCase();
 
-        for (final String token in const <String>['MSYS2', 'gcc', 'mingw']) {
-          expect(source, isNot(contains(token)), reason: '$path 仍引用 $token');
+        for (final String token in _forbiddenGnuTokens) {
+          expect(
+            code,
+            isNot(contains(token)),
+            reason: '$path 代码中仍引用 $token（大小写已归一，注释不计入）',
+          );
         }
 
-        for (final String kindConstant in const <String>[
-          'CompilerKind.icx',
-          'CompilerKind.clangCl',
-          'CompilerKind.msvc',
-        ]) {
+        for (final String kindConstant in _requiredKindConstants) {
           expect(
-            source,
+            code,
             contains(kindConstant),
             reason: '$path 未声明 $kindConstant 的真实覆盖',
           );
@@ -1066,6 +1067,44 @@ void main() {
       }
     });
   });
+}
+
+/// 门控冒烟脚本代码中禁止出现的 MSYS2 / GNU 工具链痕迹（已归一为小写）。
+///
+/// 归一为小写是为封死 `MINGW`/`Msys2`/`Gcc` 之类大小写变体的绕过；`clang-cl`
+/// 不在禁用词内——它是受支持的 `clangCl` 编译器，`clang.exe` 才是被移除的
+/// GNU ABI 驱动形式。
+const List<String> _forbiddenGnuTokens = <String>[
+  'msys2',
+  'gcc',
+  'g++',
+  'mingw',
+  'clang.exe',
+];
+
+/// 门控冒烟脚本须显式声明的受支持编译器种类常量（已归一为小写）。
+const List<String> _requiredKindConstants = <String>[
+  'compilerkind.icx',
+  'compilerkind.clangcl',
+  'compilerkind.msvc',
+];
+
+/// 逐行截去 `//` 注释尾部并丢弃纯注释行，只保留参与契约扫描的代码文本。
+///
+/// 扫描对象是 Dart 源码而非受限输入，此处不追求完整词法分析：字符串字面量内的
+/// `//`（如 URL）会连带截断该行剩余文本，属于保守收窄，不影响禁用词检出的有效性。
+String _dartCodeWithoutComments(String source) {
+  final List<String> lines = <String>[];
+  for (final String line in source.split('\n')) {
+    final int commentStart = line.indexOf('//');
+    final String code = commentStart < 0
+        ? line
+        : line.substring(0, commentStart);
+    if (code.trim().isNotEmpty) {
+      lines.add(code);
+    }
+  }
+  return lines.join('\n');
 }
 
 const List<String> _gatedSmokePaths = <String>[
