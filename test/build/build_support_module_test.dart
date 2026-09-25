@@ -127,6 +127,7 @@ List<String> _relativeFiles(String root) {
 /// cmake_configure 命令装配、优化参数注入与缺 CNP_CMAKE 报错：monkeypatch
 /// subprocess.run 捕获命令，不真实执行 cmake。
 const String _cmakeDriver = r'''
+import builtins
 import io
 import os
 
@@ -172,6 +173,19 @@ def option(command, name):
         if item.startswith(prefix):
             return item[len(prefix):]
     return 'none'
+
+
+def ipo_trace(trace):
+    """从 cmake_configure 的打印轨迹取 '<ipo 状态>/<退化原因或 none>'。"""
+    state = 'missing'
+    reason = 'none'
+    for line in trace:
+        if 'cmake_configure: config=' in line:
+            state = [
+                item for item in line.split() if item.startswith('ipo=')][0][4:]
+        if 'ipo=off reason=' in line:
+            reason = line.split('ipo=off reason=')[1]
+    return '%s/%s' % (state, reason)
 
 
 original_popen = cnp_build_support.subprocess.Popen
@@ -249,6 +263,43 @@ try:
         'C:/src', 'C:/build', 'Release', [], enable_ipo=False)
     disabled_call = list(captured[-1])
 
+    # 强制开启（enable_ipo=True）：已知种类直接 ON，跳过 auto 的 lld-link 探测；
+    # 未知种类按 unknown-compiler 退化（该退化原因与 auto 路径同文案，故逐探针
+    # 捕获打印轨迹以区分来源）。
+    forced_traces = []
+    original_print = builtins.print
+
+
+    def tracing_print(*args, **kwargs):
+        forced_traces.append(' '.join(str(arg) for arg in args))
+
+
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    builtins.print = tracing_print
+    try:
+        cnp_build_support.cmake_configure(
+            'C:/src', 'C:/build', 'Release', enable_ipo=True)
+    finally:
+        builtins.print = original_print
+    forced_msvc = list(captured[-1])
+    forced_msvc_trace = list(forced_traces)
+
+    os.environ.pop('CNP_COMPILER_KIND', None)
+    os.environ.pop('CNP_C_COMPILER', None)
+    os.environ.pop('CNP_CXX_COMPILER', None)
+    forced_traces[:] = []
+    builtins.print = tracing_print
+    try:
+        cnp_build_support.cmake_configure(
+            'C:/src', 'C:/build', 'Release', enable_ipo=True)
+    finally:
+        builtins.print = original_print
+    forced_unknown = list(captured[-1])
+    forced_unknown_trace = list(forced_traces)
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
+
     os.environ['CNP_NO_IPO'] = '1'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     disabled_env = list(captured[-1])
@@ -258,6 +309,12 @@ try:
     os.environ['CNP_COMPILER_KIND'] = 'clang-cl'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     clang_no_lld = list(captured[-1])
+
+    # 强制开启优先于 auto 的 lld-link 探测：缺 lld-link 时仍写 ON
+    # （auto 路径此时退化为 off/lld-link-missing）。
+    cnp_build_support.cmake_configure(
+        'C:/src', 'C:/build', 'Release', enable_ipo=True)
+    forced_clang_no_lld = list(captured[-1])
 
     os.environ['CNP_COMPILER_KIND'] = 'msvc'
     cnp_build_support.cmake_configure(
@@ -292,6 +349,14 @@ print('unknown_avx2=%s' % option(unknown_release, 'CMAKE_C_FLAGS'))
 print('unknown_opt=%s' % option(unknown_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('disabled_call_ipo=%s' % option(
     disabled_call, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('forced_ipo=%s' % option(
+    forced_msvc, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('forced_unknown_ipo=%s' % option(
+    forced_unknown, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('forced_trace=%s' % ipo_trace(forced_msvc_trace))
+print('forced_unknown_trace=%s' % ipo_trace(forced_unknown_trace))
+print('forced_clang_ipo=%s' % option(
+    forced_clang_no_lld, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
 print('disabled_env_ipo=%s' % option(
     disabled_env, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
 print('clang_no_lld_ipo=%s' % option(
@@ -837,6 +902,13 @@ void main() {
       expect(stdout, contains('disabled_call_ipo=none'));
       expect(stdout, contains('disabled_env_ipo=none'));
       expect(stdout, contains('clang_no_lld_ipo=none'));
+      // 强制开启（enable_ipo=True）：已知种类直接 ON；未知种类按 unknown-compiler 退化。
+      expect(stdout, contains('forced_ipo=ON'));
+      expect(stdout, contains('forced_unknown_ipo=none'));
+      expect(stdout, contains('forced_trace=on/none'));
+      expect(stdout, contains('forced_unknown_trace=off/unknown-compiler'));
+      // 强制开启优先于 lld-link 探测（auto 此时退化为 off/lld-link-missing）。
+      expect(stdout, contains('forced_clang_ipo=ON'));
       expect(stdout, contains('ipo=off reason=disabled-by-call'));
       expect(stdout, contains('ipo=off reason=disabled-by-env'));
       expect(stdout, contains('ipo=off reason=lld-link-missing'));
