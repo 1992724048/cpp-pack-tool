@@ -188,6 +188,7 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
   }
 
   Widget _buildInsertHelpers() {
+    // 两个插入型下拉的 value 恒为 null：选中只插入文本，随即恢复占位以便重复插入。
     final List<Widget> fields = <Widget>[
       if (widget.selectableScripts.isNotEmpty)
         Expanded(child: _buildField('从包中选择', _buildScriptField())),

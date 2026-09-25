@@ -2,6 +2,9 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
+/// 【文件管理】页构建选项分区：头部折叠开关 + 三型选项行（下拉 / 复选 / 多选）。
+///
+/// [saving] 为保存挂起标志，为 true 时禁用全部控件，避免挂起期间再写坏值。
 class BuildOptionsPanel extends StatefulWidget {
   const BuildOptionsPanel({
     super.key,
@@ -236,6 +239,8 @@ TextStyle _optionTextStyle(FluentThemeData theme) =>
 Widget _buildOptionTitle(FluentThemeData theme, String name) =>
     Text(name, overflow: TextOverflow.ellipsis, style: _optionTextStyle(theme));
 
+/// 布尔选项行：整行可点（悬停背板 + click 光标），Checkbox 保留自身切换入口；
+/// 行外层与 Checkbox 的手势竞技场由内层胜出，单击只切换一次。
 class _CheckboxOptionRow extends StatefulWidget {
   const _CheckboxOptionRow({required this.option, required this.value, required this.enabled, required this.onChanged});
 

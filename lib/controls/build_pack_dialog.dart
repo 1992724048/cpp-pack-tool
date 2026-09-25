@@ -29,6 +29,8 @@ const int _maxOutputLineCount = 2000;
 const double _statusColumnWidth = 260;
 const double _panelHeight = 360;
 
+/// 构建对话框关闭载荷：[fixReport] 为头文件引用检查报告（未执行时为 null），
+/// [failureEntry] 为失败会话的历史条目（成功完成或提权重试成功后为 null）。
 class BuildDialogResult {
   const BuildDialogResult({this.fixReport, this.failureEntry});
 
@@ -60,6 +62,8 @@ class BuildPackDialog extends StatefulWidget {
   final PackHeaderIncludeFixer fixIncludes;
   final ElevatedPackBuildRunner? retryElevated;
   final DateTime Function() now;
+
+  /// git 命令全局参数（手动代理的 `-c http.proxy=...`），透传给 [build]。
   final List<String> gitGlobalArguments;
 
   @override
@@ -68,6 +72,9 @@ class BuildPackDialog extends StatefulWidget {
 
 class _BuildPackDialogState extends State<BuildPackDialog> {
   final Stopwatch _sessionWatch = Stopwatch();
+
+  /// 失败会话的历史条目：首次失败构造一次（重试再失败不重复构造），成功完成时
+  /// 连同提权重试后的失败条目一并丢弃。
   HistoryModel? _failureEntry;
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
@@ -209,6 +216,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
     PackModel updated = copyPackWithFiles(widget.pack, files);
     String? syncedVersion;
+    // 仅本次构建解析出来源版本时才同步：预构建配方（source:none）不产生来源版本，
+    // 沿用旧记录可避免每次构建拿陈旧值重复同步。
     if (_sourceVersion != null) {
       updated.sourceVersion = _sourceVersion;
       final String? versionFromTag = packageVersionFromTag(_sourceVersion);
@@ -255,6 +264,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     });
   }
 
+  /// 构建成功、重新映射扫描前的 include 引用检查（含自动修复）。
+  ///
+  /// 检查失败不阻断构建成功流程：错误记入输出面板并跳过报告，继续重新映射。
   Future<void> _fixIncludes(String sourcePath) async {
     setState(() => _advanceTo(_BuildStage.fixingIncludes));
     try {
@@ -314,6 +326,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     });
   }
 
+  /// 展示失败：保留已流式积累的输出行并补齐 [outputTail]（面板中已有的行不重复
+  /// 追加）；失败条目只在首次失败时构造一次。
   void _showFailure(Object error, {String? outputTail}) {
     if (!mounted) {
       return;
@@ -451,6 +465,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     );
   }
 
+  /// 仅当失败特征命中临时目录权限问题、且提权重试入口已就绪时才显示重试按钮。
   bool get _canRetryElevated =>
       widget.retryElevated != null &&
       _environment != null &&
@@ -458,5 +473,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _error != null &&
       detectTempPermissionFailure(_failureText);
 
+  /// 提权特征在异常信息与全部输出行（含补充的输出尾部）上扫描，避免诊断只写在
+  /// 截断后的异常首行时漏判。
   String get _failureText => <String>[formatError(_error!), ..._outputLines].join('\n');
 }

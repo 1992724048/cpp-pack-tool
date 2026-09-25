@@ -1,5 +1,8 @@
 import 'dart:io';
 
+// 本文件三处 explorer 调用成功时退出码也可能非 0（实测恒为 1），故一律不检查
+// 退出码，失败只认 ProcessException。
+
 /// 将实体路径规范化为 explorer 可识别的绝对路径（分隔符统一为 `\`）。
 ///
 /// explorer 对混合分隔符路径（如 `D:\a/b.txt`）不报错但会静默打开默认位置，
