@@ -1,12 +1,11 @@
 /// 编译器类型；设置页优先级与 `CNP_COMPILER_KIND` 使用 [compilerKindId] 的标识。
-enum CompilerKind { icx, clangCl, msvc, mingw }
+enum CompilerKind { icx, clangCl, msvc }
 
 /// 编译器在设置页与 `CNP_COMPILER_KIND` 中使用的稳定标识。
 String compilerKindId(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'icx',
   CompilerKind.clangCl => 'clang-cl',
   CompilerKind.msvc => 'msvc',
-  CompilerKind.mingw => 'mingw',
 };
 
 /// [compilerKindId] 的逆向映射（大小写不敏感、容忍首尾空白）；未知标识返回 null。
@@ -34,15 +33,10 @@ bool isLegacyCompilerKindId(String id) =>
     id.trim().toLowerCase() == legacyGnuClangKindId;
 
 /// 编译器在构建对话框与设置页中展示的名称。
-///
-/// MinGW 一个种类覆盖 MSYS2 多个子环境（UCRT64 / CLANG64 的 GCC 与 GNU ABI
-/// clang、已弃用的 MINGW64），标签只署名家族、不署驱动；具体子环境由版本串的
-/// 环境标注区分（如 `14.2.0（UCRT64）`）。
 String compilerKindLabel(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'ICX',
   CompilerKind.clangCl => 'clang-cl',
   CompilerKind.msvc => 'MSVC',
-  CompilerKind.mingw => 'MinGW',
 };
 
 class DetectedCompiler {
