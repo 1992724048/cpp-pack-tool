@@ -343,7 +343,6 @@ class RuntimeLibrarySelector extends StatelessWidget {
       style: const TooltipThemeData(maxWidth: 360, showDuration: Duration(seconds: 30)),
       child: SizedBox(
         width: _width,
-        height: 29,
         child: ComboBox<String>(
           key: const Key('buildRuntimeSelector'),
           value: value ?? _defaultItemValue,

@@ -445,7 +445,7 @@ void main() {
     expect(find.byType(Tag), findsNothing);
   });
 
-  testWidgets('非二进制类型不显示构建标签', (tester) async {
+  testWidgets('源码文件位于 Release 路径时显示绿色 Release 标签', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'foo.cpp', path: 'release/foo.cpp', size: 10),
     ]);
@@ -455,7 +455,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('foo.cpp'), findsOneWidget);
-    expect(find.byType(Tag), findsNothing);
+    final Tag tag = tester.widget<Tag>(find.byType(Tag));
+    expect(tag.text, releaseBuildLabel);
+    expect(tag.color, MarkerColors.green);
   });
 
   testWidgets('exe 与 msi 文件使用 exe 图标', (tester) async {
@@ -552,6 +554,7 @@ void main() {
     );
     await tester.pump();
 
+    expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('buildOption_tbb')), findsOneWidget);
     expect(find.text('tbb'), findsOneWidget);
     final ComboBox<String> combo = _optionCombo(tester, 'tbb');
@@ -676,7 +679,8 @@ void main() {
     expect(find.byKey(const Key('buildOptionsSection')), findsNothing);
     expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
     expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
-    expect(find.byKey(const Key('buildRuntimeHelp')), findsOneWidget);
+    expect(find.text('运行库'), findsNothing);
+    expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
   });
 
   testWidgets('未提供保存回调时不渲染选项分区且运行库下拉禁用', (tester) async {
@@ -1128,7 +1132,7 @@ void main() {
     );
   });
 
-  testWidgets('运行库选择器渲染三项且工具栏顺序正确', (tester) async {
+  testWidgets('运行库紧凑选择器渲染三项且位于构建按钮右侧', (tester) async {
     await _pumpPage(
       tester,
       PackFiles(
@@ -1149,23 +1153,20 @@ void main() {
       ],
       <String>['default', 'MD', 'MT'],
     );
+    expect(find.text('默认'), findsOneWidget);
 
     final double buttonX = tester
         .getTopLeft(find.byKey(const Key('buildPackButton')))
         .dx;
-    final double labelX = tester.getTopLeft(find.text('运行库')).dx;
     final double comboX = tester
         .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
         .dx;
-    final double helpX = tester
-        .getTopLeft(find.byKey(const Key('buildRuntimeHelp')))
-        .dx;
-    expect(buttonX, lessThan(labelX));
-    expect(labelX, lessThan(comboX));
-    expect(comboX, lessThan(helpX));
+    expect(buttonX, lessThan(comboX));
+    expect(find.text('运行库'), findsNothing);
+    expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
   });
 
-  testWidgets('工具栏顺序为打开远程仓库 → 构建 → 运行库 → 版本控件', (tester) async {
+  testWidgets('工具栏顺序为构建 → 远程仓库 → 运行库 → 版本控件', (tester) async {
     final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
 
     await _pumpPage(
@@ -1181,28 +1182,25 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    final double openRepoX = tester
-        .getTopLeft(find.byKey(const Key('openRepoButton')))
-        .dx;
     final double buttonX = tester
         .getTopLeft(find.byKey(const Key('buildPackButton')))
         .dx;
-    final double labelX = tester.getTopLeft(find.text('运行库')).dx;
+    final double openRepoX = tester
+        .getTopLeft(find.byKey(const Key('openRepoButton')))
+        .dx;
     final double comboX = tester
         .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
-        .dx;
-    final double helpX = tester
-        .getTopLeft(find.byKey(const Key('buildRuntimeHelp')))
         .dx;
     final double versionX = tester
         .getTopLeft(find.byKey(const Key('packRepoVersionLabel')))
         .dx;
 
-    expect(openRepoX, lessThan(buttonX));
-    expect(buttonX, lessThan(labelX));
-    expect(labelX, lessThan(comboX));
-    expect(comboX, lessThan(helpX));
-    expect(helpX, lessThan(versionX));
+    expect(buttonX, lessThan(openRepoX));
+    expect(openRepoX, lessThan(comboX));
+    expect(comboX, lessThan(versionX));
+    expect(find.text('远程仓库'), findsOneWidget);
+    expect(find.text('运行库'), findsNothing);
+    expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
   });
 
   testWidgets('运行库保存值显示为显式项且非法值回退默认项', (tester) async {
@@ -1253,7 +1251,7 @@ void main() {
     await _selectComboItem(
       tester,
       const Key('buildRuntimeSelector'),
-      'MT（静态运行库）',
+      'MT',
     );
 
     expect(saved!.buildOptions, <String, String>{
@@ -1285,7 +1283,7 @@ void main() {
     await _selectComboItem(
       tester,
       const Key('buildRuntimeSelector'),
-      '默认（跟随配方）',
+      '默认',
     );
 
     expect(saved!.buildOptions, <String, String>{'other': 'keep'});
@@ -1313,14 +1311,14 @@ void main() {
     await _selectComboItem(
       tester,
       const Key('buildRuntimeSelector'),
-      'MD（动态运行库）',
+      'MD',
     );
 
     expect(saveCalls, 0);
     expect(find.text('已保存'), findsNothing);
   });
 
-  testWidgets('帮助按钮悬停显示运行库说明', (tester) async {
+  testWidgets('运行库下拉悬停显示说明', (tester) async {
     await _pumpPage(
       tester,
       PackFiles(
@@ -1340,7 +1338,7 @@ void main() {
     await mouse.addPointer(location: Offset.zero);
     addTearDown(mouse.removePointer);
     await mouse.moveTo(
-      tester.getCenter(find.byKey(const Key('buildRuntimeHelp'))),
+      tester.getCenter(find.byKey(const Key('buildRuntimeSelector'))),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1200));
@@ -1498,9 +1496,9 @@ void main() {
     final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
     expect(chip, findsOneWidget);
     expect(
-      find.descendant(of: chip, matching: find.text('—')),
+      find.descendant(of: chip, matching: find.text('不可用')),
       findsNWidgets(2),
-      reason: '当前与最新均为空占位',
+      reason: '当前与最新均显示不可用占位',
     );
   });
 
@@ -1542,12 +1540,12 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: chip, matching: find.text('—')),
+      find.descendant(of: chip, matching: find.text('不可用')),
       findsOneWidget,
     );
   });
 
-  testWidgets('有仓库时渲染打开远程仓库按钮并带完整 URL 提示', (tester) async {
+  testWidgets('有仓库时渲染「远程仓库」按钮并带完整 URL 提示', (tester) async {
     await _pumpPage(
       tester,
       PackFiles(
@@ -1559,7 +1557,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('openRepoButton')), findsOneWidget);
-    expect(find.text('打开远程仓库'), findsOneWidget);
+    expect(find.text('远程仓库'), findsOneWidget);
     expect(find.byTooltip('https://example.com/demo'), findsOneWidget);
   });
 

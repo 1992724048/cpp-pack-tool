@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/app_info.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -16,9 +17,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(NavigationView), findsOneWidget);
-    expect(find.text('C++ NuGet 打包工具'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('关于'), findsOneWidget);
+    expect(appName, 'CCPPP');
+
+    await tester.tap(find.text('关于'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text(appName), findsOneWidget);
   });
 }
 

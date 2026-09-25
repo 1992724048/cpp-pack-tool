@@ -1413,6 +1413,10 @@ void main() {
 
     expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
     expect(find.byKey(const Key('buildElevatedRetryHint')), findsOneWidget);
+    expect(
+      find.text('检测到临时目录权限问题，可尝试以管理员身份重试。'),
+      findsOneWidget,
+    );
     expect(find.text('以管理员身份重试'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNotNull);
   });

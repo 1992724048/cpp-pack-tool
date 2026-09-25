@@ -1148,7 +1148,7 @@ class _MainLayoutState extends State<MainLayout> {
                 ),
               ],
             ),
-            Divider(style: DividerThemeData(horizontalMargin: .fromLTRB(0, 4, 8, 0)),),
+            Divider(style: DividerThemeData(horizontalMargin: .fromLTRB(0, 3, 8, 0)),),
           ],
         ),
         displayMode: PaneDisplayMode.expanded,
