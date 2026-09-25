@@ -42,6 +42,7 @@ const Map<String, FileType> _extensionTypes = {
   'mpp': FileType.module,
   'rc': FileType.resource,
   'lib': FileType.lib,
+  'a': FileType.lib,
   'dll': FileType.dll,
   'pdb': FileType.pdb,
   'asm': FileType.asm,

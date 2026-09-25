@@ -170,6 +170,30 @@ void main() {
       expect(_packagePathOf(plan, 'plain.lib'), 'build/native/lib/plain.lib');
     });
 
+    test('NuGet 将 .a 放入 build/native/lib 并保留二进制标记', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'libz.a', path: 'lib/release/libz.a', size: 10),
+          FileModel(name: 'libz.dll.a', path: 'lib/debug/libz.dll.a', size: 20),
+          FileModel(name: 'plain.a', path: 'plain.a', size: 30),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'lib/release/libz.a'),
+        'build/native/lib/release/libz.a',
+      );
+      expect(
+        _packagePathOf(plan, 'lib/debug/libz.dll.a'),
+        'build/native/lib/debug/libz.dll.a',
+      );
+      expect(_packagePathOf(plan, 'plain.a'), 'build/native/lib/plain.a');
+      expect(_fileSource(plan, 'lib/release/libz.a').isBinary, isTrue);
+      expect(_fileSource(plan, 'lib/debug/libz.dll.a').isBinary, isTrue);
+      expect(_fileSource(plan, 'plain.a').isBinary, isTrue);
+    });
+
     test('源码、资源、可执行文件等其他类型映射到 files 且不剥离路径段', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[

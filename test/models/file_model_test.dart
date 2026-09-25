@@ -68,6 +68,12 @@ void main() {
       expect(FileModel(name: 'mylib.dll', path: '').type, FileType.dll);
     });
 
+    test('.a 作为通用归档映射为 lib 类型', () {
+      expect(FileModel(name: 'libz.a', path: '').type, FileType.lib);
+      expect(FileModel(name: 'libz.dll.a', path: '').type, FileType.lib);
+      expect(FileModel(name: 'LIBZ.A', path: '').type, FileType.lib);
+    });
+
     test('PDB 调试符号映射为 pdb', () {
       expect(FileModel(name: 'app.pdb', path: '').type, FileType.pdb);
     });

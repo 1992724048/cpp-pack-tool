@@ -170,6 +170,45 @@ void main() {
       expect(_packagePathOf(plan, 'plain.lib'), 'lib/plain.lib');
     });
 
+    test('CMake 将 .a 放入 lib 并加入 Release 链接列表', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'libz.a', path: 'lib/release/libz.a', size: 10),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(_packagePathOf(plan, 'lib/release/libz.a'), 'lib/release/libz.a');
+      expect(_fileSource(plan, 'lib/release/libz.a').isBinary, isTrue);
+      expect(
+        _generated(plan, 'lib/cmake/demo/demoTargets.cmake'),
+        contains(r'INTERFACE_LINK_LIBRARIES "${_IMPORT_PREFIX}/lib/release/libz.a"'),
+      );
+    });
+
+    test('.a 与 .lib 混排时按构建配置统一分组链接', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'rel.a', path: 'lib/release/rel.a', size: 10),
+          FileModel(name: 'dbg.dll.a', path: 'lib/debug/dbg.dll.a', size: 20),
+          FileModel(name: 'rel.lib', path: 'lib/release/rel.lib', size: 30),
+        ];
+
+      final String targets = _generated(
+        await _builder.buildPlan(pack),
+        'lib/cmake/demo/demoTargets.cmake',
+      );
+
+      expect(
+        targets,
+        contains(
+          r'  INTERFACE_LINK_LIBRARIES "$<$<CONFIG:Debug>:${_IMPORT_PREFIX}/lib/debug/dbg.dll.a>'
+          r'$<$<NOT:$<CONFIG:Debug>>:${_IMPORT_PREFIX}/lib/release/rel.a;'
+          r'${_IMPORT_PREFIX}/lib/release/rel.lib>"',
+        ),
+      );
+    });
+
     test('其他文件映射到 files 且保留相对路径', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[

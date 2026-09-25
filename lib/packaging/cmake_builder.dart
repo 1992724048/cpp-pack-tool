@@ -143,7 +143,8 @@ class CMakePackageBuilder implements PackageBuilder {
     final List<String> debugLibraries = <String>[];
     final List<String> releaseLibraries = <String>[];
     for (final PackageEntry entry in fileEntries) {
-      if (!entry.packagePath.toLowerCase().endsWith('.lib')) {
+      final String lowerPath = entry.packagePath.toLowerCase();
+      if (!lowerPath.endsWith('.lib') && !lowerPath.endsWith('.a')) {
         continue;
       }
       final String library = '\${_IMPORT_PREFIX}/${entry.packagePath}';
