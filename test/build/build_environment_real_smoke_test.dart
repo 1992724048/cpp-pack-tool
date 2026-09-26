@@ -190,13 +190,18 @@ void main() {
       print('[evidence] runtime.md=$md');
       print('[evidence] runtime.mt=$mt');
       print(
-        '[evidence] CNP_RUNTIME_LIBRARY.default='
-        '${env.environment['CNP_RUNTIME_LIBRARY']}',
+        '[evidence] profile.release.runtime='
+        '${env.environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME']}',
       );
       expect(
-        env.environment['CNP_RUNTIME_LIBRARY'],
-        'md',
-        reason: '未指定 runtimeLibrary 时缺省 md',
+        env.environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME'],
+        'follow',
+        reason: '未记录 Profile 时默认 follow',
+      );
+      expect(
+        env.environment.containsKey('CNP_RUNTIME_LIBRARY'),
+        isFalse,
+        reason: '旧运行库变量不再下发，md/mt 由下方显式注入验证',
       );
       expect(md, r'MultiThreaded$<$<CONFIG:Debug>:Debug>DLL');
       expect(mt, r'MultiThreaded$<$<CONFIG:Debug>:Debug>');

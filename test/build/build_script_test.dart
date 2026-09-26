@@ -767,22 +767,7 @@ void main() {
     });
   });
 
-  group('resolveRuntimeLibrary', () {
-    test('用户选择优先于配方声明', () {
-      expect(resolveRuntimeLibrary(userValue: 'MT', headerValue: 'md'), 'mt');
-      expect(resolveRuntimeLibrary(userValue: 'md', headerValue: 'mt'), 'md');
-    });
-
-    test('非法用户值回退配方声明，非法配方回退默认 md', () {
-      expect(resolveRuntimeLibrary(userValue: 'gnu', headerValue: 'MT'), 'mt');
-      expect(resolveRuntimeLibrary(userValue: '', headerValue: 'mt'), 'mt');
-      expect(
-        resolveRuntimeLibrary(userValue: 'gnu', headerValue: 'gnu'),
-        defaultRuntimeLibrary,
-      );
-      expect(resolveRuntimeLibrary(), defaultRuntimeLibrary);
-    });
-
+  group('runtime 保留键与归一化', () {
     test('normalizeRuntimeLibrary 大小写与空白不敏感', () {
       expect(normalizeRuntimeLibrary(' MD '), 'md');
       expect(normalizeRuntimeLibrary('Mt'), 'mt');

@@ -12,6 +12,7 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -296,6 +297,65 @@ void main() {
       expect(content.contains(r'BUILD_OUT=C:\libs\demo'), isTrue);
       expect(content.contains('SRC_PATH='), isTrue);
       expect(content.contains('PYTHONIOENCODING=utf-8'), isTrue);
+    });
+
+    test('launcher 写入的九个 Profile 变量与 BuildEnvironment.environment 一致', () async {
+      final Directory root = await _tempDirectory();
+      const CompilerProfile profile = CompilerProfile(
+        release: CompilerConfigProfile(
+          runtime: CompilerRuntimeChoice.mt,
+          instructionSet: CompilerInstructionSetChoice.avx2,
+          optimization: CompilerOptimizationChoice.maximum,
+          ipo: CompilerIpoChoice.on,
+        ),
+        debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
+      );
+      final BuildEnvironment buildEnvironment = _buildEnvironment(
+        root.path,
+        profile: profile,
+      );
+      final Map<String, String> profileEnvironment = buildProfileEnvironment(
+        profile,
+      );
+      expect(profileEnvironment, hasLength(9));
+
+      await runElevatedPackBuild(
+        _pack(),
+        (_) {},
+        buildEnvironment: buildEnvironment,
+        prepareSource: _fakePrepareSource(),
+        launcherStarter: _starterWriting(
+          root,
+          logText: 'done\n',
+          exitCode: '0',
+        ),
+        pollInterval: const Duration(milliseconds: 1),
+      );
+
+      final File launcher = File(
+        joinPath(
+          joinPath(root.path, elevatedBuildDirectoryName),
+          elevatedBuildLauncherFileName,
+        ),
+      );
+      final String content = await launcher.readAsString();
+      for (final MapEntry<String, String> entry in profileEnvironment.entries) {
+        expect(
+          buildEnvironment.environment[entry.key],
+          entry.value,
+          reason: '${entry.key} 应来自 BuildEnvironment.environment',
+        );
+        expect(
+          content.contains('set "${entry.key}=${entry.value}"'),
+          isTrue,
+          reason: 'launcher 未写入 ${entry.key}',
+        );
+      }
+      expect(
+        content.contains('CNP_RUNTIME_LIBRARY'),
+        isFalse,
+        reason: 'launcher 不应再携带旧运行库变量',
+      );
     });
 
     test('提权构建非零退出：抛带输出尾部的 PackBuildException', () async {
@@ -759,6 +819,7 @@ PackSourcePreparer _fakePrepareSource({
 BuildEnvironment _buildEnvironment(
   String tempRoot, {
   ProvisionedPython? python,
+  CompilerProfile profile = const CompilerProfile(),
 }) {
   return BuildEnvironment(
     compiler: DetectedCompiler(
@@ -768,6 +829,7 @@ BuildEnvironment _buildEnvironment(
       environmentScript: null,
     ),
     environment: <String, String>{
+      ...buildProfileEnvironment(profile),
       'TMP': tempRoot,
       'TEMP': tempRoot,
       'Path': r'C:\tools\bin',

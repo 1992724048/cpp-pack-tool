@@ -5,6 +5,7 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
+import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -461,32 +462,75 @@ void main() {
       expect(result.environment.containsKey('CNP_OPTION_OTHER'), isFalse);
     });
 
-    test('注入 CNP_RUNTIME_LIBRARY（缺省 md、显式 mt、非法回退 md）', () {
-      final BuildEnvironment byDefault = assembleBuildEnvironment(
-        compiler: _compiler(),
-        environment: <String, String>{'FOO': '1'},
-        cmakeNinja: _cmakeNinja(),
-        toolsRoot: 'tools',
+    test('Profile 投影固定为九个变量且 IPO 使用 follow/1/0', () {
+      final Map<String, String> environment = buildProfileEnvironment(
+        const CompilerProfile(
+          release: CompilerConfigProfile(
+            runtime: CompilerRuntimeChoice.mt,
+            instructionSet: CompilerInstructionSetChoice.avx2,
+            optimization: CompilerOptimizationChoice.maximum,
+            ipo: CompilerIpoChoice.on,
+          ),
+          debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
+        ),
       );
-      expect(byDefault.environment['CNP_RUNTIME_LIBRARY'], 'md');
 
-      final BuildEnvironment staticRuntime = assembleBuildEnvironment(
-        compiler: _compiler(),
-        environment: <String, String>{'FOO': '1'},
-        cmakeNinja: _cmakeNinja(),
-        toolsRoot: 'tools',
-        runtimeLibrary: 'MT',
+      expect(environment['CNP_BUILD_PROFILE_VERSION'], '1');
+      expect(environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME'], 'mt');
+      expect(environment['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'], 'avx2');
+      expect(environment['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'], 'maximum');
+      expect(environment['CNP_BUILD_PROFILE_RELEASE_IPO'], '1');
+      expect(environment['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'follow');
+      expect(environment['CNP_BUILD_PROFILE_DEBUG_IPO'], '0');
+      expect(
+        environment.keys
+            .where((String key) => key.startsWith('CNP_BUILD_PROFILE_')),
+        hasLength(9),
       );
-      expect(staticRuntime.environment['CNP_RUNTIME_LIBRARY'], 'mt');
+    });
 
-      final BuildEnvironment invalid = assembleBuildEnvironment(
+    test('父环境污染时旧运行库与 IPO 变量被清理', () {
+      final BuildEnvironment result = assembleBuildEnvironment(
+        compiler: _compiler(kind: CompilerKind.msvc),
+        environment: <String, String>{
+          'cnp_runtime_library': 'mt',
+          'Cnp_No_Ipo': '1',
+        },
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
+        profile: const CompilerProfile(),
+      );
+
+      expect(
+        result.environment.keys
+            .any((String key) => key.toLowerCase() == 'cnp_runtime_library'),
+        isFalse,
+      );
+      expect(
+        result.environment.keys
+            .any((String key) => key.toLowerCase() == 'cnp_no_ipo'),
+        isFalse,
+      );
+    });
+
+    test('装配写入默认 Profile 的九个变量且不再下发旧运行库变量', () {
+      final BuildEnvironment result = assembleBuildEnvironment(
         compiler: _compiler(),
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        runtimeLibrary: 'gnu',
       );
-      expect(invalid.environment['CNP_RUNTIME_LIBRARY'], 'md');
+
+      expect(result.environment['CNP_BUILD_PROFILE_VERSION'], '1');
+      expect(
+        result.environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME'],
+        'follow',
+      );
+      expect(result.environment['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'follow');
+      expect(result.environment['CNP_BUILD_PROFILE_DEBUG_IPO'], 'follow');
+      expect(result.environment.containsKey('CNP_RUNTIME_LIBRARY'), isFalse);
+      expect(result.environment.containsKey('CNP_NO_IPO'), isFalse);
+      expect(result.environment['FOO'], '1');
     });
 
     test('不推导 windres：同目录存在 windres 也不下发，父环境显式值保留', () {
@@ -1424,21 +1468,17 @@ void main() {
       );
     });
 
-    test('运行库按 用户选择 > 配方声明 > md 解析并下发', () async {
+    test('包生效 Profile 的两个配置分别投影到九个变量', () async {
       final Directory root = _tempDirectory();
-      Future<BuildEnvironment> prepare({
-        required Map<String, String> buildOptions,
-        String? headerRuntime,
-      }) {
-        return preparePackBuildEnvironment(
-          _pack(buildOptions: buildOptions),
+      Future<Map<String, String>> prepare(PackModel pack) async {
+        final BuildEnvironment result = await preparePackBuildEnvironment(
+          pack,
           priority: <String>['msvc'],
           provisioner: _FakeProvisioner(_cmakeNinja()),
           toolsRoot: root.path,
           baseEnvironment: <String, String>{},
-          loadHeader: (PackModel pack) async => BuildScriptHeader(
+          loadHeader: (PackModel value) async => const BuildScriptHeader(
             repo: 'https://example.com/demo.git',
-            runtime: headerRuntime,
             profileVersion: 'v1',
           ),
           detect: () async => <DetectedCompiler>[_compiler()],
@@ -1449,33 +1489,46 @@ void main() {
             return baseEnvironment;
           }),
         );
+        return result.environment;
       }
 
-      final BuildEnvironment byDefault = await prepare(
-        buildOptions: <String, String>{},
-        headerRuntime: null,
-      );
-      expect(byDefault.environment['CNP_RUNTIME_LIBRARY'], 'md');
-      expect(byDefault.environment.containsKey('CNP_OPTION_RUNTIME'), isFalse);
+      final PackModel explicit = _pack()
+        ..compilerProfile = const CompilerProfile(
+          release: CompilerConfigProfile(
+            runtime: CompilerRuntimeChoice.mt,
+            instructionSet: CompilerInstructionSetChoice.avx2,
+            optimization: CompilerOptimizationChoice.standard,
+            ipo: CompilerIpoChoice.on,
+          ),
+          debug: CompilerConfigProfile(
+            runtime: CompilerRuntimeChoice.md,
+            instructionSet: CompilerInstructionSetChoice.baseline,
+            optimization: CompilerOptimizationChoice.maximum,
+            ipo: CompilerIpoChoice.off,
+          ),
+        );
+      final Map<String, String> projected = await prepare(explicit);
+      expect(projected['CNP_BUILD_PROFILE_VERSION'], '1');
+      expect(projected['CNP_BUILD_PROFILE_RELEASE_RUNTIME'], 'mt');
+      expect(projected['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'], 'avx2');
+      expect(projected['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'], 'standard');
+      expect(projected['CNP_BUILD_PROFILE_RELEASE_IPO'], '1');
+      expect(projected['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'md');
+      expect(projected['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'], 'baseline');
+      expect(projected['CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION'], 'maximum');
+      expect(projected['CNP_BUILD_PROFILE_DEBUG_IPO'], '0');
+      expect(projected.containsKey('CNP_RUNTIME_LIBRARY'), isFalse);
+      expect(projected.containsKey('CNP_OPTION_RUNTIME'), isFalse);
 
-      final BuildEnvironment fromHeader = await prepare(
-        buildOptions: <String, String>{},
-        headerRuntime: 'mt',
+      final PackModel legacy = _pack(
+        buildOptions: <String, String>{'runtime': 'MT'},
       );
-      expect(fromHeader.environment['CNP_RUNTIME_LIBRARY'], 'mt');
-
-      final BuildEnvironment fromUser = await prepare(
-        buildOptions: <String, String>{'runtime': 'MD'},
-        headerRuntime: 'mt',
-      );
-      expect(fromUser.environment['CNP_RUNTIME_LIBRARY'], 'md');
-      expect(fromUser.environment.containsKey('CNP_OPTION_RUNTIME'), isFalse);
-
-      final BuildEnvironment invalidUser = await prepare(
-        buildOptions: <String, String>{'runtime': 'gnu'},
-        headerRuntime: 'mt',
-      );
-      expect(invalidUser.environment['CNP_RUNTIME_LIBRARY'], 'mt');
+      final Map<String, String> migrated = await prepare(legacy);
+      expect(migrated['CNP_BUILD_PROFILE_RELEASE_RUNTIME'], 'mt');
+      expect(migrated['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'mt');
+      expect(migrated['CNP_BUILD_PROFILE_RELEASE_IPO'], 'follow');
+      expect(migrated.containsKey('CNP_RUNTIME_LIBRARY'), isFalse);
+      expect(legacy.buildOptions['runtime'], 'MT', reason: '旧 YAML 键保留（C14）');
     });
 
     test('头部读取失败包装为 BuildPreparationException 且不检测/供给', () async {
@@ -1540,6 +1593,7 @@ void main() {
       );
 
       expect(provisioner.ensureCmakeNinjaCalls, 0);
+      expect(provisioner.ensurePythonCalls, 0);
     });
 
     test('辅助模块加载失败按 null 容错并继续装配', () async {

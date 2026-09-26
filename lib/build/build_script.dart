@@ -28,11 +28,11 @@ const String supportedBuildProfile = 'v1';
 /// `CNP_OPTION_RUNTIME` 与 [runtimeLibraryEnvName] 取值矛盾。
 const String runtimeOptionName = 'runtime';
 
-/// 子进程运行库环境变量名（值域 `md` / `mt`，小写规范化）。
+/// 旧子进程运行库环境变量名（Profile 接管后不再下发）。
+///
+/// 仅作只读清理标识：装配子进程环境时按大小写不敏感移除父环境残留
+/// （见 `legacyNoIpoEnvName` 同批处理），待计划 C 移除最后的 UI 引用后再删。
 const String runtimeLibraryEnvName = 'CNP_RUNTIME_LIBRARY';
-
-/// 运行库家族缺省值：动态运行库 `md`（Debug 自动 `md`/`MDd` 变体）。
-const String defaultRuntimeLibrary = 'md';
 
 final RegExp _toolNamePattern = RegExp(r'^[A-Za-z0-9._-]+$');
 final RegExp _optionNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
@@ -428,15 +428,6 @@ String? normalizeRuntimeLibrary(String? value) {
     return normalized;
   }
   return null;
-}
-
-/// 解析生效运行库家族：用户选择 > `# runtime:` 配方默认 > [defaultRuntimeLibrary]。
-///
-/// 非法保存值与非法配方声明逐级跳过；返回值恒为小写 `md` / `mt`。
-String resolveRuntimeLibrary({String? userValue, String? headerValue}) {
-  return normalizeRuntimeLibrary(userValue) ??
-      normalizeRuntimeLibrary(headerValue) ??
-      defaultRuntimeLibrary;
 }
 
 /// 依据声明集合解析最终选项值：合法保存值优先，非法或缺失取默认值，未声明键剔除。
