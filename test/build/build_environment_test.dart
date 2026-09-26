@@ -1356,6 +1356,7 @@ void main() {
           loadedPack = value;
           return const BuildScriptHeader(
             repo: 'https://github.com/example/lib.git',
+            profileVersion: 'v1',
             tools: <BuildScriptTool>[
               BuildScriptTool(
                 name: 'perl',
@@ -1438,6 +1439,7 @@ void main() {
           loadHeader: (PackModel pack) async => BuildScriptHeader(
             repo: 'https://example.com/demo.git',
             runtime: headerRuntime,
+            profileVersion: 'v1',
           ),
           detect: () async => <DetectedCompiler>[_compiler()],
           capture: _captureStub(<CompilerKind>[], (
@@ -1500,6 +1502,39 @@ void main() {
             (BuildPreparationException error) => error.message,
             'message',
             allOf(contains('读取 build.py 失败'), contains('拒绝访问')),
+          ),
+        ),
+      );
+
+      expect(provisioner.ensureCmakeNinjaCalls, 0);
+    });
+
+    test('环境准备在 Profile 失败时不检测编译器也不下载工具', () async {
+      final Directory root = _tempDirectory();
+      final _FakeProvisioner provisioner = _FakeProvisioner(_cmakeNinja());
+
+      await expectLater(
+        preparePackBuildEnvironment(
+          _pack(),
+          priority: <String>['msvc'],
+          provisioner: provisioner,
+          toolsRoot: root.path,
+          baseEnvironment: <String, String>{},
+          loadHeader: (PackModel pack) async =>
+              const BuildScriptHeader(repo: 'https://example.com/demo.git'),
+          detect: () async => throw StateError('不应检测编译器'),
+          capture: _captureStub(<CompilerKind>[], (
+            DetectedCompiler compiler,
+            Map<String, String> baseEnvironment,
+          ) {
+            return baseEnvironment;
+          }),
+        ),
+        throwsA(
+          isA<BuildPreparationException>().having(
+            (BuildPreparationException error) => error.message,
+            'message',
+            allOf(contains('缺少 Profile 声明'), contains('build.py')),
           ),
         ),
       );

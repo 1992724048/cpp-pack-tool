@@ -86,7 +86,9 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
 
 /// 解析 `build.py` 头部、拉取/对齐源码并清空包源目录（构建流水线前半段）。
 ///
-/// 流程：解析 `build.py` 头部（仓库地址 + 可选 `# source: none`）→ 目标目录
+/// 流程：解析 `build.py` 头部（仓库地址 + 可选 `# source: none`，并校验
+/// `# profile:` 声明为受支持版本，见 [requireSupportedBuildProfile]——失败即在
+/// 任何副作用前抛 [PackBuildException]）→ 目标目录
 /// （`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，保证同一
 /// 工作目录下缓存稳定命中）克隆；已有 `.git` 时原位硬重置（`fetch --progress`
 /// → `reset --hard` 上游跟踪分支（无上游回退远端默认分支，绝不盲用
@@ -140,6 +142,14 @@ Future<PackSourcePreparation> preparePackSource(
   );
   if (header == null) {
     throw const PackBuildException('build.py 首行缺少 git 仓库地址（格式：# <仓库地址>）');
+  }
+
+  // Profile 前置校验（fail-closed）：在下载阶段回调、缓存目录创建、git 调用与
+  // 源目录清理等一切副作用之前拒绝不带受支持 Profile 声明的配方。
+  try {
+    requireSupportedBuildProfile(header, scriptOnDisk.path);
+  } on FormatException catch (error) {
+    throw PackBuildException(formatError(error));
   }
 
   onStage(PackBuildStage.downloading);

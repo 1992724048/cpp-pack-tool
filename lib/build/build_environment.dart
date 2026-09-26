@@ -505,9 +505,11 @@ Future<void> _releaseSupportModule(String toolsRoot, String content) async {
   }
 }
 
-/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项与运行库（用户选择 >
-/// `# runtime:` 配方默认 > `md`）→ 供给声明工具与 CMake/Ninja/Python → 释放
-/// [loadSupportModule] 内容（缺省 null 跳过）。
+/// 依据包声明准备构建环境：读取 build.py 头部 → 校验 `# profile:` 声明为受支持
+/// 版本（见 [requireSupportedBuildProfile]，失败包装为
+/// [BuildPreparationException] 并发生在编译器检测与工具供给之前）→ 解析选项与
+/// 运行库（用户选择 > `# runtime:` 配方默认 > `md`）→ 供给声明工具与
+/// CMake/Ninja/Python → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
 ///
 /// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
 /// [BuildPreparationException]。其余参数（含 [onDownloadProgress]）透传
@@ -535,6 +537,21 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
     header = await headerLoader(pack);
   } catch (error) {
     throw BuildPreparationException('读取 build.py 失败：$error');
+  }
+  if (header != null) {
+    // Profile 前置校验（fail-closed）：在编译器检测、CMake/Ninja/Python 与
+    // `# tool` 工具供给之前拒绝不带受支持 Profile 声明的配方。
+    try {
+      requireSupportedBuildProfile(
+        header,
+        joinPath(
+          pack.sourcePath ?? '',
+          findBuildScript(pack.files)?.path ?? 'build.py',
+        ),
+      );
+    } on FormatException catch (error) {
+      throw BuildPreparationException(formatError(error));
+    }
   }
   final String? supportModule = await _loadSupportModule(loadSupportModule);
   return prepareBuildEnvironment(

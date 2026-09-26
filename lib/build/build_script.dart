@@ -14,6 +14,12 @@ const String _sourceDirectivePrefix = '# source:';
 const String _dependsDirectivePrefix = '# depends:';
 const String _runtimeDirectivePrefix = '# runtime:';
 
+/// `# profile:` 指令前缀（头部连续注释段内的构建管线 Profile 声明）。
+const String profileDirectivePrefix = '# profile:';
+
+/// 当前受支持的构建管线 Profile 版本。
+const String supportedBuildProfile = 'v1';
+
 /// 运行库选项在 `PackModel.buildOptions` 中的保留键。
 ///
 /// 键不存在 = 跟随配方默认（`# runtime:` 或 `md`）；值域 `MD` / `MT`（保存口径），
@@ -111,6 +117,7 @@ class BuildScriptHeader {
     this.options = const <BuildScriptOption>[],
     this.dependencies = const <BuildScriptDependency>[],
     this.runtime,
+    this.profileVersion,
   });
 
   final String repo;
@@ -125,11 +132,15 @@ class BuildScriptHeader {
 
   /// `# runtime:` 声明的默认运行库家族（`md` / `mt`，小写规范化）；未声明为 null。
   final String? runtime;
+
+  /// `# profile:` 声明的构建管线 Profile 版本（原始书写形式，允许两侧空白与
+  /// 大小写差异，由 [requireSupportedBuildProfile] 归一比较）；未声明为 null。
+  final String? profileVersion;
 }
 
 /// 解析 build.py 头部：首行仓库地址 + 其后连续 `#` 行中的
 /// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
-/// `# source: none` / `# runtime:` / `# depends:` 指令。
+/// `# source: none` / `# runtime:` / `# profile:` / `# depends:` 指令。
 ///
 /// 首行不合法返回 null；非法或未知指令行按注释忽略，选项名称为保留名
 /// （`runtime`，见 [runtimeOptionName]）的选项声明同样忽略；同名声明以首次为准；
@@ -148,6 +159,7 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   final Set<String> dependencyNames = <String>{};
   bool sourceNone = false;
   String? runtime;
+  String? profileVersion;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
@@ -161,6 +173,10 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
       runtime ??= normalizeRuntimeLibrary(
         line.substring(_runtimeDirectivePrefix.length),
       );
+      continue;
+    }
+    if (line.startsWith(profileDirectivePrefix)) {
+      profileVersion ??= profileVersionFromLine(line);
       continue;
     }
     final BuildScriptTool? tool = _parseToolLine(line);
@@ -190,7 +206,42 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     options: options,
     dependencies: dependencies,
     runtime: runtime,
+    profileVersion: profileVersion,
   );
+}
+
+/// 提取 `# profile:` 指令行的版本值：前缀之后的内容去两侧空白。
+///
+/// 行不含 [profileDirectivePrefix] 时返回 null；值为空串时由
+/// [requireSupportedBuildProfile] 按缺失声明处理。
+String? profileVersionFromLine(String line) {
+  final String trimmed = line.trim();
+  if (!trimmed.startsWith(profileDirectivePrefix)) {
+    return null;
+  }
+  return trimmed.substring(profileDirectivePrefix.length).trim();
+}
+
+/// 校验 [header] 声明的 Profile 版本；缺失（未声明或值为空）或不是
+/// [supportedBuildProfile] 时抛出 `FormatException`。
+///
+/// 调用方在任何副作用之前调用（源码准备：`onStage(downloading)`/缓存目录/git/
+/// 源目录清理之前；构建环境准备：编译器检测与工具供给之前），并把异常映射为
+/// 各自的用户可见异常类型；消息含脚本路径与期望的 `# profile: v1` 字面量。
+void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
+  final String version = (header.profileVersion ?? '').trim();
+  if (version.isEmpty) {
+    throw FormatException(
+      'build.py 缺少 Profile 声明：$scriptPath 需要在头部连续注释段包含 '
+      '"$profileDirectivePrefix $supportedBuildProfile"',
+    );
+  }
+  if (version.toLowerCase() != supportedBuildProfile) {
+    throw FormatException(
+      'build.py Profile 版本 "$version" 不受支持：$scriptPath 仅支持 '
+      '$supportedBuildProfile（需写 "$profileDirectivePrefix $supportedBuildProfile"）',
+    );
+  }
 }
 
 bool _isSourceNoneLine(String line) {

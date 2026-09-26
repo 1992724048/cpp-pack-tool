@@ -111,7 +111,7 @@ void main() {
 
     test('包内无 build.py 时抛错', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await expectLater(
@@ -183,6 +183,48 @@ void main() {
 
       expect(calls, isEmpty);
     });
+
+    test('build.py 缺少 Profile 声明时前置失败（无进程/无阶段/不清源目录/不建缓存）', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# https://github.com/foo/bar.git\n',
+      );
+      final String stalePath = joinPath(sourcePath, 'stale.txt');
+      File(stalePath).writeAsStringSync('stale');
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<PackBuildStage> stages = <PackBuildStage>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          stages.add,
+          processRunner: _runner(calls, (_) async => _success()),
+          cacheRoot: cacheRoot,
+        ),
+        throwsA(
+          isA<PackBuildException>().having(
+            (PackBuildException error) => error.message,
+            'message',
+            allOf(contains('缺少 Profile 声明'), contains('# profile: v1')),
+          ),
+        ),
+      );
+
+      expect(stages, isEmpty, reason: 'Profile 校验在下载阶段回调之前');
+      expect(calls, isEmpty, reason: 'Profile 校验在 git/python 执行之前');
+      expect(
+        File(stalePath).existsSync(),
+        isTrue,
+        reason: 'Profile 校验在源目录清理之前',
+      );
+      expect(
+        Directory(joinPath(cacheRoot, 'build')).existsSync(),
+        isFalse,
+        reason: 'Profile 校验在缓存目录创建之前',
+      );
+    });
   });
 
   group('下载源码', () {
@@ -190,7 +232,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\nprint(1)\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\nprint(1)\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -245,7 +287,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\nprint(1)\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\nprint(1)\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -286,7 +328,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -338,7 +380,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -382,7 +424,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -445,7 +487,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -478,7 +520,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -509,7 +551,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
@@ -561,7 +603,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> versions = <String>[];
@@ -595,7 +637,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -651,7 +693,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -713,7 +755,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -801,7 +843,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -841,7 +883,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -873,7 +915,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -908,7 +950,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -948,7 +990,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -990,7 +1032,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       Directory(joinPath(sourcePath, 'build-release')).createSync(
@@ -1031,7 +1073,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final File locked = File(joinPath(sourcePath, 'locked.dat'))
         ..writeAsStringSync('busy');
@@ -1068,7 +1110,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String scriptPath = joinPath(sourcePath, 'build.py');
       final String scriptBackup = File(scriptPath).readAsStringSync();
@@ -1114,7 +1156,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
         '# source: none\n'
         'print(1)\n',
       );
@@ -1161,7 +1203,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
         '# source: none\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
@@ -1210,7 +1252,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
         '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -1242,7 +1284,7 @@ void main() {
   group('执行构建', () {
     test('python 不可用时回退 py -3', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -1278,7 +1320,7 @@ void main() {
 
     test('python 与 py 均不可用时抛出未找到 Python', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await expectLater(
@@ -1305,7 +1347,7 @@ void main() {
 
     test('构建非零退出时异常携带合并输出末尾 20 行', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
           'line${index.toString().padLeft(2, '0')}',
@@ -1347,7 +1389,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1383,7 +1425,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1411,7 +1453,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1447,7 +1489,7 @@ void main() {
 
     test('python 回退 py 时同样携带注入环境', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
       final Map<String, String> injected = <String, String>{
@@ -1484,7 +1526,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1585,7 +1627,7 @@ void main() {
 
     test('流式构建非零退出时异常携带合并输出末尾 20 行', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
           'line${index.toString().padLeft(2, '0')}',
@@ -1635,7 +1677,7 @@ void main() {
 
     test('未提供流式执行器时 onOutput 静默降级为一次性捕获', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final List<String> lines = <String>[];
 
       await runPackBuild(
@@ -1654,7 +1696,7 @@ void main() {
 
     test('流式 python 不可用时回退 py -3 并同样转发输出', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
 
@@ -1694,7 +1736,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1758,7 +1800,7 @@ void main() {
 
     test('runPackBuildStreaming 默认流式转发 git 与 python 输出', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n');
+      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
 
@@ -1793,7 +1835,10 @@ void main() {
 
     test('无效 UTF-8 字节（GBK 中文）经流式收集不抛异常且不丢行', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# source: none\n');
+      final String sourcePath = _createSource(
+        root,
+        '# url\n# profile: v1\n# source: none\n',
+      );
       final List<String> lines = <String>[];
       // GBK 编码的「中文」+ 合法 UTF-8 行：0xD6/0xD0/0xCE/0xC4 不构成合法 UTF-8。
       final List<int> stdoutBytes = <int>[
@@ -1833,7 +1878,10 @@ void main() {
 
     test('失败输出尾部含无效 UTF-8 字节时不抛异常且保留可读行', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# source: none\n');
+      final String sourcePath = _createSource(
+        root,
+        '# url\n# profile: v1\n# source: none\n',
+      );
       final List<String> lines = <String>[];
 
       await expectLater(
@@ -1876,7 +1924,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1916,7 +1964,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1958,7 +2006,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -1994,7 +2042,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> versions = <String>[];
@@ -2025,7 +2073,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -2060,7 +2108,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n'
+        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
         '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -2088,7 +2136,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -2129,7 +2177,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://example.com/foo/bar.git\n'
+        '# https://example.com/foo/bar.git\n# profile: v1\n'
         '# source: none\n'
         "import sys\n"
         "print('中文输出：构建开始')\n"
@@ -2159,7 +2207,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://example.com/foo/bar.git\n'
+        '# https://example.com/foo/bar.git\n# profile: v1\n'
         '# source: none\n'
         "import sys\n"
         "print('开始构建')\n"
