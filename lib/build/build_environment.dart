@@ -198,7 +198,7 @@ BuildEnvironment assembleBuildEnvironment({
   ProvisionedPython? python,
   List<String> toolPathEntries = const <String>[],
   Map<String, String> options = const <String, String>{},
-  CompilerProfile profile = const CompilerProfile(),
+  required CompilerProfile profile,
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);

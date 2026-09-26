@@ -320,6 +320,7 @@ void main() {
         environment: base,
         cmakeNinja: cmakeNinja,
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(
@@ -361,6 +362,7 @@ void main() {
         environment: <String, String>{'Path': r'C:\Windows'},
         cmakeNinja: cmakeNinja,
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(
@@ -383,6 +385,7 @@ void main() {
         environment: <String, String>{'Path': r'C:\Windows'},
         cmakeNinja: cmakeNinja,
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(
@@ -397,6 +400,7 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(pathEntries: <String>[r'C:\tools\ninja']),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(result.environment['Path'], r'C:\tools\ninja;C:\LLVM\bin');
@@ -409,6 +413,7 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(result.environment.containsKey('Path'), isFalse);
@@ -425,6 +430,7 @@ void main() {
         environment: base,
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(
@@ -440,6 +446,7 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(
@@ -455,6 +462,7 @@ void main() {
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
         options: const <String, String>{'tbb': 'on', 'open_mp': 'off'},
+        profile: const CompilerProfile(),
       );
 
       expect(result.environment['CNP_OPTION_TBB'], 'on');
@@ -519,6 +527,7 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(result.environment['CNP_BUILD_PROFILE_VERSION'], '1');
@@ -552,6 +561,7 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(derived.environment['CNP_COMPILER_KIND'], 'clang-cl');
@@ -569,6 +579,7 @@ void main() {
         },
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
+        profile: const CompilerProfile(),
       );
 
       expect(declared.environment['CNP_RC_COMPILER'], r'D:\tools\windres.exe');
