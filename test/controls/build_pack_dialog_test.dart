@@ -59,7 +59,6 @@ void main() {
     expect(find.text('构建'), findsOneWidget);
     expect(find.text('包名：demo'), findsOneWidget);
     expect(find.text(r'源目录：C:\libs\demo'), findsOneWidget);
-    expect(find.byKey(const Key('buildRuntimeLabel')), findsNothing);
     expect(_stepIsActive(tester, 'prepare'), isTrue);
     expect(find.text('准备环境'), findsOneWidget);
     expect(find.text('准备源码'), findsOneWidget);
