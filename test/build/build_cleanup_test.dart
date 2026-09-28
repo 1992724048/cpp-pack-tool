@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_cleanup.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -34,6 +35,10 @@ void main() {
           reason: '$name 应保留',
         );
       }
+    });
+
+    test('契约常量与清理白名单一致（# source: 唯一合法首段须被保留）', () {
+      expect(isPreservedEntryName(presetSourceDirName), isTrue);
     });
 
     test('不保留普通文件与近似名（下划线不算分隔符、.git* 需精确匹配）', () {

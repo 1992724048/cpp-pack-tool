@@ -20,6 +20,14 @@ const String profileDirectivePrefix = '# profile:';
 /// 当前受支持的构建管线 Profile 版本。
 const String supportedBuildProfile = 'v1';
 
+/// 包内预置源码目录保留名。
+///
+/// 双重身份：既是 `# source:` 唯一合法的首段（见
+/// [requireValidSourceDirective]），也是构建输出清理的白名单项（见
+/// `isPreservedEntryName`）。两者共用这一个字面量，使「校验放行却在首次构建后
+/// 被清理删除」这种源码丢失的错配在结构上不可能发生。
+const String presetSourceDirName = '.cnp-src';
+
 /// 运行库选项在 `PackModel.buildOptions` 中的保留键。
 ///
 /// 键不存在 = 跟随配方默认（`# runtime:` 或 `md`）；值域 `MD` / `MT`（保存口径），
@@ -224,8 +232,8 @@ String? profileVersionFromLine(String line) {
 /// 校验 [header] 声明的 Profile 版本；缺失（未声明或值为空）或不是
 /// [supportedBuildProfile] 时抛出 `FormatException`。
 ///
-/// 调用方在任何副作用之前调用（源码准备：`onStage(downloading)`/缓存目录/git/
-/// 源目录清理之前；构建环境准备：编译器检测与工具供给之前），并把异常映射为
+/// 调用方在任何副作用之前调用（源码准备：阶段回调、缓存目录创建、预置源码拷贝与
+/// 包源目录清理之前；构建环境准备：编译器检测与工具供给之前），并把异常映射为
 /// 各自的用户可见异常类型；消息含脚本路径与期望的 `# profile: v1` 字面量。
 void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
   final String version = (header.profileVersion ?? '').trim();
@@ -245,14 +253,14 @@ void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
 
 /// 校验 [header] 的源码来源声明；`# source: none`（[BuildScriptHeader.sourceDir]
 /// 为 null）直接通过，声明了目录但值非法（空串、绝对路径、含盘符、含 `..`、
-/// 首段非隐藏名）时抛出 `FormatException`。
+/// 首段非 [presetSourceDirName]）时抛出 `FormatException`。
 ///
-/// 相对路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），隐藏名
+/// 相对路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），保留名
 /// 判据按同文件的 [_pathSeparatorPattern] 取首段（与 `_isRelativeSubdir` 的 `..`
-/// 切分同源，不另造正则）：非隐藏名会被文件扫描扫进包、并在构建后的输出清理中被
-/// 删除，故与非隐藏名相关的用户可见后果一并写进报错文案。调用方在任何副作用之前
-/// 调用（与 [requireSupportedBuildProfile] 同一 try 块）并把异常映射为用户可见
-/// 异常类型。
+/// 切分同源，不另造正则），大小写不敏感以对齐清理白名单 `isPreservedEntryName`：
+/// 首段不是 [presetSourceDirName] 的目录会被文件扫描扫进包、并在构建后的输出清理
+/// 中被删除，故该用户可见后果一并写进报错文案。调用方在任何副作用之前调用（与
+/// [requireSupportedBuildProfile] 同一 try 块）并把异常映射为用户可见异常类型。
 void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
   final String? sourceDir = header.sourceDir;
   if (sourceDir == null) {
@@ -263,17 +271,19 @@ void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
       _invalidSourceDirMessage(
         scriptPath,
         sourceDir,
-        '必须是包源目录下的相对路径（不得含盘符 或 ..）',
+        '必须是包源目录下的相对路径（不得含盘符或 ..）',
       ),
     );
   }
-  if (!sourceDir.split(_pathSeparatorPattern).first.startsWith('.')) {
+  if (sourceDir.split(_pathSeparatorPattern).first.toLowerCase() !=
+      presetSourceDirName) {
     throw FormatException(
       _invalidSourceDirMessage(
         scriptPath,
         sourceDir,
-        '必须以隐藏目录（如 .cnp-src/）置于包源目录下，否则源码会被文件扫描'
-        '打进 NuGet 包并在构建后的输出清理中被删除',
+        '必须位于包源目录的 $presetSourceDirName 目录下'
+        '（如 "$presetSourceDirName/vendor/zlib"），否则源码会被文件扫描打进 '
+        'NuGet 包并在构建后的输出清理中被删除',
       ),
     );
   }
