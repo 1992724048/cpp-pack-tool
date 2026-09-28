@@ -59,7 +59,7 @@ class BuildPackDialog extends StatefulWidget {
 class _BuildPackDialogState extends State<BuildPackDialog> {
   final Stopwatch _sessionWatch = Stopwatch();
 
-  /// 失败会话的历史条目：首次失败构造一次（重试再失败不重复构造），成功完成时丢弃。
+  /// 失败会话的历史条目：首次失败构造一次，成功完成时丢弃。
   HistoryModel? _failureEntry;
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;

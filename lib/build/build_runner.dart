@@ -68,7 +68,7 @@ class PackSourcePreparation {
   final Directory target;
 }
 
-/// 源码准备函数：提权重试路径与测试注入替代实现。
+/// 源码准备函数：与 [preparePackSource] 同形的函数类型。
 typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
@@ -185,8 +185,7 @@ Future<void> _copyTree(Directory from, Directory to) async {
 /// 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`（包源目录）环境变量运行
 /// `python build.py`；python 子进程固定注入 `PYTHONIOENCODING=utf-8`，保证
 /// 管道中的 stdout/stderr 恒为 UTF-8（中文 Windows 下默认按 GBK 编码，会与
-/// 流式解码口径不一致）。提权重试路径（见 elevated_build.dart）复用同一
-/// 源码准备实现，仅构建脚本阶段不同，避免两条路径行为漂移。
+/// 流式解码口径不一致）。
 ///
 /// [onOutput] 逐行转发 python 输出；[streamRunner] 为 null 时保持一次性捕获，
 /// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
