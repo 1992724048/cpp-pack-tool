@@ -562,7 +562,7 @@ void main() {
   group('requireValidSourceDirective', () {
     const String scriptPath = r'C:\libs\demo\build.py';
 
-    void expectRejected(String firstLine, String value) {
+    void expectRejected(String firstLine, String value, String reason) {
       final BuildScriptHeader header = parseBuildScriptHeader('$firstLine\n')!;
       expect(
         () => requireValidSourceDirective(header, scriptPath),
@@ -574,14 +574,14 @@ void main() {
               contains('build.py 源码目录声明非法'),
               contains(scriptPath),
               contains('# source: $value'),
-              contains('不得含盘符 或 ..'),
+              contains(reason),
             ),
           ),
         ),
       );
     }
 
-    test('# source: none 与合法相对路径通过', () {
+    test('# source: none 与隐藏目录声明通过', () {
       requireValidSourceDirective(
         parseBuildScriptHeader('# source: none\n')!,
         scriptPath,
@@ -590,27 +590,41 @@ void main() {
         parseBuildScriptHeader('# source: .cnp-src\n')!,
         scriptPath,
       );
+    });
+
+    test('首段为隐藏名的多段相对路径通过', () {
       requireValidSourceDirective(
-        parseBuildScriptHeader('# source: vendor/zlib\n')!,
+        parseBuildScriptHeader('# source: .cnp-src/vendor/zlib\n')!,
         scriptPath,
       );
       requireValidSourceDirective(
-        parseBuildScriptHeader(r'# source: vendor\zlib\n')!,
+        parseBuildScriptHeader(r'# source: .cnp-src\vendor\zlib\n')!,
         scriptPath,
       );
     });
 
     test('空值按「值非法」处理', () {
-      expectRejected('# source:', '');
-      expectRejected('# source:    ', '');
+      expectRejected('# source:', '', '不得含盘符 或 ..');
+      expectRejected('# source:    ', '', '不得含盘符 或 ..');
     });
 
     test('绝对路径、盘符与 .. 越界被拒绝', () {
-      expectRejected('# source: ../escape', '../escape');
-      expectRejected('# source: vendor/../../escape', 'vendor/../../escape');
-      expectRejected(r'# source: C:\abs\path', r'C:\abs\path');
-      expectRejected('# source: /abs/path', '/abs/path');
-      expectRejected(r'# source: \abs\path', r'\abs\path');
+      expectRejected('# source: ../escape', '../escape', '不得含盘符 或 ..');
+      expectRejected(
+        '# source: vendor/../../escape',
+        'vendor/../../escape',
+        '不得含盘符 或 ..',
+      );
+      expectRejected(r'# source: C:\abs\path', r'C:\abs\path', '不得含盘符 或 ..');
+      expectRejected('# source: /abs/path', '/abs/path', '不得含盘符 或 ..');
+      expectRejected(r'# source: \abs\path', r'\abs\path', '不得含盘符 或 ..');
+    });
+
+    test('非隐藏目录名被拒绝（否则源码进包且构建后被删）', () {
+      expectRejected('# source: vendor/zlib', 'vendor/zlib', '隐藏目录');
+      expectRejected('# source: src', 'src', '隐藏目录');
+      expectRejected(r'# source: vendor\zlib', r'vendor\zlib', '隐藏目录');
+      expectRejected('# source: cnp-src', 'cnp-src', '隐藏目录');
     });
 
     test('缺声明文案同时点出两种合法写法', () {

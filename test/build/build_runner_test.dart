@@ -244,7 +244,7 @@ void main() {
       );
 
       expect(stages, isEmpty, reason: 'Profile 校验在下载阶段回调之前');
-      expect(calls, isEmpty, reason: 'Profile 校验在 git/python 执行之前');
+      expect(calls, isEmpty, reason: 'Profile 校验在任何子进程执行之前');
       expect(
         File(stalePath).existsSync(),
         isTrue,
@@ -287,7 +287,7 @@ void main() {
         PackBuildStage.staging,
         PackBuildStage.building,
       ]);
-      expect(calls, hasLength(1), reason: '预置源码配方不执行任何 git 命令');
+      expect(calls, hasLength(1), reason: '预置源码配方只执行构建脚本');
       expect(calls.single.executable, 'python');
       expect(
         File(joinPath(targetPath, 'main.cpp')).readAsStringSync(),
@@ -308,15 +308,15 @@ void main() {
       );
     });
 
-    test('目录声明为多级子目录时按相对路径解析', () async {
+    test('目录声明为多级子目录时按相对路径解析，且构建后不被输出清理删除', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: vendor/zlib\n# profile: v1\n',
+        '# source: .cnp-src/vendor/zlib\n# profile: v1\n',
       );
-      Directory(joinPath(sourcePath, 'vendor/zlib'))
-          .createSync(recursive: true);
-      File(joinPath(sourcePath, 'vendor/zlib/zlib.h')).writeAsStringSync('z');
+      final String presetPath = joinPath(sourcePath, '.cnp-src/vendor/zlib');
+      Directory(presetPath).createSync(recursive: true);
+      File(joinPath(presetPath, 'zlib.h')).writeAsStringSync('z');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
 
@@ -328,6 +328,11 @@ void main() {
       );
 
       expect(File(joinPath(targetPath, 'zlib.h')).existsSync(), isTrue);
+      expect(
+        File(joinPath(presetPath, 'zlib.h')).existsSync(),
+        isTrue,
+        reason: '预置源码目录须在清理白名单内，构建后仍存在（否则下次构建即丢源码）',
+      );
     });
 
     test('每次构建重置缓存：上次构建的残留文件消失', () async {
@@ -579,7 +584,7 @@ void main() {
   });
 
   group('预构建（# source: none）', () {
-    test('跳过 git：仅创建缓存目录并注入 SRC_PATH 执行构建', () async {
+    test('无预置源码：仅创建缓存目录并注入 SRC_PATH 执行构建', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
@@ -603,9 +608,9 @@ void main() {
         PackBuildStage.building,
       ]);
       expect(
-        calls.where((_ProcessCall call) => call.executable == 'git'),
+        calls.where((_ProcessCall call) => call.executable != 'python'),
         isEmpty,
-        reason: 'source: none 不应调用 git',
+        reason: 'source: none 除构建脚本外不启动任何取源子进程',
       );
       expect(calls, hasLength(1));
 
@@ -625,7 +630,7 @@ void main() {
       );
     });
 
-    test('缓存目录已存在（二次构建）时保留内容且不调用 git', () async {
+    test('缓存目录已存在（二次构建）时保留内容且不重建工作区', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,

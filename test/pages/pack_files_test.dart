@@ -540,6 +540,35 @@ void main() {
     expect(find.byKey(const Key('buildPackButton')), findsNothing);
   });
 
+  testWidgets('运行库下拉与构建按钮同一判据：不可构建时不渲染', (tester) async {
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildPackButton')), findsNothing);
+    expect(find.byKey(const Key('buildRuntimeSelector')), findsNothing);
+
+    await _pumpPage(
+      tester,
+      PackFiles(
+        pack: _buildPack('demo'),
+        onBuildPack: (PackModel value) async {},
+        onSave: (PackModel value) async => true,
+        loadHeader: (PackModel value) async => _header(),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
+    expect(_runtimeCombo(tester).onChanged, isNotNull);
+  });
+
   testWidgets('声明选项时渲染控件且显示默认值', (tester) async {
     final PackModel pack = _buildPack('demo');
 

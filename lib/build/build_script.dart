@@ -244,12 +244,15 @@ void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
 }
 
 /// 校验 [header] 的源码来源声明；`# source: none`（[BuildScriptHeader.sourceDir]
-/// 为 null）直接通过，声明了目录但值非法（空串、绝对路径、含盘符、含 `..`）
-/// 时抛出 `FormatException`。
+/// 为 null）直接通过，声明了目录但值非法（空串、绝对路径、含盘符、含 `..`、
+/// 首段非隐藏名）时抛出 `FormatException`。
 ///
-/// 路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），调用方在
-/// 任何副作用之前调用（与 [requireSupportedBuildProfile] 同一 try 块）并把异常
-/// 映射为用户可见异常类型。
+/// 相对路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），隐藏名
+/// 判据按同文件的 [_pathSeparatorPattern] 取首段（与 `_isRelativeSubdir` 的 `..`
+/// 切分同源，不另造正则）：非隐藏名会被文件扫描扫进包、并在构建后的输出清理中被
+/// 删除，故与非隐藏名相关的用户可见后果一并写进报错文案。调用方在任何副作用之前
+/// 调用（与 [requireSupportedBuildProfile] 同一 try 块）并把异常映射为用户可见
+/// 异常类型。
 void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
   final String? sourceDir = header.sourceDir;
   if (sourceDir == null) {
@@ -257,10 +260,32 @@ void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
   }
   if (!_isRelativeSubdir(sourceDir)) {
     throw FormatException(
-      'build.py 源码目录声明非法：$scriptPath 的 "$_sourceDirectivePrefix '
-      '$sourceDir" 必须是包源目录下的相对路径（不得含盘符 或 ..）',
+      _invalidSourceDirMessage(
+        scriptPath,
+        sourceDir,
+        '必须是包源目录下的相对路径（不得含盘符 或 ..）',
+      ),
     );
   }
+  if (!sourceDir.split(_pathSeparatorPattern).first.startsWith('.')) {
+    throw FormatException(
+      _invalidSourceDirMessage(
+        scriptPath,
+        sourceDir,
+        '必须以隐藏目录（如 .cnp-src/）置于包源目录下，否则源码会被文件扫描'
+        '打进 NuGet 包并在构建后的输出清理中被删除',
+      ),
+    );
+  }
+}
+
+String _invalidSourceDirMessage(
+  String scriptPath,
+  String sourceDir,
+  String reason,
+) {
+  return 'build.py 源码目录声明非法：$scriptPath 的 "$_sourceDirectivePrefix '
+      '$sourceDir" $reason';
 }
 
 /// 首行「缺少源码声明」的用户可见文案（单一事实来源，供构建入口复用）。

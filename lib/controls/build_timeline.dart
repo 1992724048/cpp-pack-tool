@@ -148,7 +148,7 @@ List<BuildTimelineDetail> buildCompletionDetails({
   required int fileCount,
   required int totalSize,
   required int addedCount,
-  required   int removedCount,
+  required int removedCount,
 }) {
   return <BuildTimelineDetail>[
     BuildTimelineDetail('文件数量：$fileCount'),
