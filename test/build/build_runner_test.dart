@@ -111,7 +111,10 @@ void main() {
 
     test('包内无 build.py 时抛错', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await expectLater(
@@ -146,7 +149,7 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('build.py 首行缺少仓库地址时抛错', () async {
+    test('build.py 首行缺少源码声明时抛错', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(root, 'print(1)\n');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -159,7 +162,7 @@ void main() {
           processRunner: _runner(calls, (_) async => _success()),
           cacheRoot: joinPath(root.path, 'cache'),
         ),
-        throwsA(_buildException('build.py 首行缺少 git 仓库地址（格式：# <仓库地址>）')),
+        throwsA(_buildExceptionMatcher(contains('build.py 首行缺少源码声明'))),
       );
 
       expect(stages, isEmpty);
@@ -178,18 +181,46 @@ void main() {
           processRunner: _runner(calls, (_) async => _success()),
           cacheRoot: joinPath(root.path, 'cache'),
         ),
-        throwsA(_buildException('build.py 首行缺少 git 仓库地址（格式：# <仓库地址>）')),
+        throwsA(_buildExceptionMatcher(contains('build.py 首行缺少源码声明'))),
       );
 
       expect(calls, isEmpty);
     });
 
-    test('build.py 缺少 Profile 声明时前置失败（无进程/无阶段/不清源目录/不建缓存）', () async {
+    test('首行为旧式仓库地址（裸 URL）时按缺少声明抛错', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n',
+        '# https://github.com/foo/bar.git\n# profile: v1\n',
       );
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<PackBuildStage> stages = <PackBuildStage>[];
+
+      await expectLater(
+        runPackBuild(
+          _pack(sourcePath: sourcePath),
+          stages.add,
+          processRunner: _runner(calls, (_) async => _success()),
+          cacheRoot: joinPath(root.path, 'cache'),
+        ),
+        throwsA(
+          _buildExceptionMatcher(
+            allOf(
+              contains('build.py 首行缺少源码声明'),
+              contains('# source: <包内相对目录>'),
+              contains('# source: none'),
+            ),
+          ),
+        ),
+      );
+
+      expect(stages, isEmpty);
+      expect(calls, isEmpty);
+    });
+
+    test('build.py 缺少 Profile 声明时前置失败（无进程/无阶段/不清源目录/不建缓存）', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# source: .cnp-src\n');
       final String stalePath = joinPath(sourcePath, 'stale.txt');
       File(stalePath).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -227,13 +258,19 @@ void main() {
     });
   });
 
-  group('下载源码', () {
-    test('首次构建克隆仓库并执行构建：参数、工作目录与环境变量', () async {
+  group('预置源码（# source: <dir>）', () {
+    test('整树拷入 SRC_PATH：内容一致、嵌套目录与空目录均保留', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\nprint(1)\n',
+        '# source: .cnp-src\n# profile: v1\nprint(1)\n',
       );
+      _createPresetSource(sourcePath, <String, String>{
+        'main.cpp': 'int main() {}',
+        r'include\zlib.h': '#pragma once',
+      });
+      Directory(joinPath(sourcePath, '.cnp-src/empty'))
+          .createSync(recursive: true);
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -247,678 +284,85 @@ void main() {
       );
 
       expect(stages, <PackBuildStage>[
-        PackBuildStage.downloading,
+        PackBuildStage.staging,
         PackBuildStage.building,
       ]);
-      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isTrue);
-      expect(calls, hasLength(4));
-
-      final _ProcessCall clone = calls[0];
-      expect(clone.executable, 'git');
-      expect(clone.arguments, <String>[
-        'clone',
-        '--progress',
-        'https://github.com/foo/bar.git',
-        targetPath,
-      ]);
-      expect(clone.workingDirectory, isNull);
-      expect(clone.environment, <String, String>{'GIT_TERMINAL_PROMPT': '0'});
-
-      final _ProcessCall tags = calls[1];
-      expect(tags.executable, 'git');
-      expect(tags.arguments, <String>['ls-remote', '--tags', '--refs', 'origin']);
-      expect(tags.workingDirectory, targetPath);
-      expect(tags.environment, <String, String>{'GIT_TERMINAL_PROMPT': '0'});
-
-      expect(calls[2].arguments, <String>['clean', '-ffdx']);
-
-      final _ProcessCall python = calls[3];
-      expect(python.executable, 'python');
-      expect(python.arguments, <String>['-u', 'build.py']);
-      expect(python.workingDirectory, sourcePath);
-      expect(python.environment, <String, String>{
-        'SRC_PATH': Directory(targetPath).absolute.path,
-        'BUILD_OUT': Directory(sourcePath).absolute.path,
-        'PYTHONIOENCODING': 'utf-8',
-      });
-    });
-
-    test('git 全局参数（手动代理 -c）前置到每条 git 命令', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\nprint(1)\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (_) async => _success()),
-        cacheRoot: cacheRoot,
-        gitGlobalArguments: const <String>[
-          '-c',
-          'http.proxy=http://127.0.0.1:7890',
-        ],
-      );
-
-      final List<_ProcessCall> gitCalls = calls
-          .where((_ProcessCall call) => call.executable == 'git')
-          .toList();
-      expect(gitCalls, isNotEmpty);
-      for (final _ProcessCall call in gitCalls) {
-        expect(call.arguments.take(2).toList(), <String>[
-          '-c',
-          'http.proxy=http://127.0.0.1:7890',
-        ]);
-      }
-
-      final List<_ProcessCall> pythonCalls = calls
-          .where((_ProcessCall call) => call.executable != 'git')
-          .toList();
-      expect(pythonCalls, isNotEmpty);
+      expect(calls, hasLength(1), reason: '预置源码配方不执行任何 git 命令');
+      expect(calls.single.executable, 'python');
       expect(
-        pythonCalls.first.arguments,
-        isNot(contains('http.proxy=http://127.0.0.1:7890')),
+        File(joinPath(targetPath, 'main.cpp')).readAsStringSync(),
+        'int main() {}',
       );
-    });
-
-    test('已有 .git 时原位硬重置：fetch → reset @{u} → clean -ffdx 且保留 .git', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      File(joinPath(targetPath, 'keep.txt')).writeAsStringSync('keep');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (_) async => _success()),
-        cacheRoot: cacheRoot,
-      );
-
-      final List<_ProcessCall> gitCalls = calls
-          .where((_ProcessCall call) => call.executable == 'git')
-          .toList();
-      expect(gitCalls, hasLength(4));
-      expect(gitCalls[0].arguments, <String>['fetch', '--progress']);
-      expect(gitCalls[0].workingDirectory, targetPath);
-      expect(gitCalls[0].environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-      expect(gitCalls[1].arguments, <String>['reset', '--hard', '@{u}']);
-      expect(gitCalls[1].workingDirectory, targetPath);
-      expect(gitCalls[2].arguments, <String>[
-        'ls-remote',
-        '--tags',
-        '--refs',
-        'origin',
-      ]);
-      expect(gitCalls[2].workingDirectory, targetPath);
-      expect(gitCalls[3].arguments, <String>['clean', '-ffdx']);
-      expect(gitCalls[3].workingDirectory, targetPath);
-      expect(calls[4].executable, 'python');
       expect(
-        Directory(joinPath(targetPath, '.git')).existsSync(),
+        File(joinPath(targetPath, 'include/zlib.h')).readAsStringSync(),
+        '#pragma once',
+      );
+      expect(
+        Directory(joinPath(targetPath, 'empty')).existsSync(),
         isTrue,
-        reason: '硬重置保留 .git 仓库目录',
+        reason: '空目录一并复制，保持树形结构',
       );
       expect(
-        File(joinPath(targetPath, 'keep.txt')).existsSync(),
-        isTrue,
-        reason: '桩 git 不清文件：该断言只锁命令序列，真实清理由 git 自身完成',
+        calls.single.environment!['SRC_PATH'],
+        Directory(targetPath).absolute.path,
       );
     });
 
-    test('解析出最新稳定 tag 时检出该 tag（新建克隆路径）', () async {
+    test('目录声明为多级子目录时按相对路径解析', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: vendor/zlib\n# profile: v1\n',
       );
+      Directory(joinPath(sourcePath, 'vendor/zlib'))
+          .createSync(recursive: true);
+      File(joinPath(sourcePath, 'vendor/zlib/zlib.h')).writeAsStringSync('z');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await runPackBuild(
         _pack(sourcePath: sourcePath),
         (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v1.14.0', 'v1.18.0', 'v1.9.0']);
-          }
-          return _success();
-        }),
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
         cacheRoot: cacheRoot,
       );
 
-      expect(
-        calls.map((_ProcessCall call) => call.arguments).toList(),
-        <List<String>>[
-          <String>[
-            'clone',
-            '--progress',
-            'https://github.com/foo/bar.git',
-            targetPath,
-          ],
-          <String>['ls-remote', '--tags', '--refs', 'origin'],
-          <String>['checkout', '--force', 'v1.18.0'],
-          <String>['clean', '-ffdx'],
-          <String>['-u', 'build.py'],
-        ],
-      );
-      expect(calls[2].workingDirectory, targetPath);
-      expect(calls[2].environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-      expect(calls[3].arguments, <String>['clean', '-ffdx']);
+      expect(File(joinPath(targetPath, 'zlib.h')).existsSync(), isTrue);
     });
 
-    test('已有 .git 时检出最新稳定 tag 且重复构建幂等', () async {
+    test('每次构建重置缓存：上次构建的残留文件消失', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: .cnp-src\n# profile: v1\n',
       );
+      _createPresetSource(sourcePath, <String, String>{'main.cpp': 'v1'});
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      Future<void> runOnce() async {
-        await runPackBuild(
-          _pack(sourcePath: sourcePath),
-          (_) {},
-          processRunner: _runner(calls, (call) async {
-            if (_isLsRemote(call)) {
-              return _lsRemoteResult(<String>['v1.0.0', 'v2.1.0']);
-            }
-            return _success();
-          }),
-          cacheRoot: cacheRoot,
-        );
-      }
-
-      await runOnce();
-      await runOnce();
-
-      final List<List<String>> resets = calls
-          .where(
-            (_ProcessCall call) =>
-                call.arguments.isNotEmpty && call.arguments.first == 'reset',
-          )
-          .map((_ProcessCall call) => call.arguments)
-          .toList();
-      expect(resets, <List<String>>[
-        <String>['reset', '--hard', '@{u}'],
-        <String>['reset', '--hard', '@{u}'],
-      ]);
-      final List<List<String>> checkouts = calls
-          .where(
-            (_ProcessCall call) =>
-                call.arguments.isNotEmpty && call.arguments.first == 'checkout',
-          )
-          .map((_ProcessCall call) => call.arguments)
-          .toList();
-      expect(
-        checkouts,
-        <List<String>>[
-          <String>['checkout', '--force', 'v2.1.0'],
-          <String>['checkout', '--force', 'v2.1.0'],
-        ],
-        reason: '两次构建检出同一 tag（桩 git 恒成功，幂等由真实 git 的 Already on 保证）',
-      );
-      expect(
-        calls.where(
-          (_ProcessCall call) =>
-              call.arguments.isNotEmpty && call.arguments.first == 'clean',
-        ),
-        hasLength(2),
-      );
-    });
-
-    test('无可用 tag 时跳过检出并保持默认分支行为', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final File residual = File(joinPath(targetPath, 'residual.txt'))
+        ..createSync(recursive: true);
+      residual.writeAsStringSync('residual');
 
       await runPackBuild(
         _pack(sourcePath: sourcePath),
         (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['nightly', 'release-x']);
-          }
-          return _success();
-        }),
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
         cacheRoot: cacheRoot,
       );
 
-      expect(
-        calls.where(
-          (_ProcessCall call) =>
-              call.arguments.isNotEmpty && call.arguments.first == 'checkout',
-        ),
-        isEmpty,
-        reason: '无可用 tag 不产生检出调用',
-      );
-      expect(calls, hasLength(4));
-      expect(calls.last.executable, 'python');
+      expect(residual.existsSync(), isFalse, reason: '预置源码配方每次构建重置缓存');
+      expect(File(joinPath(targetPath, 'main.cpp')).readAsStringSync(), 'v1');
     });
 
-    test('tag 查询失败（离线）时静默回退默认分支', () async {
+    test('预置源码目录不存在时抛错且不建缓存、不清源目录', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: .cnp-src\n# profile: v1\n',
       );
+      final String stalePath = joinPath(sourcePath, 'stale.txt');
+      File(stalePath).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return ProcessResult(1, 128, '', 'fatal: unable to access\n');
-          }
-          return _success();
-        }),
-        cacheRoot: cacheRoot,
-      );
-
-      expect(
-        calls.where(
-          (_ProcessCall call) =>
-              call.arguments.isNotEmpty && call.arguments.first == 'checkout',
-        ),
-        isEmpty,
-      );
-      expect(calls.last.executable, 'python');
-    });
-
-    test('检出 tag 失败时提示并继续构建、版本回退 describe', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<String> lines = <String>[];
-      final List<PackBuildStage> stages = <PackBuildStage>[];
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        stages.add,
-        processRunner: _runner(<_ProcessCall>[], (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v9.9.9']);
-          }
-          if (call.arguments.isNotEmpty && call.arguments.first == 'checkout') {
-            return ProcessResult(
-              1,
-              1,
-              '',
-              "error: pathspec 'v9.9.9' did not match any file(s) known to git\n",
-            );
-          }
-          if (call.arguments.first == 'describe') {
-            return ProcessResult(1, 0, 'v9.9.8\n', '');
-          }
-          return _success();
-        }),
-        onOutput: lines.add,
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(stages, <PackBuildStage>[
-        PackBuildStage.downloading,
-        PackBuildStage.building,
-      ]);
-      expect(
-        lines.any((String line) => line.contains('检出最新稳定 tag v9.9.9 失败')),
-        isTrue,
-        reason: '检出失败应提示用户但继续构建',
-      );
-      expect(
-        versions,
-        <String>['v9.9.8'],
-        reason: '检出失败不得记录 tag v9.9.9（与实建源码不符），版本回退 describe',
-      );
-    });
-
-    test('检出 tag 失败且无可用 describe 时版本回退短哈希', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(<_ProcessCall>[], (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v9.9.9']);
-          }
-          if (call.arguments.isNotEmpty && call.arguments.first == 'checkout') {
-            return ProcessResult(1, 1, '', 'error: pathspec\n');
-          }
-          if (call.arguments.first == 'describe') {
-            return ProcessResult(1, 128, '', 'fatal: no names found\n');
-          }
-          if (call.arguments.first == 'rev-parse') {
-            return ProcessResult(1, 0, 'abc1234\n', '');
-          }
-          return _success();
-        }),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, <String>['abc1234']);
-    });
-
-    test('无上游且 origin/HEAD 可得时 reset 回退远端默认分支', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (call.arguments.length >= 3 &&
-              call.arguments[0] == 'reset' &&
-              call.arguments[2] == '@{u}') {
-            return ProcessResult(1, 128, '', 'fatal: no upstream configured\n');
-          }
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v1.0.0']);
-          }
-          if (call.arguments.first == 'symbolic-ref') {
-            return ProcessResult(1, 0, 'refs/remotes/origin/main\n', '');
-          }
-          return _success();
-        }),
-        cacheRoot: cacheRoot,
-      );
-
-      final List<List<String>> resets = calls
-          .where(
-            (_ProcessCall call) =>
-                call.arguments.isNotEmpty && call.arguments.first == 'reset',
-          )
-          .map((_ProcessCall call) => call.arguments)
-          .toList();
-      expect(resets, <List<String>>[
-        <String>['reset', '--hard', '@{u}'],
-        <String>['reset', '--hard', 'refs/remotes/origin/main'],
-      ]);
-      expect(
-        calls.where(
-          (_ProcessCall call) => call.arguments.first == 'checkout',
-        ),
-        hasLength(1),
-      );
-      expect(
-        calls.where(
-          (_ProcessCall call) => call.arguments.first == 'clean',
-        ),
-        hasLength(1),
-      );
-    });
-
-    test('无上游且缺 origin/HEAD 时先 set-head --auto 再回退默认分支', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      bool autoRefreshed = false;
-      bool sawSetHead = false;
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (call.arguments.length >= 3 &&
-              call.arguments[0] == 'reset' &&
-              call.arguments[2] == '@{u}') {
-            return ProcessResult(1, 128, '', 'fatal: no upstream configured\n');
-          }
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>[]);
-          }
-          if (call.arguments.length >= 4 &&
-              call.arguments[0] == 'remote' &&
-              call.arguments[1] == 'set-head') {
-            autoRefreshed = true;
-            sawSetHead = true;
-            return _success();
-          }
-          if (call.arguments.first == 'symbolic-ref') {
-            return autoRefreshed
-                ? ProcessResult(1, 0, 'refs/remotes/origin/master\n', '')
-                : ProcessResult(1, 1, '', 'fatal: ref refs/remotes/origin/HEAD is not a symbolic ref\n');
-          }
-          if (call.arguments.length >= 3 &&
-              call.arguments[0] == 'reset' &&
-              call.arguments[2] == 'refs/remotes/origin/master') {
-            return _success();
-          }
-          return _success();
-        }),
-        cacheRoot: cacheRoot,
-      );
-
-      expect(sawSetHead, isTrue, reason: '缺 origin/HEAD 时应先 set-head --auto');
-      final List<List<String>> resets = calls
-          .where(
-            (_ProcessCall call) =>
-                call.arguments.isNotEmpty && call.arguments.first == 'reset',
-          )
-          .map((_ProcessCall call) => call.arguments)
-          .toList();
-      expect(resets.last, <String>[
-        'reset',
-        '--hard',
-        'refs/remotes/origin/master',
-      ]);
-    });
-
-    test('无上游且 origin/HEAD 与 set-head 均失败时报清晰错误并提示删缓存', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          (_) {},
-          processRunner: _runner(calls, (call) async {
-            if (call.arguments.length >= 3 &&
-                call.arguments[0] == 'reset' &&
-                call.arguments[2] == '@{u}') {
-              return ProcessResult(1, 128, '', 'fatal: no upstream configured\n');
-            }
-            if (_isLsRemote(call)) {
-              return _lsRemoteResult(<String>[]);
-            }
-            if (call.arguments.length >= 4 &&
-                call.arguments[0] == 'remote' &&
-                call.arguments[1] == 'set-head') {
-              return ProcessResult(1, 128, '', 'error: cannot determine remote HEAD\n');
-            }
-            if (call.arguments.first == 'symbolic-ref') {
-              return ProcessResult(
-                1,
-                1,
-                '',
-                'fatal: ref refs/remotes/origin/HEAD is not a symbolic ref\n',
-              );
-            }
-            return _success();
-          }),
-          cacheRoot: cacheRoot,
-        ),
-        throwsA(
-          _buildException(
-            '拉取源码失败（退出码 128）；无法确定 $targetPath 的默认分支，'
-            '可删除该缓存目录后重试构建',
-            outputTail: contains('no upstream configured'),
-          ),
-        ),
-      );
-
-      final PackBuildException error;
-      try {
-        await runPackBuild(
-          _pack(sourcePath: sourcePath),
-          (_) {},
-          processRunner: _runner(<_ProcessCall>[], (call) async {
-            if (call.arguments.length >= 3 &&
-                call.arguments[0] == 'reset' &&
-                call.arguments[2] == '@{u}') {
-              return ProcessResult(1, 128, '', 'fatal: no upstream configured\n');
-            }
-            if (_isLsRemote(call)) {
-              return _lsRemoteResult(<String>[]);
-            }
-            if (call.arguments.length >= 4 &&
-                call.arguments[0] == 'remote' &&
-                call.arguments[1] == 'set-head') {
-              return ProcessResult(1, 128, '', 'error: cannot determine remote HEAD\n');
-            }
-            if (call.arguments.first == 'symbolic-ref') {
-              return ProcessResult(
-                1,
-                1,
-                '',
-                'fatal: ref refs/remotes/origin/HEAD is not a symbolic ref\n',
-              );
-            }
-            return _success();
-          }),
-          cacheRoot: cacheRoot,
-        );
-        fail('应抛出 PackBuildException');
-      } on PackBuildException catch (caught) {
-        error = caught;
-      }
-      expect(error.message, contains('删除该缓存目录'));
-    });
-
-    test('多行 FETCH_HEAD 不被盲用：回退链全程不出现 FETCH_HEAD', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (call.arguments.length >= 3 &&
-              call.arguments[0] == 'reset' &&
-              call.arguments[2] == '@{u}') {
-            return ProcessResult(1, 128, '', 'fatal: no upstream configured\n');
-          }
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v1.0.0']);
-          }
-          if (call.arguments.first == 'symbolic-ref') {
-            return ProcessResult(1, 0, 'refs/remotes/origin/main\n', '');
-          }
-          return _success();
-        }),
-        cacheRoot: cacheRoot,
-      );
-
-      expect(
-        calls.any(
-          (_ProcessCall call) => call.arguments.contains('FETCH_HEAD'),
-        ),
-        isFalse,
-        reason: '多行 FETCH_HEAD 取首行会检出非预期分支（事故源），回退链必须不含 FETCH_HEAD',
-      );
-    });
-
-    test('目标目录存在但不是 git 仓库时先清理再克隆', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(targetPath).createSync(recursive: true);
-      File(joinPath(targetPath, 'stale.txt')).writeAsStringSync('stale');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      bool existedAtClone = true;
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (call.executable == 'git' && call.arguments.first == 'clone') {
-            existedAtClone = Directory(targetPath).existsSync();
-          }
-          return _success();
-        }),
-        cacheRoot: cacheRoot,
-      );
-
-      expect(existedAtClone, isFalse);
-      expect(
-        calls.where((_ProcessCall call) => call.arguments.first == 'clone'),
-        hasLength(1),
-      );
-    });
-
-    test('克隆失败时删除残留并抛出含输出尾部的异常', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
       final List<_ProcessCall> calls = <_ProcessCall>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
 
@@ -926,104 +370,93 @@ void main() {
         runPackBuild(
           _pack(sourcePath: sourcePath),
           stages.add,
-          processRunner: _runner(calls, (_) async {
-            Directory(targetPath).createSync(recursive: true);
-            File(joinPath(targetPath, 'partial.txt')).writeAsStringSync('x');
-            return ProcessResult(1, 128, '', 'fatal: repository not found\n');
-          }),
+          processRunner: _runner(calls, (_) async => _success()),
           cacheRoot: cacheRoot,
         ),
         throwsA(
-          _buildException(
-            '克隆源码失败（退出码 128）',
-            outputTail: contains('fatal: repository not found'),
+          isA<PackBuildException>().having(
+            (PackBuildException error) => error.message,
+            'message',
+            allOf(
+              contains('找不到包内预置源码目录'),
+              contains(joinPath(sourcePath, '.cnp-src')),
+              contains('# source: .cnp-src'),
+            ),
           ),
         ),
       );
 
-      expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
-      expect(calls, hasLength(1));
-      expect(Directory(targetPath).existsSync(), isFalse);
+      expect(stages, isEmpty);
+      expect(calls, isEmpty);
+      expect(File(stalePath).existsSync(), isTrue);
+      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isFalse);
     });
 
-    test('拉取失败时抛出异常、不清理源目录且不执行构建', () async {
+    test('预置源码目录为空（递归后零文件）时单独报错', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: .cnp-src\n# profile: v1\n',
       );
-      File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
+      Directory(joinPath(sourcePath, '.cnp-src/nested'))
+          .createSync(recursive: true);
       final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
 
       await expectLater(
         runPackBuild(
           _pack(sourcePath: sourcePath),
           stages.add,
-          processRunner: _runner(
-            calls,
-            (_) async => ProcessResult(1, 1, '', 'fatal: unable to access\n'),
-          ),
+          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
           cacheRoot: cacheRoot,
         ),
         throwsA(
-          _buildException(
-            '拉取源码失败（退出码 1）',
-            outputTail: contains('unable to access'),
+          isA<PackBuildException>().having(
+            (PackBuildException error) => error.message,
+            'message',
+            allOf(
+              contains('包内预置源码目录为空'),
+              contains(joinPath(sourcePath, '.cnp-src')),
+              contains('# source: .cnp-src'),
+            ),
           ),
         ),
       );
 
-      expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
-      expect(calls, hasLength(1));
-      expect(
-        File(joinPath(sourcePath, 'stale.txt')).existsSync(),
-        isTrue,
-        reason: '拉取失败不得触碰包源目录',
-      );
+      expect(stages, isEmpty);
+      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isFalse);
     });
 
-    test('clean 失败同样按拉取失败报错且不执行构建', () async {
+    test('声明值越界时前置失败（无副作用）', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: ../escape\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<_ProcessCall> calls = <_ProcessCall>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
 
       await expectLater(
         runPackBuild(
           _pack(sourcePath: sourcePath),
           stages.add,
-          processRunner: _runner(calls, (call) async {
-            if (call.arguments.isNotEmpty && call.arguments.first == 'clean') {
-              return ProcessResult(1, 1, '', 'fatal: cannot clean\n');
-            }
-            return _success();
-          }),
+          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
           cacheRoot: cacheRoot,
         ),
         throwsA(
-          _buildException(
-            '拉取源码失败（退出码 1）',
-            outputTail: contains('cannot clean'),
+          isA<PackBuildException>().having(
+            (PackBuildException error) => error.message,
+            'message',
+            allOf(
+              contains('build.py 源码目录声明非法'),
+              contains('# source: ../escape'),
+            ),
           ),
         ),
       );
 
-      expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
-      expect(
-        File(joinPath(sourcePath, 'build.py')).existsSync(),
-        isTrue,
-        reason: 'git 失败时不进入源目录清理',
-      );
+      expect(stages, isEmpty);
+      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isFalse);
     });
   });
 
@@ -1032,15 +465,13 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
-      Directory(joinPath(sourcePath, 'build-release')).createSync(
-        recursive: true,
-      );
-      File(
-        joinPath(sourcePath, 'build-release/CMakeCache.txt'),
-      ).writeAsStringSync('x');
+      Directory(joinPath(sourcePath, 'build-release'))
+          .createSync(recursive: true);
+      File(joinPath(sourcePath, 'build-release/CMakeCache.txt'))
+          .writeAsStringSync('x');
       final Set<String> visibleAtBuild = <String>{};
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
@@ -1060,7 +491,7 @@ void main() {
         cacheRoot: joinPath(root.path, 'cache'),
       );
 
-      expect(calls, hasLength(4));
+      expect(calls, hasLength(1));
       expect(
         visibleAtBuild,
         containsAll(<String>['build.py', 'icon.png', 'LICENSE']),
@@ -1073,7 +504,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
       final File locked = File(joinPath(sourcePath, 'locked.dat'))
         ..writeAsStringSync('busy');
@@ -1098,7 +529,7 @@ void main() {
         ),
       );
 
-      expect(stages, <PackBuildStage>[PackBuildStage.downloading]);
+      expect(stages, <PackBuildStage>[PackBuildStage.staging]);
       expect(
         calls.where((_ProcessCall call) => call.executable == 'python'),
         isEmpty,
@@ -1110,7 +541,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
       final String scriptPath = joinPath(sourcePath, 'build.py');
       final String scriptBackup = File(scriptPath).readAsStringSync();
@@ -1143,11 +574,7 @@ void main() {
         joinPath(root.path, 'cache/build/demo').replaceAll('/', r'\'),
         reason: '相对 cacheRoot 以工作目录为基准解析为同一绝对路径',
       );
-      expect(
-        calls,
-        hasLength(8),
-        reason: '两次构建各含 clone + tag 查询 + clean + python',
-      );
+      expect(calls, hasLength(2), reason: '两次构建各含一次构建脚本执行');
     });
   });
 
@@ -1156,8 +583,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
-        '# source: none\n'
+        '# source: none\n# profile: v1\n'
         'print(1)\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -1173,7 +599,7 @@ void main() {
       );
 
       expect(stages, <PackBuildStage>[
-        PackBuildStage.downloading,
+        PackBuildStage.staging,
         PackBuildStage.building,
       ]);
       expect(
@@ -1203,18 +629,11 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
-        '# source: none\n',
+        '# source: none\n# profile: v1\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
-      File(
-        joinPath(targetPath, 'downloads/openvino.zip'),
-      ).createSync(recursive: true);
-      File(
-        joinPath(targetPath, 'unpacked/.complete'),
-      ).createSync(recursive: true);
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await runPackBuild(
@@ -1224,17 +643,37 @@ void main() {
         cacheRoot: cacheRoot,
       );
 
-      expect(calls, hasLength(1));
-      expect(calls.single.executable, 'python');
+      // 第一次构建后写入脚本下载/解压产物，作为第二次构建前已存在的缓存。
+      File(joinPath(targetPath, 'downloads/openvino.zip'))
+          .createSync(recursive: true);
+      File(joinPath(targetPath, 'unpacked/.complete'))
+          .createSync(recursive: true);
+      expect(
+        File(joinPath(sourcePath, 'build.py')).readAsStringSync(),
+        startsWith('# source: none'),
+      );
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
+      );
+
+      expect(calls, hasLength(2));
+      expect(
+        calls.every((_ProcessCall call) => call.executable == 'python'),
+        isTrue,
+      );
       expect(
         File(joinPath(targetPath, 'downloads/openvino.zip')).existsSync(),
         isTrue,
-        reason: 'source: none 缓存目录（downloads）不得清理',
+        reason: 'source: none 缓存目录（downloads）跨构建保留',
       );
       expect(
         File(joinPath(targetPath, 'unpacked/.complete')).existsSync(),
         isTrue,
-        reason: 'source: none 缓存目录（unpacked）不得清理',
+        reason: 'source: none 缓存目录（unpacked）跨构建保留',
       );
       expect(
         File(joinPath(sourcePath, 'stale.txt')).existsSync(),
@@ -1252,8 +691,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
-        '# source: none\n',
+        '# source: none\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1284,7 +722,10 @@ void main() {
   group('执行构建', () {
     test('python 不可用时回退 py -3', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
       final List<_ProcessCall> calls = <_ProcessCall>[];
@@ -1303,15 +744,15 @@ void main() {
       );
 
       expect(stages, <PackBuildStage>[
-        PackBuildStage.downloading,
+        PackBuildStage.staging,
         PackBuildStage.building,
       ]);
-      expect(calls, hasLength(5));
-      expect(calls[3].executable, 'python');
-      expect(calls[4].executable, 'py');
-      expect(calls[4].arguments, <String>['-3', '-u', 'build.py']);
-      expect(calls[4].workingDirectory, sourcePath);
-      expect(calls[4].environment, <String, String>{
+      expect(calls, hasLength(2));
+      expect(calls[0].executable, 'python');
+      expect(calls[1].executable, 'py');
+      expect(calls[1].arguments, <String>['-3', '-u', 'build.py']);
+      expect(calls[1].workingDirectory, sourcePath);
+      expect(calls[1].environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
         'PYTHONIOENCODING': 'utf-8',
@@ -1320,7 +761,10 @@ void main() {
 
     test('python 与 py 均不可用时抛出未找到 Python', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
       await expectLater(
@@ -1328,9 +772,6 @@ void main() {
           _pack(sourcePath: sourcePath),
           (_) {},
           processRunner: _runner(calls, (call) async {
-            if (call.executable == 'git') {
-              return _success();
-            }
             throw ProcessException(
               call.executable,
               call.arguments,
@@ -1342,12 +783,15 @@ void main() {
         throwsA(_buildException('未找到 Python（python / py），无法执行构建')),
       );
 
-      expect(calls, hasLength(5));
+      expect(calls, hasLength(2));
     });
 
     test('构建非零退出时异常携带合并输出末尾 20 行', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
           'line${index.toString().padLeft(2, '0')}',
@@ -1360,9 +804,7 @@ void main() {
           (_) {},
           processRunner: _runner(
             calls,
-            (call) async => call.executable == 'git'
-                ? _success()
-                : ProcessResult(1, 3, stdout, 'err-line'),
+            (call) async => ProcessResult(1, 3, stdout, 'err-line'),
           ),
           cacheRoot: joinPath(root.path, 'cache'),
         ),
@@ -1385,11 +827,11 @@ void main() {
   });
 
   group('环境注入', () {
-    test('注入的子进程环境透传到 git 与 python 调用', () async {
+    test('注入的子进程环境透传到构建脚本调用', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1408,12 +850,8 @@ void main() {
         environment: injected,
       );
 
-      expect(calls, hasLength(4));
-      expect(calls[0].environment, <String, String>{
-        ...injected,
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-      expect(calls.last.environment, <String, String>{
+      expect(calls, hasLength(1));
+      expect(calls.single.environment, <String, String>{
         ...injected,
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
@@ -1425,7 +863,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1438,11 +876,8 @@ void main() {
         cacheRoot: cacheRoot,
       );
 
-      expect(calls, hasLength(4));
-      expect(calls[0].environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-      expect(calls.last.environment, <String, String>{
+      expect(calls, hasLength(1));
+      expect(calls.single.environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
         'PYTHONIOENCODING': 'utf-8',
@@ -1453,7 +888,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -1465,22 +900,14 @@ void main() {
         processRunner: _runner(calls, (_) async => _success()),
         cacheRoot: cacheRoot,
         environment: <String, String>{
-          'GIT_TERMINAL_PROMPT': '1',
           'SRC_PATH': r'D:\bogus',
           'BUILD_OUT': r'D:\bogus',
           'PYTHONIOENCODING': 'gbk',
         },
       );
 
-      expect(calls, hasLength(4));
-      expect(calls[0].environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '0',
-        'SRC_PATH': r'D:\bogus',
-        'BUILD_OUT': r'D:\bogus',
-        'PYTHONIOENCODING': 'gbk',
-      });
-      expect(calls.last.environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '1',
+      expect(calls, hasLength(1));
+      expect(calls.single.environment, <String, String>{
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
         'PYTHONIOENCODING': 'utf-8',
@@ -1489,7 +916,10 @@ void main() {
 
     test('python 回退 py 时同样携带注入环境', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
       final Map<String, String> injected = <String, String>{
@@ -1510,9 +940,9 @@ void main() {
         environment: injected,
       );
 
-      expect(calls, hasLength(5));
-      expect(calls[4].executable, 'py');
-      expect(calls[4].environment, <String, String>{
+      expect(calls, hasLength(2));
+      expect(calls.last.executable, 'py');
+      expect(calls.last.environment, <String, String>{
         ...injected,
         'SRC_PATH': Directory(targetPath).absolute.path,
         'BUILD_OUT': Directory(sourcePath).absolute.path,
@@ -1522,112 +952,12 @@ void main() {
   });
 
   group('流式输出', () {
-    test('注入流式执行器且回调非空时 git 与 python 逐行转发并转发环境', () async {
+    test('流式构建非零退出时异常携带合并输出末尾 20 行', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<String> lines = <String>[];
-      final Map<String, String> injected = <String, String>{
-        'CNP_TOOLS_DIR': r'D:\tools',
-      };
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (_) async => _success()),
-        streamRunner: _streamingRunner((_StreamCall call) async {
-          if (call.arguments.first == 'ls-remote') {
-            return _fakeProcess(
-              stdout: _lsRemoteOutput(<String>['v1.0.0', 'v2.0.0']),
-            );
-          }
-          if (call.executable == 'git') {
-            return _fakeProcess(
-              stdout:
-                  'Receiving objects:  12% (1/8)\r'
-                  'Receiving objects:  34% (3/8)\r',
-            );
-          }
-          return _fakeProcess(stdout: 'line1\nline2\n', stderr: 'warn1\n');
-        }),
-        onOutput: lines.add,
-        cacheRoot: cacheRoot,
-        environment: injected,
-      );
-
-      expect(lines, <String>[
-        'Receiving objects:  12% (1/8)',
-        'Receiving objects:  34% (3/8)',
-        '0000000000000000000000000000000000000000\trefs/tags/v1.0.0',
-        '0000000000000000000000000000000000000001\trefs/tags/v2.0.0',
-        'Receiving objects:  12% (1/8)',
-        'Receiving objects:  34% (3/8)',
-        'Receiving objects:  12% (1/8)',
-        'Receiving objects:  34% (3/8)',
-        'line1',
-        'line2',
-        'warn1',
-      ]);
-      expect(calls, isEmpty, reason: '注入流式执行器时 git 与 python 均走流式');
-
-      expect(_streamCalls, hasLength(5));
-      final _StreamCall git = _streamCalls.first;
-      expect(git.executable, 'git');
-      expect(git.arguments, <String>[
-        'clone',
-        '--progress',
-        'https://github.com/foo/bar.git',
-        targetPath,
-      ]);
-      expect(git.workingDirectory, isNull);
-      expect(git.environment, <String, String>{
-        ...injected,
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-
-      final _StreamCall tags = _streamCalls[1];
-      expect(tags.executable, 'git');
-      expect(tags.arguments, <String>['ls-remote', '--tags', '--refs', 'origin']);
-      expect(tags.workingDirectory, targetPath);
-      // tag 查询与其他 git 调用共用环境（代理变量随之下发）。
-      expect(tags.environment, <String, String>{
-        ...injected,
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-
-      final _StreamCall checkout = _streamCalls[2];
-      expect(checkout.executable, 'git');
-      expect(checkout.arguments, <String>['checkout', '--force', 'v2.0.0']);
-      expect(checkout.workingDirectory, targetPath);
-      expect(checkout.environment, <String, String>{
-        ...injected,
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-
-      final _StreamCall clean = _streamCalls[3];
-      expect(clean.arguments, <String>['clean', '-ffdx']);
-      expect(clean.workingDirectory, targetPath);
-
-      final _StreamCall stream = _streamCalls.last;
-      expect(stream.executable, 'python');
-      expect(stream.arguments, <String>['-u', 'build.py']);
-      expect(stream.workingDirectory, sourcePath);
-      expect(stream.environment, <String, String>{
-        ...injected,
-        'SRC_PATH': Directory(targetPath).absolute.path,
-        'BUILD_OUT': Directory(sourcePath).absolute.path,
-        'PYTHONIOENCODING': 'utf-8',
-      });
-    });
-
-    test('流式构建非零退出时异常携带合并输出末尾 20 行', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
           'line${index.toString().padLeft(2, '0')}',
@@ -1640,9 +970,6 @@ void main() {
           (_) {},
           processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
           streamRunner: _streamingRunner((_StreamCall call) async {
-            if (call.executable == 'git') {
-              return _fakeProcess(stdout: 'clone ok\n');
-            }
             return _fakeProcess(
               stdout: '$stdout\n',
               stderr: 'err-line\n',
@@ -1668,16 +995,59 @@ void main() {
         ),
       );
 
-      expect(
-        lines,
-        hasLength(29),
-        reason: 'clone 1 行 + ls-remote 1 行 + clean 1 行 + 25 行 stdout + 1 行 stderr 都经回调转发',
+      expect(lines, hasLength(26), reason: '25 行 stdout + 1 行 stderr 都经回调转发');
+    });
+
+    test('注入流式执行器且回调非空时构建脚本逐行转发并转发环境', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(
+        root,
+        '# source: .cnp-src\n# profile: v1\n',
       );
+      _createPresetSource(sourcePath, <String, String>{'main.cpp': 'v1'});
+      final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      final List<String> lines = <String>[];
+      final Map<String, String> injected = <String, String>{
+        'CNP_TOOLS_DIR': r'D:\tools',
+      };
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(calls, (_) async => _success()),
+        streamRunner: _streamingRunner(
+          (_StreamCall call) async =>
+              _fakeProcess(stdout: 'line1\nline2\n', stderr: 'warn1\n'),
+        ),
+        onOutput: lines.add,
+        cacheRoot: cacheRoot,
+        environment: injected,
+      );
+
+      expect(lines, <String>['line1', 'line2', 'warn1']);
+      expect(calls, isEmpty, reason: '注入流式执行器时构建脚本走流式');
+
+      expect(_streamCalls, hasLength(1));
+      final _StreamCall stream = _streamCalls.single;
+      expect(stream.executable, 'python');
+      expect(stream.arguments, <String>['-u', 'build.py']);
+      expect(stream.workingDirectory, sourcePath);
+      expect(stream.environment, <String, String>{
+        ...injected,
+        'SRC_PATH': Directory(targetPath).absolute.path,
+        'BUILD_OUT': Directory(sourcePath).absolute.path,
+        'PYTHONIOENCODING': 'utf-8',
+      });
     });
 
     test('未提供流式执行器时 onOutput 静默降级为一次性捕获', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final List<String> lines = <String>[];
 
       await runPackBuild(
@@ -1696,7 +1066,10 @@ void main() {
 
     test('流式 python 不可用时回退 py -3 并同样转发输出', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: none\n# profile: v1\n',
+      );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
 
@@ -1708,99 +1081,26 @@ void main() {
           if (call.executable == 'python') {
             throw ProcessException('python', <String>['build.py'], 'not found');
           }
-          return _fakeProcess(
-            stdout: call.executable == 'git' ? 'clone ok\n' : 'fallback done\n',
-          );
+          return _fakeProcess(stdout: 'fallback done\n');
         }),
         onOutput: lines.add,
         cacheRoot: cacheRoot,
       );
 
-      expect(lines, <String>[
-        'clone ok',
-        'clone ok',
-        'clone ok',
-        'fallback done',
-      ]);
+      expect(lines, <String>['fallback done']);
       expect(_streamCalls.map((_StreamCall call) => call.executable), <String>[
-        'git',
-        'git',
-        'git',
         'python',
         'py',
       ]);
       expect(_streamCalls.last.arguments, <String>['-3', '-u', 'build.py']);
     });
 
-    test('流式 fetch：--progress 逐行转发且失败异常携带 \\r 分隔后的尾部', () async {
+    test('runPackBuildStreaming 默认流式转发构建脚本输出', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# source: none\n# profile: v1\n',
       );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      Directory(joinPath(targetPath, '.git')).createSync(recursive: true);
-      final List<String> lines = <String>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          (_) {},
-          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
-          streamRunner: _streamingRunner((_StreamCall call) async {
-            expect(call.executable, 'git');
-            if (call.arguments.first == 'fetch') {
-              return _fakeProcess(
-                stdout: 'remote: Total 8 (delta 0)\r',
-                stderr:
-                    'Receiving objects:  50% (4/8)\r'
-                    'fatal: unable to access repository\n',
-              );
-            }
-            // 后续步骤失败：尾部应仍保留 fetch 进度输出与 fatal 行。
-            return _fakeProcess(
-              stdout: 'remote: Total 8 (delta 0)\r',
-              stderr:
-                  'Receiving objects:  50% (4/8)\r'
-                  'fatal: unable to access repository\n',
-              exitCode: 1,
-            );
-          }),
-          onOutput: lines.add,
-          cacheRoot: cacheRoot,
-        ),
-        throwsA(
-          _buildExceptionMatcher(
-            contains('拉取源码失败（退出码 1）'),
-            outputTail: allOf(
-              contains('Receiving objects:  50% (4/8)'),
-              contains('fatal: unable to access repository'),
-            ),
-          ),
-        ),
-      );
-
-      expect(_streamCalls, hasLength(5));
-      expect(_streamCalls.first.arguments, <String>['fetch', '--progress']);
-      expect(_streamCalls.last.arguments, <String>[
-        'symbolic-ref',
-        '--quiet',
-        'refs/remotes/origin/HEAD',
-      ]);
-      expect(
-        lines,
-        containsAll(<String>[
-          'remote: Total 8 (delta 0)',
-          'Receiving objects:  50% (4/8)',
-          'fatal: unable to access repository',
-        ]),
-      );
-    });
-
-    test('runPackBuildStreaming 默认流式转发 git 与 python 输出', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# url\n# profile: v1\n');
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
 
@@ -1818,16 +1118,8 @@ void main() {
         cacheRoot: cacheRoot,
       );
 
-      expect(lines, <String>[
-        'streamed',
-        'streamed',
-        'streamed',
-        'streamed',
-      ]);
+      expect(lines, <String>['streamed']);
       expect(_streamCalls.map((_StreamCall call) => call.executable), <String>[
-        'git',
-        'git',
-        'git',
         'python',
       ]);
       expect(_streamCalls.last.arguments, <String>['-u', 'build.py']);
@@ -1837,17 +1129,23 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# url\n# profile: v1\n# source: none\n',
+        '# source: none\n# profile: v1\n',
       );
       final List<String> lines = <String>[];
       // GBK 编码的「中文」+ 合法 UTF-8 行：0xD6/0xD0/0xCE/0xC4 不构成合法 UTF-8。
       final List<int> stdoutBytes = <int>[
-        0xD6, 0xD0, 0xCE, 0xC4, 0x0A,
+        0xD6,
+        0xD0,
+        0xCE,
+        0xC4,
+        0x0A,
         ...utf8.encode('line-after-invalid\n'),
       ];
       final List<int> stderrBytes = <int>[
         ...utf8.encode('错误: '),
-        0xBA, 0xF3, 0x0A,
+        0xBA,
+        0xF3,
+        0x0A,
         ...utf8.encode('tail-line\n'),
       ];
 
@@ -1880,7 +1178,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# url\n# profile: v1\n# source: none\n',
+        '# source: none\n# profile: v1\n',
       );
       final List<String> lines = <String>[];
 
@@ -1893,7 +1191,11 @@ void main() {
             (_StreamCall call) async => _FakeProcess.raw(
               stdoutBytes: <int>[
                 ...utf8.encode('readable-line\n'),
-                0xD6, 0xD0, 0xCE, 0xC4, 0x0A,
+                0xD6,
+                0xD0,
+                0xCE,
+                0xC4,
+                0x0A,
                 ...utf8.encode('中文错误：编译失败\n'),
               ],
               stderrBytes: <int>[],
@@ -1919,266 +1221,12 @@ void main() {
     });
   });
 
-  group('源码版本记录', () {
-    test('解析出最新稳定 tag 时直接回调该 tag 且不查询 describe', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v1.2.3', 'v1.2.2']);
-          }
-          return _success();
-        }),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, <String>['v1.2.3']);
-      final _ProcessCall checkout = calls.firstWhere(
-        (_ProcessCall call) => call.arguments.first == 'checkout',
-      );
-      expect(checkout.arguments, <String>['checkout', '--force', 'v1.2.3']);
-      expect(checkout.workingDirectory, targetPath);
-      expect(checkout.environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-      expect(
-        calls.where((_ProcessCall call) => call.arguments.first == 'describe'),
-        isEmpty,
-        reason: '已解析出 tag 时不再重复查询 describe',
-      );
-    });
-
-    test('tag 查询失败时回退 describe', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final String targetPath = joinPath(cacheRoot, 'build/demo');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return ProcessResult(1, 128, '', 'fatal: unable to access\n');
-          }
-          if (call.arguments.first == 'describe') {
-            return ProcessResult(1, 0, 'v1.2.3\n', '');
-          }
-          return _success();
-        }),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, <String>['v1.2.3']);
-      final _ProcessCall describe = calls.firstWhere(
-        (_ProcessCall call) => call.arguments.first == 'describe',
-      );
-      expect(describe.arguments, <String>['describe', '--tags', '--abbrev=0']);
-      expect(describe.workingDirectory, targetPath);
-      expect(describe.environment, <String, String>{
-        'GIT_TERMINAL_PROMPT': '0',
-      });
-      expect(
-        calls.where((_ProcessCall call) => call.arguments.first == 'rev-parse'),
-        isEmpty,
-      );
-    });
-
-    test('无可用 tag 且 describe 失败时回退短哈希', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>[]);
-          }
-          if (call.arguments.first == 'describe') {
-            return ProcessResult(1, 128, '', 'fatal: no names found\n');
-          }
-          if (call.arguments.first == 'rev-parse') {
-            return ProcessResult(1, 0, 'abc1234\n', '');
-          }
-          return _success();
-        }),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, <String>['abc1234']);
-      final _ProcessCall head = calls.firstWhere(
-        (_ProcessCall call) => call.arguments.first == 'rev-parse',
-      );
-      expect(head.arguments, <String>['rev-parse', '--short', 'HEAD']);
-    });
-
-    test('describe 抛异常时回退短哈希', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(<_ProcessCall>[], (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>[]);
-          }
-          if (call.arguments.first == 'describe') {
-            throw ProcessException('git', call.arguments, 'not found');
-          }
-          if (call.arguments.first == 'rev-parse') {
-            return ProcessResult(1, 0, 'deadbee', '');
-          }
-          return _success();
-        }),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, <String>['deadbee']);
-    });
-
-    test('两种查询均失败时静默且构建继续', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<String> versions = <String>[];
-      final List<PackBuildStage> stages = <PackBuildStage>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        stages.add,
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>[]);
-          }
-          if (call.arguments.first == 'describe' ||
-              call.arguments.first == 'rev-parse') {
-            return ProcessResult(1, 128, '', 'fatal\n');
-          }
-          return _success();
-        }),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, isEmpty);
-      expect(stages, <PackBuildStage>[
-        PackBuildStage.downloading,
-        PackBuildStage.building,
-      ]);
-    });
-
-    test('# source: none 不查询版本', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/openvinotoolkit/openvino.git\n# profile: v1\n'
-        '# source: none\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<String> versions = <String>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (_) async => _success()),
-        onSourceVersion: versions.add,
-        cacheRoot: cacheRoot,
-      );
-
-      expect(versions, isEmpty);
-      expect(
-        calls.where((_ProcessCall call) => call.executable == 'git'),
-        isEmpty,
-      );
-      expect(calls, hasLength(1));
-      expect(calls.single.executable, 'python');
-    });
-
-    test('未提供回调时仍执行源码对齐但不查询 describe', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
-      );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await runPackBuild(
-        _pack(sourcePath: sourcePath),
-        (_) {},
-        processRunner: _runner(calls, (call) async {
-          if (_isLsRemote(call)) {
-            return _lsRemoteResult(<String>['v3.0.0']);
-          }
-          return _success();
-        }),
-        cacheRoot: cacheRoot,
-      );
-
-      expect(calls, hasLength(5));
-      expect(calls[0].arguments.first, 'clone');
-      expect(
-        calls.where((_ProcessCall call) => call.arguments.first == 'checkout'),
-        hasLength(1),
-      );
-      expect(
-        calls.where(
-          (_ProcessCall call) =>
-              call.arguments.first == 'describe' ||
-              call.arguments.first == 'rev-parse',
-        ),
-        isEmpty,
-        reason: '未提供回调时不查询版本（describe/rev-parse 零调用）',
-      );
-      expect(calls.last.executable, 'python');
-    });
-  });
-
   group('真实进程流式编码（仅 Windows + Python）', () {
     test('中文 stdout/stderr 经生产流式路径按 UTF-8 解码且无替换字符', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://example.com/foo/bar.git\n# profile: v1\n'
-        '# source: none\n'
+        '# source: none\n# profile: v1\n'
         "import sys\n"
         "print('中文输出：构建开始')\n"
         "print('中文错误：诊断信息', file=sys.stderr)\n",
@@ -2207,8 +1255,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://example.com/foo/bar.git\n# profile: v1\n'
-        '# source: none\n'
+        '# source: none\n# profile: v1\n'
         "import sys\n"
         "print('开始构建')\n"
         "print('中文错误：编译失败', file=sys.stderr)\n"
@@ -2299,25 +1346,17 @@ String _createSource(Directory root, String scriptContent) {
   return sourcePath;
 }
 
-ProcessResult _success() => ProcessResult(1, 0, '', '');
-
-/// 是否为本地仓库的远端 tag 查询（源码版本对齐第一步）。
-bool _isLsRemote(_ProcessCall call) =>
-    call.arguments.length >= 2 &&
-    call.arguments[0] == 'ls-remote' &&
-    call.arguments[1] == '--tags';
-
-/// 构造 `git ls-remote --tags --refs origin` 的成功输出（哈希为占位值）。
-ProcessResult _lsRemoteResult(List<String> tags) =>
-    ProcessResult(1, 0, _lsRemoteOutput(tags), '');
-
-String _lsRemoteOutput(List<String> tags) {
-  final StringBuffer buffer = StringBuffer();
-  for (int index = 0; index < tags.length; index++) {
-    buffer.writeln('${index.toString().padLeft(40, '0')}\trefs/tags/${tags[index]}');
+/// 在包源目录下建 `.cnp-src` 预置源码目录（键为相对路径，分隔符正反皆可）。
+void _createPresetSource(String sourcePath, Map<String, String> files) {
+  for (final MapEntry<String, String> entry in files.entries) {
+    final File file = File(
+      joinPath(joinPath(sourcePath, '.cnp-src'), entry.key),
+    )..createSync(recursive: true);
+    file.writeAsStringSync(entry.value);
   }
-  return buffer.toString();
 }
+
+ProcessResult _success() => ProcessResult(1, 0, '', '');
 
 PackStreamingProcessRunner _streamingRunner(_FakeProcessHandler handler) {
   return (

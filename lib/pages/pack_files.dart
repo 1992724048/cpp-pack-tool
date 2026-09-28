@@ -112,7 +112,8 @@ class _PackFilesState extends State<PackFiles> {
   }
 
   Future<void> _refreshLatestVersion() async {
-    final String? repo = _header?.repo;
+    // 仓库元数据链路待删除：本阶段恒为 null，版本胶囊与远端 tag 查询静默不触发
+    const String? repo = null;
     final Future<String?> Function(String repoUrl)? loader = widget.loadLatestVersion;
     final int loadId = ++_latestLoadId;
     if (repo == null) {
@@ -469,8 +470,9 @@ class _PackFilesState extends State<PackFiles> {
   @override
   Widget build(BuildContext context) {
     final bool canBuild = widget.onBuildPack != null && findBuildScript(widget.pack.files) != null;
-    final String? openRepoUrl = openableRepoWebUrl(_header?.repo ?? '');
-    final bool showVersionChip = _header?.repo != null;
+    // 仓库元数据链路待删除：本阶段恒为 null，仓库按钮与版本胶囊静默不渲染
+    final String? openRepoUrl = openableRepoWebUrl('');
+    final bool showVersionChip = false;
     final List<BuildScriptOption> options = canBuild && widget.onSave != null ? (_header?.options ??
         const <BuildScriptOption>[]) : const <BuildScriptOption>[];
     final Color sizeColor = FluentTheme

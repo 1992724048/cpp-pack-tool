@@ -43,10 +43,8 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
-            onStage(PackBuildStage.downloading);
+            onStage(PackBuildStage.staging);
             await downloadGate.future;
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -65,7 +63,7 @@ void main() {
     expect(find.text('运行库：跟随配方'), findsOneWidget);
     expect(_stepIsActive(tester, 'prepare'), isTrue);
     expect(find.text('准备环境'), findsOneWidget);
-    expect(find.text('下载源码'), findsOneWidget);
+    expect(find.text('准备源码'), findsOneWidget);
     expect(find.text('执行构建'), findsOneWidget);
     expect(find.text('检查头文件引用'), findsOneWidget);
     expect(find.text('重新映射'), findsOneWidget);
@@ -134,8 +132,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -167,8 +163,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => throw ArgumentError('目录不存在: X'),
       onApply: (PackModel pack) async {},
@@ -191,8 +185,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async => throw Exception('写入失败'),
@@ -214,8 +206,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -239,8 +229,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException('构建失败（退出码 1）');
           },
@@ -275,8 +263,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw PackBuildException('${'x' * 200}\nsecond line');
           },
@@ -302,15 +288,12 @@ void main() {
     await _pumpDialog(
       tester,
       onResult: (BuildDialogResult? value) => closedWith = value,
-      retryElevated:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            required BuildEnvironment buildEnvironment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {},
+      retryElevated: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        required BuildEnvironment buildEnvironment,
+        void Function(String line)? onOutput,
+      }) async {},
       build: _permissionFailureBuild(),
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {
@@ -344,8 +327,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -378,8 +359,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             buildCount++;
           },
@@ -418,8 +397,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             received = environment;
           },
@@ -442,8 +419,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -468,8 +443,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -484,17 +457,16 @@ void main() {
     await _pumpDialog(
       tester,
       sourceNone: true,
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
-      }) async {
-        onStage(PackBuildStage.downloading);
-        onStage(PackBuildStage.building);
-      },
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+          }) async {
+            onStage(PackBuildStage.staging);
+            onStage(PackBuildStage.building);
+          },
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
     );
@@ -517,8 +489,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -548,8 +518,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             receivedLines = <String>[
               'INFO: 开始构建',
@@ -605,8 +573,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onOutput?.call('ERROR: 即将失败');
             throw const PackBuildException(
@@ -645,8 +611,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onOutput?.call('line one');
             onOutput?.call('line two');
@@ -794,8 +758,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -953,8 +915,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -1024,10 +984,8 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
-            onStage(PackBuildStage.downloading);
+            onStage(PackBuildStage.staging);
             await downloadGate.future;
             onStage(PackBuildStage.building);
             onOutput?.call(
@@ -1043,7 +1001,7 @@ void main() {
 
     expect(find.text('下载'), findsOneWidget);
     expect(_stepIsActive(tester, 'download'), isTrue);
-    expect(find.text('下载源码'), findsNothing);
+    expect(find.text('准备源码'), findsNothing);
 
     downloadGate.complete();
     await tester.pump();
@@ -1086,223 +1044,6 @@ void main() {
     );
   });
 
-  testWidgets('构建回调的仓库版本写入应用包', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {
-            onSourceVersion?.call('v3.1.4');
-          },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied, isNotNull);
-    expect(applied!.sourceVersion, 'v3.1.4');
-  });
-
-  testWidgets('未收到版本回调时保留原记录', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      pack: _pack()..sourceVersion = 'v1.0.0',
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
-      }) async {},
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied, isNotNull);
-    expect(applied!.sourceVersion, 'v1.0.0');
-  });
-
-  testWidgets('预构建包未产出来源版本时不重复同步（source:none）', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      sourceNone: true,
-      pack: _pack()..sourceVersion = 'v2.0.0',
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
-      }) async {},
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied!.version, '1.0.0');
-    expect(applied!.sourceVersion, 'v2.0.0');
-    expect(applied!.history, hasLength(1));
-    expect(applied!.history.single.type, HistoryType.built);
-    expect(applied!.history.single.message, startsWith('构建成功：耗时 '));
-    expect(applied!.history.single.message, isNot(contains('版本已同步')));
-    expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
-  });
-
-  testWidgets('来源版本为 tag 时自动同步包版本并合并进构建条目（R9）', (tester) async {
-    PackModel? applied;
-    final DateTime now = DateTime(2026, 9, 16, 10, 30);
-
-    await _pumpDialog(
-      tester,
-      now: () => now,
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {
-            onSourceVersion?.call('v1.18.0');
-          },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied!.version, '1.18.0');
-    expect(applied!.sourceVersion, 'v1.18.0');
-    expect(applied!.history, hasLength(1));
-    expect(applied!.history.single.type, HistoryType.built);
-    expect(
-      applied!.history.single.message,
-      matches(RegExp(r'^构建成功：耗时 .+，版本已同步 1\.0\.0 → 1\.18\.0$')),
-    );
-    expect(applied!.history.single.time, now);
-    expect(find.byKey(const Key('buildSyncedVersion')), findsOneWidget);
-    expect(find.text('已自动同步版本：1.18.0'), findsOneWidget);
-  });
-
-  testWidgets('单段前缀 tag 同样参与同步（version-3.49.1）', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {
-            onSourceVersion?.call('version-3.49.1');
-          },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied!.version, '3.49.1');
-    expect(find.text('已自动同步版本：3.49.1'), findsOneWidget);
-  });
-
-  testWidgets('短哈希来源版本不参与同步（不动版本）', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {
-            onSourceVersion?.call('a1b2c3d');
-          },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied!.version, '1.0.0');
-    expect(applied!.sourceVersion, 'a1b2c3d');
-    expect(applied!.history, hasLength(1));
-    expect(applied!.history.single.type, HistoryType.built);
-    expect(applied!.history.single.message, isNot(contains('版本已同步')));
-    expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
-  });
-
-  testWidgets('来源版本与包版本一致时零变化', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      pack: _pack()..sourceVersion = 'v1.0.0',
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {
-            onSourceVersion?.call('v1.0.0');
-          },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied!.version, '1.0.0');
-    expect(applied!.history, hasLength(1));
-    expect(applied!.history.single.type, HistoryType.built);
-    expect(applied!.history.single.message, isNot(contains('版本已同步')));
-    expect(find.byKey(const Key('buildSyncedVersion')), findsNothing);
-  });
-
   testWidgets('构建成功后先检查头文件引用再重新映射并随关闭返回报告', (tester) async {
     final List<String> order = <String>[];
     final Completer<HeaderIncludeFixReport> fixGate =
@@ -1332,8 +1073,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             order.add('build');
           },
@@ -1380,8 +1119,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       scanFiles: (String sourcePath) async {
         scanCount++;
@@ -1413,10 +1150,7 @@ void main() {
 
     expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
     expect(find.byKey(const Key('buildElevatedRetryHint')), findsOneWidget);
-    expect(
-      find.text('检测到临时目录权限问题，可尝试以管理员身份重试。'),
-      findsOneWidget,
-    );
+    expect(find.text('检测到临时目录权限问题，可尝试以管理员身份重试。'), findsOneWidget);
     expect(find.text('以管理员身份重试'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNotNull);
   });
@@ -1431,8 +1165,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -1491,12 +1223,10 @@ void main() {
             void Function(PackBuildStage) onStage, {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             order.add('elevated');
             receivedEnvironment = buildEnvironment;
-            onStage(PackBuildStage.downloading);
+            onStage(PackBuildStage.staging);
             onOutput?.call('管理员构建输出');
             onStage(PackBuildStage.building);
           },
@@ -1533,10 +1263,8 @@ void main() {
             void Function(PackBuildStage) onStage, {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
-            onStage(PackBuildStage.downloading);
+            onStage(PackBuildStage.staging);
             await downloadGate.future;
             onStage(PackBuildStage.building);
             await buildGate.future;
@@ -1550,7 +1278,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
     await tester.pump();
-    expect(find.text('正在以管理员身份拉取源码…'), findsOneWidget);
+    expect(find.text('正在以管理员身份准备源码…'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
     downloadGate.complete();
@@ -1572,8 +1300,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException('已取消以管理员身份重试（UAC 授权被拒绝）');
           },
@@ -1604,8 +1330,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             required BuildEnvironment buildEnvironment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             onOutput?.call('管理员构建输出行');
             throw const PackBuildException(
@@ -1642,8 +1366,6 @@ PackBuildRunner _permissionFailureBuild() {
     void Function(PackBuildStage) onStage, {
     Map<String, String>? environment,
     void Function(String line)? onOutput,
-    void Function(String version)? onSourceVersion,
-    List<String> gitGlobalArguments = const <String>[],
   }) async {
     throw const PackBuildException(
       '构建失败（退出码 1）',
@@ -1659,7 +1381,6 @@ ElevatedPackBuildRunner _noopElevatedRunner() {
     void Function(PackBuildStage) onStage, {
     required BuildEnvironment buildEnvironment,
     void Function(String line)? onOutput,
-    void Function(String version)? onSourceVersion,
   }) async {};
 }
 
@@ -1674,8 +1395,7 @@ Color _outputLine(WidgetTester tester, String line) {
   );
 }
 
-Finder _timelineStep(String id) =>
-    find.byKey(Key('buildTimelineStep_$id'));
+Finder _timelineStep(String id) => find.byKey(Key('buildTimelineStep_$id'));
 
 bool _stepIsActive(WidgetTester tester, String id) {
   return find
@@ -1757,8 +1477,6 @@ PackBuildRunner _emitLines(List<String> lines) {
     void Function(PackBuildStage) onStage, {
     Map<String, String>? environment,
     void Function(String line)? onOutput,
-    void Function(String version)? onSourceVersion,
-    List<String> gitGlobalArguments = const <String>[],
   }) async {
     for (final String line in lines) {
       onOutput?.call(line);

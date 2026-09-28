@@ -53,8 +53,8 @@ class ProxyEndpoint {
 
 /// 解析后的代理配置：off / auto / manual 归一为「用哪个代理 / 直连」。
 ///
-/// [findProxyFor] / [environmentEntries] / [gitGlobalArguments] 是设置到运行侧的
-/// 唯一来源，避免各调用点各自解释设置。
+/// [findProxyFor] / [environmentEntries] 是设置到运行侧的唯一来源，避免各调用点
+/// 各自解释设置。
 class ProxyResolution {
   const ProxyResolution({
     required this.mode,
@@ -113,17 +113,6 @@ class ProxyResolution {
       }
     }
     return entries.join(',');
-  }
-
-  /// git 命令全局参数（手动模式；配置优先于环境变量）：`-c http.proxy=<url>`。
-  List<String> gitGlobalArguments() {
-    if (mode != ProxyModeSetting.manual) {
-      return const <String>[];
-    }
-    final ProxyEndpoint? endpoint = httpProxy ?? httpsProxy;
-    return endpoint == null
-        ? const <String>[]
-        : <String>['-c', 'http.proxy=${endpoint.url}'];
   }
 }
 

@@ -177,7 +177,6 @@ void main() {
         processRunner: _teeProcessRunner,
         cacheRoot: cacheRoot.path,
         environment: env.environment,
-        onSourceVersion: sourceVersions.add,
       );
       print('[evidence] sourceVersion=$sourceVersions');
 

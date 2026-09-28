@@ -240,7 +240,6 @@ void main() {
       final Directory root = await _tempDirectory();
       final List<String> output = <String>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
-      String? receivedVersion;
       Map<String, String>? prepareEnvironment;
 
       await runElevatedPackBuild(
@@ -254,13 +253,11 @@ void main() {
               PackProcessRunner processRunner = Process.run,
               PackStreamingProcessRunner? streamRunner,
               void Function(String line)? onOutput,
-              void Function(String version)? onSourceVersion,
               String cacheRoot = 'cache',
               Map<String, String>? environment,
             }) async {
               prepareEnvironment = environment;
-              onStage(PackBuildStage.downloading);
-              onSourceVersion?.call('v3.1.4');
+              onStage(PackBuildStage.staging);
               return PackSourcePreparation(
                 sourcePath: r'C:\libs\demo',
                 scriptPath: 'build.py',
@@ -274,15 +271,13 @@ void main() {
         ),
         pollInterval: const Duration(milliseconds: 1),
         onOutput: output.add,
-        onSourceVersion: (String version) => receivedVersion = version,
       );
 
       expect(stages, <PackBuildStage>[
-        PackBuildStage.downloading,
+        PackBuildStage.staging,
         PackBuildStage.building,
       ]);
       expect(output, <String>['line-1', '中文行', 'more']);
-      expect(receivedVersion, 'v3.1.4');
       expect(prepareEnvironment?['TMP'], root.path);
 
       final File launcher = File(
@@ -803,11 +798,10 @@ PackSourcePreparer _fakePrepareSource({
     PackProcessRunner processRunner = Process.run,
     PackStreamingProcessRunner? streamRunner,
     void Function(String line)? onOutput,
-    void Function(String version)? onSourceVersion,
     String cacheRoot = 'cache',
     Map<String, String>? environment,
   }) async {
-    onStage(PackBuildStage.downloading);
+    onStage(PackBuildStage.staging);
     return PackSourcePreparation(
       sourcePath: sourcePath,
       scriptPath: scriptPath,

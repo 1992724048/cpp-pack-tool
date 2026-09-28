@@ -52,7 +52,7 @@ const List<BuildTimelineStepId> sourceNoneTimelineOrder = <BuildTimelineStepId>[
 String buildTimelineStepLabel(BuildTimelineStepId id, {bool sourceNone = false}) {
   return switch (id) {
     BuildTimelineStepId.prepare => '准备环境',
-    BuildTimelineStepId.download => sourceNone ? '下载' : '下载源码',
+    BuildTimelineStepId.download => sourceNone ? '下载' : '准备源码',
     BuildTimelineStepId.build => '执行构建',
     BuildTimelineStepId.includes => '检查头文件引用',
     BuildTimelineStepId.classify => '分类',
@@ -136,7 +136,7 @@ List<BuildTimelineDetail> buildActiveStepDetails({
     details.add(BuildTimelineDetail('已下载 $buildProgressPercent%'));
   }
   if (!sourceNone && step == BuildTimelineStepId.download && elevatedRetry) {
-    details.add(const BuildTimelineDetail('正在以管理员身份拉取源码…'));
+    details.add(const BuildTimelineDetail('正在以管理员身份准备源码…'));
   }
   if (!sourceNone && step == BuildTimelineStepId.build && elevatedRetry) {
     details.add(const BuildTimelineDetail('正在以管理员身份执行构建…'));
@@ -148,15 +148,13 @@ List<BuildTimelineDetail> buildCompletionDetails({
   required int fileCount,
   required int totalSize,
   required int addedCount,
-  required int removedCount,
-  String? syncedVersion,
+  required   int removedCount,
 }) {
   return <BuildTimelineDetail>[
     BuildTimelineDetail('文件数量：$fileCount'),
     BuildTimelineDetail('总大小：${formatBytes(totalSize)}'),
     BuildTimelineDetail('新增：$addedCount 个文件'),
     BuildTimelineDetail('移除：$removedCount 个文件'),
-    if (syncedVersion != null) BuildTimelineDetail('已自动同步版本：$syncedVersion', key: const Key('buildSyncedVersion')),
   ];
 }
 

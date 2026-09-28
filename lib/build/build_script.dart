@@ -111,8 +111,7 @@ class BuildScriptDependency {
 /// build.py 头部解析结果。
 class BuildScriptHeader {
   const BuildScriptHeader({
-    required this.repo,
-    this.sourceNone = false,
+    this.sourceDir,
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
     this.dependencies = const <BuildScriptDependency>[],
@@ -120,11 +119,14 @@ class BuildScriptHeader {
     this.profileVersion,
   });
 
-  final String repo;
+  /// 首行 `# source:` 声明的包源目录下相对目录（如 `.cnp-src`）；声明
+  /// `# source: none` 时为 null。路径合法性由 [requireValidSourceDirective]
+  /// 判定，解析期原样保留声明值以便报错文案引用用户写法。
+  final String? sourceDir;
 
-  /// 声明 `# source: none`：预构建配方跳过 git 源码拉取，`SRC_PATH` 仅作为
-  /// 脚本自行下载/解压的工作区。
-  final bool sourceNone;
+  /// 无预置源码（`# source: none`）：`SRC_PATH` 仅作为脚本自行下载/解压的
+  /// 工作区，跨构建保留。
+  bool get sourceNone => sourceDir == null;
 
   final List<BuildScriptTool> tools;
   final List<BuildScriptOption> options;
@@ -138,17 +140,20 @@ class BuildScriptHeader {
   final String? profileVersion;
 }
 
-/// 解析 build.py 头部：首行仓库地址 + 其后连续 `#` 行中的
+/// 解析 build.py 头部：首行源码来源声明 + 其后连续 `#` 行中的
 /// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
-/// `# source: none` / `# runtime:` / `# profile:` / `# depends:` 指令。
+/// `# runtime:` / `# profile:` / `# depends:` 指令。
 ///
-/// 首行不合法返回 null；非法或未知指令行按注释忽略，选项名称为保留名
+/// 首行必须命中源码来源声明锚点（[_sourceDirectivePrefix]，即严格锚点），
+/// 否则返回 null；第 2 行起的非法或未知指令行按注释忽略，选项名称为保留名
 /// （`runtime`，见 [runtimeOptionName]）的选项声明同样忽略；同名声明以首次为准；
 /// 遇到首个非 `#` 行（含空行）即终止头部连续段。
 BuildScriptHeader? parseBuildScriptHeader(String content) {
   final List<String> lines = content.split('\n');
-  final String? repository = _parseRepoLine(lines.first);
-  if (repository == null) {
+  final ({String? sourceDir, bool anchored}) firstLine = _parseSourceDirLine(
+    lines.first,
+  );
+  if (!firstLine.anchored) {
     return null;
   }
   final List<BuildScriptTool> tools = <BuildScriptTool>[];
@@ -157,17 +162,12 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   final Set<String> toolNames = <String>{};
   final Set<String> optionNames = <String>{};
   final Set<String> dependencyNames = <String>{};
-  bool sourceNone = false;
   String? runtime;
   String? profileVersion;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
       break;
-    }
-    if (_isSourceNoneLine(line)) {
-      sourceNone = true;
-      continue;
     }
     if (line.startsWith(_runtimeDirectivePrefix)) {
       runtime ??= normalizeRuntimeLibrary(
@@ -200,8 +200,7 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     }
   }
   return BuildScriptHeader(
-    repo: repository,
-    sourceNone: sourceNone,
+    sourceDir: firstLine.sourceDir,
     tools: tools,
     options: options,
     dependencies: dependencies,
@@ -244,20 +243,48 @@ void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
   }
 }
 
-bool _isSourceNoneLine(String line) {
-  if (!line.startsWith(_sourceDirectivePrefix)) {
-    return false;
+/// 校验 [header] 的源码来源声明；`# source: none`（[BuildScriptHeader.sourceDir]
+/// 为 null）直接通过，声明了目录但值非法（空串、绝对路径、含盘符、含 `..`）
+/// 时抛出 `FormatException`。
+///
+/// 路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），调用方在
+/// 任何副作用之前调用（与 [requireSupportedBuildProfile] 同一 try 块）并把异常
+/// 映射为用户可见异常类型。
+void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
+  final String? sourceDir = header.sourceDir;
+  if (sourceDir == null) {
+    return;
   }
-  return line.substring(_sourceDirectivePrefix.length).trim() == 'none';
+  if (!_isRelativeSubdir(sourceDir)) {
+    throw FormatException(
+      'build.py 源码目录声明非法：$scriptPath 的 "$_sourceDirectivePrefix '
+      '$sourceDir" 必须是包源目录下的相对路径（不得含盘符 或 ..）',
+    );
+  }
 }
 
-String? _parseRepoLine(String rawLine) {
+/// 首行「缺少源码声明」的用户可见文案（单一事实来源，供构建入口复用）。
+String buildScriptSourceDeclarationMissingMessage(String scriptPath) =>
+    'build.py 首行缺少源码声明：$scriptPath 需要 '
+    '"$_sourceDirectivePrefix <包内相对目录>"，'
+    '仅提供预构建归档的配方写 "$_sourceDirectivePrefix none"';
+
+/// 解析 build.py 首行的源码来源声明（严格锚点 [_sourceDirectivePrefix]）。
+///
+/// [anchored] 为 false 表示首行 trim 后不以该前缀开头，调用方据此让整个头部
+/// 解析返回 null（fail-closed，不做旧写法兼容）；命中前缀时把剩余值 trim 后
+/// 原样存入 [sourceDir]（路径合法性留给 [requireValidSourceDirective]），
+/// 值为 `none`（大小写不敏感）时 [sourceDir] 为 null。
+({String? sourceDir, bool anchored}) _parseSourceDirLine(String rawLine) {
   final String line = rawLine.trim();
-  if (!line.startsWith('#')) {
-    return null;
+  if (!line.startsWith(_sourceDirectivePrefix)) {
+    return (sourceDir: null, anchored: false);
   }
-  final String repository = line.substring(1).trim();
-  return repository.isEmpty ? null : repository;
+  final String value = line.substring(_sourceDirectivePrefix.length).trim();
+  return (
+    sourceDir: value.toLowerCase() == 'none' ? null : value,
+    anchored: true,
+  );
 }
 
 BuildScriptTool? _parseToolLine(String line) {
@@ -413,12 +440,6 @@ BuildScriptDependency? _parseDependsLine(String line) {
   }
   return BuildScriptDependency(name: tokens[0]);
 }
-
-/// 解析 build.py 首行的 git 仓库地址（`# <仓库地址>`）。
-///
-/// 首行 trim 后必须以 `#` 开头且 `#` 之后仍有非空内容，否则返回 null。
-String? parseBuildScriptRepo(String content) =>
-    parseBuildScriptHeader(content)?.repo;
 
 /// 运行库家族声明值规范化：接受 `md` / `mt`（大小写不敏感、允许两侧空白），
 /// 其余值（含 null/空串）返回 null。

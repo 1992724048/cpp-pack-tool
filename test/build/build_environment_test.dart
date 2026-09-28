@@ -1410,7 +1410,6 @@ void main() {
         loadHeader: (PackModel value) async {
           loadedPack = value;
           return const BuildScriptHeader(
-            repo: 'https://github.com/example/lib.git',
             profileVersion: 'v1',
             tools: <BuildScriptTool>[
               BuildScriptTool(
@@ -1489,7 +1488,6 @@ void main() {
           toolsRoot: root.path,
           baseEnvironment: <String, String>{},
           loadHeader: (PackModel value) async => const BuildScriptHeader(
-            repo: 'https://example.com/demo.git',
             profileVersion: 'v1',
           ),
           detect: () async => <DetectedCompiler>[_compiler()],
@@ -1585,7 +1583,7 @@ void main() {
           toolsRoot: root.path,
           baseEnvironment: <String, String>{},
           loadHeader: (PackModel pack) async =>
-              const BuildScriptHeader(repo: 'https://example.com/demo.git'),
+              const BuildScriptHeader(),
           detect: () async => throw StateError('不应检测编译器'),
           capture: _captureStub(<CompilerKind>[], (
             DetectedCompiler compiler,

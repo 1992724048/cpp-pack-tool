@@ -497,24 +497,20 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     _resolvedHeaderKeys[name] = key;
-    String? repo;
-    try {
-      final BuildScriptHeader? header = await widget.loadBuildHeader(pack);
-      repo = header?.repo;
-    } catch (_) {
-      repo = null;
-    }
+    // 仓库元数据链路待删除：本阶段不再从头部解析仓库地址，恒为 null（仓库相关
+    // UI 静默不渲染）
+    const String? resolvedRepo = null;
     if (!mounted) {
       return;
     }
-    final String? resolvedRepo = repo;
-    final RepoLocation? location = resolvedRepo == null ? null : parseRepoLocation(resolvedRepo);
+    final String? repo = resolvedRepo;
+    final RepoLocation? location = repo == null ? null : parseRepoLocation(repo);
     final String? previousRepo = _packRepos[name];
     setState(() {
-      _packRepos[name] = resolvedRepo;
+      _packRepos[name] = repo;
       _repoPlatforms[name] = location?.platform;
       // 仓库地址变化时先清空旧头像：新头像查询完成前不得沿用上一仓库的图标
-      if (location == null || resolvedRepo != previousRepo) {
+      if (location == null || repo != previousRepo) {
         _repoIcons[name] = null;
       }
     });
@@ -804,22 +800,17 @@ class _MainLayoutState extends State<MainLayout> {
       builder: (_) => BuildPackDialog(
         pack: pack,
         sourceNone: sourceNone,
-        gitGlobalArguments: proxy.gitGlobalArguments(),
         build:
             (
               PackModel pack,
               void Function(PackBuildStage) onStage, {
               Map<String, String>? environment,
               void Function(String line)? onOutput,
-              void Function(String version)? onSourceVersion,
-              List<String> gitGlobalArguments = const <String>[],
             }) => widget.buildPack(
               pack,
               onStage,
               environment: environment,
               onOutput: onOutput,
-              onSourceVersion: onSourceVersion,
-              gitGlobalArguments: gitGlobalArguments,
             ),
         prepare: (PackModel pack, {ToolDownloadProgressCallback? onDownloadProgress}) => prepare(
           pack,

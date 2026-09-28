@@ -185,26 +185,17 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settin
       );
     });
 
-    test('gitGlobalArguments：仅手动模式输出 -c http.proxy', () {
+    test('手动模式：端点透传进环境变量条目（git 专用参数已随 git 移除）', () {
       const ProxyResolution manualResolution = ProxyResolution(
         mode: ProxyModeSetting.manual,
         httpProxy: manual,
         httpsProxy: manual,
       );
-      expect(
-        manualResolution.gitGlobalArguments(),
-        <String>['-c', 'http.proxy=http://127.0.0.1:7890'],
-      );
-
-      const ProxyResolution auto = ProxyResolution(
-        mode: ProxyModeSetting.auto,
-        httpProxy: manual,
-      );
-      expect(auto.gitGlobalArguments(), isEmpty);
-      expect(
-        const ProxyResolution(mode: ProxyModeSetting.off).gitGlobalArguments(),
-        isEmpty,
-      );
+      expect(manualResolution.environmentEntries(), <String, String>{
+        'HTTP_PROXY': 'http://127.0.0.1:7890',
+        'HTTPS_PROXY': 'http://127.0.0.1:7890',
+        'NO_PROXY': 'localhost,127.0.0.1',
+      });
     });
   });
 
@@ -356,10 +347,11 @@ HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settin
         proxyPort: 7890,
       ),
     );
-    expect(manual.gitGlobalArguments(), <String>[
-      '-c',
-      'http.proxy=http://127.0.0.1:7890',
-    ]);
+    expect(manual.environmentEntries(), <String, String>{
+      'HTTP_PROXY': 'http://127.0.0.1:7890',
+      'HTTPS_PROXY': 'http://127.0.0.1:7890',
+      'NO_PROXY': 'localhost,127.0.0.1',
+    });
 
     final ProxyResolution auto = await resolveProxyFromSettings(
       const SettingsModel(proxyMode: ProxyModeSetting.auto),

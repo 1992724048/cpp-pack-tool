@@ -128,7 +128,6 @@ void main() {
     test('显式版本范围优先', () {
       final PackModel pack = _pack();
       const BuildScriptHeader header = BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'libbar', version: '[1.0,2.0)'),
         ],
@@ -148,7 +147,6 @@ void main() {
 
     test('缺省版本用本地包版本生成下限', () {
       const BuildScriptHeader header = BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'libfoo'),
         ],
@@ -167,7 +165,6 @@ void main() {
 
     test('本地包缺失回退 [0.0.0,) 并注明；本地版本非法同样回退', () {
       const BuildScriptHeader header = BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'ghost'),
           BuildScriptDependency(name: 'weird'),
@@ -197,7 +194,6 @@ void main() {
         ],
       );
       const BuildScriptHeader header = BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'libfoo', version: '[2.0,)'),
         ],
@@ -217,7 +213,6 @@ void main() {
 
     test('自依赖跳过', () {
       const BuildScriptHeader header = BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'DEMO'),
         ],
@@ -240,7 +235,6 @@ void main() {
         applySystemEntries(
           pack,
           header: const BuildScriptHeader(
-            repo: 'https://example.com/demo.git',
           ),
         ).changed,
         isFalse,
@@ -273,7 +267,6 @@ void main() {
           release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
         );
       const BuildScriptHeader header = BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'libfoo'),
         ],

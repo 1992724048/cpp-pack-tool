@@ -17,6 +17,8 @@ void main() {
         'post.bat',
         '.git',
         '.GIT',
+        '.cnp-src',
+        '.CNP-SRC',
         'LICENSE',
         'license',
         'LICENCE',
@@ -44,6 +46,7 @@ void main() {
         'ICON',
         '.gitignore',
         '.gitmodules',
+        '.cnp-src.bak',
       ]) {
         expect(
           isPreservedEntryName(name),
@@ -51,6 +54,25 @@ void main() {
           reason: '$name 应删除',
         );
       }
+    });
+
+    test('包内预置源码目录 .cnp-src 跨构建存活', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, '# source: .cnp-src\n');
+      _writeFile(sourcePath, '.cnp-src/main.cpp', 'int main() {}');
+      _writeFile(sourcePath, '.cnp-src/include/zlib.h', '#pragma once');
+
+      await cleanupBuildOutput(sourcePath);
+
+      expect(
+        File(joinPath(sourcePath, '.cnp-src/main.cpp')).existsSync(),
+        isTrue,
+        reason: '预置源码目录缺失将使第二次构建报「找不到目录」，根因反直觉',
+      );
+      expect(
+        File(joinPath(sourcePath, '.cnp-src/include/zlib.h')).existsSync(),
+        isTrue,
+      );
     });
   });
 

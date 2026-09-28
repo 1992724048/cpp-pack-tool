@@ -6,7 +6,6 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
-import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_output_panel.dart';
 import 'package:cpp_nuget_pack/controls/build_timeline.dart';
@@ -17,7 +16,7 @@ import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-enum _BuildStage { preparing, downloading, building, fixingIncludes, classifying, remapping, completed, failed }
+enum _BuildStage { preparing, staging, building, fixingIncludes, classifying, remapping, completed, failed }
 
 typedef BuildPackPrepare = Future<BuildEnvironment> Function(
   PackModel pack, {
@@ -50,7 +49,6 @@ class BuildPackDialog extends StatefulWidget {
     this.fixIncludes = fixHeaderIncludes,
     this.retryElevated,
     this.now = DateTime.now,
-    this.gitGlobalArguments = const <String>[],
   });
 
   final PackModel pack;
@@ -62,9 +60,6 @@ class BuildPackDialog extends StatefulWidget {
   final PackHeaderIncludeFixer fixIncludes;
   final ElevatedPackBuildRunner? retryElevated;
   final DateTime Function() now;
-
-  /// git 命令全局参数（手动代理的 `-c http.proxy=...`），透传给 [build]。
-  final List<String> gitGlobalArguments;
 
   @override
   State<BuildPackDialog> createState() => _BuildPackDialogState();
@@ -84,8 +79,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   List<FileModel> _files = const <FileModel>[];
   int _addedCount = 0;
   int _removedCount = 0;
-  String? _sourceVersion;
-  String? _syncedVersion;
   HeaderIncludeFixReport? _fixReport;
   bool _elevatedRetry = false;
   BuildTimelineStepId _failedStep = BuildTimelineStepId.prepare;
@@ -104,7 +97,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   BuildTimelineStepId _stepFor(_BuildStage stage) {
     return switch (stage) {
       _BuildStage.preparing => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.prepare,
-      _BuildStage.downloading => BuildTimelineStepId.download,
+      _BuildStage.staging => BuildTimelineStepId.download,
       _BuildStage.building => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.build,
       _BuildStage.fixingIncludes => BuildTimelineStepId.includes,
       _BuildStage.classifying => BuildTimelineStepId.classify,
@@ -146,8 +139,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         _onBuildStage,
         environment: environment.environment,
         onOutput: _onBuildOutput,
-        onSourceVersion: _onSourceVersion,
-        gitGlobalArguments: widget.gitGlobalArguments,
       );
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
@@ -167,7 +158,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
     setState(() {
       _elevatedRetry = true;
-      _advanceTo(_BuildStage.downloading);
+      _advanceTo(_BuildStage.staging);
       _error = null;
       _downloadProgress = null;
     });
@@ -178,7 +169,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         _onBuildStage,
         buildEnvironment: environment,
         onOutput: _onBuildOutput,
-        onSourceVersion: _onSourceVersion,
       );
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
@@ -214,38 +204,20 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
 
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
-    PackModel updated = copyPackWithFiles(widget.pack, files);
-    String? syncedVersion;
-    // 仅本次构建解析出来源版本时才同步：预构建配方（source:none）不产生来源版本，
-    // 沿用旧记录可避免每次构建拿陈旧值重复同步。
-    if (_sourceVersion != null) {
-      updated.sourceVersion = _sourceVersion;
-      final String? versionFromTag = packageVersionFromTag(_sourceVersion);
-      if (versionFromTag != null && versionFromTag != updated.version) {
-        syncedVersion = versionFromTag;
-      }
-    }
-    final String previousVersion = updated.version;
-    final bool versionSynced = syncedVersion != null && syncedVersion != previousVersion;
+    final PackModel updated = copyPackWithFiles(widget.pack, files);
     final String elapsedText = formatDuration(_sessionWatch.elapsed);
     updated.history = appendHistoryEntry(
       updated.history,
       HistoryModel(
         time: widget.now(),
         type: HistoryType.built,
-        message: versionSynced
-            ? '构建成功：耗时 $elapsedText，版本已同步 $previousVersion → $syncedVersion'
-            : '构建成功：耗时 $elapsedText',
+        message: '构建成功：耗时 $elapsedText',
       ),
     );
-    if (versionSynced) {
-      updated = copyPackWithVersion(updated, syncedVersion);
-    }
     setState(() {
       _files = files;
       _addedCount = diff.added;
       _removedCount = diff.removed;
-      _syncedVersion = syncedVersion;
     });
 
     try {
@@ -283,14 +255,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     setState(() {
       _downloadProgress = null;
       _advanceTo(switch (stage) {
-        PackBuildStage.downloading => _BuildStage.downloading,
+        PackBuildStage.staging => _BuildStage.staging,
         PackBuildStage.building => _BuildStage.building,
       });
     });
-  }
-
-  void _onSourceVersion(String version) {
-    _sourceVersion = version;
   }
 
   void _onDownloadProgress(ToolDownloadProgress progress) {
@@ -419,7 +387,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   bool get _isRunning =>
       _stage == _BuildStage.preparing ||
-      _stage == _BuildStage.downloading ||
+      _stage == _BuildStage.staging ||
       _stage == _BuildStage.building ||
       _stage == _BuildStage.fixingIncludes ||
       _stage == _BuildStage.classifying ||
@@ -459,7 +427,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         totalSize: totalFileSize(_files),
         addedCount: _addedCount,
         removedCount: _removedCount,
-        syncedVersion: _syncedVersion,
       ),
       failureText: failed ? '构建失败：${formatError(_error!)}' : null,
     );

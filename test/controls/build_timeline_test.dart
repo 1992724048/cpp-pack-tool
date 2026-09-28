@@ -40,7 +40,7 @@ void main() {
       );
       expect(
         steps.map((BuildTimelineStep step) => step.label),
-        <String>['准备环境', '下载源码', '执行构建', '检查头文件引用', '重新映射', '完成'],
+        <String>['准备环境', '准备源码', '执行构建', '检查头文件引用', '重新映射', '完成'],
       );
     });
 
@@ -191,19 +191,18 @@ void main() {
         elevatedRetry: true,
       );
 
-      expect(download.single.text, '正在以管理员身份拉取源码…');
+      expect(download.single.text, '正在以管理员身份准备源码…');
       expect(build.single.text, '正在以管理员身份执行构建…');
     });
   });
 
   group('buildCompletionDetails', () {
-    test('结果摘要含数量/大小/增删与版本同步', () {
+    test('结果摘要含数量/大小/增删', () {
       final List<BuildTimelineDetail> details = buildCompletionDetails(
         fileCount: 2,
         totalSize: 2048,
         addedCount: 1,
         removedCount: 3,
-        syncedVersion: '1.2.3',
       );
 
       expect(
@@ -213,13 +212,12 @@ void main() {
           '总大小：2.0 KB',
           '新增：1 个文件',
           '移除：3 个文件',
-          '已自动同步版本：1.2.3',
         ],
       );
-      expect(details.last.key, const Key('buildSyncedVersion'));
+      expect(details, hasLength(4));
     });
 
-    test('未同步版本时省略版本行', () {
+    test('全零统计仍给出四行摘要', () {
       final List<BuildTimelineDetail> details = buildCompletionDetails(
         fileCount: 0,
         totalSize: 0,
@@ -254,7 +252,7 @@ void main() {
 
       expect(find.byKey(const Key('buildTimeline')), findsOneWidget);
       expect(find.text('准备环境'), findsOneWidget);
-      expect(find.text('下载源码'), findsOneWidget);
+      expect(find.text('准备源码'), findsOneWidget);
       expect(find.text('执行构建'), findsOneWidget);
       expect(find.text('检查头文件引用'), findsOneWidget);
       expect(find.text('重新映射'), findsOneWidget);

@@ -191,8 +191,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
     );
 
@@ -777,7 +775,6 @@ void main() {
       pickDirectory: () async => null,
       scanFiles: (String path) => completer.future,
       loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
-        repo: 'https://example.com/demo.git',
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'libfoo'),
           BuildScriptDependency(name: 'ghost', version: '[1.0,)'),
@@ -885,19 +882,16 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             builtPack = pack;
             receivedEnvironment = environment;
             for (final PackBuildStage stage in <PackBuildStage>[
-              PackBuildStage.downloading,
+              PackBuildStage.staging,
               PackBuildStage.building,
             ]) {
               stages.add(stage);
               onStage(stage);
             }
-            onSourceVersion?.call('v9.9.9');
           },
     );
 
@@ -916,80 +910,12 @@ void main() {
     expect(find.text('新增：1 个文件'), findsOneWidget);
     expect(find.text('移除：2 个文件'), findsOneWidget);
     expect(stages, <PackBuildStage>[
-      PackBuildStage.downloading,
+      PackBuildStage.staging,
       PackBuildStage.building,
     ]);
     expect(store.saveCount, 1);
     expect(store.packs.single.files, hasLength(1));
     expect(store.packs.single.files.single.path, 'new/new.h');
-    expect(store.packs.single.sourceVersion, 'v9.9.9');
-  });
-
-  testWidgets('手动代理设置以 -c http.proxy 参数下发构建', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: <FileModel>[
-            FileModel(name: 'build.py', path: 'build.py', size: 10),
-          ],
-        ),
-      ],
-    );
-    List<String>? receivedGitArguments;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: SettingsModel(
-        proxyMode: ProxyModeSetting.manual,
-        proxyHost: '127.0.0.1',
-        proxyPort: 7890,
-        compilerPriority: const <String>['icx'],
-        detectedCompilers: <DetectedCompiler>[
-          _compiler(CompilerKind.icx, '2026.1.0'),
-        ],
-      ),
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => null,
-      prepareBuildEnv:
-          (
-            PackModel pack, {
-            required List<String> compilerPriority,
-            required List<DetectedCompiler> cachedCompilers,
-            required CompilerDetectionCallback onCompilersDetected,
-            ToolDownloadProgressCallback? onDownloadProgress,
-          }) async => _buildEnvironment(),
-      buildPack:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
-          }) async {
-            receivedGitArguments = gitGlobalArguments;
-            onStage(PackBuildStage.downloading);
-            onStage(PackBuildStage.building);
-          },
-    );
-
-    await tester.tap(find.text('文件管理'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('buildPackButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(receivedGitArguments, <String>[
-      '-c',
-      'http.proxy=http://127.0.0.1:7890',
-    ]);
   });
 
   testWidgets('默认构建接线使用流式构建执行器', (tester) async {
@@ -1040,10 +966,8 @@ void main() {
       store: store,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
-        repo: 'https://github.com/openvinotoolkit/openvino.git',
-        sourceNone: true,
-      ),
+      loadBuildHeader: (PackModel pack) async =>
+          const BuildScriptHeader(sourceDir: null),
       prepareBuildEnv:
           (
             PackModel pack, {
@@ -1060,8 +984,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
     );
 
@@ -1144,8 +1066,6 @@ void main() {
         void Function(PackBuildStage) onStage, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-        void Function(String version)? onSourceVersion,
-        List<String> gitGlobalArguments = const <String>[],
       }) async {},
       fixIncludes: (String sourcePath, {required String packageName}) async {
         received = (sourcePath, packageName);
@@ -1213,8 +1133,6 @@ void main() {
             void Function(PackBuildStage) onStage, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
-            void Function(String version)? onSourceVersion,
-            List<String> gitGlobalArguments = const <String>[],
           }) async {
             throw const PackBuildException('构建失败（退出码 1）');
           },
@@ -2348,258 +2266,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(_dependencyGraphButton(tester).onPressed, isNull);
-  });
-
-  testWidgets('有仓库的包显示 git 徽标，有新版本时替换为更新徽标', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'alpha',
-          '1.0.0',
-          sourcePath: r'C:\libs\alpha',
-          files: _buildPyFiles(),
-        )..sourceVersion = 'v1.0.0',
-        _pack(
-          'beta',
-          '1.0.0',
-          sourcePath: r'C:\libs\beta',
-          files: _buildPyFiles(),
-        )..sourceVersion = 'v2.0.0',
-        _pack('gamma', '1.0.0'),
-      ],
-    );
-    int remoteCalls = 0;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => pack.name == 'gamma'
-          ? null
-          : const BuildScriptHeader(repo: 'https://example.com/demo.git'),
-      loadRemoteTags: (String repoUrl) async {
-        remoteCalls++;
-        return <String>['v1.0.0', 'v2.0.0'];
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('repoUpdateBadge_alpha')), findsOneWidget);
-    expect(find.byKey(const Key('repoBadge_alpha')), findsNothing);
-    expect(find.byKey(const Key('repoBadge_beta')), findsOneWidget);
-    expect(find.byKey(const Key('repoUpdateBadge_beta')), findsNothing);
-    expect(find.byKey(const Key('repoBadge_gamma')), findsNothing);
-    expect(find.byKey(const Key('repoUpdateBadge_gamma')), findsNothing);
-    expect(remoteCalls, 1, reason: '同一仓库 URL 只查询一次（会话缓存）');
-  });
-
-  testWidgets('远端查询失败时仅显示 git 徽标', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: _buildPyFiles(),
-        )..sourceVersion = 'v1.0.0',
-      ],
-    );
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async =>
-          const BuildScriptHeader(repo: 'https://example.com/demo.git'),
-      loadRemoteTags: (String repoUrl) async => null,
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('repoBadge_demo')), findsOneWidget);
-    expect(find.byKey(const Key('repoUpdateBadge_demo')), findsNothing);
-  });
-
-  testWidgets('文件管理页显示当前与远端最新版本', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: _buildPyFiles(),
-        )..sourceVersion = 'v1.0.0',
-      ],
-    );
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async =>
-          const BuildScriptHeader(repo: 'https://example.com/demo.git'),
-      loadRemoteTags: (String repoUrl) async => <String>['v2.0.0'],
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.text('文件管理'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
-    expect(chip, findsOneWidget);
-    expect(
-      find.descendant(of: chip, matching: find.text('v1.0.0')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: chip, matching: find.text('v2.0.0')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('远程头像按仓库 URL 去重解析并落位侧栏', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'alpha',
-          '1.0.0',
-          sourcePath: r'C:\libs\alpha',
-          files: _buildPyFiles(),
-        ),
-        _pack(
-          'beta',
-          '1.0.0',
-          sourcePath: r'C:\libs\beta',
-          files: _buildPyFiles(),
-        ),
-      ],
-    );
-    int iconCalls = 0;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
-        repo: 'https://github.com/madler/zlib.git',
-      ),
-      loadRemoteTags: (String repoUrl) async => <String>['v1.0.0'],
-      loadRepoIcon: (String repoUrl) async {
-        iconCalls++;
-        return r'C:\cache\icons\github\madler.png';
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(iconCalls, 1, reason: '同一仓库 URL 只解析一次（会话缓存）');
-    expect(find.byKey(const Key('repoAvatar_alpha')), findsOneWidget);
-    expect(find.byKey(const Key('repoAvatar_beta')), findsOneWidget);
-    expect(find.byKey(const Key('repoFallbackIcon_alpha')), findsNothing);
-  });
-
-  testWidgets('GitHub 平台在头像缺失时显示平台回退图标', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: _buildPyFiles(),
-        ),
-      ],
-    );
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
-        repo: 'https://github.com/madler/zlib',
-      ),
-      loadRemoteTags: (String repoUrl) async => <String>['v1.0.0'],
-      loadRepoIcon: (String repoUrl) async => null,
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('repoFallbackIcon_demo')), findsOneWidget);
-    expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
-  });
-
-  testWidgets('重新映射换仓库时先清空旧头像', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: _buildPyFiles(),
-        ),
-      ],
-    );
-    final Completer<List<FileModel>> scanCompleter =
-        Completer<List<FileModel>>();
-    final Completer<String?> newIconCompleter = Completer<String?>();
-    int headerCalls = 0;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) => scanCompleter.future,
-      loadBuildHeader: (PackModel pack) async {
-        headerCalls++;
-        return BuildScriptHeader(
-          repo: headerCalls == 1
-              ? 'https://github.com/madler/zlib'
-              : 'https://github.com/facebook/zstd',
-        );
-      },
-      loadRepoIcon: (String repoUrl) async {
-        if (repoUrl.contains('madler')) {
-          return r'C:\cache\icons\github\madler.png';
-        }
-        return newIconCompleter.future;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('repoAvatar_demo')), findsOneWidget);
-
-    await tester.tap(find.byTooltip('重新映射'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    scanCompleter.complete(<FileModel>[
-      FileModel(name: 'build.py', path: 'sub/build.py', size: 10),
-    ]);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(headerCalls, greaterThan(1));
-    expect(
-      find.byKey(const Key('repoFallbackIcon_demo')),
-      findsOneWidget,
-      reason: '仓库地址变化后、新头像查询完成前不得沿用旧仓库头像',
-    );
-    expect(find.byKey(const Key('repoAvatar_demo')), findsNothing);
-
-    newIconCompleter.complete(r'C:\cache\icons\github\zstd.png');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('repoAvatar_demo')), findsOneWidget);
   });
 
   testWidgets('删除包时探测构建缓存并可按需删除缓存', (tester) async {

@@ -59,7 +59,6 @@ typedef ElevatedPackBuildRunner = Future<void> Function(
   void Function(PackBuildStage) onStage, {
   required BuildEnvironment buildEnvironment,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
 });
 
 /// 日志 tail 的行解码器：字节块 → 完整输出行。
@@ -254,8 +253,8 @@ exit 0
 
 /// 以管理员身份重跑构建流水线（临时目录权限失败的 UAC 重试路径）。
 ///
-/// 流程：[prepareSource]（缺省 [preparePackSource]：git 拉取/对齐与包源目录
-/// 清理，非提权）→ 生成 [buildElevatedLauncher] 到本次构建受控 `TMP` 下的
+/// 流程：[prepareSource]（缺省 [preparePackSource]：备源与包源目录清理，
+/// 非提权）→ 生成 [buildElevatedLauncher] 到本次构建受控 `TMP` 下的
 /// `elevated/` 目录 → 经 [launcherStarter]（缺省 `Process.run`）运行 PowerShell
 /// 提权启动器 → 轮询日志 tail 逐行回调 [onOutput]（[LogTailDecoder] 口径）→
 /// 以退出码标记文件判定结果。构建脚本的输出/失败语义与 [runPackBuild] 一致：
@@ -271,7 +270,6 @@ Future<void> runElevatedPackBuild(
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner? streamRunner = Process.start,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   PackSourcePreparer prepareSource = preparePackSource,
   PackProcessRunner launcherStarter = Process.run,
@@ -283,7 +281,6 @@ Future<void> runElevatedPackBuild(
     processRunner: processRunner,
     streamRunner: streamRunner,
     onOutput: onOutput,
-    onSourceVersion: onSourceVersion,
     cacheRoot: cacheRoot,
     environment: buildEnvironment.environment,
   );

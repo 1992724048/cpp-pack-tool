@@ -1006,7 +1006,9 @@ void main() {
     await tester.pump();
 
     expect(
-      tester.widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm'))).checked,
+      tester
+          .widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm')))
+          .checked,
       isTrue,
       reason: '首值为勾选态（默认 ON）',
     );
@@ -1022,7 +1024,9 @@ void main() {
     await _pumpPage(tester, page(pack));
     await tester.pump();
     expect(
-      tester.widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm'))).checked,
+      tester
+          .widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm')))
+          .checked,
       isFalse,
     );
 
@@ -1059,9 +1063,7 @@ void main() {
     await tester.pump();
     expect(
       _rowDecoration(tester, row).color,
-      FluentTheme.of(
-        tester.element(row),
-      ).resources.controlFillColorSecondary,
+      FluentTheme.of(tester.element(row)).resources.controlFillColorSecondary,
     );
 
     await mouse.moveTo(
@@ -1090,7 +1092,9 @@ void main() {
 
     expect(
       tester
-          .widget<Checkbox>(find.byKey(const Key('buildOptionValue_accel_SSE2')))
+          .widget<Checkbox>(
+            find.byKey(const Key('buildOptionValue_accel_SSE2')),
+          )
           .checked,
       isFalse,
       reason: '未保存时全部未勾选',
@@ -1106,7 +1110,9 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<Checkbox>(find.byKey(const Key('buildOptionValue_accel_AVX2')))
+          .widget<Checkbox>(
+            find.byKey(const Key('buildOptionValue_accel_AVX2')),
+          )
           .checked,
       isTrue,
     );
@@ -1130,11 +1136,9 @@ void main() {
     await tester.tap(find.byKey(const Key('buildOptionValue_accel_NEON')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(
-      saves.last.buildOptions,
-      <String, String>{'accel': ''},
-      reason: '多选允许全不选并保存空串',
-    );
+    expect(saves.last.buildOptions, <String, String>{
+      'accel': '',
+    }, reason: '多选允许全不选并保存空串');
   });
 
   testWidgets('运行库紧凑选择器渲染三项且位于构建按钮右侧', (tester) async {
@@ -1171,120 +1175,6 @@ void main() {
     expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
   });
 
-  testWidgets('工具栏顺序为构建 → 远程仓库 → 分隔线 → 运行库 → 版本控件', (tester) async {
-    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async => true,
-        loadHeader: (PackModel value) async => _header(),
-        loadLatestVersion: (String repoUrl) async => 'v1.0.0',
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder buttonFinder = find.byKey(const Key('buildPackButton'));
-    final Finder openRepoFinder = find.byKey(const Key('openRepoButton'));
-    final Finder separatorFinder = find.byKey(
-      const Key('packRepoRuntimeSeparator'),
-    );
-    final Finder comboFinder = find.byKey(const Key('buildRuntimeSelector'));
-    final Finder versionFinder = find.byKey(const Key('packRepoVersionLabel'));
-    final Rect buttonRect = tester.getRect(buttonFinder);
-    final Rect openRepoRect = tester.getRect(openRepoFinder);
-    final Rect separatorRect = tester.getRect(separatorFinder);
-    final Rect comboRect = tester.getRect(comboFinder);
-    final Rect versionRect = tester.getRect(versionFinder);
-    final Finder runtimeGroup = _nearestAncestorRow(tester, separatorFinder);
-    final Rect runtimeGroupRect = tester.getRect(runtimeGroup);
-
-    expect(separatorFinder, findsOneWidget);
-    expect(tester.getSize(separatorFinder), const Size(1, 20));
-    expect(buttonRect.left, lessThan(openRepoRect.left));
-    expect(openRepoRect.left, lessThan(separatorRect.left));
-    expect(separatorRect.left, lessThan(comboRect.left));
-    expect(comboRect.left, lessThan(versionRect.left));
-    expect(separatorRect.center.dy, closeTo(comboRect.center.dy, 0.001));
-    expect(separatorRect.left - runtimeGroupRect.left, closeTo(4, 0.001));
-    expect(comboRect.left - separatorRect.right, closeTo(4, 0.001));
-    expect(
-      find.descendant(of: runtimeGroup, matching: comboFinder),
-      findsOneWidget,
-    );
-    expect(
-      tester.widget<Container>(separatorFinder).color,
-      FluentTheme.of(tester.element(separatorFinder))
-          .resources
-          .dividerStrokeColorDefault,
-    );
-    expect(find.text('远程仓库'), findsOneWidget);
-    expect(find.text('运行库'), findsNothing);
-    expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('窄窗口下远程仓库与运行库组换行且组内保持同行', (tester) async {
-    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async => true,
-        loadHeader: (PackModel value) async => _header(),
-        loadLatestVersion: (String repoUrl) async => 'v1.0.0',
-      ),
-    );
-    tester.view.physicalSize = const Size(400, 800);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder openRepoFinder = find.byKey(const Key('openRepoButton'));
-    final Finder separatorFinder = find.byKey(
-      const Key('packRepoRuntimeSeparator'),
-    );
-    final Finder comboFinder = find.byKey(const Key('buildRuntimeSelector'));
-    final Finder runtimeGroup = _nearestAncestorRow(tester, separatorFinder);
-    final Rect openRepoRect = tester.getRect(openRepoFinder);
-    final Rect separatorRect = tester.getRect(separatorFinder);
-    final Rect comboRect = tester.getRect(comboFinder);
-    final Rect runtimeGroupRect = tester.getRect(runtimeGroup);
-
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
-    expect(_runtimeCombo(tester).onChanged, isNotNull);
-    expect(
-      openRepoRect.center.dy,
-      isNot(closeTo(runtimeGroupRect.center.dy, 0.001)),
-      reason: '有限宽度应迫使远程仓库与运行库组进入不同 run',
-    );
-    expect(
-      separatorRect.center.dy,
-      closeTo(runtimeGroupRect.center.dy, 0.001),
-    );
-    expect(separatorRect.center.dy, closeTo(comboRect.center.dy, 0.001));
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('无运行库时仓库按钮存在但不显示分隔线', (tester) async {
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byKey(const Key('openRepoButton')), findsOneWidget);
-    expect(find.byKey(const Key('buildRuntimeSelector')), findsNothing);
-    expect(find.byKey(const Key('packRepoRuntimeSeparator')), findsNothing);
-  });
-
   testWidgets('运行库保存值显示为显式项且非法值回退默认项', (tester) async {
     Widget page(PackModel pack) => PackFiles(
       pack: pack,
@@ -1295,7 +1185,9 @@ void main() {
 
     await _pumpPage(
       tester,
-      page(_buildPack('demo')..buildOptions = <String, String>{'runtime': 'MT'}),
+      page(
+        _buildPack('demo')..buildOptions = <String, String>{'runtime': 'MT'},
+      ),
     );
     await tester.pump();
     expect(_runtimeCombo(tester).value, 'MT');
@@ -1303,8 +1195,7 @@ void main() {
     await _pumpPage(
       tester,
       page(
-        _buildPack('demo2')
-          ..buildOptions = <String, String>{'runtime': 'gnu'},
+        _buildPack('demo2')..buildOptions = <String, String>{'runtime': 'gnu'},
       ),
     );
     await tester.pump();
@@ -1330,11 +1221,7 @@ void main() {
     );
     await tester.pump();
 
-    await _selectComboItem(
-      tester,
-      const Key('buildRuntimeSelector'),
-      'MT',
-    );
+    await _selectComboItem(tester, const Key('buildRuntimeSelector'), 'MT');
 
     expect(saved!.buildOptions, <String, String>{
       'other': 'keep',
@@ -1362,11 +1249,7 @@ void main() {
     );
     await tester.pump();
 
-    await _selectComboItem(
-      tester,
-      const Key('buildRuntimeSelector'),
-      '默认',
-    );
+    await _selectComboItem(tester, const Key('buildRuntimeSelector'), '默认');
 
     expect(saved!.buildOptions, <String, String>{'other': 'keep'});
   });
@@ -1390,11 +1273,7 @@ void main() {
     );
     await tester.pump();
 
-    await _selectComboItem(
-      tester,
-      const Key('buildRuntimeSelector'),
-      'MD',
-    );
+    await _selectComboItem(tester, const Key('buildRuntimeSelector'), 'MD');
 
     expect(saveCalls, 0);
     expect(find.text('已保存'), findsNothing);
@@ -1452,7 +1331,7 @@ void main() {
         .getTopLeft(find.byKey(const Key('buildOptionsSection')))
         .dy;
     expect(toolbarY, lessThan(sectionY));
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
+    expect(find.byKey(const Key('buildOptionsSection')), findsOneWidget);
   });
 
   testWidgets('保存挂起时选项控件与运行库下拉禁用', (tester) async {
@@ -1476,7 +1355,9 @@ void main() {
     expect(_optionCombo(tester, 'tbb').onChanged, isNull);
     expect(_runtimeCombo(tester).onChanged, isNull);
     expect(
-      tester.widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm'))).onChanged,
+      tester
+          .widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm')))
+          .onChanged,
       isNull,
     );
 
@@ -1487,223 +1368,6 @@ void main() {
     expect(find.text('已保存'), findsOneWidget);
     expect(_runtimeCombo(tester).onChanged, isNotNull);
     expect(_optionCombo(tester, 'tbb').onChanged, isNotNull);
-  });
-
-  testWidgets('有仓库时显示当前与最新版本', (tester) async {
-    final Completer<String?> latest = Completer<String?>();
-    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-        loadLatestVersion: (String repoUrl) => latest.future,
-      ),
-    );
-    await tester.pump();
-
-    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
-    expect(chip, findsOneWidget);
-    expect(
-      find.descendant(of: chip, matching: find.text('当前')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: chip, matching: find.text('v1.0.0')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: chip, matching: find.text('查询中…')),
-      findsOneWidget,
-    );
-
-    latest.complete('v2.0.0');
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(
-      find.descendant(of: chip, matching: find.text('v2.0.0')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: chip, matching: find.text('查询中…')),
-      findsNothing,
-    );
-  });
-
-  testWidgets('最新版本高于当前版本时显示前导更新图标', (tester) async {
-    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-        loadLatestVersion: (String repoUrl) async => 'v2.0.0',
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
-    expect(
-      find.descendant(
-        of: chip,
-        matching: find.byIcon(FluentIcons.update_restore),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: chip, matching: find.text('v2.0.0')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('未注入最新版本加载器时显示占位', (tester) async {
-    final PackModel pack = _buildPack('demo');
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
-    expect(chip, findsOneWidget);
-    expect(
-      find.descendant(of: chip, matching: find.text('不可用')),
-      findsNWidgets(2),
-      reason: '当前与最新均显示不可用占位',
-    );
-  });
-
-  testWidgets('无仓库的包不显示版本控件', (tester) async {
-    final PackModel pack = _buildPack('demo');
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => null,
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsNothing);
-    expect(find.byKey(const Key('openRepoButton')), findsNothing);
-    expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
-    expect(find.byKey(const Key('packRepoRuntimeSeparator')), findsNothing);
-  });
-
-  testWidgets('最新版本查询失败时显示占位', (tester) async {
-    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-        loadLatestVersion: (String repoUrl) async => null,
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder chip = find.byKey(const Key('packRepoVersionLabel'));
-    expect(
-      find.descendant(of: chip, matching: find.text('v1.0.0')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: chip, matching: find.text('不可用')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('有仓库时渲染「远程仓库」按钮并带完整 URL 提示', (tester) async {
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byKey(const Key('openRepoButton')), findsOneWidget);
-    expect(find.text('远程仓库'), findsOneWidget);
-    expect(find.byTooltip('https://example.com/demo'), findsOneWidget);
-  });
-
-  testWidgets('点击打开远程仓库按钮使用规范化 URL', (tester) async {
-    String? openedUrl;
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-        openUrl: (String url) async {
-          openedUrl = url;
-          return true;
-        },
-      ),
-    );
-    await tester.pump();
-
-    await tester.tap(find.byKey(const Key('openRepoButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(openedUrl, 'https://example.com/demo');
-    expect(find.text('无法打开链接'), findsNothing);
-  });
-
-  testWidgets('打开远程仓库失败时提示无法打开链接', (tester) async {
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async => _header(),
-        openUrl: (String url) async => false,
-      ),
-    );
-    await tester.pump();
-
-    await tester.tap(find.byKey(const Key('openRepoButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('无法打开链接'), findsOneWidget);
-  });
-
-  testWidgets('仓库不可打开时不渲染打开远程仓库按钮', (tester) async {
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        onBuildPack: (PackModel value) async {},
-        loadHeader: (PackModel value) async =>
-            const BuildScriptHeader(repo: r'D:\repos\demo'),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byKey(const Key('openRepoButton')), findsNothing);
-    expect(find.byKey(const Key('packRepoRuntimeSeparator')), findsNothing);
-    expect(find.byKey(const Key('packRepoVersionLabel')), findsOneWidget);
   });
 }
 
@@ -1741,37 +1405,14 @@ const BuildScriptOption _accelOption = BuildScriptOption(
 BuildScriptHeader _header({
   List<BuildScriptOption> options = const <BuildScriptOption>[],
 }) {
-  return BuildScriptHeader(
-    repo: 'https://example.com/demo.git',
-    options: options,
-  );
-}
-
-Finder _nearestAncestorRow(WidgetTester tester, Finder descendant) {
-  Finder? result;
-  tester.element(descendant).visitAncestorElements((Element ancestor) {
-    if (result != null) {
-      return true;
-    }
-    if (ancestor.widget is Row) {
-      final Widget row = ancestor.widget;
-      result = find.byWidgetPredicate(
-        (Widget widget) => identical(widget, row),
-      );
-      return true;
-    }
-    return false;
-  });
-  return result ?? (throw StateError('未找到祖先 Row'));
+  return BuildScriptHeader(sourceDir: '.cnp-src', options: options);
 }
 
 ComboBox<String> _optionCombo(WidgetTester tester, String name) =>
     tester.widget<ComboBox<String>>(find.byKey(Key('buildOption_$name')));
 
-ComboBox<String> _runtimeCombo(WidgetTester tester) =>
-    tester.widget<ComboBox<String>>(
-      find.byKey(const Key('buildRuntimeSelector')),
-    );
+ComboBox<String> _runtimeCombo(WidgetTester tester) => tester
+    .widget<ComboBox<String>>(find.byKey(const Key('buildRuntimeSelector')));
 
 BoxDecoration _rowDecoration(WidgetTester tester, Finder row) =>
     tester.widget<Container>(row).decoration! as BoxDecoration;

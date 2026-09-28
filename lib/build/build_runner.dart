@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/build/build_cache.dart';
 import 'package:cpp_nuget_pack/build/build_cleanup.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -18,15 +17,13 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
   Map<String, String>? environment,
 });
 
-/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`/
-/// `onSourceVersion`/`gitGlobalArguments` 调用 [runPackBuild]。
+/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`
+/// 调用 [runPackBuild]。
 typedef PackBuildRunner = Future<void> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   Map<String, String>? environment,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
-  List<String> gitGlobalArguments,
 });
 
 /// 流式子进程执行器：与 `Process.start` 同形的可注入替代（测试用）。
@@ -37,8 +34,8 @@ typedef PackStreamingProcessRunner = Future<Process> Function(
   Map<String, String>? environment,
 });
 
-/// 构建阶段：下载源码 / 执行构建。
-enum PackBuildStage { downloading, building }
+/// 构建阶段：备源（拷贝预置源码 / 建空工作区）/ 执行构建。
+enum PackBuildStage { staging, building }
 
 /// 构建失败异常：[message] 面向用户展示，[outputTail] 为进程输出末尾片段。
 class PackBuildException implements Exception {
@@ -52,7 +49,6 @@ class PackBuildException implements Exception {
 }
 
 const int _outputTailLineCount = 20;
-const String _gitPromptEnvironmentKey = 'GIT_TERMINAL_PROMPT';
 
 /// 构建源码准备结果（[preparePackSource] 输出）。
 class PackSourcePreparation {
@@ -79,50 +75,40 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
   PackProcessRunner processRunner,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
   String cacheRoot,
   Map<String, String>? environment,
 });
 
-/// 解析 `build.py` 头部、拉取/对齐源码并清空包源目录（构建流水线前半段）。
+/// 校验 `build.py` 头部、从包内预置源码目录备源并清空包源目录（构建流水线前半段）。
 ///
-/// 流程：解析 `build.py` 头部（仓库地址 + 可选 `# source: none`，并校验
-/// `# profile:` 声明为受支持版本，见 [requireSupportedBuildProfile]——失败即在
-/// 任何副作用前抛 [PackBuildException]）→ 目标目录
-/// （`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，保证同一
-/// 工作目录下缓存稳定命中）克隆；已有 `.git` 时原位硬重置（`fetch --progress`
-/// → `reset --hard` 上游跟踪分支（无上游回退远端默认分支，绝不盲用
-/// `FETCH_HEAD`）→ `clean -ffdx`，保留 `.git`、清掉上次构建的中间产物）→
-/// 源码版本对齐（解析最新稳定 tag → `checkout --force` 该 tag；无可用 tag
-/// 或检出失败时保持默认分支行为，且版本记录回退 `describe → 短哈希`，
-/// 见 [resolveLatestStableTag]）→ 清空包源
-/// 目录中白名单外的一切（见 [cleanupBuildOutput]）。
+/// 流程：根级 `build.py` 存在性检查 → 解析头部（首行为严格锚点源码来源声明，
+/// 并校验 `# profile:` 声明为受支持版本，见 [requireSupportedBuildProfile]、
+/// 源码目录声明为包源目录下的相对路径，见 [requireValidSourceDirective]——任一
+/// 失败即在任何副作用前抛 [PackBuildException]）→ 校验预置源码目录存在且非空
+/// → 目标目录（`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，
+/// 保证同一工作目录下缓存稳定命中）备源 → 清空包源目录中白名单外的一切
+/// （见 [cleanupBuildOutput]）。
 ///
-/// 声明 `# source: none`（预构建配方）时跳过 git：仅创建目标目录作为
-/// `SRC_PATH` 工作区（缓存目录不清理，脚本缓存跨构建复用），但仍清空包源目录。
+/// 两条备源分支语义相反，不得统一：
+/// - 声明了预置源码目录：先删目标目录残留再整树拷贝，每次构建从干净状态开始
+///   （等价原 `git clean -ffdx`），空目录一并复制以保持树形结构；
+/// - 声明 `# source: none`（无预置源码）：只创建目标目录作为 `SRC_PATH`
+///   工作区，**绝不清理缓存目录**——脚本自行下载/解压的产物（可达数百 MB）
+///   须跨构建复用，误清会让每次构建退化为全量重下且不报任何错。
 ///
-/// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）；
-/// 与 `GIT_TERMINAL_PROMPT` 同名的键恒以本函数计算的值为准。
-/// [onOutput] 非空时逐行转发子进程输出（git 源码拉取），同时汇聚完整输出用于
-/// 失败诊断；clone / fetch 追加 `--progress` 以强制输出进度。
+/// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）。
+/// [onOutput] 非空时逐行转发构建脚本子进程输出，同时汇聚完整输出用于失败诊断。
 /// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
 /// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
 /// `Process.start`，测试注入替代实现）。
-/// [onSourceVersion] 非空时在源码就绪后回调源码版本：优先使用刚成功检出的
-/// 最新稳定 tag（检出失败不记录该 tag，避免与实建源码不符），回退
-/// `git describe --tags --abbrev=0`（仍失败回退 `git rev-parse --short HEAD`）；
-/// 查询失败静默跳过，`# source: none` 包不查询。
-/// 为 null 时不产生任何额外 git 调用（源码对齐仍照常执行）。
 Future<PackSourcePreparation> preparePackSource(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
-  List<String> gitGlobalArguments = const <String>[],
 }) async {
   final String? sourcePath = pack.sourcePath;
   if (sourcePath == null) {
@@ -141,81 +127,56 @@ Future<PackSourcePreparation> preparePackSource(
     await scriptOnDisk.readAsString(),
   );
   if (header == null) {
-    throw const PackBuildException('build.py 首行缺少 git 仓库地址（格式：# <仓库地址>）');
+    throw PackBuildException(
+      buildScriptSourceDeclarationMissingMessage(scriptOnDisk.path),
+    );
   }
 
-  // Profile 前置校验（fail-closed）：在下载阶段回调、缓存目录创建、git 调用与
-  // 源目录清理等一切副作用之前拒绝不带受支持 Profile 声明的配方。
+  // Profile 与源码来源声明的前置校验（fail-closed）：在阶段回调、缓存目录创建、
+  // 预置源码拷贝与包源目录清理等一切副作用之前拒绝不合规配方。
   try {
     requireSupportedBuildProfile(header, scriptOnDisk.path);
+    requireValidSourceDirective(header, scriptOnDisk.path);
   } on FormatException catch (error) {
     throw PackBuildException(formatError(error));
   }
 
-  onStage(PackBuildStage.downloading);
+  // 预置源码目录的存在性与非空性同样在副作用之前校验：否则错误只会指向配方
+  // 内部（在空 SRC_PATH 上炸），把排查方向带偏。
+  final String? sourceDir = header.sourceDir;
+  final Directory? presetSource = sourceDir == null
+      ? null
+      : Directory(joinPath(sourcePath, sourceDir));
+  if (presetSource != null) {
+    if (!await presetSource.exists()) {
+      throw PackBuildException(
+        '找不到包内预置源码目录：${presetSource.absolute.path}'
+        '（首行声明 "# source: $sourceDir"）',
+      );
+    }
+    if (!await _treeHasFile(presetSource)) {
+      throw PackBuildException(
+        '包内预置源码目录为空：${presetSource.absolute.path}'
+        '（首行声明 "# source: $sourceDir"）',
+      );
+    }
+  }
+
+  onStage(PackBuildStage.staging);
   final Directory target = packBuildCacheDirectory(
     pack.name,
     cacheRoot: cacheRoot,
   );
-  if (header.sourceNone) {
-    // 预构建配方（`# source: none`）：跳过 git 源码拉取；缓存目录仍会创建并
-    // 作为 `SRC_PATH` 注入，供脚本自行下载/解压（二次构建复用其中缓存；
-    // 与源码克隆缓存不同，预构建缓存不随构建清空）。
+  if (presetSource == null) {
+    // 预构建配方（`# source: none`）：缓存目录只建不清，脚本自行下载/解压的
+    // 产物跨构建复用。
     await target.create(recursive: true);
   } else {
-    await target.parent.create(recursive: true);
-    if (await _hasGitDirectory(target)) {
-      await _pullRepository(
-        processRunner,
-        streamRunner,
-        target,
-        environment,
-        onOutput,
-        gitGlobalArguments,
-      );
-    } else {
-      await _cloneRepository(
-        processRunner,
-        streamRunner,
-        target,
-        header.repo,
-        environment,
-        onOutput,
-        gitGlobalArguments,
-      );
-    }
-    final String? stableTag = await _alignSourceVersion(
-      processRunner,
-      streamRunner,
-      target,
-      environment,
-      onOutput,
-      gitGlobalArguments,
-    );
-    await _cleanRepository(
-      processRunner,
-      streamRunner,
-      target,
-      environment,
-      onOutput,
-      gitGlobalArguments,
-    );
-    if (onSourceVersion != null) {
-      final String? version = await _querySourceVersion(
-        processRunner,
-        target,
-        environment,
-        stableTag: stableTag,
-        gitGlobalArguments: gitGlobalArguments,
-      );
-      if (version != null) {
-        onSourceVersion(version);
-      }
-    }
+    await _materializeSource(presetSource, target);
   }
 
   // 源码（或预构建工作区）就绪后、执行脚本前清空包源目录，保证产物不带
-  // 上一次构建的残留；下载/拉取失败时不触碰源目录。
+  // 上一次构建的残留；备源失败时不触碰源目录。
   try {
     await cleanupBuildOutput(sourcePath);
   } on BuildCleanupException catch (error) {
@@ -229,19 +190,67 @@ Future<PackSourcePreparation> preparePackSource(
   );
 }
 
-/// 拉取源码并执行包内 `build.py`。
+/// 目录树内是否至少含一个文件（目录递归下探；不跟随链接）。
+Future<bool> _treeHasFile(Directory directory) async {
+  await for (final FileSystemEntity entry in directory.list(
+    followLinks: false,
+  )) {
+    if (entry is File) {
+      return true;
+    }
+    if (entry is Directory && await _treeHasFile(entry)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 备源：删除 [target] 残留后把 [source] 整树拷入（含空目录）。
+Future<void> _materializeSource(Directory source, Directory target) async {
+  await _deleteResidual(target.path);
+  await target.create(recursive: true);
+  try {
+    await _copyTree(source, target);
+  } on FileSystemException catch (error) {
+    throw PackBuildException(
+      '准备源码失败：无法把 ${source.absolute.path} 复制到 '
+      '${target.absolute.path}（$error）',
+    );
+  }
+}
+
+/// 递归拷贝目录树（源目录 → 目标目录，含空目录）。
 ///
-/// 覆盖整条构建流水线：[preparePackSource]（git 拉取/对齐 + 源目录清理）→
+/// 与 `FileScan` 的扫描口径一致：不跟随符号链接/目录联接，避免把目录外的树
+/// 拖进缓存。
+Future<void> _copyTree(Directory from, Directory to) async {
+  await for (final FileSystemEntity entry in from.list(followLinks: false)) {
+    final String destination = joinPath(to.path, baseName(entry.path));
+    if (entry is Directory) {
+      await Directory(destination).create(recursive: true);
+      await _copyTree(entry, Directory(destination));
+      continue;
+    }
+    if (entry is File) {
+      await entry.copy(destination);
+      continue;
+    }
+  }
+}
+
+/// 执行包内 `build.py`（源码准备见 [preparePackSource]）。
+///
+/// 覆盖整条构建流水线：[preparePackSource]（备源 + 包源目录清理）→
 /// 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`（包源目录）环境变量运行
 /// `python build.py`；python 子进程固定注入 `PYTHONIOENCODING=utf-8`，保证
 /// 管道中的 stdout/stderr 恒为 UTF-8（中文 Windows 下默认按 GBK 编码，会与
 /// 流式解码口径不一致）。提权重试路径（见 elevated_build.dart）复用同一
 /// 源码准备实现，仅构建脚本阶段不同，避免两条路径行为漂移。
 ///
-/// 其余参数口径与 [preparePackSource] 一致：[onOutput] 逐行转发 git 与 python
-/// 输出；[streamRunner] 为 null 时保持一次性捕获，非 null 时以其为流式执行器
+/// 其余参数口径与 [preparePackSource] 一致：[onOutput] 逐行转发 python 输出；
+/// [streamRunner] 为 null 时保持一次性捕获，非 null 时以其为流式执行器
 /// （生产经 [runPackBuildStreaming] 注入 `Process.start`）。源码准备失败
-/// （克隆/拉取/检出/清理）抛 [PackBuildException]，构建脚本非零退出抛
+/// （备源/清理）抛 [PackBuildException]，构建脚本非零退出抛
 /// [PackBuildException]（携带输出尾部）。
 Future<void> runPackBuild(
   PackModel pack,
@@ -249,10 +258,8 @@ Future<void> runPackBuild(
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
-  List<String> gitGlobalArguments = const <String>[],
 }) async {
   final PackSourcePreparation source = await preparePackSource(
     pack,
@@ -260,10 +267,8 @@ Future<void> runPackBuild(
     processRunner: processRunner,
     streamRunner: streamRunner,
     onOutput: onOutput,
-    onSourceVersion: onSourceVersion,
     cacheRoot: cacheRoot,
     environment: environment,
-    gitGlobalArguments: gitGlobalArguments,
   );
   onStage(PackBuildStage.building);
   await _runBuildScript(
@@ -278,7 +283,7 @@ Future<void> runPackBuild(
 }
 
 /// 生产构建入口：[runPackBuild] 的流式变体，默认以 `Process.start` 逐行转发
-/// git 与 python 子进程输出（UI 实时显示）；其余参数口径与 [runPackBuild]
+/// python 子进程输出（UI 实时显示）；其余参数口径与 [runPackBuild]
 /// 完全一致。测试可经 [streamRunner] 注入替代执行器。
 Future<void> runPackBuildStreaming(
   PackModel pack,
@@ -286,10 +291,8 @@ Future<void> runPackBuildStreaming(
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner streamRunner = Process.start,
   void Function(String line)? onOutput,
-  void Function(String version)? onSourceVersion,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
-  List<String> gitGlobalArguments = const <String>[],
 }) {
   return runPackBuild(
     pack,
@@ -297,412 +300,9 @@ Future<void> runPackBuildStreaming(
     processRunner: processRunner,
     streamRunner: streamRunner,
     onOutput: onOutput,
-    onSourceVersion: onSourceVersion,
     cacheRoot: cacheRoot,
     environment: environment,
-    gitGlobalArguments: gitGlobalArguments,
   );
-}
-
-Future<bool> _hasGitDirectory(Directory target) async {
-  final FileSystemEntityType type = await FileSystemEntity.type(
-    '${target.path}/.git',
-  );
-  return type != FileSystemEntityType.notFound;
-}
-
-/// 已有仓库的源码对齐（版本对齐前段）：`fetch` 拉到最新 → `reset --hard` 到
-/// 上游跟踪分支（无上游时回退远端默认分支，见 [_resetHard]）；不执行 `clean`
-/// ——清理须在「检出最新稳定 tag」之后（见 [runPackBuild]），否则 tag 检出的
-/// 工作树变更会被提前清掉。
-///
-/// 任一步非零退出抛 [PackBuildException]（文案与输出尾部口径与克隆失败一致）；
-/// 此时不执行包源目录清理与构建脚本。
-Future<void> _pullRepository(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  Directory target,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) async {
-  final ProcessResult fetch = await _runGit(
-    processRunner,
-    streamRunner,
-    const <String>['fetch', '--progress'],
-    workingDirectory: target.path,
-    environment: environment,
-    onOutput: onOutput,
-    gitGlobalArguments: gitGlobalArguments,
-  );
-  _requirePullStep(fetch);
-  final ProcessResult reset = await _resetHard(
-    processRunner,
-    streamRunner,
-    target,
-    environment,
-    onOutput,
-    gitGlobalArguments,
-  );
-  if (reset.exitCode != 0) {
-    throw PackBuildException(
-      '拉取源码失败（退出码 ${reset.exitCode}）；'
-      '无法确定 ${target.path} 的默认分支，可删除该缓存目录后重试构建',
-      outputTail: _outputTail(reset),
-    );
-  }
-}
-
-/// 清掉工作区上次构建的中间产物（`clean -ffdx`，含 ignored 文件），保留
-/// `.git` 与仓库配置；在源码版本对齐（tag 检出）之后执行。
-Future<void> _cleanRepository(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  Directory target,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) async {
-  final ProcessResult clean = await _runGit(
-    processRunner,
-    streamRunner,
-    const <String>['clean', '-ffdx'],
-    workingDirectory: target.path,
-    environment: environment,
-    onOutput: onOutput,
-    gitGlobalArguments: gitGlobalArguments,
-  );
-  _requirePullStep(clean);
-}
-
-/// `reset --hard` 到当前分支的上游（`@{u}`）；无上游配置时回退远端默认分支
-/// （`origin/HEAD`，缺失时先经 `git remote set-head origin --auto` 刷新再解析）；
-/// 全部失败返回最后一次失败结果（调用方据此报错，绝不盲用 `FETCH_HEAD`——
-/// 多行 FETCH_HEAD 取首行会检出非预期分支）。
-Future<ProcessResult> _resetHard(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  Directory target,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) async {
-  final ProcessResult upstream = await _runGit(
-    processRunner,
-    streamRunner,
-    const <String>['reset', '--hard', '@{u}'],
-    workingDirectory: target.path,
-    environment: environment,
-    onOutput: onOutput,
-    gitGlobalArguments: gitGlobalArguments,
-  );
-  if (upstream.exitCode == 0) {
-    return upstream;
-  }
-  String? remoteHead = await _readRemoteHead(
-    processRunner,
-    streamRunner,
-    target,
-    environment,
-    onOutput,
-    gitGlobalArguments,
-  );
-  if (remoteHead == null) {
-    // 缓存仓库可能缺失 `refs/remotes/origin/HEAD`（克隆后被清理/损坏），
-    // 经 `set-head --auto` 重新从远端解析默认分支；失败时保持 null。
-    await _runGit(
-      processRunner,
-      streamRunner,
-      const <String>['remote', 'set-head', 'origin', '--auto'],
-      workingDirectory: target.path,
-      environment: environment,
-      onOutput: onOutput,
-      gitGlobalArguments: gitGlobalArguments,
-    );
-    remoteHead = await _readRemoteHead(
-      processRunner,
-      streamRunner,
-      target,
-      environment,
-      onOutput,
-      gitGlobalArguments,
-    );
-  }
-  if (remoteHead != null) {
-    return _runGit(
-      processRunner,
-      streamRunner,
-      <String>['reset', '--hard', remoteHead],
-      workingDirectory: target.path,
-      environment: environment,
-      onOutput: onOutput,
-      gitGlobalArguments: gitGlobalArguments,
-    );
-  }
-  return upstream;
-}
-
-/// 解析远端默认分支的本地引用：`git symbolic-ref --quiet refs/remotes/origin/HEAD`
-/// → `refs/remotes/origin/<分支>`；无符号引用或解析失败返回 null。
-Future<String?> _readRemoteHead(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  Directory target,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) async {
-  final ProcessResult result = await _runGit(
-    processRunner,
-    streamRunner,
-    const <String>['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'],
-    workingDirectory: target.path,
-    environment: environment,
-    onOutput: onOutput,
-    gitGlobalArguments: gitGlobalArguments,
-  );
-  if (result.exitCode != 0) {
-    return null;
-  }
-  final String ref = '${result.stdout}'.trim();
-  return ref.isEmpty ? null : ref;
-}
-
-void _requirePullStep(ProcessResult result) {
-  if (result.exitCode != 0) {
-    throw PackBuildException(
-      '拉取源码失败（退出码 ${result.exitCode}）',
-      outputTail: _outputTail(result),
-    );
-  }
-}
-
-/// 源码版本对齐：解析远端最新稳定 tag（与 UI「最新版本」同一口径）并
-/// `git checkout --force` 到该 tag（detached HEAD）。
-///
-/// - 已处于目标 tag 时 git 输出「Already on ...」且退出码 0，重复构建幂等；
-/// - 无可用 tag（含查询失败）视为保持默认分支行为，静默跳过；
-/// - 检出失败（如 tag 在远端被删除、本地缺少对象）时打印提示并保持当前
-///   分支状态继续构建——源码版本对齐是尽力而为，不应让整次构建失败。
-///
-/// 返回仅当检出成功时为该 tag；未解析出或检出失败返回 null（调用方版本记录
-/// 回退 `describe → 短哈希`，避免记录与实建源码不符的 tag）。
-Future<String?> _alignSourceVersion(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  Directory target,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) async {
-  final String? tag = await resolveLatestStableTag(
-    target,
-    runner: _tagQueryRunner(
-      processRunner,
-      streamRunner,
-      onOutput,
-      gitGlobalArguments,
-    ),
-    timeout: const Duration(seconds: 15),
-    environment: environment,
-  );
-  if (tag == null) {
-    return null;
-  }
-  final ProcessResult checkout = await _runGit(
-    processRunner,
-    streamRunner,
-    <String>['checkout', '--force', tag],
-    workingDirectory: target.path,
-    environment: environment,
-    onOutput: onOutput,
-    gitGlobalArguments: gitGlobalArguments,
-  );
-  if (checkout.exitCode != 0) {
-    onOutput?.call('警告：检出最新稳定 tag $tag 失败，保持默认分支继续构建');
-    return null;
-  }
-  return tag;
-}
-
-/// tag 查询执行器：按当前模式选择（注入流式执行器时经 `git ls-remote` 流式
-/// 转发，与 fetch/python 输出口径一致；否则用收集式 [processRunner]）。
-/// [gitGlobalArguments]（如手动代理的 `-c http.proxy=...`）前置到子命令之前。
-PackProcessRunner _tagQueryRunner(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) {
-  return (
-    String executable,
-    List<String> arguments, {
-    String? workingDirectory,
-    Map<String, String>? environment,
-  }) async {
-    final List<String> commandArguments = <String>[
-      ...gitGlobalArguments,
-      ...arguments,
-    ];
-    final Map<String, String> gitEnvironment = <String, String>{
-      ...?environment,
-      _gitPromptEnvironmentKey: '0',
-    };
-    if (streamRunner == null) {
-      return processRunner(
-        executable,
-        commandArguments,
-        workingDirectory: workingDirectory,
-        environment: gitEnvironment,
-      );
-    }
-    return _runStreamingProcess(
-      streamRunner,
-      executable,
-      commandArguments,
-      workingDirectory,
-      gitEnvironment,
-      onOutput,
-    );
-  };
-}
-
-Future<void> _cloneRepository(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  Directory target,
-  String repository,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments,
-) async {
-  await _deleteResidual(target.path);
-  final ProcessResult result = await _runGit(
-    processRunner,
-    streamRunner,
-    <String>['clone', '--progress', repository, target.path],
-    environment: environment,
-    onOutput: onOutput,
-    gitGlobalArguments: gitGlobalArguments,
-  );
-  if (result.exitCode == 0) {
-    return;
-  }
-  await _deleteResidual(target.path);
-  throw PackBuildException(
-    '克隆源码失败（退出码 ${result.exitCode}）',
-    outputTail: _outputTail(result),
-  );
-}
-
-Future<ProcessResult> _runGit(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  List<String> arguments, {
-  String? workingDirectory,
-  Map<String, String>? environment,
-  void Function(String line)? onOutput,
-  List<String> gitGlobalArguments = const <String>[],
-}) {
-  final Map<String, String> gitEnvironment = <String, String>{
-    ...?environment,
-    _gitPromptEnvironmentKey: '0',
-  };
-  final List<String> commandArguments = <String>[
-    ...gitGlobalArguments,
-    ...arguments,
-  ];
-  if (streamRunner != null) {
-    return _runStreamingProcess(
-      streamRunner,
-      'git',
-      commandArguments,
-      workingDirectory,
-      gitEnvironment,
-      onOutput,
-    );
-  }
-  return processRunner(
-    'git',
-    commandArguments,
-    workingDirectory: workingDirectory,
-    environment: gitEnvironment,
-  );
-}
-
-/// 查询仓库版本：优先使用 [stableTag]（刚成功检出的最新稳定 tag，与「最新版本」
-/// 显示口径一致）；未提供（未解析出或检出失败）时回退
-/// `git describe --tags --abbrev=0`，仍失败回退短哈希，均失败返回 null。
-Future<String?> _querySourceVersion(
-  PackProcessRunner processRunner,
-  Directory target,
-  Map<String, String>? environment, {
-  String? stableTag,
-  List<String> gitGlobalArguments = const <String>[],
-}) async {
-  if (stableTag != null) {
-    return stableTag;
-  }
-  final String? tag = await _describeTag(
-    processRunner,
-    target,
-    environment,
-    gitGlobalArguments,
-  );
-  if (tag != null) {
-    return tag;
-  }
-  return _shortHead(processRunner, target, environment, gitGlobalArguments);
-}
-
-Future<String?> _describeTag(
-  PackProcessRunner processRunner,
-  Directory target,
-  Map<String, String>? environment,
-  List<String> gitGlobalArguments,
-) async {
-  try {
-    final ProcessResult result = await _runGit(
-      processRunner,
-      null,
-      const <String>['describe', '--tags', '--abbrev=0'],
-      workingDirectory: target.path,
-      environment: environment,
-      gitGlobalArguments: gitGlobalArguments,
-    );
-    if (result.exitCode != 0) {
-      return null;
-    }
-    final String tag = '${result.stdout}'.trim();
-    return tag.isEmpty ? null : tag;
-  } on ProcessException {
-    return null;
-  }
-}
-
-Future<String?> _shortHead(
-  PackProcessRunner processRunner,
-  Directory target,
-  Map<String, String>? environment,
-  List<String> gitGlobalArguments,
-) async {
-  try {
-    final ProcessResult result = await _runGit(
-      processRunner,
-      null,
-      const <String>['rev-parse', '--short', 'HEAD'],
-      workingDirectory: target.path,
-      environment: environment,
-      gitGlobalArguments: gitGlobalArguments,
-    );
-    if (result.exitCode != 0) {
-      return null;
-    }
-    final String hash = '${result.stdout}'.trim();
-    return hash.isEmpty ? null : hash;
-  } on ProcessException {
-    return null;
-  }
 }
 
 Future<void> _deleteResidual(String path) async {

@@ -9,7 +9,7 @@
 
 </div>
 
-CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把 C/C++ 头文件、源码和库组织为 NuGet 包或 CMake 配置包。它既支持从本地目录添加包，也支持依据远程仓库的 `build.py` 拉取源码、准备编译环境、执行构建并重新映射；节点脚本编辑器可生成 PowerShell 5.1 脚本并随 NuGet 包发布。设置页可导出 `SKILL.md`，用于指导 AI 为远程仓库编写 `build.py`。
+CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把 C/C++ 头文件、源码和库组织为 NuGet 包或 CMake 配置包。它既支持从本地目录添加包，也支持依据包内预置源码目录的 `build.py` 准备源码、准备编译环境、执行构建并重新映射；节点脚本编辑器可生成 PowerShell 5.1 脚本并随 NuGet 包发布。设置页可导出 `SKILL.md`，用于指导 AI 为源码包编写 `build.py`。
 
 ## 功能特性
 
@@ -58,18 +58,30 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 
 解压后把包根加入 `CMAKE_PREFIX_PATH`，即可使用 `find_package(<包名> CONFIG REQUIRED)`，并链接 `<包名>::<包名>`。两种格式都把 `.a` 视为通用静态归档：与 `.lib` 一样归入库目录并保留 `release`/`debug` 路径段（CMake 格式中按配置分组写入链接列表）。CMake 格式不包含节点脚本，根级 `build.py` 同样排除。
 
-## 远程构建与 SKILL.md
+## 构建配方与 SKILL.md
 
 源目录根部存在 `build.py` 时，应用按以下约定执行构建：
 
-- 第一行必须是 `# <git仓库地址>`；其后连续的 `#` 行可声明 `# tool`、`# option`、`# checkbox`、`# multiselect`、`# runtime`、`# source: none` 和 `# depends` 指令。
-- 默认流程是准备构建环境、拉取或复用源码缓存、对齐版本、执行 `python -u build.py`、检查头文件引用并自动重新映射。
+- 第一行必须是 `# source: <包内相对目录>`（严格锚点，不匹配即整头解析失败）；只提供预构建归档的配方写 `# source: none`。其后连续的 `#` 行可声明 `# tool`、`# option`、`# checkbox`、`# multiselect`、`# runtime`、`# profile` 和 `# depends` 指令。
+- 默认流程是准备构建环境、从预置源码目录备源、执行 `python -u build.py`、检查头文件引用并自动重新映射。
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链与选项变量以及 `PYTHONIOENCODING=utf-8`。
 - 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。运行库家族 `md` / `mt` 由工具按「用户选择 > `# runtime:` > `md`」解析后经编译器 Profile 下发子进程，`CNP_RUNTIME_LIBRARY` 旧口径不再进入构建环境。
 - `assets/build/cnp_build_support.py` 会在构建前释放到 `tools/`，供配方统一处理 CMake/Ninja、编译参数、产物分层、许可证和预构建归档分类。
-- 设置页的「生成 SKILL.md…」会写出内置模板 `assets/build/SKILL.md`，其用途是指导 AI 为远程仓库编写兼容本工具的 `build.py`，不是直接生成一个包。
+- 设置页的「生成 SKILL.md…」会写出内置模板 `assets/build/SKILL.md`，其用途是指导 AI 为源码包编写兼容本工具的 `build.py`，不是直接生成一个包。
 
-`# source: none` 用于只提供预构建归档的配方：跳过 Git 源码拉取，由脚本自行下载和解压产物；应用仍会清空 `BUILD_OUT`，并将缓存保留在 `SRC_PATH` 中供后续构建复用。
+### 预置源码目录的硬约束
+
+`# source:` 声明的目录必须是包源目录下的**相对路径**（不得含盘符或 `..`），且**必须以 `.` 开头**（如 `.cnp-src/`）。以 `.` 开头同时满足两条约束，缺一不可：
+
+| 约束 | 不满足的后果 |
+| ---- | ---- |
+| 以 `.` 开头 | 非隐藏名会被文件扫描扫进 `pack.files` 打进 `.nupkg`（体积暴涨），且会在下次构建被输出清理删除 |
+| 已加入清理白名单 | 首次构建后目录即被删，第二次构建报「找不到目录」，根因反直觉 |
+
+头部指令段是从第一行起连续的 `#` 行，**段内不得插入空行**（空行会终止头部解析）：分段请用 `#` 空注释行。另需注意——
+
+- `# source: <dir>`：每次构建把该目录整树拷入 `SRC_PATH`，构建前先清空 `SRC_PATH` 上次构建的残留。
+- `# source: none`：跳过备源，只把 `SRC_PATH` 建为空目录并**跨构建保留**，由脚本自行下载和解压产物。
 
 ## 构建与运行
 
