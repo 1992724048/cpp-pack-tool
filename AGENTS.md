@@ -4,7 +4,7 @@
 
 「C++ NuGet 打包工具」：Flutter **Windows 桌面应用**（`.metadata` → `project_type: app`），目标是把 C++ 头文件/源码/库可视化成 NuGet 包。注意：
 
-- **不是** Flutter 插件、**不是** C++ 库。名称里的 NuGet 是应用生成的目标格式：NuGet 构建器会在打包时自行生成 `<包ID>.nuspec` 与 `build/native/<包ID>.targets`，导出器用 Dart 组装 `.nupkg`；CMake 构建器生成 CMake 配置包。应用不依赖外部 NuGet CLI、`nuget.exe` 或 `dotnet pack`，CI 也不执行 NuGet 工具链。
+- **不是** Flutter 插件、**不是** C++ 库。名称里的 NuGet 是应用生成的目标格式：NuGet 构建器会在打包时自行生成 `<包ID>.nuspec` 与 `build/native/<包ID>.targets`，导出器用 Dart 组装 `.nupkg`。应用不依赖外部 NuGet CLI、`nuget.exe` 或 `dotnet pack`，CI 也不执行 NuGet 工具链。
 - 仅支持 Windows（无 android/ios/linux/macos/web 平台目录）。
 
 ## Commands

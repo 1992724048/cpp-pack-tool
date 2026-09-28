@@ -14,7 +14,6 @@ const Object _unset = Object();
 class SettingsModel {
   const SettingsModel({
     this.outputDirectory,
-    this.cmakeOutputDirectory,
     this.defaultAuthor = '',
     this.themeMode = ThemeModeSetting.system,
     this.compilerPriority = _defaultCompilerPriority,
@@ -23,9 +22,6 @@ class SettingsModel {
 
   /// NuGet 打包输出目录。
   final String? outputDirectory;
-
-  /// CMake 打包输出目录。
-  final String? cmakeOutputDirectory;
 
   /// 全局默认作者：新包预填，占位作者在保存/加载时自动替换。
   final String defaultAuthor;
@@ -42,7 +38,6 @@ class SettingsModel {
   /// 「传 null（清空）」。
   SettingsModel copyWith({
     Object? outputDirectory = _unset,
-    Object? cmakeOutputDirectory = _unset,
     String? defaultAuthor,
     ThemeModeSetting? themeMode,
     List<String>? compilerPriority,
@@ -52,9 +47,6 @@ class SettingsModel {
       outputDirectory: identical(outputDirectory, _unset)
           ? this.outputDirectory
           : outputDirectory as String?,
-      cmakeOutputDirectory: identical(cmakeOutputDirectory, _unset)
-          ? this.cmakeOutputDirectory
-          : cmakeOutputDirectory as String?,
       defaultAuthor: defaultAuthor ?? this.defaultAuthor,
       themeMode: themeMode ?? this.themeMode,
       compilerPriority: compilerPriority ?? this.compilerPriority,
@@ -65,8 +57,6 @@ class SettingsModel {
   Map<String, Object?> toMap() {
     return <String, Object?>{
       if (outputDirectory != null) 'outputDirectory': outputDirectory,
-      if (cmakeOutputDirectory != null)
-        'cmakeOutputDirectory': cmakeOutputDirectory,
       if (defaultAuthor.isNotEmpty) 'defaultAuthor': defaultAuthor,
       'themeMode': themeMode.name,
       'compilerPriority': <String>[...compilerPriority],
@@ -81,7 +71,6 @@ class SettingsModel {
   factory SettingsModel.fromMap(Map<String, Object?> map) {
     return SettingsModel(
       outputDirectory: _optionalString(map['outputDirectory']),
-      cmakeOutputDirectory: _optionalString(map['cmakeOutputDirectory']),
       defaultAuthor: _trimmedString(map['defaultAuthor']),
       themeMode: _themeModeFrom(map['themeMode']),
       compilerPriority: _compilerPriorityFrom(map['compilerPriority']),

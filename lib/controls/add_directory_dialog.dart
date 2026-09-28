@@ -1,8 +1,6 @@
-import 'package:cpp_nuget_pack/controls/format_selection_dialog.dart';
 import 'package:cpp_nuget_pack/controls/license_field.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/util/file_image.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -13,7 +11,6 @@ class AddDirectoryDialog extends StatefulWidget {
     required this.directoryPath,
     required this.scanFuture,
     this.initialAuthor = '',
-    this.builders = PackageBuilderRegistry.all,
   });
 
   final String directoryPath;
@@ -21,9 +18,6 @@ class AddDirectoryDialog extends StatefulWidget {
 
   /// 新包作者预填值（全局默认作者）。
   final String initialAuthor;
-
-  /// 可选的打包格式（测试注入；默认全部注册格式）。
-  final List<PackageBuilder> builders;
 
   @override
   State<AddDirectoryDialog> createState() => _AddDirectoryDialogState();
@@ -37,7 +31,6 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
 
   String? _license;
   bool _licenseValid = true;
-  late final List<String> _enabledFormatIds;
   List<FileModel>? _files;
   Object? _scanError;
 
@@ -45,9 +38,6 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
   void initState() {
     super.initState();
     _authorController.text = widget.initialAuthor;
-    _enabledFormatIds = <String>[
-      for (final PackageBuilder builder in widget.builders) builder.id,
-    ];
     _idController.addListener(_refresh);
     _versionController.addListener(_refresh);
     _authorController.addListener(_refresh);
@@ -102,26 +92,8 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
           license: _license,
           iconPath: icon?.path,
           sourcePath: widget.directoryPath,
-        )
-        ..files = _files ?? const <FileModel>[]
-        ..enabledFormats = List<String>.of(_enabledFormatIds),
+        )..files = _files ?? const <FileModel>[],
     );
-  }
-
-  Future<void> _pickFormats() async {
-    final List<String>? selected = await showFormatSelectionDialog(
-      context,
-      builders: widget.builders,
-      enabledIds: _enabledFormatIds,
-    );
-    if (selected == null || !mounted) {
-      return;
-    }
-    setState(() {
-      _enabledFormatIds
-        ..clear()
-        ..addAll(selected);
-    });
   }
 
   @override
@@ -261,43 +233,8 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
             maxLines: 3,
           ),
         ),
-        const SizedBox(height: 12),
-        _buildFormatField(),
       ],
     );
-  }
-
-  Widget _buildFormatField() {
-    final FluentThemeData theme = FluentTheme.of(context);
-    return _buildField(
-      label: '打包格式',
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              _formatSummary(),
-              key: const Key('addPackFormatSummary'),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: theme.resources.textFillColorSecondary),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Button(
-            key: const Key('addPackFormatButton'),
-            onPressed: _pickFormats,
-            child: const Text('选择…'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatSummary() {
-    final List<String> names = <String>[
-      for (final PackageBuilder builder in widget.builders)
-        if (_enabledFormatIds.contains(builder.id)) builder.displayName,
-    ];
-    return names.isEmpty ? '未启用任何格式' : names.join('、');
   }
 
   Widget _buildField({required String label, required Widget child}) {

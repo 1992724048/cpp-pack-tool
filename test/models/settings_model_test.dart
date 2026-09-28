@@ -319,29 +319,24 @@ void main() {
     expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
   });
 
-  test('默认值与空映射：CMake 目录未设置、默认作者为空', () {
+  test('默认值与空映射：输出目录未设置、默认作者为空', () {
     const SettingsModel settings = SettingsModel();
 
-    expect(settings.cmakeOutputDirectory, isNull);
+    expect(settings.outputDirectory, isNull);
     expect(settings.defaultAuthor, '');
-    expect(
-      const SettingsModel().toMap().containsKey('cmakeOutputDirectory'),
-      isFalse,
-    );
+    expect(const SettingsModel().toMap().containsKey('outputDirectory'), isFalse);
     expect(const SettingsModel().toMap().containsKey('defaultAuthor'), isFalse);
   });
 
-  test('toMap/fromMap 往返保留双输出目录与默认作者', () {
+  test('toMap/fromMap 往返保留输出目录与默认作者', () {
     const SettingsModel settings = SettingsModel(
       outputDirectory: r'D:\out\nuget',
-      cmakeOutputDirectory: r'D:\out\cmake',
       defaultAuthor: '张三',
     );
 
     final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
 
     expect(loaded.outputDirectory, r'D:\out\nuget');
-    expect(loaded.cmakeOutputDirectory, r'D:\out\cmake');
     expect(loaded.defaultAuthor, '张三');
   });
 
@@ -363,35 +358,23 @@ void main() {
     );
   });
 
-  test('CMake 输出目录空串视为未设置', () {
-    final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
-      'cmakeOutputDirectory': '',
-    });
-
-    expect(loaded.cmakeOutputDirectory, isNull);
-  });
-
   test('copyWith 覆盖字段并保留其余字段；可空字段用哨兵区分清空', () {
     const SettingsModel settings = SettingsModel(
       outputDirectory: r'D:\out',
-      cmakeOutputDirectory: r'D:\cmake',
       defaultAuthor: '张三',
       themeMode: ThemeModeSetting.dark,
     );
 
     final SettingsModel same = settings.copyWith();
     expect(same.outputDirectory, r'D:\out');
-    expect(same.cmakeOutputDirectory, r'D:\cmake');
     expect(same.defaultAuthor, '张三');
     expect(same.themeMode, ThemeModeSetting.dark);
 
     final SettingsModel cleared = settings.copyWith(
       outputDirectory: null,
-      cmakeOutputDirectory: null,
       themeMode: ThemeModeSetting.light,
     );
     expect(cleared.outputDirectory, isNull);
-    expect(cleared.cmakeOutputDirectory, isNull);
     expect(cleared.themeMode, ThemeModeSetting.light);
     expect(cleared.defaultAuthor, '张三');
   });

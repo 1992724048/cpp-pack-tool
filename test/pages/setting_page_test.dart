@@ -14,14 +14,11 @@ void main() {
       expect(find.text(header), findsOneWidget, reason: '缺少分区：$header');
     }
     expect(find.text('NuGet 打包输出目录'), findsOneWidget);
-    expect(find.text('CMake 打包输出目录'), findsOneWidget);
     expect(find.text('默认作者'), findsOneWidget);
-    expect(find.text('未设置'), findsNWidgets(2));
+    expect(find.text('未设置'), findsOneWidget);
     expect(find.text('主题模式'), findsOneWidget);
     expect(find.byKey(const Key('settingPickDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingClearDirButton')), findsOneWidget);
-    expect(find.byKey(const Key('settingPickCmakeDirButton')), findsOneWidget);
-    expect(find.byKey(const Key('settingClearCmakeDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingDefaultAuthorField')), findsOneWidget);
     expect(find.byKey(const Key('settingThemeModeField')), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -35,7 +32,7 @@ void main() {
     );
 
     expect(find.text(r'D:\nuget\out'), findsOneWidget);
-    expect(find.text('未设置'), findsOneWidget);
+    expect(find.text('未设置'), findsNothing);
     expect(_clearButton(tester).onPressed, isNotNull);
   });
 
@@ -131,7 +128,7 @@ void main() {
 
     expect(saved, isNotNull);
     expect(saved!.outputDirectory, isNull);
-    expect(find.text('未设置'), findsNWidgets(2));
+    expect(find.text('未设置'), findsOneWidget);
     expect(find.text('已保存'), findsOneWidget);
   });
 
@@ -146,52 +143,12 @@ void main() {
     expect(find.text('已保存'), findsNothing);
   });
 
-  testWidgets('选择 CMake 目录后回传并显示新路径', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      pickDirectory: () async => r'D:\out\cmake',
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
-
-    await tester.tap(find.byKey(const Key('settingPickCmakeDirButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(saved, isNotNull);
-    expect(saved!.cmakeOutputDirectory, r'D:\out\cmake');
-    expect(saved!.outputDirectory, isNull);
-    expect(find.text(r'D:\out\cmake'), findsOneWidget);
-    expect(find.text('已保存'), findsOneWidget);
-  });
-
-  testWidgets('清除 CMake 目录回传空值', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      settings: const SettingsModel(cmakeOutputDirectory: r'D:\out\cmake'),
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
-
-    await tester.tap(find.byKey(const Key('settingClearCmakeDirButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(saved!.cmakeOutputDirectory, isNull);
-    expect(find.text('未设置'), findsNWidgets(2));
-  });
-
-  testWidgets('主题变更保存时保留双目录与默认作者字段', (tester) async {
+  testWidgets('主题变更保存时保留输出目录与默认作者字段', (tester) async {
     SettingsModel? saved;
     await _pumpSetting(
       tester,
       settings: const SettingsModel(
         outputDirectory: r'D:\out\nuget',
-        cmakeOutputDirectory: r'D:\out\cmake',
         defaultAuthor: '张三',
       ),
       onSave: (SettingsModel next) async {
@@ -202,7 +159,6 @@ void main() {
     await _selectCombo(tester, const Key('settingThemeModeField'), '深色');
 
     expect(saved!.outputDirectory, r'D:\out\nuget');
-    expect(saved!.cmakeOutputDirectory, r'D:\out\cmake');
     expect(saved!.defaultAuthor, '张三');
     expect(saved!.themeMode, ThemeModeSetting.dark);
   });

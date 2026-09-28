@@ -14,9 +14,8 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/packaging/cmake_exporter.dart' as cmake_exporter;
+import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
-import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
@@ -149,7 +148,6 @@ class MainLayout extends StatefulWidget {
     this.settings = const SettingsModel(),
     this.onSaveSettings = _noopSaveSettings,
     this.exportPackage = exportNuGetPackage,
-    this.exportCmakePackage = cmake_exporter.exportCmakePackage,
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
     this.retryElevatedBuild = runElevatedPackBuild,
@@ -167,7 +165,6 @@ class MainLayout extends StatefulWidget {
   final SettingsModel settings;
   final Future<void> Function(SettingsModel settings) onSaveSettings;
   final Future<PackageExportResult> Function(PackModel pack, String outputDirectory) exportPackage;
-  final Future<PackageExportResult> Function(PackModel pack, String outputDirectory) exportCmakePackage;
   final PackBuildRunner buildPack;
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
 
@@ -196,12 +193,10 @@ class MainLayout extends StatefulWidget {
 }
 
 class _MainLayoutState extends State<MainLayout> {
-  static const String _nugetBuilderId = 'nuget';
-  static const String _cmakeBuilderId = 'cmake';
+  static const NuGetPackageBuilder _packagingBuilder = NuGetPackageBuilder();
 
   List<PackModel> _packs = [];
   int? _selected;
-  PackageBuilder _packagingBuilder = PackageBuilderRegistry.all.first;
 
   /// 默认作者批量修正防重入（启动与设置变更可能相邻触发）。
   bool _fixingAuthors = false;
@@ -581,10 +576,6 @@ class _MainLayoutState extends State<MainLayout> {
     return applySystemEntries(pack, header: header, resolvePackVersion: (String name) => _findPack(name)?.version).pack;
   }
 
-  void _selectPackagingBuilder(PackageBuilder builder) {
-    setState(() => _packagingBuilder = builder);
-  }
-
   Future<void> _buildPack(PackModel pack) async {
     if (!mounted) {
       return;
@@ -728,13 +719,11 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     final PackModel pack = _packs[selected];
-    final PackageBuilder builder = effectivePackagingBuilder(pack, _packagingBuilder);
-    final bool isCmake = builder.id == _cmakeBuilderId;
-    final String? outputDirectory = isCmake ? widget.settings.cmakeOutputDirectory : widget.settings.outputDirectory;
+    final String? outputDirectory = widget.settings.outputDirectory;
     if (outputDirectory == null || outputDirectory.isEmpty) {
       showFloatingToast(
         context,
-        isCmake ? '请先在设置页配置 CMake 打包输出目录' : '请先在设置页配置 NuGet 打包输出目录',
+        '请先在设置页配置 NuGet 打包输出目录',
         type: FloatingToastType.error,
         duration: const Duration(seconds: 5),
       );
@@ -751,7 +740,7 @@ class _MainLayoutState extends State<MainLayout> {
         return;
       }
     }
-    final PackagePlan? plan = await _buildPackagingPlan(builder, pack);
+    final PackagePlan? plan = await _buildPackagingPlan(pack);
     if (!mounted) {
       return;
     }
@@ -759,7 +748,7 @@ class _MainLayoutState extends State<MainLayout> {
         ? const <PackagingIssue>[]
         : collectExecutableWarnings(plan);
     final List<PackagingIssue> issues = <PackagingIssue>[
-      if (plan != null && builder.id == _nugetBuilderId) ...collectPackagingIssues(pack, plan),
+      if (plan != null) ...collectPackagingIssues(pack, plan),
       ...executableWarnings,
     ];
     if (issues.isNotEmpty) {
@@ -772,22 +761,20 @@ class _MainLayoutState extends State<MainLayout> {
         return;
       }
     }
-    final Future<PackageExportResult> Function(PackModel pack, String outputDirectory) exportPackage =
-        builder.id == _cmakeBuilderId ? widget.exportCmakePackage : widget.exportPackage;
     await showDialog<void>(
       context: context,
       builder: (_) => PackExportDialog(
         pack: pack,
         outputDirectory: outputDirectory,
-        exportPackage: exportPackage,
+        exportPackage: widget.exportPackage,
         onExported: (PackageExportResult result) => _recordExport(pack, result),
       ),
     );
   }
 
-  Future<PackagePlan?> _buildPackagingPlan(PackageBuilder builder, PackModel pack) async {
+  Future<PackagePlan?> _buildPackagingPlan(PackModel pack) async {
     try {
-      return await builder.buildPlan(pack);
+      return await _packagingBuilder.buildPlan(pack);
     } catch (_) {
       // 校验期构建计划失败不阻断导出：导出对话框会以实际错误提示用户
       return null;
@@ -935,8 +922,6 @@ class _MainLayoutState extends State<MainLayout> {
           onSave: _savePack,
           pickDirectory: widget.pickDirectory,
           onBuildPack: _buildPack,
-          packagingBuilder: _packagingBuilder,
-          onPackagingBuilderChanged: _selectPackagingBuilder,
           loadHeader: widget.loadBuildHeader,
         ),
         footerItems: [

@@ -8,14 +8,13 @@ import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/license_file.dart';
-import 'package:cpp_nuget_pack/packaging/package_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/sha1.dart';
 
-class NuGetPackageBuilder implements PackageBuilder {
+class NuGetPackageBuilder {
   const NuGetPackageBuilder();
 
   static const String _buildNative = 'build/native';
@@ -29,13 +28,6 @@ class NuGetPackageBuilder implements PackageBuilder {
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
   static final RegExp _invalidTargetNameChar = RegExp(r'[^A-Za-z0-9_]');
 
-  @override
-  String get id => 'nuget';
-
-  @override
-  String get displayName => 'NuGet 包';
-
-  @override
   Future<PackagePlan> buildPlan(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {

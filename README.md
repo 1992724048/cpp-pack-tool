@@ -9,7 +9,7 @@
 
 </div>
 
-CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把 C/C++ 头文件、源码和库组织为 NuGet 包或 CMake 配置包。它既支持从本地目录添加包，也支持依据包内预置源码目录的 `build.py` 准备源码、准备编译环境、执行构建并重新映射；节点脚本编辑器可生成 PowerShell 5.1 脚本并随 NuGet 包发布。
+CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把 C/C++ 头文件、源码和库组织为 NuGet 包。它既支持从本地目录添加包，也支持依据包内预置源码目录的 `build.py` 准备源码、准备编译环境、执行构建并重新映射；节点脚本编辑器可生成 PowerShell 5.1 脚本并随 NuGet 包发布。
 
 ## 功能特性
 
@@ -21,9 +21,9 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 编译设置 | 管理宏定义、编译前/后命令、附加库目录和附加库，条目可按 ALL/Release/Debug 分组；可接入根级 `pre.bat`/`post.bat` 系统命令。 |
 | 节点脚本 | 在画布上编排节点、连线、检查参数并预览 PowerShell 5.1 脚本；支持校验、诊断、串行防抖保存和失败重试。 |
 | 构建 | 源目录根部存在 `build.py` 时显示构建入口；自动准备编译器与工具、准备源码、执行脚本、检查头文件引用并重新映射。 |
-| 打包设置 | 为每个包启用 NuGet 或 CMake 格式，预览包内文件树和文本内容后导出；CMake 格式提供 `find_package` 配置包。 |
+| 打包设置 | 预览 NuGet 包内的文件树和文本内容后导出。 |
 | 历史记录 | 记录创建、版本变更、重新映射、打包导出和构建事件，时间线最多保留 100 条，可删除单条记录。 |
-| 设置与关于 | 配置 NuGet/CMake 输出目录、默认作者、主题与编译器优先级；关于页显示应用信息与项目主页。 |
+| 设置与关于 | 配置 NuGet 输出目录、默认作者、主题与编译器优先级；关于页显示应用信息与项目主页。 |
 
 ## 打包产物
 
@@ -34,7 +34,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 内容 | 包内路径 | 说明 |
 | ---- | -------- | ---- |
 | 头文件 / 模块 | `build/native/include/<源目录名>/...` | 剥离开头 `include/` 后套源目录命名空间；首段已同名时不再叠加。 |
-| `lib` / `dll` / `pdb` / `.a` | `build/native/lib/...` | 剥离开头 `lib` 或 `bin`；`.a` 是通用静态归档，一并归入库目录。 |
+| `lib` / `dll` / `pdb` / `.a` | `build/native/lib/...` | 剥离开头 `lib` 或 `bin`；`.a` 是通用静态归档，与 `.lib` 一样归入库目录并保留 `release`/`debug` 路径段。 |
 | 其余源文件 | `build/native/files/...` | 保留相对路径；根级 `build.py` 不入包。 |
 | NuGet 清单 | `<包ID>.nuspec` | 由应用生成，记录版本、作者、许可证、依赖和图标引用。 |
 | MSBuild 集成 | `build/native/<包ID>.targets` | 由应用生成，供消费者工程导入。 |
@@ -42,21 +42,6 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 节点脚本（可选） | `build/native/files/scripts/<id>.ps1` | 节点图生成的 UTF-8 BOM PowerShell 5.1 脚本。 |
 
 `<包ID>.targets` 会追加头文件搜索路径，并按 ALL/Release/Debug 写入宏定义、附加库目录和附加库；包内 `.lib` 可按路径自动推导配置。包内 `dll`/`pdb` 在构建后优先硬链接到 `$(OutDir)`（失败时回退复制），许可证文件也按同样方式部署到 `$(OutDir)licenses`。编译前/后命令以带条件的自定义 `Exec` 目标执行；包内 `.asm` 和 `.rc` 分别生成 MASM 与资源编译项。节点脚本按 pre/post 阶段生成 MSBuild `Exec` 目标并传入 `CNP_*` 环境变量。
-
-### CMake 配置包（`.zip`）
-
-导出文件名为 `<包ID>-<去 +build 版本>-cmake.zip`，内容布局如下：
-
-| 内容 | 包内路径 |
-| ---- | -------- |
-| 头文件 / 模块 | `include/<源目录名>/...` |
-| `lib` / `dll` / `pdb` / `.a` | `lib/...` |
-| 其余源文件 | `files/...` |
-| CMake 配置 | `lib/cmake/<包名>/<包名>Config.cmake` |
-| CMake 目标 | `lib/cmake/<包名>/<包名>Targets.cmake` |
-| 版本文件 | `lib/cmake/<包名>/<包名>ConfigVersion.cmake`（版本为数字点分时生成） |
-
-解压后把包根加入 `CMAKE_PREFIX_PATH`，即可使用 `find_package(<包名> CONFIG REQUIRED)`，并链接 `<包名>::<包名>`。两种格式都把 `.a` 视为通用静态归档：与 `.lib` 一样归入库目录并保留 `release`/`debug` 路径段（CMake 格式中按配置分组写入链接列表）。CMake 格式不包含节点脚本，根级 `build.py` 同样排除。
 
 ## 构建配方
 
@@ -118,7 +103,6 @@ config/
 | 字段 | 说明 |
 | ---- | ---- |
 | `outputDirectory` | NuGet 打包输出目录。 |
-| `cmakeOutputDirectory` | CMake 配置包输出目录。 |
 | `defaultAuthor` | 新包默认作者，并用于替换占位作者。 |
 | `themeMode` | `system`、`dark` 或 `light`。 |
 | `compilerPriority` / `detectedCompilers` | 编译器优先级（默认 `ICX > clang-cl > MSVC`）与检测缓存（ICX / clang-cl / MSVC）。 |
@@ -133,7 +117,7 @@ config/
 | `dependencies` | 包依赖（`name`/`version`）。 |
 | `commands` / `macros` / `libDirectories` / `libraries` | 编译集成配置，条目可带 `buildModel`。 |
 | `scripts` | 节点脚本项目、节点、连线和视口数据。 |
-| `buildOptions` / `enabledFormats` | 构建选项和启用的打包格式；空的 `enabledFormats` 表示全部格式启用。 |
+| `buildOptions` | 构建选项。 |
 | `history` | 创建、版本变更、重新映射、导出和构建历史。 |
 
 `buildModel` 取值为 `all`、`release` 或 `debug`。损坏或缺少必填字段的包配置会被跳过，应用启动后以悬浮提示列出问题文件。
@@ -155,7 +139,7 @@ config/
 | [file_selector](https://pub.dev/packages/file_selector) | 系统原生目录和保存位置选择。 |
 | [flutter_svg](https://pub.dev/packages/flutter_svg) | SVG 图标渲染。 |
 | [yaml](https://pub.dev/packages/yaml) / [yaml_edit](https://pub.dev/packages/yaml_edit) | YAML 配置读取与生成。 |
-| [archive](https://pub.dev/packages/archive) | NuGet OPC/ZIP 与 CMake 配置包压缩。 |
+| [archive](https://pub.dev/packages/archive) | NuGet OPC/ZIP 压缩。 |
 | `assets/build/cnp_build_support.py` | 包内 `build.py` 配方使用的构建与产物分类辅助模块。 |
 
 ## 第三方声明

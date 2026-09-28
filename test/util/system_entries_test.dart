@@ -259,8 +259,7 @@ void main() {
             type: HistoryType.created,
             message: '创建包',
           ),
-        ]
-        ..enabledFormats = <String>['nuget'];
+        ];
       const BuildScriptHeader header = BuildScriptHeader(
         dependencies: <BuildScriptDependency>[
           BuildScriptDependency(name: 'libfoo'),
@@ -289,7 +288,6 @@ void main() {
       expect(updated.macros.single.value, 'A=1');
       expect(updated.history.single.message, '创建包');
       expect(updated.buildOptions, <String, String>{'tbb': 'on'});
-      expect(updated.enabledFormats, <String>['nuget']);
       // 不修改入参：原包列表保持原样
       expect(pack.commands, isEmpty);
       expect(pack.dependencies, hasLength(1));

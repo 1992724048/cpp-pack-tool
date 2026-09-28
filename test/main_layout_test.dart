@@ -17,7 +17,6 @@ import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/packaging/cmake_exporter.dart' as cmake_exporter;
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/pages/about.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
@@ -1667,213 +1666,6 @@ void main() {
     expect(exportCalls, 1);
   });
 
-  testWidgets('选择 CMake 格式时坏脚本不入校验且无 exe 不弹窗', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          scripts: <ScriptProjectModel>[_brokenScript()],
-        ),
-      ],
-    );
-    int nugetCalls = 0;
-    int cmakeCalls = 0;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: const SettingsModel(
-        outputDirectory: r'D:\out',
-        cmakeOutputDirectory: r'D:\out\cmake',
-      ),
-      exportPackage: (PackModel pack, String outputDirectory) async {
-        nugetCalls++;
-        return (
-          outputPath: r'D:\out\demo.1.0.0.nupkg',
-          fileCount: 1,
-          packageSize: 64,
-        );
-      },
-      exportCmakePackage: (PackModel pack, String outputDirectory) async {
-        cmakeCalls++;
-        return (
-          outputPath: r'D:\out\demo-1.0.0-cmake.zip',
-          fileCount: 2,
-          packageSize: 128,
-        );
-      },
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.text('打包设置'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('packagingBuilderField')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text('CMake').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byTooltip('打包文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
-    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
-    expect(cmakeCalls, 1);
-    expect(nugetCalls, 0);
-  });
-
-  testWidgets('选择 CMake 格式时包内 exe 弹导出校验并调用 CMake 导出器', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: <FileModel>[
-            FileModel(name: 'tool.exe', path: 'bin/tool.exe', size: 64),
-          ],
-        ),
-      ],
-    );
-    int nugetCalls = 0;
-    int cmakeCalls = 0;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: const SettingsModel(
-        outputDirectory: r'D:\out',
-        cmakeOutputDirectory: r'D:\out\cmake',
-      ),
-      exportPackage: (PackModel pack, String outputDirectory) async {
-        nugetCalls++;
-        return (
-          outputPath: r'D:\out\demo.1.0.0.nupkg',
-          fileCount: 1,
-          packageSize: 64,
-        );
-      },
-      exportCmakePackage: (PackModel pack, String outputDirectory) async {
-        cmakeCalls++;
-        return (
-          outputPath: r'D:\out\demo-1.0.0-cmake.zip',
-          fileCount: 2,
-          packageSize: 128,
-        );
-      },
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.text('打包设置'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('packagingBuilderField')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text('CMake').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byTooltip('打包文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
-    expect(dialog, findsOneWidget);
-    expect(find.text('导出校验'), findsOneWidget);
-    expect(
-      find.descendant(of: dialog, matching: find.text('tool.exe')),
-      findsOneWidget,
-    );
-    expect(find.byTooltip('files/bin/tool.exe'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: dialog,
-        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('packExportDialog')), findsNothing);
-    expect(cmakeCalls, 0);
-
-    await tester.tap(find.byKey(const Key('packagingIssuesContinueButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(dialog, findsNothing);
-    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
-    expect(cmakeCalls, 1);
-    expect(nugetCalls, 0);
-  });
-
-  testWidgets('选择 CMake 格式后打包调用 CMake 导出器', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
-    );
-    int nugetCalls = 0;
-    int cmakeCalls = 0;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: const SettingsModel(
-        outputDirectory: r'D:\out',
-        cmakeOutputDirectory: r'D:\out\cmake',
-      ),
-      exportPackage: (PackModel pack, String outputDirectory) async {
-        nugetCalls++;
-        return (
-          outputPath: r'D:\out\demo.1.0.0.nupkg',
-          fileCount: 1,
-          packageSize: 64,
-        );
-      },
-      exportCmakePackage: (PackModel pack, String outputDirectory) async {
-        cmakeCalls++;
-        return (
-          outputPath: r'D:\out\demo-1.0.0-cmake.zip',
-          fileCount: 2,
-          packageSize: 128,
-        );
-      },
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.text('打包设置'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('packagingBuilderField')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text('CMake').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byTooltip('打包文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(cmakeCalls, 1);
-    expect(nugetCalls, 0);
-    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
-    expect(find.text('打包完成'), findsOneWidget);
-    expect(find.text('文件数量：2'), findsOneWidget);
-  });
-
   testWidgets('无包时历史按钮禁用', (tester) async {
     await _pumpMainLayout(
       tester,
@@ -2453,108 +2245,6 @@ void main() {
     expect(store.packs.single.author, '张三');
     expect(store.packs.single.name, 'demo');
   });
-
-  testWidgets('启用集合仅含 CMake 时按 CMake 目录路由导出', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')
-          ..enabledFormats = <String>['cmake'],
-      ],
-    );
-    int nugetCalls = 0;
-    String? cmakeDirectory;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: const SettingsModel(
-        outputDirectory: r'D:\out\nuget',
-        cmakeOutputDirectory: r'D:\out\cmake',
-      ),
-      exportPackage: (PackModel pack, String outputDirectory) async {
-        nugetCalls++;
-        return (
-          outputPath: r'D:\out\nuget\demo.nupkg',
-          fileCount: 1,
-          packageSize: 1,
-        );
-      },
-      exportCmakePackage: (PackModel pack, String outputDirectory) async {
-        cmakeDirectory = outputDirectory;
-        return (
-          outputPath: r'D:\out\cmake\demo.zip',
-          fileCount: 1,
-          packageSize: 1,
-        );
-      },
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.byTooltip('打包文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(cmakeDirectory, r'D:\out\cmake');
-    expect(nugetCalls, 0);
-    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
-    expect(find.text('打包完成'), findsOneWidget);
-  });
-
-  testWidgets('启用集合仅含 CMake 且未设置 CMake 目录时提示对应目录', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')
-          ..enabledFormats = <String>['cmake'],
-      ],
-    );
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: const SettingsModel(outputDirectory: r'D:\out\nuget'),
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.byTooltip('打包文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('请先在设置页配置 CMake 打包输出目录'), findsOneWidget);
-    expect(find.byKey(const Key('packExportDialog')), findsNothing);
-  });
-
-  testWidgets('启用集合仅含 CMake 时导出校验不收集脚本问题', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          scripts: <ScriptProjectModel>[_brokenScript()],
-        )..enabledFormats = <String>['cmake'],
-      ],
-    );
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      settings: const SettingsModel(cmakeOutputDirectory: r'D:\out\cmake'),
-      exportCmakePackage: (PackModel pack, String outputDirectory) async =>
-          (outputPath: r'D:\out\cmake\demo.zip', fileCount: 1, packageSize: 1),
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.byTooltip('打包文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('packagingIssuesDialog')), findsNothing);
-    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
-  });
 }
 
 Future<void> _pumpMainLayout(
@@ -2566,8 +2256,6 @@ Future<void> _pumpMainLayout(
   Future<void> Function(SettingsModel settings)? onSaveSettings,
   Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
   exportPackage,
-  Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
-  exportCmakePackage,
   PackBuildRunner? buildPack,
   PackBuildEnvironmentPreparer? prepareBuildEnv,
   Future<List<DetectedCompiler>> Function()? detectCompilers,
@@ -2590,8 +2278,6 @@ Future<void> _pumpMainLayout(
         settings: settings,
         onSaveSettings: onSaveSettings ?? (SettingsModel settings) async {},
         exportPackage: exportPackage ?? exportNuGetPackage,
-        exportCmakePackage:
-            exportCmakePackage ?? cmake_exporter.exportCmakePackage,
         buildPack: buildPack ?? runPackBuild,
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,

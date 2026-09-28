@@ -31,7 +31,6 @@ void main() {
       expect(changed.history, same(source.history));
       expect(changed.scripts, same(source.scripts));
       expect(changed.buildOptions, same(source.buildOptions));
-      expect(changed.enabledFormats, same(source.enabledFormats));
       expect(changed.name, 'demo');
       expect(changed.author, 'tester');
     });
@@ -688,46 +687,16 @@ void main() {
       expect(warnings, isEmpty);
     });
 
-    test('enabledFormats 默认空列表（= 全部启用）且空时省略键', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      );
+    test('老包已删除的 enabledFormats 键按未知键忽略，写回时不再出现', () {
+      final PackModel pack = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'enabledFormats': <Object?>['nuget', 'cmake'],
+      });
 
-      expect(pack.enabledFormats, isEmpty);
+      expect(pack.name, 'demo');
       expect(pack.toMap().containsKey('enabledFormats'), isFalse);
-    });
-
-    test('toMap/fromMap 往返保留启用格式集合', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      )..enabledFormats = <String>['nuget', 'cmake'];
-
-      final Map<String, Object?> map = pack.toMap();
-
-      expect(map['enabledFormats'], <String>['nuget', 'cmake']);
-      expect(PackModel.fromMap(map).enabledFormats, <String>['nuget', 'cmake']);
-    });
-
-    test('fromMap enabledFormats 容错：非列表/坏条目跳过，空结果即空', () {
-      final PackModel nonList = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-        'enabledFormats': 42,
-      });
-      final PackModel filtered = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-        'enabledFormats': <Object?>['nuget', 7, '', 'cmake'],
-      });
-
-      expect(nonList.enabledFormats, isEmpty);
-      expect(filtered.enabledFormats, <String>['nuget', 'cmake']);
     });
   });
 

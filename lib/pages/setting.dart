@@ -141,8 +141,8 @@ class _SettingState extends State<Setting> {
     showFloatingToast(context, '已保存');
   }
 
-  SettingsModel _directorySettings({required String? outputDirectory, required String? cmakeOutputDirectory}) {
-    return widget.settings.copyWith(outputDirectory: outputDirectory, cmakeOutputDirectory: cmakeOutputDirectory);
+  SettingsModel _directorySettings({required String? outputDirectory}) {
+    return widget.settings.copyWith(outputDirectory: outputDirectory);
   }
 
   SettingsModel _defaultAuthorSettings(String defaultAuthor) => widget.settings.copyWith(defaultAuthor: defaultAuthor);
@@ -171,22 +171,10 @@ class _SettingState extends State<Setting> {
     if (path == null || !mounted) {
       return;
     }
-    await _apply(_directorySettings(outputDirectory: path, cmakeOutputDirectory: widget.settings.cmakeOutputDirectory));
+    await _apply(_directorySettings(outputDirectory: path));
   }
 
-  Future<void> _clearDirectory() =>
-      _apply(_directorySettings(outputDirectory: null, cmakeOutputDirectory: widget.settings.cmakeOutputDirectory));
-
-  Future<void> _pickCmakeDirectory() async {
-    final String? path = await widget.pickDirectory();
-    if (path == null || !mounted) {
-      return;
-    }
-    await _apply(_directorySettings(outputDirectory: widget.settings.outputDirectory, cmakeOutputDirectory: path));
-  }
-
-  Future<void> _clearCmakeDirectory() =>
-      _apply(_directorySettings(outputDirectory: widget.settings.outputDirectory, cmakeOutputDirectory: null));
+  Future<void> _clearDirectory() => _apply(_directorySettings(outputDirectory: null));
 
   @override
   Widget build(BuildContext context) {
@@ -205,14 +193,6 @@ class _SettingState extends State<Setting> {
               clearKey: const Key('settingClearDirButton'),
               onPick: _pickDirectory,
               onClear: _clearDirectory,
-            ),
-            _buildDirectoryCard(
-              header: 'CMake 打包输出目录',
-              path: widget.settings.cmakeOutputDirectory,
-              pickKey: const Key('settingPickCmakeDirButton'),
-              clearKey: const Key('settingClearCmakeDirButton'),
-              onPick: _pickCmakeDirectory,
-              onClear: _clearCmakeDirectory,
             ),
           ],
         ),

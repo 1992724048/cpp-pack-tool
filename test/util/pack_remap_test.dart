@@ -107,8 +107,7 @@ void main() {
                 trigger: ScriptTrigger.pre,
               ),
             ]
-            ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'}
-            ..enabledFormats = <String>['nuget'];
+            ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'};
       final List<FileModel> files = <FileModel>[
         FileModel(name: 'logo.svg', path: 'assets/logo.svg', size: 128),
         FileModel(name: 'foo.h', path: 'include/foo.h', size: 256),
@@ -133,7 +132,6 @@ void main() {
       expect(updated.history, same(pack.history));
       expect(updated.scripts, same(pack.scripts));
       expect(updated.buildOptions, <String, String>{'tbb': 'on', 'mp': 'off'});
-      expect(updated.enabledFormats, <String>['nuget']);
     });
 
     test('新快照无图片文件时 iconPath 为空', () {

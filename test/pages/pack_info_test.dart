@@ -455,8 +455,8 @@ void main() {
     expect(find.textContaining('建议使用 SPDX 标识符'), findsOneWidget);
   });
 
-  testWidgets('保存包信息时保留启用格式集合', (tester) async {
-    final PackModel pack = _pack()..enabledFormats = <String>['cmake'];
+  testWidgets('保存包信息时保留未编辑字段', (tester) async {
+    final PackModel pack = _pack();
     PackModel? saved;
 
     await _pumpPage(
@@ -480,7 +480,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(saved!.enabledFormats, <String>['cmake']);
+    expect(saved!.version, '2.0.0');
+    expect(saved!.name, pack.name);
+    expect(saved!.author, pack.author);
+    expect(saved!.files, same(pack.files));
   });
 }
 
