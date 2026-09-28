@@ -481,9 +481,9 @@ def _is_license_name(name):
 def _license_core_rank(lowered_name):
     for index, core_name in enumerate(LICENSE_CORE_PRIORITY):
         if (
-            lowered_name == core_name
-            or lowered_name.startswith(core_name + "-")
-            or lowered_name.startswith(core_name + ".")
+                lowered_name == core_name
+                or lowered_name.startswith(core_name + "-")
+                or lowered_name.startswith(core_name + ".")
         ):
             return index
     return len(LICENSE_CORE_PRIORITY)
