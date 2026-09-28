@@ -46,7 +46,6 @@ void main() {
       final FluentThemeData theme = buildTheme(Brightness.light);
       expect(AppColors.textPrimary(theme), theme.resources.textFillColorPrimary);
       expect(AppColors.textSecondary(theme), theme.resources.textFillColorSecondary);
-      expect(AppColors.accent(theme), theme.accentColor);
       expect(AppColors.card(theme), theme.resources.cardBackgroundFillColorDefault);
     });
 

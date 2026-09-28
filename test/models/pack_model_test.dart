@@ -670,7 +670,7 @@ void main() {
       expect(pack.buildOptions, <String, String>{'tbb': 'on'});
     });
 
-    test('老包 buildOptions.runtime 原样读回（无人读取的死键）', () {
+    test('老包 buildOptions.runtime 经 fromMap 原样读回（无人读取的死键）', () {
       final List<String> warnings = <String>[];
       final PackModel pack = PackModel.fromMap(<String, Object?>{
         'name': 'demo',

@@ -4,12 +4,9 @@ import 'package:flutter/services.dart';
 
 abstract final class SettingsCardTokens {
   static const double minHeight = 0;
-  static const double subItemMinHeight = 0;
   static const double minWidth = 148;
   static const double cornerRadius = 4;
   static const EdgeInsets padding = EdgeInsets.all(16);
-
-  static const EdgeInsets subItemPadding = EdgeInsets.fromLTRB(48, 8, 44, 8);
 
   static const double headerIconSize = 20;
   static const double headerIconSpacing = 20;
@@ -31,10 +28,7 @@ class SettingsCard extends StatefulWidget {
     this.content,
     this.onPressed,
     this.enabled = true,
-    this.subItem = false,
-    this.borderless = false,
     this.padding,
-    this.showChevron = true,
   });
 
   final Widget? header;
@@ -47,17 +41,7 @@ class SettingsCard extends StatefulWidget {
 
   final bool enabled;
 
-  /// 子项变体（SettingsExpander 子项专用）：无圆角、左缩进 48。
-  final bool subItem;
-
-  /// 无边框变体（SettingsExpander 头部：透明底、无描边、无圆角）。
-  final bool borderless;
-
   final EdgeInsetsGeometry? padding;
-
-  /// 可点击卡的尾部箭头（13px chevron_right，间距 14）；[onPressed] 非空时生效。
-  /// Expander 头部自带 32×32 折叠按钮，传 false 避免重复箭头。
-  final bool showChevron;
 
   @override
   State<SettingsCard> createState() => _SettingsCardState();
@@ -82,16 +66,10 @@ class _SettingsCardState extends State<SettingsCard> {
     final FluentThemeData theme = FluentTheme.of(context);
     final Color background = _backgroundFor(theme);
     final Color borderColor = _borderColorFor(theme);
-    final BorderRadius radius = BorderRadius.circular(
-      widget.subItem || widget.borderless ? 0 : SettingsCardTokens.cornerRadius,
-    );
+    final BorderRadius radius = BorderRadius.circular(SettingsCardTokens.cornerRadius);
     final BoxBorder border;
-    if (widget.borderless) {
-      border = Border.all(color: Colors.transparent, width: 1);
-    } else if (_focused && _clickable) {
+    if (_focused && _clickable) {
       border = Border.all(color: theme.resources.focusStrokeColorOuter, width: 2);
-    } else if (widget.subItem) {
-      border = Border(top: BorderSide(color: borderColor));
     } else {
       border = Border.all(color: borderColor);
     }
@@ -104,11 +82,11 @@ class _SettingsCardState extends State<SettingsCard> {
 
     card = AnimatedContainer(
       duration: SettingsCardTokens.backgroundTransition,
-      constraints: BoxConstraints(
+      constraints: const BoxConstraints(
         minWidth: SettingsCardTokens.minWidth,
-        minHeight: widget.subItem ? SettingsCardTokens.subItemMinHeight : SettingsCardTokens.minHeight,
+        minHeight: SettingsCardTokens.minHeight,
       ),
-      padding: widget.padding ?? (widget.subItem ? SettingsCardTokens.subItemPadding : SettingsCardTokens.padding),
+      padding: widget.padding ?? SettingsCardTokens.padding,
       decoration: BoxDecoration(color: background, border: border, borderRadius: radius),
       child: card,
     );
@@ -161,9 +139,6 @@ class _SettingsCardState extends State<SettingsCard> {
     if (!widget.enabled) {
       return theme.resources.controlFillColorDisabled;
     }
-    if (widget.borderless) {
-      return Colors.transparent;
-    }
     if (_pressed) {
       return AppColors.pressedFill(theme);
     }
@@ -174,7 +149,7 @@ class _SettingsCardState extends State<SettingsCard> {
   }
 
   Color _borderColorFor(FluentThemeData theme) {
-    if (!widget.enabled || widget.subItem) {
+    if (!widget.enabled) {
       return AppColors.stroke(theme);
     }
     if (_pressed || (_hovered && _clickable)) {
@@ -226,7 +201,7 @@ class _SettingsCardState extends State<SettingsCard> {
           )
         : null;
     final Widget? content = widget.content;
-    final Widget? chevron = widget.showChevron && _clickable
+    final Widget? chevron = _clickable
         ? Padding(
             padding: const EdgeInsets.only(left: SettingsCardTokens.actionIconSpacing),
             child: Icon(

@@ -276,7 +276,7 @@ List<PackagingIssue> collectPackagingIssues(PackModel pack, PackagePlan plan) {
 
 /// 导出前校验：包内 `.exe` 条目（大小写不敏感）逐条转为分发提示。
 ///
-/// 两种打包格式均适用；label 为包内路径，message 统一提示可执行二进制随包分发。
+/// label 为包内路径，message 统一提示可执行二进制随包分发。
 List<PackagingIssue> collectExecutableWarnings(PackagePlan plan) {
   final List<PackagingIssue> warnings = <PackagingIssue>[];
   for (final PackageEntry entry in plan.entries) {

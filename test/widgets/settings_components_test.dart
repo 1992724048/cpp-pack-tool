@@ -1,5 +1,4 @@
 import 'package:cpp_nuget_pack/widgets/settings/settings_card.dart';
-import 'package:cpp_nuget_pack/widgets/settings/settings_expander.dart';
 import 'package:cpp_nuget_pack/widgets/settings/settings_group.dart';
 import 'package:cpp_nuget_pack/widgets/settings/settings_page.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -319,122 +318,6 @@ void main() {
     });
   });
 
-  group('SettingsExpander', () {
-    testWidgets('默认收起；点击头部展开（333ms）再收起（167ms）', (tester) async {
-      await _pump(
-        tester,
-        SettingsExpander(
-          key: const Key('expander'),
-          header: const Text('代理'),
-          toggleKey: const Key('expanderToggle'),
-          items: const <Widget>[SettingsExpanderItem(header: Text('子项'))],
-        ),
-      );
-
-      expect(find.text('子项'), findsNothing);
-      expect(_animatedSize(tester).duration, const Duration(milliseconds: 167));
-
-      await tester.tap(find.byType(SettingsCard).first);
-      await tester.pump();
-      expect(find.text('子项'), findsOneWidget);
-      expect(_animatedSize(tester).duration, const Duration(milliseconds: 333));
-      await tester.pump(const Duration(milliseconds: 333));
-      await tester.pump();
-
-      await tester.tap(find.byType(SettingsCard).first);
-      await tester.pump();
-      expect(_animatedSize(tester).duration, const Duration(milliseconds: 167));
-      await tester.pump(const Duration(milliseconds: 167));
-      await tester.pump();
-      expect(find.text('子项'), findsNothing);
-    });
-
-    testWidgets('chevron 可点击切换且 Tooltip 文案随状态切换', (tester) async {
-      await _pump(
-        tester,
-        SettingsExpander(
-          header: const Text('头部'),
-          toggleKey: const Key('expanderToggle'),
-          items: const <Widget>[SettingsExpanderItem(header: Text('子项'))],
-        ),
-      );
-
-      expect(find.byTooltip('展开设置'), findsOneWidget);
-      expect(find.byKey(const Key('expanderToggle')), findsOneWidget);
-      expect(find.text('子项'), findsNothing);
-      // 头部卡不叠加尾部箭头（只保留折叠按钮自身的 chevron_down）。
-      expect(find.byIcon(FluentIcons.chevron_right), findsNothing);
-      await tester.tap(find.byType(SettingsCard).first);
-      await tester.pump();
-      expect(find.byTooltip('收起设置'), findsOneWidget);
-      expect(find.text('子项'), findsOneWidget);
-    });
-
-    testWidgets('子项为无圆角、左缩进 48、顶部 1px 分隔线且高度随内容自适应', (tester) async {
-      await _pump(
-        tester,
-        SettingsExpander(
-          header: const Text('头部'),
-          initiallyExpanded: true,
-          items: const <Widget>[
-            SettingsExpanderItem(key: Key('item'), header: Text('子项')),
-          ],
-        ),
-      );
-
-      final SettingsCard card = tester.widget<SettingsCard>(
-        find.descendant(
-          of: find.byKey(const Key('item')),
-          matching: find.byType(SettingsCard),
-        ),
-      );
-      expect(card.subItem, isTrue);
-
-      final AnimatedContainer container = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byKey(const Key('item')),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      expect(container.padding, const EdgeInsets.fromLTRB(48, 8, 44, 8));
-      final BoxDecoration decoration = container.decoration! as BoxDecoration;
-      expect(decoration.borderRadius, BorderRadius.zero);
-      final Border border = decoration.border! as Border;
-      expect(border.top.width, 1);
-      expect(border.left.width, 0);
-      // 左缩进 48：子项文字相对卡左缘内缩 48（左边框 0 不额外占位）。
-      expect(
-        tester.getTopLeft(find.text('子项')).dx -
-            tester.getTopLeft(find.byKey(const Key('item'))).dx,
-        closeTo(48, 0.5),
-      );
-      // 高度自适应：17 = 顶部 1px 分隔线 + 上下内边距 8，无固定最小高。
-      expect(
-        tester.getSize(find.byKey(const Key('item'))).height,
-        closeTo(17 + tester.getSize(find.text('子项')).height, 0.5),
-      );
-
-      await _pump(
-        tester,
-        SettingsExpander(
-          header: const Text('头部'),
-          initiallyExpanded: true,
-          items: const <Widget>[
-            SettingsExpanderItem(
-              key: Key('tallItem'),
-              header: Text('子项'),
-              content: SizedBox(height: 40),
-            ),
-          ],
-        ),
-      );
-      expect(
-        tester.getSize(find.byKey(const Key('tallItem'))).height,
-        closeTo(17 + 40, 0.5),
-      );
-    });
-  });
-
   group('SettingsPage', () {
     testWidgets('标题 24 Semibold、水平内边距 8、内容最大宽 1000、底部留白 32', (tester) async {
       tester.view.physicalSize = const Size(1600, 900);
@@ -516,12 +399,6 @@ AnimatedContainer _cardContainer(WidgetTester tester, Key key) {
       of: find.byKey(key),
       matching: find.byType(AnimatedContainer),
     ),
-  );
-}
-
-AnimatedSize _animatedSize(WidgetTester tester) {
-  return tester.widget<AnimatedSize>(
-    find.byKey(SettingsExpanderTokens.bodyKey),
   );
 }
 

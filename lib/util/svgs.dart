@@ -3,8 +3,6 @@
 class Svgs {
   static final openBox = SvgPicture.asset('assets/icons/open_box.svg', semanticsLabel: '打开文件夹', width: 20, height: 20);
   static final settings = SvgPicture.asset('assets/icons/settings.svg', semanticsLabel: '设置', width: 20, height: 20);
-  static final help = SvgPicture.asset('assets/icons/help.svg', semanticsLabel: '帮助', width: 20, height: 20);
-  static final home = SvgPicture.asset('assets/icons/home.svg', semanticsLabel: '主页', width: 20, height: 20);
   static final cardboardBox = SvgPicture.asset('assets/icons/cardboard_box.svg', semanticsLabel: '纸箱', width: 20, height: 20);
   static final showPermitCard = SvgPicture.asset('assets/icons/show_permit_card.svg', semanticsLabel: '显示许可证卡片', width: 20, height: 20);
   static final fileExplorer = SvgPicture.asset('assets/icons/file_explorer.svg', semanticsLabel: '文件资源管理器', width: 20, height: 20);
@@ -17,6 +15,5 @@ class Svgs {
   static final moveToFolder = SvgPicture.asset('assets/icons/move_to_folder.svg', semanticsLabel: '移动到文件夹', width: 20, height: 20);
   static final historyFolder = SvgPicture.asset('assets/icons/history_folder.svg', semanticsLabel: '历史文件夹', width: 20, height: 20);
   static final SvgPicture internetConnection = SvgPicture.asset('assets/icons/internet_connection.svg', semanticsLabel: '依赖关系图', width: 20, height: 20);
-  static final save = SvgPicture.asset('assets/icons/save.svg', semanticsLabel: '保存', width: 20, height: 20);
   static final info = SvgPicture.asset('assets/icons/info.svg', semanticsLabel: '信息', width: 20, height: 20);
 }

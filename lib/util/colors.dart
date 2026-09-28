@@ -35,23 +35,11 @@ class AppColors {
   static Color textSecondary(FluentThemeData theme) =>
       theme.resources.textFillColorSecondary;
 
-  static Color textTertiary(FluentThemeData theme) =>
-      theme.resources.textFillColorTertiary;
-
   static Color textDisabled(FluentThemeData theme) =>
       theme.resources.textFillColorDisabled;
 
-  static Color onAccent(FluentThemeData theme) =>
-      theme.resources.textOnAccentFillColorPrimary;
-
   static Color card(FluentThemeData theme) =>
       theme.resources.cardBackgroundFillColorDefault;
-
-  static Color cardSecondary(FluentThemeData theme) =>
-      theme.resources.cardBackgroundFillColorSecondary;
-
-  static Color layer(FluentThemeData theme) =>
-      theme.resources.layerFillColorDefault;
 
   static Color stroke(FluentThemeData theme) =>
       theme.resources.cardStrokeColorDefault;
@@ -64,11 +52,6 @@ class AppColors {
 
   static Color pressedFill(FluentThemeData theme) =>
       theme.resources.controlFillColorTertiary;
-
-  static Color neutralFill(FluentThemeData theme) =>
-      theme.resources.controlStrongFillColorDefault;
-
-  static Color accent(FluentThemeData theme) => theme.accentColor;
 }
 
 /// 固定标记色板：内容标识色（标签 / 类别 / 时间线类型），

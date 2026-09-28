@@ -274,7 +274,7 @@ void main() {
       expect(result.errors.single.message, contains('脚本'));
     });
 
-    test('老包 buildOptions.runtime 原样读回（无人读取的死键）', () async {
+    test('老包 buildOptions.runtime 经 YAML 落盘原样读回（无人读取的死键）', () async {
       await store.ensureConfigExist();
       File('${tempDir.path}/packs/legacy_runtime.yaml').writeAsStringSync(
         'name: legacy_runtime\nversion: 1.0.0\nauthor: tester\n'

@@ -261,7 +261,7 @@ class _PackFilesState extends State<PackFiles> {
       padding: const EdgeInsets.fromLTRB(8, 3, 8, 0),
       child: Card(
         padding: EdgeInsetsGeometry.all(5),
-        // `Wrap` 需按工具条可用宽度换行，`double.infinity` 在有界父约束下收紧为满宽。
+        // `double.infinity` 在有界父约束下收紧为满宽。
         child: SizedBox(
           width: double.infinity,
           child: Wrap(

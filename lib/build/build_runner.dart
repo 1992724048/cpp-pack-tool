@@ -236,11 +236,10 @@ Future<void> _copyTree(Directory from, Directory to) async {
 /// 流式解码口径不一致）。提权重试路径（见 elevated_build.dart）复用同一
 /// 源码准备实现，仅构建脚本阶段不同，避免两条路径行为漂移。
 ///
-/// 其余参数口径与 [preparePackSource] 一致：[onOutput] 逐行转发 python 输出；
-/// [streamRunner] 为 null 时保持一次性捕获，非 null 时以其为流式执行器
-/// （生产经 [runPackBuildStreaming] 注入 `Process.start`）。源码准备失败
-/// （备源/清理）抛 [PackBuildException]，构建脚本非零退出抛
-/// [PackBuildException]（携带输出尾部）。
+/// [onOutput] 逐行转发 python 输出；[streamRunner] 为 null 时保持一次性捕获，
+/// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
+/// `Process.start`）。源码准备失败（备源/清理）抛 [PackBuildException]，
+/// 构建脚本非零退出抛 [PackBuildException]（携带输出尾部）。
 Future<void> runPackBuild(
   PackModel pack,
   void Function(PackBuildStage) onStage, {

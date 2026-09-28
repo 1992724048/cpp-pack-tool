@@ -49,9 +49,9 @@ __all__ = (
 HEADER_EXTENSIONS = frozenset((".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp"))
 LIBRARY_EXTENSIONS = frozenset((".lib", ".a"))
 BINARY_EXTENSIONS = frozenset((".dll", ".pdb", ".exe"))
-# stage_binaries 收集的扩展名：库类（LIBRARY_EXTENSIONS，静态库与导入库等以 `.a`
-# 结尾的归档经 splitext 自然覆盖）与动态库 / 调试符号。`.exe` 不参与 staging
-# （classify_tree 才收 .exe，两者职责不同）。
+# stage_binaries 收集的扩展名：库类（LIBRARY_EXTENSIONS：`.lib` 与 `.a`；扩展名
+# 由 splitext 取最后一段，故 `libz.dll.a` 判为 `.a` 落 lib 而非 bin）与动态库 /
+# 调试符号。`.exe` 不参与 staging（classify_tree 才收 .exe，两者职责不同）。
 _STAGE_EXTENSIONS = LIBRARY_EXTENSIONS | frozenset((".dll", ".pdb"))
 
 # 与打包器 lib/packaging/license_file.dart 保持一致：核心名 + `-`/`.` 后缀变体。

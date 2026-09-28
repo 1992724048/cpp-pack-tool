@@ -351,11 +351,26 @@ void main() {
     const SettingsModel settings = SettingsModel(
       outputDirectory: r'D:\out',
       themeMode: ThemeModeSetting.dark,
+      compilerPriority: <String>['clang-cl', 'icx', 'msvc'],
+      detectedCompilers: <DetectedCompiler>[
+        DetectedCompiler(
+          kind: CompilerKind.msvc,
+          version: '19.40',
+          executablePath: r'C:\VS\bin\cl.exe',
+          environmentScript: r'C:\VS\vcvars64.bat',
+        ),
+      ],
     );
 
-    final SettingsModel same = settings.copyWith();
+    // 非空覆盖参数 + 未传字段保留：detectedCompilers 须被显式覆盖，
+    // 而 outputDirectory / themeMode / compilerPriority 仍是 settings 上的原值。
+    final SettingsModel same = settings.copyWith(
+      detectedCompilers: const <DetectedCompiler>[],
+    );
     expect(same.outputDirectory, r'D:\out');
     expect(same.themeMode, ThemeModeSetting.dark);
+    expect(same.compilerPriority, <String>['clang-cl', 'icx', 'msvc']);
+    expect(same.detectedCompilers, isEmpty);
 
     final SettingsModel cleared = settings.copyWith(
       outputDirectory: null,
@@ -363,5 +378,6 @@ void main() {
     );
     expect(cleared.outputDirectory, isNull);
     expect(cleared.themeMode, ThemeModeSetting.light);
+    expect(cleared.detectedCompilers, settings.detectedCompilers);
   });
 }

@@ -76,8 +76,6 @@ class FileModel {
   FileType type = FileType.other;
   BuildModel buildModel = BuildModel.all;
 
-  bool copyOutput = false;
-
   FileModel({required this.name, required this.path, this.size = 0}) {
     extension = name.split('.').last.toLowerCase();
     type = _determineFileType(extension);
