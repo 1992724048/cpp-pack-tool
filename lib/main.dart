@@ -752,9 +752,8 @@ class _MainLayoutState extends State<MainLayout> {
   /// 修复改写了文件内容、字节数随之变化，而 `pack.files` 是构建后 [FileScan] 的
   /// 快照：重新 stat 被改写文件并只替换这些条目，其余条目（含顺序）原样保留。
   ///
-  /// 必要的依据是 [FileModel.size] 会进入打包计划（`PackageFileSource.size` →
-  /// `PackagePlan.totalSize`）与导出预览，不刷新即按旧字节数展示。stat 失败保留
-  /// 原值并放过，不阻断导出。
+  /// 必要的依据是 [FileModel.size] 会进入打包计划（`PackageFileSource.size`）、
+  /// 文件管理页与导出预览对话框的总大小，不刷新即按旧字节数展示。
   Future<PackModel> _refreshFixedFileSizes(
     PackModel pack,
     String sourcePath,
@@ -777,6 +776,7 @@ class _MainLayoutState extends State<MainLayout> {
             ..buildModel = file.buildModel,
         );
       } catch (_) {
+        // stat 失败保留原字节数并放过：只为刷新展示，不阻断导出
         files.add(file);
       }
     }

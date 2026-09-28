@@ -43,7 +43,7 @@ void main() {
       fixHeaderIncludes(source.path, packageName: packageName);
 
   /// gtest 式样本：`gtest-all.cc` 引同目录 `.cc` 与 `src/` 下的 `.h`；`.h` 那条
-  /// 修复后在包内落 include 根之下可修，`.cc` 那条落 `files/` 无改写目标。
+  /// 走新规则改成 include 根相对路径，`.cc` 那条落 `files/`、回落到裸文件名。
   Future<void> writeGtestLikeTree() async {
     await writeText(
       'src/gtest/gtest-all.cc',
@@ -62,24 +62,21 @@ void main() {
     await writeText('include/gtest/gtest.h', '#pragma once\n');
   }
 
-  test('gtest 式样本：5 处 .h 跨类引用全部改写为 include 根相对路径，.cc 引用回落报告', () async {
+  test('gtest 式样本：5 处 .h 引用改写为 include 根相对路径，.cc 引用回落到裸文件名', () async {
     await writeGtestLikeTree();
 
     final HeaderIncludeFixReport report = await runFixer();
 
     // 命名空间取源目录 basename（gtest）：`src/gtest/gtest-internal-inl.h` 落
-    // `gtest/src/gtest/gtest-internal-inl.h`，在 include 根之下，可改写。
-    expect(report.fixedCount, 5);
-    expect(
-      report.issues.single.filePath,
-      'src/gtest/gtest-all.cc',
-    );
-    expect(report.issues.single.kind, HeaderIncludeIssueKind.crossTree);
-    expect(report.issues.single.include, 'src/gtest.cc');
-    expect(report.issues.single.candidates, <String>['src/gtest/gtest.cc']);
+    // `gtest/src/gtest/gtest-internal-inl.h`，在 include 根之下，走新规则。
+    expect(report.fixedCount, 6);
+    expect(report.issues, isEmpty);
 
-    for (final HeaderIncludeFix fix in report.fixed) {
-      expect(fix.from, 'src/gtest-internal-inl.h');
+    final List<HeaderIncludeFix> headerFixes = report.fixed
+        .where((HeaderIncludeFix fix) => fix.from == 'src/gtest-internal-inl.h')
+        .toList();
+    expect(headerFixes, hasLength(5));
+    for (final HeaderIncludeFix fix in headerFixes) {
       expect(fix.to, 'gtest/src/gtest/gtest-internal-inl.h');
       expect(fix.filePath, startsWith('src/gtest/'));
       expect(
@@ -88,10 +85,15 @@ void main() {
       );
     }
 
-    // `.cc` 目标落 files/，include 根搜不到，原样不动
+    // `.cc` 目标落 files/、include 根搜不到，回落到裸文件名：候选与引用文件同目录
+    // 且打包落点目录一致，包内由「引用文件所在目录」命中。
+    final HeaderIncludeFix sourceFix = report.fixed
+        .singleWhere((HeaderIncludeFix fix) => fix.from == 'src/gtest.cc');
+    expect(sourceFix.to, 'gtest.cc');
+    expect(sourceFix.filePath, 'src/gtest/gtest-all.cc');
     expect(
       await readText('src/gtest/gtest-all.cc'),
-      '#include "gtest/gtest.h"\n#include "src/gtest.cc"\n',
+      '#include "gtest/gtest.h"\n#include "gtest.cc"\n',
     );
   });
 
@@ -137,20 +139,60 @@ void main() {
     );
   });
 
-  test('改写结果自检回落：候选不在 include 根之下时仍报 crossTree 且不改写', () async {
-    // 字面量 `a/helper.cc` 是从包根书写的过期路径（源码层解析不到），唯一候选是
+  test('源码层能解析、包内解析不了：同目录 .cc 引 .h 改写为 include 根相对路径', () async {
+    // 唯一的判据是包布局：两者源码同目录，`.cc` 落 files/、`.h` 落
+    // include/<命名空间>/，裸文件名在包内两条查找路径都落空，属真正失效的引用。
+    // 若仍按源码布局放行，这类引用会被静默放过。
+    await writeText(
+      'cpp_client_wrapper/core_implementations.cc',
+      '#include "binary_messenger_impl.h"\n',
+    );
+    await writeText('cpp_client_wrapper/binary_messenger_impl.h', '#pragma once\n');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.issues, isEmpty);
+    expect(report.fixedCount, 1);
+    final HeaderIncludeFix fix = report.fixed.single;
+    expect(fix.filePath, 'cpp_client_wrapper/core_implementations.cc');
+    expect(fix.from, 'binary_messenger_impl.h');
+    expect(fix.to, 'gtest/cpp_client_wrapper/binary_messenger_impl.h');
+    expect(
+      await readText('cpp_client_wrapper/core_implementations.cc'),
+      '#include "gtest/cpp_client_wrapper/binary_messenger_impl.h"\n',
+    );
+  });
+
+  test('回落裸文件名修复：候选不在 include 根之下时改写为裸文件名', () async {
+    // 字面量 `a/helper.cc` 是从包根书写的过期路径（包内解析不到），唯一候选是
     // 引用文件同目录的 `src/a/helper.cc`；`.cc` 落 files/、include 根搜不到，
-    // 没有可用的改写目标 → 不写、回落报告（旧规则此时会改写成裸文件名）。
+    // 新规则无目标，回落到裸文件名（同目录 + 打包落点目录一致）。
     await writeText('src/a/one.cc', '#include "a/helper.cc"\n');
     await writeText('src/a/helper.cc', '');
 
     final HeaderIncludeFixReport report = await runFixer();
 
-    expect(report.fixedCount, 0);
-    expect(report.issues.single.kind, HeaderIncludeIssueKind.crossTree);
-    expect(report.issues.single.candidates, <String>['src/a/helper.cc']);
-    expect(report.issues.single.description, contains('不在 include 根之下'));
-    expect(await readText('src/a/one.cc'), '#include "a/helper.cc"\n');
+    expect(report.issues, isEmpty);
+    expect(report.fixedCount, 1);
+    final HeaderIncludeFix fix = report.fixed.single;
+    expect(fix.filePath, 'src/a/one.cc');
+    expect(fix.from, 'a/helper.cc');
+    expect(fix.to, 'helper.cc');
+    expect(await readText('src/a/one.cc'), '#include "helper.cc"\n');
+  });
+
+  test('files/ 同目录裸文件名引用不产生 from == to 的空修复', () async {
+    // 包内可解析（引用文件落 files/<原路径>/，由「本文件所在目录」命中裸文件名），
+    // 少了 files/ 兄弟支就会走回落规则改写成同一个字面量，fixedCount 虚增。
+    await writeText('src/a/one.cc', '#include "helper.cc"\n');
+    await writeText('src/a/helper.cc', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    // isEmpty 蕴含 fixedCount 为 0；连同文件内容一起钉住，防止回落规则产出一次
+    // from == to 的空修复。
+    expect(report.isEmpty, isTrue);
+    expect(await readText('src/a/one.cc'), '#include "helper.cc"\n');
   });
 
   test('多候选时报 multipleCandidates 且不修改', () async {
@@ -200,7 +242,28 @@ void main() {
     expect(await readText('foo/bar.h'), '#include "baz/bar.h"\n');
   });
 
+  test('尖括号：包内能经 include 根解析的引用不报告', () async {
+    // 源码层无 `include/gtest/flutter/...` 这条路，但包内它正是 include 根相对
+    // 路径；尖括号与引号同一判据，否则同一文件里会出现「引号已按包布局修复、
+    // 尖括号却报失效」的自相矛盾。
+    await writeText(
+      'src/a.cc',
+      '#include <gtest/flutter/cpp_client_wrapper/binary_messenger_impl.h>\n',
+    );
+    await writeText('flutter/cpp_client_wrapper/binary_messenger_impl.h', '#pragma once\n');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.isEmpty, isTrue);
+    expect(
+      await readText('src/a.cc'),
+      '#include <gtest/flutter/cpp_client_wrapper/binary_messenger_impl.h>\n',
+    );
+  });
+
   test('唯一候选位于其他目录时报 crossTree 且不修改', () async {
+    // 两条改写规则都不适用：既不在 include 根之下（给不出根相对路径），也不与
+    // 引用文件同目录（给不出裸文件名）。
     await writeText('src/a/one.cc', '#include "src/helper.cc"\n');
     await writeText('src/b/helper.cc', '');
 
@@ -209,6 +272,7 @@ void main() {
     expect(report.fixedCount, 0);
     expect(report.issues.single.kind, HeaderIncludeIssueKind.crossTree);
     expect(report.issues.single.candidates, <String>['src/b/helper.cc']);
+    expect(report.issues.single.description, contains('无适用改写形态'));
     expect(await readText('src/a/one.cc'), '#include "src/helper.cc"\n');
   });
 
@@ -265,7 +329,10 @@ void main() {
     expect(issue.description, contains('尖括号'));
   });
 
-  test('可解析引用（相对目录/include 根/包根）不报告不修改', () async {
+  test('源码层能解析的引用（相对目录/include 根/包根）按包布局改写', () async {
+    // 三条在源码树里都解析得到，但包内解析不到：`.cc` 落 files/ 与头文件分属两棵
+    // 树，源码的相对目录与包根写法都不是 include 根相对路径。判据只看包布局，
+    // 故三条都要改写，其中第 1、3 条收敛到同一目标。
     await writeText('src/a/self.h', '');
     await writeText('include/foo/bar.h', '');
     await writeText(
@@ -277,12 +344,25 @@ void main() {
 
     final HeaderIncludeFixReport report = await runFixer();
 
-    expect(report.isEmpty, isTrue);
+    expect(report.issues, isEmpty);
+    expect(report.fixedCount, 3);
+    expect(
+      report.fixed.map((HeaderIncludeFix fix) => fix.from).toList(),
+      <String>['self.h', 'foo/bar.h', 'src/a/self.h'],
+    );
+    expect(
+      report.fixed.map((HeaderIncludeFix fix) => fix.to).toList(),
+      <String>[
+        'gtest/src/a/self.h',
+        'gtest/foo/bar.h',
+        'gtest/src/a/self.h',
+      ],
+    );
     expect(
       await readText('src/a/user.cc'),
-      '#include "self.h"\n'
-      '#include "foo/bar.h"\n'
-      '#include "src/a/self.h"\n',
+      '#include "gtest/src/a/self.h"\n'
+      '#include "gtest/foo/bar.h"\n'
+      '#include "gtest/src/a/self.h"\n',
     );
   });
 

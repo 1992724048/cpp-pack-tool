@@ -8,8 +8,9 @@ import 'package:cpp_nuget_pack/util/format.dart';
 
 /// 参与 include 检查的文本源码扩展名（头 + 源；大小写不敏感）。
 ///
-/// 失效引用实测集中在 `.cc`（gtest 的 `gtest-all.cc` 融合式 include），
-/// 因此扫描范围从「头文件」扩大到全部文本源码。
+/// 判定只看打包后的布局，而包内失效的引用大量出自 `.cc`：源文件落
+/// `build/native/files/`、头文件落 include 根的命名空间树，源码树里的同目录写法
+/// 在包内必然失效。只扫头文件会整类漏掉。
 const Set<String> headerIncludeSourceExtensions = <String>{
   'h',
   'hpp',
@@ -31,8 +32,9 @@ enum HeaderIncludeIssueKind {
   /// 包内存在多个同名候选，无法确定目标。
   multipleCandidates,
 
-  /// 有唯一候选但其打包落点不在 include 根之下（如 `.cc` 落 `files/`、`.lib`
-  /// 落 `lib/`，include 根搜不到），没有「相对 include 根的包内路径」可作改写目标。
+  /// 有唯一候选，但两种改写形态都不成立：既不落 include 根之下（给不出「相对
+  /// include 根的包内路径」，如 `.cc` 落 `files/`、`.lib` 落 `lib/`），也不与
+  /// 引用文件同目录且打包落点一致（给不出裸文件名）。
   crossTree,
 
   /// 尖括号自引用（首段命中包内 include 根）但目标缺失；仅报告不修改。
@@ -57,7 +59,8 @@ class HeaderIncludeFix {
   /// 原 include 字面量（不含引号）。
   final String from;
 
-  /// 修复后的 include 字面量：目标文件相对包内 include 根的包内路径。
+  /// 修复后的 include 字面量：候选落 include 根之下时是它相对该根的包内路径，
+  /// 否则是裸文件名（此时候选与引用文件同目录且打包落点一致）。
   final String to;
 }
 
@@ -85,7 +88,7 @@ class HeaderIncludeIssue {
     HeaderIncludeIssueKind.noCandidate => '包内未找到同名文件',
     HeaderIncludeIssueKind.multipleCandidates =>
       '存在多个同名候选：${candidates.join('、')}',
-    HeaderIncludeIssueKind.crossTree => '唯一候选打包后不在 include 根之下：${candidates.join('、')}',
+    HeaderIncludeIssueKind.crossTree => '唯一候选无适用改写形态：${candidates.join('、')}',
     HeaderIncludeIssueKind.missingAngle => '尖括号自引用缺失（不自动修改）',
   };
 }
@@ -124,18 +127,22 @@ typedef PackHeaderIncludeFixer = Future<HeaderIncludeFixReport> Function(
   required String packageName,
 });
 
-/// 扫描 [sourcePath] 下全部文本源码的 `#include` 引用并做保守自动修复：
+/// 扫描 [sourcePath] 下全部文本源码的 `#include` 引用并做保守自动修复。
 ///
-/// - 引号引用先按**源码布局**解析（当前文件目录 → 每个 `includeRoots` → 包根），
-///   命中即视为正常、不动；未命中再按**包内布局**判一次（`.targets` 恒定只下发
-///   `build/native/include` 一个搜索根），已能解析的同样原样保留——否则会产出一次
-///   内容不变的「修复」而虚增 fixedCount；
-/// - 仍未解析的引用找**唯一同名候选**（basename 大小写不敏感全包搜索），候选落在
-///   include 根之下时改写为**目标相对 include 根的包内路径**——include 根恒定下发，
-///   该形式在任何引用位置都必然解析得到；改写后再自检一次可解析性，不能则回落报告；
-/// - 其余未解析引用收集为待处理问题（无候选 / 多候选 / 候选不在 include 根之下），
+/// 判据唯一：**打包后的布局**（`staged` 源目录只作为改写对象，不参与判定——
+/// 编译输入恒为 `SRC_PATH`，包源目录里的改写在下一次构建开始时就被输出清理删掉）。
+///
+/// - 引号引用按包布局解析（先查引用文件自身的包内目录，再查
+///   `build/native/include` 根），命中即视为正常、不动；
+/// - 未解析的引号引用找**唯一同名候选**（basename 大小写不敏感全包搜索），两条
+///   规则依次尝试：候选落 include 根之下时改写为**它相对 include 根的包内路径**
+///   （include 根恒定下发，该形式在包内任何位置都必然解析得到）；否则回落到裸
+///   文件名——仅当候选与引用文件同目录、打包落点目录也一致时成立（此时包内
+///   查找只剩「引用文件所在目录」一条路径，裸文件名由此命中）；
+/// - 其余未解析引用收集为待处理问题（无候选 / 多候选 / 唯一候选无适用改写形态），
 ///   外部依赖（首段目录不落在包内，如 `absl/...`）与条件编译外部引用不报告；
-/// - 尖括号引用仅检查首段命中包内 include 根的自引用存在性，缺失仅报告。
+/// - 尖括号引用按同一包布局判一次可解析性（只查搜索根，不查本文件所在目录），
+///   缺失仅报告、不自动修改。
 ///
 /// [packageName] 与打包器同一命名空间口径（见 [includeNamespaceOf]）；
 /// [readFile]/[writeFile] 可注入以配合测试。保留文件编码/BOM/行尾，仅替换
@@ -306,16 +313,30 @@ String? _normalizeRelativePath(String baseDirectory, String path) {
   return stack.isEmpty ? null : stack.join('/');
 }
 
+FileType _fileTypeOf(String path) {
+  final String normalized = path.replaceAll('\\', '/');
+  return FileModel(name: baseName(normalized), path: normalized).type;
+}
+
 /// 打包落点是否落在包内 include 根（`build/native/include`）之下：只有头文件与
 /// 模块会被打包器搬进 include 命名空间树，其余文件留在 `files/`/`lib/`，而
 /// `.targets` 不为它们下发任何搜索根。
 bool _landsUnderIncludeRoot(String path) {
-  final String normalized = path.replaceAll('\\', '/');
-  final FileType type = FileModel(
-    name: baseName(normalized),
-    path: normalized,
-  ).type;
+  final FileType type = _fileTypeOf(path);
   return type == FileType.header || type == FileType.module;
+}
+
+/// 打包落点是否落在包内 `build/native/files/` 之下：头文件/模块进 include 命名
+/// 空间树、`.lib`/`.dll`/`.pdb` 进 `lib/`，其余文件保持原相对路径。
+bool _landsUnderFilesRoot(String path) {
+  return switch (_fileTypeOf(path)) {
+    FileType.header ||
+    FileType.module ||
+    FileType.lib ||
+    FileType.dll ||
+    FileType.pdb => false,
+    _ => true,
+  };
 }
 
 /// 打包落点路径（与 `nuget_builder` 同一口径：头文件/模块进 include 命名空间树，
@@ -474,14 +495,7 @@ class _FileScanner {
     final String includePath = match.group(1)!;
     final ({int start, int end}) span = _captureSpan(match);
     if (includePath.trim().isEmpty ||
-        _resolvesQuotedInclude(includePath)) {
-      return line;
-    }
-
-    // 第 1 步：包布局下已能解析的引用不是问题，原样保留。源码层解析不了但经
-    // include 根能在包内解析的引用（如 `ns/sub/include/ns/other.h`）正落此处，
-    // 少了这道判定会对它做一次内容不变的改写，虚增 fixedCount。
-    if (_resolvesInPackageLayout(includePath)) {
+        _resolvesInPackageLayout(includePath, searchOwnDirectory: true)) {
       return line;
     }
 
@@ -520,13 +534,14 @@ class _FileScanner {
       return line;
     }
 
-    // 第 2 步：唯一候选落在 include 根之下时，改写为它相对 include 根的包内
-    // 路径。引号/尖括号形态不变，只换字面量。
+    // 改写分派：两条规则依次尝试（引号/尖括号形态不变，只换字面量）。include 根
+    // 恒定下发，「相对 include 根的包内路径」在包内任何位置都必然解析得到，故改写
+    // 结果由构造即成立、不再对结果重复判定。
     final String candidate = candidates.single;
-    final String? replacement = _includeRootRelativeTarget(candidate);
-
-    // 第 3 步：自检改写结果在包布局下确实能解析，不能则不写、回落到报告分支。
-    if (replacement != null && _resolvesInPackageLayout(replacement)) {
+    final String? replacement =
+        _includeRootRelativeTarget(candidate) ??
+        _siblingBareNameTarget(candidate);
+    if (replacement != null) {
       fixes.add(
         HeaderIncludeFix(
           filePath: filePath,
@@ -551,7 +566,8 @@ class _FileScanner {
 
   void _handleAngle(String line, RegExpMatch match, int lineNumber) {
     final String includePath = match.group(1)!;
-    if (includePath.trim().isEmpty || _resolvesAngleInclude(includePath)) {
+    if (includePath.trim().isEmpty ||
+        _resolvesInPackageLayout(includePath, searchOwnDirectory: false)) {
       return;
     }
     if (!_isAngleSelfReference(includePath)) {
@@ -567,49 +583,60 @@ class _FileScanner {
     );
   }
 
-  bool _resolvesQuotedInclude(String includePath) {
-    if (_exists(_normalizeRelativePath(_directoryOf(filePath), includePath))) {
-      return true;
-    }
-    for (final String root in index.includeRoots) {
-      if (_exists(_normalizeRelativePath(root, includePath))) {
-        return true;
-      }
-    }
-    return _exists(_normalizeRelativePath('', includePath));
-  }
-
-  bool _resolvesAngleInclude(String includePath) {
-    for (final String root in index.includeRoots) {
-      if (_exists(_normalizeRelativePath(root, includePath))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /// 包布局下的可解析性。`.targets` 恒定只下发 `build/native/include` 一个搜索
-  /// 根，故只需两条路径：引用文件自身的包内目录（仅当它也落在 include 根之下
-  /// 才有意义）与 include 根本身；`files/`、`lib/` 下的源文件没有对应搜索根。
-  bool _resolvesInPackageLayout(String includePath) {
-    if (_landsUnderIncludeRoot(filePath)) {
+  /// 包布局下的可解析性，即 MSBuild 实际会给出的查找结果。`.targets` 恒定只下发
+  /// `build/native/include` 一个搜索根，故只有两条查找路径：搜索根本身，以及
+  /// （仅引号引用——MSVC 只对 `"..."` 先查本文件所在目录）引用文件自身的包内目录。
+  /// 自目录那一条按引用文件落在哪棵树取基底，分 include 根与 `files/` 两支：
+  /// 两个索引由 [addFile] 同一处分派、互不重叠，同名路径不会串到另一棵树上去；
+  /// `lib/` 下的文件两支都不落、也没有搜索根。
+  bool _resolvesInPackageLayout(
+    String includePath, {
+    required bool searchOwnDirectory,
+  }) {
+    if (searchOwnDirectory) {
+      final String selfLanding = _packageDestination(
+        filePath,
+        index.namespace,
+      );
       final String? sibling = _normalizeRelativePath(
-        _directoryOf(_packageDestination(filePath, index.namespace)),
+        _directoryOf(selfLanding),
         includePath,
       );
-      if (_existsInIncludeRoot(sibling)) {
+      if (_landsUnderIncludeRoot(filePath) && _existsInIncludeRoot(sibling)) {
+        return true;
+      }
+      if (_landsUnderFilesRoot(filePath) && _existsInFilesRoot(sibling)) {
         return true;
       }
     }
     return _existsInIncludeRoot(_normalizeRelativePath('', includePath));
   }
 
-  /// 改写目标：候选落在 include 根之下时取其相对 include 根的包内路径；否则无
-  /// 目标（非头文件落 `files/`/`lib/`，include 根搜不到任何改写形态）。
+  /// 新规则改写目标：候选落 include 根之下时取其相对 include 根的包内路径；
+  /// 否则无目标（非头文件落 `files/`/`lib/`，include 根搜不到任何改写形态）。
   String? _includeRootRelativeTarget(String candidate) =>
       _landsUnderIncludeRoot(candidate)
           ? _packageDestination(candidate, index.namespace)
           : null;
+
+  /// 回落改写目标：候选与引用文件**同目录**、且两者打包落点目录一致时给裸文件名。
+  ///
+  /// 头文件进 include 命名空间树、非头文件留在原相对路径，同目录是同落点的前提；
+  /// 头文件引用另有 include 根可搜，走不到这里，此刻到这里的候选必定不进 include
+  /// 根，树内唯一剩下的查找路径就是「引用文件所在目录」，裸文件名由此命中。
+  String? _siblingBareNameTarget(String candidate) {
+    if (_directoryOf(candidate).toLowerCase() !=
+        _directoryOf(filePath).toLowerCase()) {
+      return null;
+    }
+    final String candidateDir = _directoryOf(
+      _packageDestination(candidate, index.namespace),
+    ).toLowerCase();
+    final String selfDir = _directoryOf(
+      _packageDestination(filePath, index.namespace),
+    ).toLowerCase();
+    return candidateDir == selfDir ? baseName(candidate) : null;
+  }
 
   /// 尖括号自引用：首段命中包内 include 根下的子目录（如 `<gtest/...>`）。
   bool _isAngleSelfReference(String includePath) {
@@ -637,13 +664,13 @@ class _FileScanner {
     return !index.directoryNames.contains(first.toLowerCase());
   }
 
-  bool _exists(String? normalizedRelativePath) =>
-      normalizedRelativePath != null &&
-      index.contains(normalizedRelativePath.toLowerCase());
-
   bool _existsInIncludeRoot(String? normalizedRelativePath) =>
       normalizedRelativePath != null &&
       index.includeRootPaths.contains(normalizedRelativePath.toLowerCase());
+
+  bool _existsInFilesRoot(String? normalizedRelativePath) =>
+      normalizedRelativePath != null &&
+      index.filesRootPaths.contains(normalizedRelativePath.toLowerCase());
 }
 
 class _IncludeIndex {
@@ -658,13 +685,15 @@ class _IncludeIndex {
   /// （头文件/模块）——`files/`、`lib/` 下的文件与 include 根同名也不可搜到。
   final Set<String> includeRootPaths = <String>{};
 
-  final Map<String, String> _actualPathsByLowerPath = <String, String>{};
+  /// 包内 `build/native/files/` 下的路径（相对该根、小写，即原相对路径）。与
+  /// [includeRootPaths] 由同一处分派、互不重叠：头文件/模块只进前者，`.lib`/
+  /// `.dll`/`.pdb` 两棵都不进。
+  final Set<String> filesRootPaths = <String>{};
+
   final Map<String, List<String>> _pathsByLowerName = <String, List<String>>{};
   final Set<String> _includeRootLowerPaths = <String>{};
   final Map<String, Set<String>> _includeRootChildDirs =
       <String, Set<String>>{};
-
-  bool contains(String lowerPath) => _actualPathsByLowerPath.containsKey(lowerPath);
 
   List<String> candidatesFor(String lowerBaseName) =>
       _pathsByLowerName[lowerBaseName] ?? const <String>[];
@@ -675,7 +704,6 @@ class _IncludeIndex {
 
   void addFile(String path) {
     files.add(path);
-    _actualPathsByLowerPath[path.toLowerCase()] = path;
     _pathsByLowerName
         .putIfAbsent(baseName(path).toLowerCase(), () => <String>[])
         .add(path);
@@ -683,6 +711,8 @@ class _IncludeIndex {
       includeRootPaths.add(
         _packageDestination(path, namespace).toLowerCase(),
       );
+    } else if (_landsUnderFilesRoot(path)) {
+      filesRootPaths.add(path.toLowerCase());
     }
   }
 

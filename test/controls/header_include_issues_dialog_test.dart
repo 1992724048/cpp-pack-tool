@@ -55,7 +55,7 @@ void main() {
 
     expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
     expect(
-      find.text('"src/gtest-internal-inl.h"：唯一候选打包后不在 include 根之下：src/gtest/gtest-internal-inl.h'),
+      find.text('"src/gtest-internal-inl.h"：唯一候选无适用改写形态：src/gtest/gtest-internal-inl.h'),
       findsOneWidget,
     );
     expect(find.text('include/mimalloc/track.h:85'), findsOneWidget);

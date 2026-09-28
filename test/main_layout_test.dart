@@ -1012,9 +1012,66 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   });
 
+  testWidgets('构建对话框：sourceNone 为 false 时走准备环境时间线', (tester) async {
+    // 与上面那条成对，把 sourceNone 的两个极性都显式钉住。缺省替身是 true，
+    // 若这里也注入 true，即使实现把极性接反两条都会照样通过、判别力归零。
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: r'C:\libs\demo',
+          files: _buildPyFiles(),
+        ),
+      ],
+    );
+    final Completer<BuildEnvironment> prepareGate =
+        Completer<BuildEnvironment>();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
+      probeSourceAbsent: (String sourcePath) async => false,
+      prepareBuildEnv:
+          (
+            PackModel pack, {
+            required List<String> compilerPriority,
+            required List<DetectedCompiler> cachedCompilers,
+            required CompilerDetectionCallback onCompilersDetected,
+            ToolDownloadProgressCallback? onDownloadProgress,
+          }) => prepareGate.future,
+      buildPack: (
+        PackModel pack,
+        void Function(PackBuildStage) onStage, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+      }) async {},
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('准备环境'), findsOneWidget);
+    expect(find.text('准备源码'), findsOneWidget);
+    expect(find.text('下载'), findsNothing);
+    expect(find.text('分类'), findsNothing);
+
+    prepareGate.complete(_buildEnvironment());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  });
+
   // 本组不注入 probeSourceAbsent，走 MainLayout 构造函数的**生产默认实现**
-  // （absentByPresetSourceProbe）对真实临时目录求值。替身对默认值零判别力：
-  // 上面那条用例即使把替身值与实现同步翻转也照样通过，故默认值极性只能由本组钉住。
+  // （absentByPresetSourceProbe）对真实临时目录求值。缺省替身取 true、对本组零
+  // 判别力，故生产默认的极性只能由本组钉住——上面那两条用例只钉住「接线正确、
+  // 两个极性各自走对时间线」，替身换成什么值都照样通过。
   testWidgets('生产默认实现：有 .cnp-src 的包走准备环境时间线', (tester) async {
     final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
     addTearDown(() => sourceDir.deleteSync(recursive: true));
@@ -1126,7 +1183,7 @@ void main() {
     expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
     expect(
       find.text(
-        '"src/gtest-internal-inl.h"：唯一候选打包后不在 include 根之下：src/gtest/gtest-internal-inl.h',
+        '"src/gtest-internal-inl.h"：唯一候选无适用改写形态：src/gtest/gtest-internal-inl.h',
       ),
       findsOneWidget,
     );
@@ -2395,8 +2452,13 @@ Future<void> _openBuildDialogWithProductionProbe(
 
 Future<bool> _noBuildCache(String packName) async => false;
 
-/// 预置源码探测的缺省替身：**无**预置源码（`sourceNone` 为 true，走准备环境
+/// 预置源码探测的缺省替身：**无**预置源码（`sourceNone` 为 true，走下载/分类
 /// 时间线）。名字与极性同向，取反只写在生产实现里。极性见 `PackSourceAbsentProbe`。
+///
+/// 取 true 而非 false：与生产默认 [absentByPresetSourceProbe] 的取值同向，替身
+/// 与生产不会因极性不同而各自走一条时间线。默认值本身不承载判别力——两个极性
+/// 各由本文件里显式注入的用例钉住，生产默认的极性由 `_openBuildDialogWithProductionProbe`
+/// 那组钉住。
 Future<bool> _absentPresetSource(String sourcePath) async => true;
 
 Future<void> _noDeleteBuildCache(String packName) async {}
