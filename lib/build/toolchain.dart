@@ -19,8 +19,9 @@ const String _vcToolsComponent =
 /// [environment] 为版本探测子进程的环境（如注入受控 `TMP`/`TEMP`）；null 时
 /// 继承宿主环境。探测只认退出码 0 且 stdout 命中版本：ICX 在临时目录不可用时
 /// 会以 1 退出（`error #10026`，stdout 为空、横幅与错误写 stderr），不为其放行
-/// ——该文本形态与 stdout 正常输出不同且放行会掩盖真实失败；此失败模式由构建
-/// 环境准备注入受控 `TMP`/`TEMP` 解决。
+/// ——该文本形态与 stdout 正常输出不同且放行会掩盖真实失败。该失败模式由设置页
+/// 检测入口 `detectCompilersWithControlledTemp` 注入受控 `TMP`/`TEMP` 规避；自行
+/// 传入 [environment] 的调用方需保证其中的 `TMP`/`TEMP` 指向当前用户所有的目录。
 Future<DetectedCompiler?> detectIcx({
   PackProcessRunner runner = Process.run,
   required String oneApiRoot,
