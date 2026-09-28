@@ -1031,8 +1031,6 @@ BuildEnvironment _environment({
       'CNP_COMPILER_KIND': 'icx',
       'Path': r'C:\tools\bin',
     },
-    cmakePath: r'C:\tools\cmake\bin\cmake.exe',
-    ninjaPath: r'C:\tools\ninja\ninja.exe',
     toolsDir: r'C:\tools',
   );
 }

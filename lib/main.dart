@@ -26,7 +26,6 @@ import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/services.dart';
 
 import 'app_info.dart';
 import 'controls/add_directory_dialog.dart';
@@ -111,7 +110,7 @@ typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   required CompilerDetectionCallback onCompilersDetected,
 });
 
-/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块。
+/// 默认构建环境准备：读取包内 build.py 头部并解析选项。
 Future<BuildEnvironment> _preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> compilerPriority,
@@ -123,7 +122,6 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
     priority: compilerPriority,
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
-    loadSupportModule: () => rootBundle.loadString('assets/build/cnp_build_support.py'),
   );
 }
 

@@ -18,11 +18,13 @@ class BuildPreparationException implements Exception {
 
 final RegExp _lineSeparator = RegExp(r'\r?\n');
 
-/// 构建辅助模块释放到 `tools/` 的文件名。
-const String _supportModuleFileName = 'cnp_build_support.py';
+/// 注入子进程的 CMake 可执行文件名；由子进程按 `PATH` 解析。
+const String _cmakeCommandName = 'cmake';
 
-/// 受控构建临时目录的父目录（相对 [toolsRoot]）；每次调用在其下创建独立子目录，
-/// 与供给层暂存用的随机子目录（`tools/.tmp/<工具名>-<随机>`）互不冲突。
+/// 注入子进程的 Ninja 可执行文件名；由子进程按 `PATH` 解析。
+const String _ninjaCommandName = 'ninja';
+
+/// 受控临时目录的父目录（相对 [toolsRoot]）；每次调用在其下创建独立子目录。
 const String _controlledTempRelativePath = '.tmp/build';
 
 /// 受控临时子目录名前缀；进程内序号与毫秒时间戳共同保证同一进程快速连续调用
@@ -46,7 +48,7 @@ Future<Map<String, String>> captureToolchainEnvironment(
 }) async {
   final Map<String, String> base = baseEnvironment ?? Platform.environment;
   final String? script = compiler.environmentScript;
-  if (script == null) {
+  if (script == null || script.isEmpty) {
     return Map<String, String>.of(base);
   }
 
@@ -80,10 +82,10 @@ typedef ToolchainEnvironmentCapture = Future<Map<String, String>> Function(
 
 /// 在受控 `TMP`/`TEMP`（[createControlledTempDirectory]）下检测编译器。
 ///
-/// 设置页与构建共用此入口，避免宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时
-/// 探测失败（如 ICX 的 `error #10026`，见 [createControlledTempDirectory]）；
-/// [detect] 为测试注入点，缺省经 [detectCompilers] 以受控环境探测。检测完成后
-/// 删除本次临时目录（检测自包含；构建路径的目录由外层构建生命周期使用）。
+/// 设置页的检测入口，避免宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时探测失败
+/// （如 ICX 的 `error #10026`，见 [createControlledTempDirectory]）；[detect] 为
+/// 测试注入点，缺省经 [detectCompilers] 以受控环境探测。检测完成后删除本次临时
+/// 目录（检测自包含）。
 Future<List<DetectedCompiler>> detectCompilersWithControlledTemp({
   PackProcessRunner runner = Process.run,
   String toolsRoot = 'tools',
@@ -110,10 +112,7 @@ class BuildEnvironment {
   const BuildEnvironment({
     required this.compiler,
     required this.environment,
-    required this.cmakePath,
-    required this.ninjaPath,
     required this.toolsDir,
-    this.python,
   });
 
   final DetectedCompiler compiler;
@@ -121,51 +120,36 @@ class BuildEnvironment {
   /// 完整子进程环境（含捕获的编译器环境、`PATH` 与 `CNP_*`）。
   final Map<String, String> environment;
 
-  /// CMake 可执行文件路径；本地在 PATH 时为命令名 `cmake`。
-  final String? cmakePath;
-
-  /// Ninja 可执行文件路径；本地在 PATH 时为命令名 `ninja`。
-  final String? ninjaPath;
-
   /// `tools/` 目录绝对路径。
   final String toolsDir;
-
-  /// 构建脚本使用的 Python 解释器（准备阶段解析结果）：供给版为绝对路径，
-  /// 本机命中为 `python` / `py`。提权重试据此在 launcher 中优先嵌入已解析的
-  /// 可执行文件，避免提权上下文重新解析 `PATH` 引入歧义。
-  final ProvisionedPython? python;
 }
 
 /// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
 ///
-/// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
-/// 未能归属的工具目录 → [python] 的解释器目录（[ProvisionedPython.pathEntries]） →
-/// [toolPathEntries]（`# tool` 声明的工具） →
+/// PATH 键大小写不敏感（保留原键名与值），前置顺序为 [toolPathEntries] →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
 /// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
-/// `PYTHONPATH` 前置 [toolsRoot] 绝对路径
-/// （保留原值）；[environment] 不被修改。
+/// [environment] 不被修改。
 ///
 /// 编译参数（指令集、优化等级、链接时优化、运行库家族与语言标准）一律不由本层
 /// 决定，配方可经 `cmake_configure(extra_args=…)` 自定任何 `-D` 参数。
 ///
-/// `CNP_C_COMPILER` 取 [DetectedCompiler.executablePath]、
+/// `CNP_CMAKE` / `CNP_NINJA` 固定为命令名 `cmake` / `ninja`，由子进程按 `PATH`
+/// 解析。`CNP_C_COMPILER` 取 [DetectedCompiler.executablePath]、
 /// `CNP_CXX_COMPILER` 取 [DetectedCompiler.cxxCompilerPath]。`CNP_RC_COMPILER`
-/// 不做推导：它只在输入 [environment] 已显式声明时随子进程透传（供构建脚本或
-/// 辅助模块注入 `CMAKE_RC_COMPILER`），缺失即不下发，CMake 可经 PATH 自行解析。
+/// 不做推导：它只在输入 [environment] 已显式声明时随子进程透传，缺失即不下发，
+/// CMake 可经 PATH 自行解析。
 BuildEnvironment assembleBuildEnvironment({
   required DetectedCompiler compiler,
   required Map<String, String> environment,
-  required CmakeNinja cmakeNinja,
   required String toolsRoot,
-  ProvisionedPython? python,
   List<String> toolPathEntries = const <String>[],
   Map<String, String> options = const <String, String>{},
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);
-  _setEnvironmentValue(child, 'CNP_CMAKE', cmakeNinja.cmakeExecutable);
-  _setEnvironmentValue(child, 'CNP_NINJA', cmakeNinja.ninjaExecutable);
+  _setEnvironmentValue(child, 'CNP_CMAKE', _cmakeCommandName);
+  _setEnvironmentValue(child, 'CNP_NINJA', _ninjaCommandName);
   _setEnvironmentValue(child, 'CNP_TOOLS_DIR', toolsDir);
   _setEnvironmentValue(child, 'CNP_C_COMPILER', compiler.executablePath);
   _setEnvironmentValue(child, 'CNP_CXX_COMPILER', compiler.cxxCompilerPath);
@@ -179,125 +163,65 @@ BuildEnvironment assembleBuildEnvironment({
   }
   _prependPathEntries(
     child,
-    _orderedToolPathEntries(
-      cmakeNinja,
-      python?.pathEntries ?? const <String>[],
-      toolPathEntries,
-      compiler.extraPathEntries,
-    ),
+    <String>[...toolPathEntries, ...compiler.extraPathEntries],
   );
-  _prependEnvironmentValue(child, 'PYTHONPATH', toolsDir);
   return BuildEnvironment(
     compiler: compiler,
     environment: child,
-    cmakePath: cmakeNinja.cmakeExecutable,
-    ninjaPath: cmakeNinja.ninjaExecutable,
     toolsDir: toolsDir,
-    python: python,
   );
 }
 
-/// 准备构建环境：先创建本次调用的受控构建临时目录（`<toolsRoot>/.tmp/build/run-*`，
-/// 新建目录 owner 为当前用户，保证 ICX 等编译器可写）并把 `TMP`/`TEMP` 注入 base
-/// 副本（宿主临时目录不可用或指向他人所有目录时 ICX 探测与构建会失败）→ 复用
-/// [cachedCompilers] 中有效且匹配 [priority] 的编译器，缓存缺失/失效时按
-/// [priority] 检测（全部落空时下载 clang/LLVM 到 `tools/clang/` 兜底）→ 捕获
-/// 编译器环境 → 供给 CMake/Ninja、Python（本机优先，缺失下载 embeddable 版）与
-/// [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*` 与选项变量。
+/// 准备构建环境：复用 [cachedCompilers] 中有效且匹配 [priority] 的编译器，缓存
+/// 缺失/失效时按 [priority] 检测 → 捕获编译器环境 → 装配 `PATH`、`CNP_*` 与选项
+/// 变量。全部落空或任一环节失败时抛 [BuildPreparationException]（不再下载、不再
+/// 释放任何工具链）。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
-/// 不改动本进程与系统）；受控 `TMP`/`TEMP` 写入其副本并随编译器检测、环境捕获
-/// 与最终 [BuildEnvironment.environment] 注入子进程；[cachedCompilers] 为上次
+/// 不改动本进程与系统，也不改写其中的 `TMP`/`TEMP`）；[cachedCompilers] 为上次
 /// 检测的持久化结果（见 `SettingsModel.detectedCompilers`，设置页与构建共用），
 /// 条目经 [isCompilerUsable] 校验后才参与选择；[onCompilersDetected] 在缓存
-/// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[onDownloadProgress]
-/// 透传到各供给调用（CMake/Ninja/Python/声明工具/兜底 clang），供 UI 展示
-/// 下载进度；[detect]/[capture] 为测试注入点，不传缓存与回调时行为与不启用
-/// 缓存完全一致。无可用编译器且 clang/LLVM 兜底失败、或任一环节失败时抛
-/// [BuildPreparationException]。
+/// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[detect]/[capture] 为
+/// 测试注入点，不传缓存与回调时行为与不启用缓存完全一致。
 Future<BuildEnvironment> prepareBuildEnvironment({
   List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
   PackProcessRunner runner = Process.run,
-  ToolProvisioner? provisioner,
   String toolsRoot = 'tools',
   Map<String, String>? baseEnvironment,
-  List<BuildScriptTool> tools = const <BuildScriptTool>[],
   Map<String, String> options = const <String, String>{},
-  String? supportModule,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
-  ToolDownloadProgressCallback? onDownloadProgress,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
   final Map<String, String> base = baseEnvironment ?? Platform.environment;
-  final Map<String, String> childBase = await withControlledTempEnvironment(
-    base,
-    toolsRoot: toolsRoot,
-  );
   DetectedCompiler? compiler = selectCompiler(
     _usableCachedCompilers(cachedCompilers),
     priority,
   );
   if (compiler == null) {
     final CompilerDetector detector =
-        detect ??
-        (() => detectCompilers(runner: runner, environment: childBase));
+        detect ?? (() => detectCompilers(runner: runner, environment: base));
     final List<DetectedCompiler> detected = await detector();
     onCompilersDetected?.call(detected);
     compiler = selectCompiler(detected, priority);
   }
-  compiler ??= await _provisionFallbackCompiler(
-    provisioner: provisioner,
-    runner: runner,
-    toolsRoot: toolsRoot,
-    baseEnvironment: childBase,
-    priority: priority,
-    onDownloadProgress: onDownloadProgress,
-  );
+  if (compiler == null) {
+    throw BuildPreparationException(_noCompilerMessage(priority));
+  }
 
   final ToolchainEnvironmentCapture captureEnvironment =
       capture ?? captureToolchainEnvironment;
   final Map<String, String> captured = await captureEnvironment(
     compiler,
     runner: runner,
-    baseEnvironment: childBase,
+    baseEnvironment: base,
   );
-
-  final ToolProvisioner toolProvisioner =
-      provisioner ??
-      ToolProvisioner(
-        toolsRoot: toolsRoot,
-        runner: runner,
-        environment: captured,
-      );
-  final CmakeNinja cmakeNinja = await toolProvisioner.ensureCmakeNinja(
-    onDownloadProgress: onDownloadProgress,
-  );
-  final ProvisionedPython python = await toolProvisioner.ensurePython(
-    onDownloadProgress: onDownloadProgress,
-  );
-
-  final List<String> toolPathEntries = <String>[];
-  for (final BuildScriptTool tool in tools) {
-    final ProvisionedTool provisioned = await _ensureDeclaredTool(
-      toolProvisioner,
-      tool,
-      onDownloadProgress,
-    );
-    toolPathEntries.addAll(provisioned.pathEntries);
-  }
-  if (supportModule != null) {
-    await _releaseSupportModule(toolsRoot, supportModule);
-  }
 
   return assembleBuildEnvironment(
     compiler: compiler,
     environment: captured,
-    cmakeNinja: cmakeNinja,
     toolsRoot: toolsRoot,
-    python: python,
-    toolPathEntries: toolPathEntries,
     options: options,
   );
 }
@@ -371,12 +295,12 @@ Map<String, String> _withControlledTemp(
   return child;
 }
 
-/// 创建本次调用的受控构建临时目录并把 `TMP`/`TEMP` 写入 base 副本（大小写不敏感
+/// 创建本次调用的受控临时目录并把 `TMP`/`TEMP` 写入 base 副本（大小写不敏感
 /// 替换已有键，键统一为规范大写）。
 ///
-/// 宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时编译器探测与构建会失败（如 ICX
-/// 的 `error #10026: error generating temporary file`，见
-/// [createControlledTempDirectory]）；设置页检测与构建统一改用本次新建的
+/// 宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时编译器探测会失败（如 ICX 的
+/// `error #10026: error generating temporary file`，见
+/// [createControlledTempDirectory]），故探测方改用本次新建的
 /// `<toolsRoot>/.tmp/build/run-*` 子目录。`Platform.environment` 的键迭代为
 /// 全大写、副本的精确键查找会落空，故同时把默认查找键复制为规范拼写。返回新
 /// map，不修改 [base]；目录创建失败抛 [BuildPreparationException]（toolsRoot
@@ -408,105 +332,23 @@ void _copyEnvironmentValue(
   _setEnvironmentValue(target, key, value);
 }
 
-/// 编译器检测全部落空时的最后手段：下载 clang/LLVM 到 `tools/clang/`，
-/// 以 [baseEnvironment] 探测 clang-cl 版本并组装编译器条目（PATH 注入其 bin
-/// 目录）。
-///
-/// LLVM 发行版不含 MSVC 标准库头与链接库，clang-cl 仍需 MSVC/SDK 环境（由检测
-/// 阶段的 vcvars 继承链路提供），故不携带环境脚本；供给失败包装
-/// [BuildPreparationException] 保留原详情。
-Future<DetectedCompiler> _provisionFallbackCompiler({
-  required ToolProvisioner? provisioner,
-  required PackProcessRunner runner,
-  required String toolsRoot,
-  required Map<String, String> baseEnvironment,
-  required List<String> priority,
-  ToolDownloadProgressCallback? onDownloadProgress,
-}) async {
-  final ToolProvisioner toolProvisioner =
-      provisioner ??
-      ToolProvisioner(
-        toolsRoot: toolsRoot,
-        runner: runner,
-        environment: baseEnvironment,
-      );
-  final ProvisionedTool clang;
-  try {
-    clang = await toolProvisioner.ensureClangLlvm(
-      onDownloadProgress: onDownloadProgress,
-    );
-  } on BuildPreparationException catch (error) {
-    throw BuildPreparationException(
-      '${_noCompilerMessage(priority)}；clang/LLVM 最后手段失败：${error.message}',
-    );
-  } catch (error) {
-    throw BuildPreparationException(
-      '${_noCompilerMessage(priority)}；clang/LLVM 最后手段失败：$error',
-    );
-  }
-  final DetectedCompiler? compiler = await detectClangCl(
-    runner: runner,
-    llvmBinDir: joinPath(clang.directory, 'bin'),
-    environment: baseEnvironment,
-  );
-  if (compiler == null) {
-    throw BuildPreparationException(
-      'clang/LLVM 已供给予 ${clang.directory}，但 clang-cl 版本探测失败',
-    );
-  }
-  return compiler;
-}
-
-Future<ProvisionedTool> _ensureDeclaredTool(
-  ToolProvisioner provisioner,
-  BuildScriptTool tool,
-  ToolDownloadProgressCallback? onDownloadProgress,
-) async {
-  try {
-    return await provisioner.ensureTool(
-      name: tool.name,
-      url: tool.url,
-      binSubdir: tool.binSubdir,
-      onDownloadProgress: onDownloadProgress,
-    );
-  } on BuildPreparationException {
-    rethrow;
-  } catch (error) {
-    throw BuildPreparationException('工具 ${tool.name} 准备失败：$error');
-  }
-}
-
-Future<void> _releaseSupportModule(String toolsRoot, String content) async {
-  try {
-    await Directory(toolsRoot).create(recursive: true);
-    await File(joinPath(toolsRoot, _supportModuleFileName))
-        .writeAsString(content);
-  } on FileSystemException catch (error) {
-    throw BuildPreparationException('释放构建辅助模块失败：$error');
-  }
-}
-
-/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 供给声明工具与
-/// CMake/Ninja/Python → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
+/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 透传
+/// [prepareBuildEnvironment]。
 ///
 /// 编译参数不经本层下发：配方自行决定并可经 `cmake_configure(extra_args=…)`
 /// 传入任意 `-D` 参数。
 ///
 /// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
-/// [BuildPreparationException]。其余参数（含 [onDownloadProgress]）透传
-/// [prepareBuildEnvironment]。
+/// [BuildPreparationException]。其余参数透传 [prepareBuildEnvironment]。
 Future<BuildEnvironment> preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> priority,
   PackProcessRunner runner = Process.run,
-  ToolProvisioner? provisioner,
   String toolsRoot = 'tools',
   Map<String, String>? baseEnvironment,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader,
-  Future<String> Function()? loadSupportModule,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
-  ToolDownloadProgressCallback? onDownloadProgress,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
@@ -518,37 +360,20 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
   } catch (error) {
     throw BuildPreparationException('读取 build.py 失败：$error');
   }
-  final String? supportModule = await _loadSupportModule(loadSupportModule);
   return prepareBuildEnvironment(
     priority: priority,
     runner: runner,
-    provisioner: provisioner,
     toolsRoot: toolsRoot,
     baseEnvironment: baseEnvironment,
-    tools: header?.tools ?? const <BuildScriptTool>[],
     options: resolveBuildOptions(
       header?.options ?? const <BuildScriptOption>[],
       pack.buildOptions,
     ),
-    supportModule: supportModule,
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
-    onDownloadProgress: onDownloadProgress,
     detect: detect,
     capture: capture,
   );
-}
-
-Future<String?> _loadSupportModule(Future<String> Function()? loader) async {
-  if (loader == null) {
-    return null;
-  }
-  try {
-    return await loader();
-  } catch (_) {
-    // 辅助模块缺失/加载失败不阻断构建：脚本可自行回退。
-    return null;
-  }
 }
 
 /// 脚本路径可能含空格；直接内嵌进 `cmd /c` 参数字符串会被 Dart 的 Windows
@@ -629,49 +454,6 @@ String _noCompilerMessage(List<String> priority) {
   return '未检测到可用编译器（优先级：${priority.join(' > ')}）';
 }
 
-/// 工具目录前置排序：Ninja → CMake → 未能归属的目录 → Python 解释器目录 →
-/// 声明工具目录 → 编译器附加目录。
-///
-/// [CmakeNinja.pathEntries] 不区分工具归属（供给顺序为先 CMake 后 Ninja），
-/// 这里按可执行文件路径归属分组，使 PATH 结构稳定。
-List<String> _orderedToolPathEntries(
-  CmakeNinja cmakeNinja,
-  List<String> pythonPathEntries,
-  List<String> toolPathEntries,
-  List<String> extraPathEntries,
-) {
-  final List<String> ninjaEntries = <String>[];
-  final List<String> cmakeEntries = <String>[];
-  final List<String> unknownEntries = <String>[];
-  for (final String entry in cmakeNinja.pathEntries) {
-    if (_containsExecutable(entry, cmakeNinja.ninjaExecutable)) {
-      ninjaEntries.add(entry);
-    } else if (_containsExecutable(entry, cmakeNinja.cmakeExecutable)) {
-      cmakeEntries.add(entry);
-    } else {
-      unknownEntries.add(entry);
-    }
-  }
-  return <String>[
-    ...ninjaEntries,
-    ...cmakeEntries,
-    ...unknownEntries,
-    ...pythonPathEntries,
-    ...toolPathEntries,
-    ...extraPathEntries,
-  ];
-}
-
-bool _containsExecutable(String directory, String executable) {
-  final String normalizedDirectory = directory
-      .replaceAll('/', '\\')
-      .toLowerCase();
-  final String normalizedExecutable = executable
-      .replaceAll('/', '\\')
-      .toLowerCase();
-  return normalizedExecutable.startsWith('$normalizedDirectory\\');
-}
-
 void _prependPathEntries(
   Map<String, String> environment,
   List<String> entries,
@@ -694,20 +476,6 @@ void _prependPathEntries(
   environment[pathKey ?? 'Path'] = existing.isEmpty
       ? prefix
       : '$prefix;$existing';
-}
-
-/// 将 [value] 前置到 [key]（大小写不敏感匹配、保留原键名），原值以 `;` 连接；
-/// 无原值时仅写入 [value]。
-void _prependEnvironmentValue(
-  Map<String, String> environment,
-  String key,
-  String value,
-) {
-  final String? existingKey = _findKeyIgnoreCase(environment, key);
-  final String existing = existingKey == null ? '' : environment[existingKey]!;
-  environment[existingKey ?? key] = existing.isEmpty
-      ? value
-      : '$value;$existing';
 }
 
 String? _findKeyIgnoreCase(Map<String, String> environment, String key) {
