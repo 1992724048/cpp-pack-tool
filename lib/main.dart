@@ -23,7 +23,6 @@ import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/author_rules.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/util/proxy.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/util/system_entries.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
@@ -117,15 +116,13 @@ typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   ToolDownloadProgressCallback? onDownloadProgress,
 });
 
-/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块；
-/// [proxy] 代理解析注入工具下载与构建子进程环境。
+/// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块。
 Future<BuildEnvironment> _preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> compilerPriority,
   required List<toolchain.DetectedCompiler> cachedCompilers,
   required CompilerDetectionCallback onCompilersDetected,
   ToolDownloadProgressCallback? onDownloadProgress,
-  ProxyResolution? proxy,
 }) {
   return preparePackBuildEnvironment(
     pack,
@@ -133,7 +130,6 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
     onDownloadProgress: onDownloadProgress,
-    proxy: proxy,
     loadSupportModule: () => rootBundle.loadString('assets/build/cnp_build_support.py'),
   );
 }
@@ -209,10 +205,6 @@ class _MainLayoutState extends State<MainLayout> {
 
   /// 默认作者批量修正防重入（启动与设置变更可能相邻触发）。
   bool _fixingAuthors = false;
-
-  /// 代理解析缓存（与设置对象绑定；设置被替换后按需重新解析）。
-  Future<ProxyResolution>? _proxyResolutionFuture;
-  SettingsModel? _proxyResolutionSettings;
 
   @override
   void initState() {
@@ -443,19 +435,6 @@ class _MainLayoutState extends State<MainLayout> {
     return null;
   }
 
-  /// 当前设置的代理解析（同一设置对象复用；设置变更后重新解析，自动模式读注册表）。
-  Future<ProxyResolution> _proxyResolution() {
-    final SettingsModel settings = widget.settings;
-    final Future<ProxyResolution>? pending = _proxyResolutionFuture;
-    if (pending != null && identical(_proxyResolutionSettings, settings)) {
-      return pending;
-    }
-    _proxyResolutionSettings = settings;
-    final Future<ProxyResolution> resolved = resolveProxyFromSettings(settings);
-    _proxyResolutionFuture = resolved;
-    return resolved;
-  }
-
   Future<void> _deleteSelectedPack() async {
     final int? selected = _selected;
     if (selected == null || selected < 0 || selected >= _packs.length) {
@@ -607,7 +586,6 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _buildPack(PackModel pack) async {
-    final ProxyResolution proxy = await _proxyResolution();
     if (!mounted) {
       return;
     }
@@ -625,7 +603,6 @@ class _MainLayoutState extends State<MainLayout> {
           cachedCompilers: cachedCompilers,
           onCompilersDetected: onCompilersDetected,
           onDownloadProgress: onDownloadProgress,
-          proxy: proxy,
         );
     final bool sourceNone = await _loadSourceNone(pack);
     if (!mounted) {

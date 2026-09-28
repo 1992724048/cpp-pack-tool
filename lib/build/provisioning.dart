@@ -5,9 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/util/proxy.dart';
 
 /// 工具包下载器：返回 zip/tar 归档字节，失败时抛异常。
 typedef ToolFetcher = Future<Uint8List> Function(Uri uri);
@@ -210,7 +208,6 @@ class ToolProvisioner {
     ToolFetcher? fetch,
     PackProcessRunner? runner,
     Map<String, String>? environment,
-    ProxyResolution? proxy,
     int replaceAttempts = _defaultReplaceAttempts,
     Duration replaceRetryDelay = _defaultReplaceRetryDelay,
   }) : assert(replaceAttempts >= 1),
@@ -219,7 +216,6 @@ class ToolProvisioner {
        _customFetch = fetch,
        _runner = runner ?? Process.run,
        _environment = environment ?? Platform.environment,
-       _proxyResolution = proxy,
        _replaceAttempts = replaceAttempts,
        _replaceRetryDelay = replaceRetryDelay;
 
@@ -229,9 +225,6 @@ class ToolProvisioner {
   final ToolFetcher? _customFetch;
   final PackProcessRunner _runner;
   final Map<String, String> _environment;
-
-  /// 代理解析（内建下载用；null = 直连）。
-  final ProxyResolution? _proxyResolution;
   final int _replaceAttempts;
   final Duration _replaceRetryDelay;
 
@@ -485,7 +478,6 @@ class ToolProvisioner {
       uri,
       toolName: toolName,
       onDownloadProgress: onDownloadProgress,
-      proxy: _proxyResolution,
     );
   }
 
@@ -854,21 +846,15 @@ const Duration _downloadConnectionTimeout = Duration(seconds: 15);
 const Duration _downloadIdleTimeout = Duration(seconds: 30);
 
 /// 内建 HTTP 下载：整包读入内存；[onDownloadProgress] 非空时按块上报进度
-/// （首个事件为 0 字节，其后每个响应块一个事件，速度为块间瞬时速度）；
-/// [proxy] 缺省直连（显式赋值 `findProxy`，不读取环境变量）。
+/// （首个事件为 0 字节，其后每个响应块一个事件，速度为块间瞬时速度）。
 Future<Uint8List> _fetchBytesOverHttp(
   Uri uri, {
   String? toolName,
   ToolDownloadProgressCallback? onDownloadProgress,
-  ProxyResolution? proxy,
 }) async {
-  final HttpClient client = HttpClient();
-  configureHttpClient(
-    client,
-    proxy ?? const ProxyResolution(mode: ProxyModeSetting.off),
-    connectionTimeout: _downloadConnectionTimeout,
-    idleTimeout: _downloadIdleTimeout,
-  );
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = _downloadConnectionTimeout
+    ..idleTimeout = _downloadIdleTimeout;
   try {
     final HttpClientRequest request = await client.getUrl(uri);
     final HttpClientResponse response = await request.close();

@@ -1,7 +1,6 @@
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/licenses.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
@@ -36,31 +35,16 @@ class _SettingState extends State<Setting> {
     ThemeModeSetting.light: '浅色',
   };
 
-  static const Map<ProxyModeSetting, String> _proxyModeLabels = <ProxyModeSetting, String>{
-    ProxyModeSetting.off: '关闭',
-    ProxyModeSetting.auto: '自动检测',
-    ProxyModeSetting.manual: '手动设置',
-  };
-
   List<toolchain.DetectedCompiler> _detected = const <toolchain.DetectedCompiler>[];
   bool _detecting = true;
   late final TextEditingController _defaultAuthorController;
   late final FocusNode _defaultAuthorFocusNode;
-  late final TextEditingController _proxyHostController;
-  late final FocusNode _proxyHostFocusNode;
-  late final TextEditingController _proxyPortController;
-  late final FocusNode _proxyPortFocusNode;
-  String? _proxyPortError;
 
   @override
   void initState() {
     super.initState();
     _defaultAuthorController = TextEditingController(text: widget.settings.defaultAuthor);
     _defaultAuthorFocusNode = FocusNode()..addListener(_onAuthorFocusChanged);
-    _proxyHostController = TextEditingController(text: widget.settings.proxyHost);
-    _proxyHostFocusNode = FocusNode()..addListener(_onProxyHostFocusChanged);
-    _proxyPortController = TextEditingController(text: widget.settings.proxyPort?.toString() ?? '');
-    _proxyPortFocusNode = FocusNode()..addListener(_onProxyPortFocusChanged);
     final List<toolchain.DetectedCompiler> cached = widget.settings.detectedCompilers;
     if (cached.isEmpty) {
       _detectCompilers(showLoading: false);
@@ -76,12 +60,6 @@ class _SettingState extends State<Setting> {
     if (oldWidget.settings.defaultAuthor != widget.settings.defaultAuthor && !_defaultAuthorFocusNode.hasFocus) {
       _defaultAuthorController.text = widget.settings.defaultAuthor;
     }
-    if (oldWidget.settings.proxyHost != widget.settings.proxyHost && !_proxyHostFocusNode.hasFocus) {
-      _proxyHostController.text = widget.settings.proxyHost;
-    }
-    if (oldWidget.settings.proxyPort != widget.settings.proxyPort && !_proxyPortFocusNode.hasFocus) {
-      _proxyPortController.text = widget.settings.proxyPort?.toString() ?? '';
-    }
   }
 
   @override
@@ -90,14 +68,6 @@ class _SettingState extends State<Setting> {
       ..removeListener(_onAuthorFocusChanged)
       ..dispose();
     _defaultAuthorController.dispose();
-    _proxyHostFocusNode
-      ..removeListener(_onProxyHostFocusChanged)
-      ..dispose();
-    _proxyHostController.dispose();
-    _proxyPortFocusNode
-      ..removeListener(_onProxyPortFocusChanged)
-      ..dispose();
-    _proxyPortController.dispose();
     super.dispose();
   }
 
@@ -108,20 +78,6 @@ class _SettingState extends State<Setting> {
     _saveDefaultAuthor();
   }
 
-  void _onProxyHostFocusChanged() {
-    if (_proxyHostFocusNode.hasFocus) {
-      return;
-    }
-    _saveProxyHost();
-  }
-
-  void _onProxyPortFocusChanged() {
-    if (_proxyPortFocusNode.hasFocus) {
-      return;
-    }
-    _saveProxyPort();
-  }
-
   /// 失焦或回车时保存默认作者；值未变化不触发（防重复写盘 / 重复 toast）。
   void _saveDefaultAuthor() {
     final String value = _defaultAuthorController.text.trim();
@@ -129,46 +85,6 @@ class _SettingState extends State<Setting> {
       return;
     }
     _apply(_defaultAuthorSettings(value));
-  }
-
-  Future<void> _saveProxyMode(ProxyModeSetting mode) {
-    if (mode == widget.settings.proxyMode) {
-      return Future<void>.value();
-    }
-    return _apply(widget.settings.copyWith(proxyMode: mode));
-  }
-
-  /// 手动代理地址失焦/回车保存；值未变化不写盘。地址允许 `http://host` 前缀
-  /// （保存原样），空值视为未设置（运行侧退直连）。
-  void _saveProxyHost() {
-    final String value = _proxyHostController.text.trim();
-    if (value == widget.settings.proxyHost) {
-      return;
-    }
-    _apply(widget.settings.copyWith(proxyHost: value));
-  }
-
-  /// 手动代理端口失焦/回车保存；空值清除端口（可回退地址中声明的端口），
-  /// 非 1–65535 的整数时显示内联错误且不写盘。
-  void _saveProxyPort() {
-    final String text = _proxyPortController.text.trim();
-    if (text.isEmpty) {
-      setState(() => _proxyPortError = null);
-      if (widget.settings.proxyPort != null) {
-        _apply(widget.settings.copyWith(proxyPort: null));
-      }
-      return;
-    }
-    final int? port = int.tryParse(text);
-    if (port == null || port < 1 || port > 65535) {
-      setState(() => _proxyPortError = '端口需为 1–65535 的整数');
-      return;
-    }
-    setState(() => _proxyPortError = null);
-    if (port == widget.settings.proxyPort) {
-      return;
-    }
-    _apply(widget.settings.copyWith(proxyPort: port));
   }
 
   Future<void> _detectCompilers({required bool showLoading}) async {
@@ -274,10 +190,9 @@ class _SettingState extends State<Setting> {
 
   @override
   Widget build(BuildContext context) {
-    final bool manualProxy = widget.settings.proxyMode == ProxyModeSetting.manual;
     return SettingsPage(
       title: '设置',
-      description: const Text('配置打包输出目录、默认作者、外观、编译器优先级与网络代理。'),
+      description: const Text('配置打包输出目录、默认作者、外观与编译器优先级。'),
       children: <Widget>[
         SettingsGroup(
           header: '打包',
@@ -304,10 +219,6 @@ class _SettingState extends State<Setting> {
         SettingsGroup(header: '新包默认值', children: <Widget>[_buildDefaultAuthorCard()]),
         SettingsGroup(header: '外观', children: <Widget>[_buildThemeModeCard()]),
         SettingsGroup(header: '编译器', children: <Widget>[_buildCompilerCard()]),
-        SettingsGroup(
-          header: '网络',
-          children: <Widget>[_buildProxyModeCard(), if (manualProxy) _buildProxyManualCard()],
-        ),
       ],
     );
   }
@@ -393,88 +304,6 @@ class _SettingState extends State<Setting> {
           items: <ComboBoxItem<ThemeModeSetting>>[
             for (final ThemeModeSetting mode in ThemeModeSetting.values)
               ComboBoxItem<ThemeModeSetting>(value: mode, child: Text(_themeModeLabels[mode]!)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProxyModeCard() {
-    return SettingsCard(
-      padding: const .fromLTRB(8, 8, 8, 8),
-      header: const Text('代理模式'),
-      description: const Text(
-        '自动检测：使用 Windows 系统代理设置，不可用时自动直连。'
-        '手动设置：填写本机代理服务器，代理不可用时自动直连。',
-      ),
-      content: _comboBoxField(
-        width: 160,
-        child: ComboBox<ProxyModeSetting>(
-          key: const Key('settingProxyModeField'),
-          value: widget.settings.proxyMode,
-          isExpanded: true,
-          onChanged: (ProxyModeSetting? value) {
-            if (value != null) {
-              _saveProxyMode(value);
-            }
-          },
-          items: <ComboBoxItem<ProxyModeSetting>>[
-            for (final ProxyModeSetting mode in ProxyModeSetting.values)
-              ComboBoxItem<ProxyModeSetting>(value: mode, child: Text(_proxyModeLabels[mode]!)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProxyManualCard() {
-    final FluentThemeData theme = FluentTheme.of(context);
-    return SettingsCard(
-      padding: const .fromLTRB(8, 8, 8, 8),
-      header: const Text('手动设置'),
-      description: const Text(
-        '服务器地址支持 host:port 或 http://host:port，端口留空时使用地址中声明的端口'
-        '（均未声明时默认 1080）。',
-      ),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                SizedBox(
-                  width: 240,
-                  child: TextBox(
-                    key: const Key('settingProxyHostField'),
-                    controller: _proxyHostController,
-                    focusNode: _proxyHostFocusNode,
-                    placeholder: '127.0.0.1',
-                    onSubmitted: (String _) => _saveProxyHost(),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 96,
-                  child: TextBox(
-                    key: const Key('settingProxyPortField'),
-                    controller: _proxyPortController,
-                    focusNode: _proxyPortFocusNode,
-                    placeholder: '7890',
-                    onSubmitted: (String _) => _saveProxyPort(),
-                  ),
-                ),
-              ],
-            ),
-            if (_proxyPortError != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  _proxyPortError!,
-                  style: TextStyle(fontSize: 12, color: AppColors.critical(theme.brightness)),
-                ),
-              ),
           ],
         ),
       ),
