@@ -1,7 +1,6 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -51,128 +50,105 @@ void main() {
   });
 
   group('parseBuildScriptHeader', () {
-    test('仅源码声明首行时 tools/options 为空且 sourceNone 为 false', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\nprint(1)\n',
+    test('无任何指令行时返回空头部', () {
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\nprint(1)\n',
       );
 
-      expect(header, isNotNull);
-      expect(header!.sourceDir, '.cnp-src');
-      expect(header.sourceNone, isFalse);
       expect(header.tools, isEmpty);
       expect(header.options, isEmpty);
       expect(header.dependencies, isEmpty);
     });
 
-    test('# source: none 作为首行解析（兼容 CRLF 与无空格形式）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: none\r\n'
-        '# tool: nasm https://example.com/nasm.zip\r\n'
-        '# option: tbb = off | on\r\n'
-        'print(1)\r\n',
-      );
-
-      expect(header!.sourceDir, isNull);
-      expect(header.sourceNone, isTrue);
-      expect(header.tools, hasLength(1));
-      expect(header.options.single.name, 'tbb');
-
-      final BuildScriptHeader? noSpace = parseBuildScriptHeader(
-        '# source:none\n',
-      );
-      expect(noSpace!.sourceNone, isTrue);
-
-      final BuildScriptHeader? upper = parseBuildScriptHeader(
-        '# source: NONE\n',
-      );
-      expect(upper!.sourceNone, isTrue);
-    });
-
-    test('预置源码目录保留原样（含子目录、两侧空白、多种分隔符）', () {
+    test('首行非 # 行时头部为空（其后 # 行不再解析）', () {
+      expect(parseBuildScriptHeader('print(1)').tools, isEmpty);
+      expect(parseBuildScriptHeader('').tools, isEmpty);
       expect(
-        parseBuildScriptHeader('# source: vendor/zlib\n')!.sourceDir,
-        'vendor/zlib',
-      );
-      expect(
-        parseBuildScriptHeader('# source:   .cnp-src   \n')!.sourceDir,
-        '.cnp-src',
-      );
-      expect(
-        parseBuildScriptHeader('# source: .cnp-src\\win\n')!.sourceDir,
-        r'.cnp-src\win',
+        parseBuildScriptHeader(
+          '   \n# tool: nasm https://example.com/a.zip\n',
+        ).tools,
+        isEmpty,
       );
     });
 
-    test('第 2 行起的 # source: 一律按注释忽略（不覆盖首行声明）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# source: yes\n'
-        '# source: none\n'
-        '# source: \n'
+    test('旧式首行（裸 URL / # source: none / # source: <dir>）按普通注释忽略，其余指令照常解析', () {
+      for (final String legacy in <String>[
+        '# https://github.com/foo/bar.git',
+        '# https://example.com/repo.git',
+        '# source: none',
+        '# source: NONE',
+        '# source: .cnp-src',
+        '# source: .cnp-src/vendor/zlib',
+        r'# source: .cnp-src\vendor\zlib',
+        '# 普通注释',
+      ]) {
+        final BuildScriptHeader header = parseBuildScriptHeader(
+          '$legacy\n'
+          '# tool: nasm https://example.com/nasm.zip\n'
+          '# option: tbb = off | on\n'
+          '# depends: libfoo\n'
+          'print(1)\n',
+        );
+
+        expect(header.tools.single.name, 'nasm', reason: '首行 "$legacy"');
+        expect(header.options.single.name, 'tbb', reason: '首行 "$legacy"');
+        expect(
+          header.dependencies.single.name,
+          'libfoo',
+          reason: '首行 "$legacy"',
+        );
+      }
+    });
+
+    test('头部连续段以第 1 行起算（首行即指令）', () {
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# tool: nasm https://example.com/nasm.zip\n'
+        '# option: tbb = off | on\n'
         'print(1)\n',
       );
 
-      expect(header!.sourceDir, '.cnp-src');
-      expect(header.sourceNone, isFalse);
+      expect(header.tools.single.name, 'nasm');
+      expect(header.options.single.name, 'tbb');
     });
 
-    test('首行缺值解析为非 null 空串（交由 requireValidSourceDirective 报错）', () {
-      expect(parseBuildScriptHeader('# source:\n')!.sourceDir, '');
-      expect(parseBuildScriptHeader('# source:   \n')!.sourceDir, '');
-      expect(parseBuildScriptHeader('# source:\n')!.sourceNone, isFalse);
-    });
+    test('段内任意位置的 # source: 行按注释忽略', () {
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
+        '# 配方说明\n'
+        '# source: yes\n'
+        '# source:\n'
+        '# tool: nasm https://example.com/nasm.zip\n',
+      );
 
-    test('首行缺声明时整头解析失败（fail-closed，不做旧写法兼容）', () {
-      expect(
-        parseBuildScriptHeader('# https://github.com/foo/bar.git\nprint(1)\n'),
-        isNull,
-      );
-      expect(
-        parseBuildScriptHeader('# https://example.com/repo.git\n'),
-        isNull,
-      );
-      expect(parseBuildScriptHeader('# 普通注释\n# source: none\n'), isNull);
-      expect(parseBuildScriptHeader('   #   \n# source: none\n'), isNull);
-      // 锚点前缀含空格，`#source:` 不命中
-      expect(parseBuildScriptHeader('#source: .cnp-src\n'), isNull);
-      expect(parseBuildScriptHeader('# source: .cnp-src\n'), isNotNull);
-    });
-
-    test('首行不合法返回 null', () {
-      expect(parseBuildScriptHeader('print(1)'), isNull);
-      expect(parseBuildScriptHeader(''), isNull);
-      expect(parseBuildScriptHeader('   \n# source: none'), isNull);
-      expect(
-        parseBuildScriptHeader('#\n# tool: nasm https://example.com/a.zip'),
-        isNull,
-      );
+      expect(header.tools, hasLength(1));
+      expect(header.options, isEmpty);
     });
 
     test('# tool 基础解析（name/url，兼容 CRLF）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\r\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\r\n'
         '# tool: nasm https://example.com/nasm.zip\r\n'
         'print(1)\r\n',
       );
 
-      expect(header!.tools, hasLength(1));
+      expect(header.tools, hasLength(1));
       expect(header.tools.single.name, 'nasm');
       expect(header.tools.single.url, 'https://example.com/nasm.zip');
       expect(header.tools.single.binSubdir, isNull);
     });
 
     test('# tool 支持 bin= 子目录', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# tool: perl https://example.com/perl.zip bin=perl/bin\n',
       );
 
-      expect(header!.tools.single.binSubdir, 'perl/bin');
+      expect(header.tools.single.binSubdir, 'perl/bin');
     });
 
     test('# tool 非法行忽略', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# tool: nasm\n'
         '# tool: bad*name https://example.com/a.zip\n'
         '# tool: bad name https://example.com/a.zip\n'
@@ -187,16 +163,16 @@ void main() {
         'print(1)\n',
       );
 
-      expect(header!.tools, isEmpty);
+      expect(header.tools, isEmpty);
     });
 
     test('# option 解析（默认首值、values 顺序）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# option: tbb = off | on\n',
       );
 
-      expect(header!.options, hasLength(1));
+      expect(header.options, hasLength(1));
       final BuildScriptOption option = header.options.single;
       expect(option.name, 'tbb');
       expect(option.values, <String>['off', 'on']);
@@ -204,18 +180,18 @@ void main() {
     });
 
     test('# option 单值（等号两侧无空格）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# option: mode=fast\n',
       );
 
-      expect(header!.options.single.values, <String>['fast']);
+      expect(header.options.single.values, <String>['fast']);
       expect(header.options.single.defaultValue, 'fast');
     });
 
     test('# option 非法行忽略', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# option: 1abc = on\n'
         '# option: tbb on\n'
         '# option: tbb =\n'
@@ -225,17 +201,17 @@ void main() {
         'print(1)\n',
       );
 
-      expect(header!.options, isEmpty);
+      expect(header.options, isEmpty);
     });
 
     test('# checkbox 解析（勾选态 / 未勾选态，首值为默认）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# checkbox: use_nasm = ON | OFF\n'
         '# checkbox:strict=OFF|ON\n',
       );
 
-      expect(header!.options, hasLength(2));
+      expect(header.options, hasLength(2));
       expect(header.options[0].name, 'use_nasm');
       expect(header.options[0].control, BuildOptionControl.checkbox);
       expect(header.options[0].values, <String>['ON', 'OFF']);
@@ -245,8 +221,8 @@ void main() {
     });
 
     test('# checkbox 非法行忽略（值非恰 2 个 / 空 / 重复）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# checkbox: one = ON\n'
         '# checkbox: three = ON | OFF | AUTO\n'
         '# checkbox: empty = ON |\n'
@@ -255,23 +231,23 @@ void main() {
         'print(1)\n',
       );
 
-      expect(header!.options, isEmpty);
+      expect(header.options, isEmpty);
     });
 
     test('# multiselect 解析（声明序值列表）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# multiselect: accel = SSE2 | AVX2 | NEON\n',
       );
 
-      expect(header!.options, hasLength(1));
+      expect(header.options, hasLength(1));
       expect(header.options.single.control, BuildOptionControl.multiselect);
       expect(header.options.single.values, <String>['SSE2', 'AVX2', 'NEON']);
     });
 
     test('# multiselect 非法行忽略（空值 / 重复 / 含分号）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# multiselect: a = x | | y\n'
         '# multiselect: b = x | x\n'
         '# multiselect: c = a;b | c\n'
@@ -279,23 +255,23 @@ void main() {
         'print(1)\n',
       );
 
-      expect(header!.options, isEmpty);
+      expect(header.options, isEmpty);
     });
 
     test('三型同名以首次声明为准（跨指令）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# option: mode = fast | slow\n'
         '# checkbox: mode = ON | OFF\n',
       );
 
-      expect(header!.options, hasLength(1));
+      expect(header.options, hasLength(1));
       expect(header.options.single.control, BuildOptionControl.dropdown);
     });
 
     test('未知 # 行忽略，空行终止头部连续段', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# 普通注释\n'
         '#\n'
         '# tool: nasm https://example.com/nasm.zip\n'
@@ -303,40 +279,40 @@ void main() {
         '# option: tbb = off | on\n',
       );
 
-      expect(header!.tools, hasLength(1));
+      expect(header.tools, hasLength(1));
       expect(header.options, isEmpty);
     });
 
     test('首行后非 # 行立即终止头部连续段', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# tool: nasm https://example.com/nasm.zip\n'
         'print(1)\n'
         '# option: tbb = off | on\n',
       );
 
-      expect(header!.tools, hasLength(1));
+      expect(header.tools, hasLength(1));
       expect(header.options, isEmpty);
     });
 
     test('重复 tool/option 名首次生效', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# tool: nasm https://one.example.com/a.zip\n'
         '# tool: nasm https://two.example.com/b.zip\n'
         '# option: tbb = off | on\n'
         '# option: tbb = on | off\n',
       );
 
-      expect(header!.tools, hasLength(1));
+      expect(header.tools, hasLength(1));
       expect(header.tools.single.url, 'https://one.example.com/a.zip');
       expect(header.options, hasLength(1));
       expect(header.options.single.values, <String>['off', 'on']);
     });
 
     test('# depends 解析（包名、缺省版本与显式范围，兼容 CRLF 与无空格）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\r\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\r\n'
         '# depends: libfoo\r\n'
         '# depends: libbar [1.0,2.0)\r\n'
         '# depends:libbaz\r\n'
@@ -344,7 +320,7 @@ void main() {
         'print(1)\r\n',
       );
 
-      expect(header!.dependencies, hasLength(4));
+      expect(header.dependencies, hasLength(4));
       expect(header.dependencies[0].name, 'libfoo');
       expect(header.dependencies[0].version, isNull);
       expect(header.dependencies[1].name, 'libbar');
@@ -356,8 +332,8 @@ void main() {
     });
 
     test('# depends 非法行忽略（空、超 token、非法版本范围）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# depends:\n'
         '# depends: \n'
         '# depends: foo bar baz\n'
@@ -368,194 +344,57 @@ void main() {
         'print(1)\n',
       );
 
-      expect(header!.dependencies, isEmpty);
+      expect(header.dependencies, isEmpty);
     });
 
     test('# depends 同名以首次为准（大小写不敏感）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# depends: libfoo\n'
         '# depends: LIBFOO [2.0,)\n',
       );
 
-      expect(header!.dependencies, hasLength(1));
+      expect(header.dependencies, hasLength(1));
       expect(header.dependencies.single.name, 'libfoo');
       expect(header.dependencies.single.version, isNull);
     });
 
     test('# depends 位于头部连续段之外时不生效', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '\n'
         '# depends: libfoo\n',
       );
 
-      expect(header!.dependencies, isEmpty);
+      expect(header.dependencies, isEmpty);
 
-      final BuildScriptHeader? afterCode = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader afterCode = parseBuildScriptHeader(
+        '# 配方说明\n'
         'print(1)\n'
         '# depends: libfoo\n',
       );
 
-      expect(afterCode!.dependencies, isEmpty);
+      expect(afterCode.dependencies, isEmpty);
     });
   });
 
   group('# profile 指令已退役', () {
     test('头部内的 # profile: 行按未知注释忽略，不影响其余指令解析', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n'
         '# profile: v1\n'
         '# tool: nasm https://example.com/nasm.zip\n',
       );
 
-      expect(header, isNotNull);
-      expect(header!.sourceDir, '.cnp-src');
       expect(header.tools, hasLength(1));
     });
 
     test('不带 # profile: 声明的配方照常解析出头部', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n',
+      final BuildScriptHeader header = parseBuildScriptHeader(
+        '# 配方说明\n',
       );
 
-      expect(header, isNotNull);
-      expect(header!.sourceDir, '.cnp-src');
-    });
-  });
-
-  group('requireValidSourceDirective', () {
-    const String scriptPath = r'C:\libs\demo\build.py';
-    const String reservedNameReason = '必须位于包源目录的 .cnp-src 目录下'
-        '（如 ".cnp-src/vendor/zlib"）';
-    const String scannedNameConsequence =
-        '否则源码会被文件扫描打进 NuGet 包并在构建后的输出清理中被删除';
-    const String skippedNameConsequence = '否则会在构建后的输出清理中被删除';
-
-    void expectRejected(String firstLine, String value, String reason) {
-      final BuildScriptHeader header = parseBuildScriptHeader('$firstLine\n')!;
-      expect(
-        () => requireValidSourceDirective(header, scriptPath),
-        throwsA(
-          isA<FormatException>().having(
-            (FormatException error) => error.message,
-            'message',
-            allOf(
-              contains('build.py 源码目录声明非法'),
-              contains(scriptPath),
-              contains('# source: $value'),
-              contains(reason),
-            ),
-          ),
-        ),
-      );
-    }
-
-    void expectRejectedScanned(String firstLine, String value) =>
-        expectRejected(firstLine, value, '$reservedNameReason，$scannedNameConsequence');
-
-    void expectRejectedSkipped(String firstLine, String value) =>
-        expectRejected(firstLine, value, '$reservedNameReason，$skippedNameConsequence');
-
-    test('# source: none 与保留名目录声明通过（大小写不敏感）', () {
-      requireValidSourceDirective(
-        parseBuildScriptHeader('# source: none\n')!,
-        scriptPath,
-      );
-      requireValidSourceDirective(
-        parseBuildScriptHeader('# source: .cnp-src\n')!,
-        scriptPath,
-      );
-      requireValidSourceDirective(
-        parseBuildScriptHeader('# source: .CNP-SRC\n')!,
-        scriptPath,
-      );
-    });
-
-    test('首段为保留名的多段相对路径通过（大小写不敏感）', () {
-      requireValidSourceDirective(
-        parseBuildScriptHeader('# source: .cnp-src/vendor/zlib\n')!,
-        scriptPath,
-      );
-      requireValidSourceDirective(
-        parseBuildScriptHeader(r'# source: .cnp-src\vendor\zlib\n')!,
-        scriptPath,
-      );
-      requireValidSourceDirective(
-        parseBuildScriptHeader('# source: .CNP-SRC/vendor/zlib\n')!,
-        scriptPath,
-      );
-    });
-
-    test('空值按「值非法」处理', () {
-      expectRejected('# source:', '', '不得含盘符或 ..');
-      expectRejected('# source:    ', '', '不得含盘符或 ..');
-    });
-
-    test('绝对路径、盘符与 .. 越界被拒绝', () {
-      expectRejected('# source: ../escape', '../escape', '不得含盘符或 ..');
-      expectRejected(
-        '# source: vendor/../../escape',
-        'vendor/../../escape',
-        '不得含盘符或 ..',
-      );
-      expectRejected(r'# source: C:\abs\path', r'C:\abs\path', '不得含盘符或 ..');
-      expectRejected('# source: /abs/path', '/abs/path', '不得含盘符或 ..');
-      expectRejected(r'# source: \abs\path', r'\abs\path', '不得含盘符或 ..');
-    });
-
-    test('首段非 .cnp-src 保留名的被扫描目录被拒绝（否则源码进包且构建后被删）', () {
-      expectRejectedScanned('# source: vendor/zlib', 'vendor/zlib');
-      expectRejectedScanned('# source: src', 'src');
-      expectRejectedScanned(r'# source: vendor\zlib', r'vendor\zlib');
-      expectRejectedScanned('# source: cnp-src', 'cnp-src');
-    });
-
-    test('首段非 .cnp-src 保留名的跳过目录被拒绝（否则首次构建后被清理删除）', () {
-      expectRejectedSkipped('# source: .my-cache', '.my-cache');
-      expectRejectedSkipped(
-        '# source: .git-cache/vendor',
-        '.git-cache/vendor',
-      );
-    });
-
-    test('build/out 这类扫描跳过目录取到「仅被清理」文案而非「会进包」文案', () {
-      expectRejectedSkipped('# source: build/zlib', 'build/zlib');
-      expectRejectedSkipped('# source: out/zlib', 'out/zlib');
-      expectRejectedSkipped('# source: BUILD/foo', 'BUILD/foo');
-    });
-
-    test('首段被扫描跳过的判据与 FileScan.shouldSkipDirectory 同步', () {
-      for (final String segment in <String>['build', 'out', '.git', 'Build']) {
-        expect(
-          _sourceDirectiveConsequence(segment),
-          'skip',
-          reason: '$segment 应走「仅被清理」文案',
-        );
-      }
-      for (final String segment in <String>['vendor', 'src', 'cnp-src', 'outputs']) {
-        expect(
-          _sourceDirectiveConsequence(segment),
-          'scan',
-          reason: '$segment 应走「会进包」文案',
-        );
-      }
-    });
-
-    test('缺声明文案同时点出两种合法写法', () {
-      final String message = buildScriptSourceDeclarationMissingMessage(
-        scriptPath,
-      );
-      expect(
-        message,
-        allOf(
-          contains('build.py 首行缺少源码声明'),
-          contains(scriptPath),
-          contains('# source: <包内相对目录>'),
-          contains('# source: none'),
-        ),
-      );
+      expect(header.tools, isEmpty);
     });
   });
 
@@ -772,14 +611,13 @@ void main() {
         pack,
         readFile: (String path) async {
           readPath = path;
-          return '# source: .cnp-src\n'
+          return '# 配方说明\n'
               '# tool: nasm https://example.com/nasm.zip\n';
         },
       );
 
       expect(readPath, r'C:\packs\demo/build.py');
-      expect(header!.sourceDir, '.cnp-src');
-      expect(header.tools.single.name, 'nasm');
+      expect(header!.tools.single.name, 'nasm');
     });
 
     test('无根级脚本不读文件并返回 null', () async {
@@ -837,28 +675,4 @@ void main() {
       );
     });
   });
-}
-
-/// 源码声明被判到哪条后果分支：`skip`（仅构建后被清理）或 `scan`（会进包）。
-///
-/// 判据直接比对 [FileScan.shouldSkipDirectory]——文案分支一旦与扫描器跳过口径
-/// 漂移（如只判 `.` 前缀而漏掉 `build`/`out`），本函数即与真实扫描行为对不上。
-String _sourceDirectiveConsequence(String firstSegment) {
-  const String scriptPath = r'C:\libs\demo\build.py';
-  final BuildScriptHeader header = parseBuildScriptHeader(
-    '# source: $firstSegment/x\n',
-  )!;
-  try {
-    requireValidSourceDirective(header, scriptPath);
-  } on FormatException catch (error) {
-    final String message = error.message;
-    final bool scanned = message.contains('文件扫描打进 NuGet 包');
-    expect(
-      scanned,
-      !FileScan.shouldSkipDirectory(firstSegment),
-      reason: '$firstSegment 的文案分支与 FileScan.shouldSkipDirectory 不一致',
-    );
-    return scanned ? 'scan' : 'skip';
-  }
-  fail('$firstSegment/x 本应被拒绝，却通过了校验');
 }

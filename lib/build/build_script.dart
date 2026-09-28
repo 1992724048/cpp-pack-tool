@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/version_range.dart';
 
@@ -11,16 +10,14 @@ const String _toolDirectivePrefix = '# tool:';
 const String _optionDirectivePrefix = '# option:';
 const String _checkboxDirectivePrefix = '# checkbox:';
 const String _multiSelectDirectivePrefix = '# multiselect:';
-const String _sourceDirectivePrefix = '# source:';
 const String _dependsDirectivePrefix = '# depends:';
 
-/// 包内预置源码目录保留名。
+/// 包内预置源码目录的固定名（工具自动探测，配方无需声明）。
 ///
-/// 双重身份：既是 `# source:` 唯一合法的首段（见
-/// [requireValidSourceDirective]），也须出现在构建输出清理的白名单
-/// （`isPreservedEntryName`）中。白名单是 `build_cleanup.dart` 内的独立字面量，
-/// 两者的一致性由清理侧的契约测试钉住：改动任一处都必须同步另一处，否则源码
-/// 会在首次构建后的输出清理中被删除。
+/// 双重身份：备源分叉的唯一判据（见 [hasPresetSource]），也须出现在构建输出清理
+/// 的白名单（`isPreservedEntryName`）中。白名单是 `build_cleanup.dart` 内的独立
+/// 字面量，两者的一致性由清理侧的契约测试钉住：改动任一处都必须同步另一处，
+/// 否则源码会在首次构建后的输出清理中被删除。
 const String presetSourceDirName = '.cnp-src';
 
 final RegExp _toolNamePattern = RegExp(r'^[A-Za-z0-9._-]+$');
@@ -100,48 +97,31 @@ class BuildScriptDependency {
 /// build.py 头部解析结果。
 class BuildScriptHeader {
   const BuildScriptHeader({
-    this.sourceDir,
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
     this.dependencies = const <BuildScriptDependency>[],
   });
-
-  /// 首行 `# source:` 声明的包源目录下相对目录（如 `.cnp-src`）；声明
-  /// `# source: none` 时为 null。路径合法性由 [requireValidSourceDirective]
-  /// 判定，解析期原样保留声明值以便报错文案引用用户写法。
-  final String? sourceDir;
-
-  /// 无预置源码（`# source: none`）：`SRC_PATH` 仅作为脚本自行下载/解压的
-  /// 工作区，跨构建保留。
-  bool get sourceNone => sourceDir == null;
 
   final List<BuildScriptTool> tools;
   final List<BuildScriptOption> options;
   final List<BuildScriptDependency> dependencies;
 }
 
-/// 解析 build.py 头部：首行源码来源声明 + 其后连续 `#` 行中的
-/// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
-/// `# depends:` 指令。
+/// 解析 build.py 头部：从第 1 行起连续 `#` 行中的 `# tool:` / `# option:` /
+/// `# checkbox:` / `# multiselect:` / `# depends:` 指令。
 ///
-/// 首行必须命中源码来源声明锚点（[_sourceDirectivePrefix]，即严格锚点），
-/// 否则返回 null；第 2 行起的非法或未知指令行按注释忽略；同名声明以首次为准；
-/// 遇到首个非 `#` 行（含空行）即终止头部连续段。
-BuildScriptHeader? parseBuildScriptHeader(String content) {
+/// 非法或未知指令行按注释忽略；同名声明以首次为准；遇到首个非 `#` 行（含空行）
+/// 即终止头部连续段。源码来源不再由配方声明（改由 [presetSourceDirName] 目录
+/// 探测），故任意首行均正常解析。
+BuildScriptHeader parseBuildScriptHeader(String content) {
   final List<String> lines = content.split('\n');
-  final ({String? sourceDir, bool anchored}) firstLine = _parseSourceDirLine(
-    lines.first,
-  );
-  if (!firstLine.anchored) {
-    return null;
-  }
   final List<BuildScriptTool> tools = <BuildScriptTool>[];
   final List<BuildScriptOption> options = <BuildScriptOption>[];
   final List<BuildScriptDependency> dependencies = <BuildScriptDependency>[];
   final Set<String> toolNames = <String>{};
   final Set<String> optionNames = <String>{};
   final Set<String> dependencyNames = <String>{};
-  for (final String rawLine in lines.skip(1)) {
+  for (final String rawLine in lines) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
       break;
@@ -167,86 +147,39 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     }
   }
   return BuildScriptHeader(
-    sourceDir: firstLine.sourceDir,
     tools: tools,
     options: options,
     dependencies: dependencies,
   );
 }
 
-/// 校验 [header] 的源码来源声明；`# source: none`（[BuildScriptHeader.sourceDir]
-/// 为 null）直接通过，声明了目录但值非法（空串、绝对路径、含盘符、含 `..`、
-/// 首段非 [presetSourceDirName]）时抛出 `FormatException`。
+/// 包源目录 [sourcePath] 下的 [presetSourceDirName] 是否存在且含文件。
 ///
-/// 相对路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），保留名
-/// 判据按同文件的 [_pathSeparatorPattern] 取首段（与 `_isRelativeSubdir` 的 `..`
-/// 切分同源，不另造正则），大小写不敏感以对齐清理白名单 `isPreservedEntryName`：
-/// 首段不是 [presetSourceDirName] 的目录一律会在构建后的输出清理中被删除，故该
-/// 后果写进报错文案；首段不被文件扫描跳过时还会被打进 NuGet 包，故两种后果分
-/// 文案表述——是否跳过的判据直接复用 [FileScan.shouldSkipDirectory]（隐藏目录与
-/// `build`/`out`），不在本地另写一份等价判断，否则扫描口径演进时必然漂移。
-/// 调用方在任何副作用之前调用并把异常映射为用户可见异常类型。
-void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
-  final String? sourceDir = header.sourceDir;
-  if (sourceDir == null) {
-    return;
-  }
-  if (!_isRelativeSubdir(sourceDir)) {
-    throw FormatException(
-      _invalidSourceDirMessage(
-        scriptPath,
-        sourceDir,
-        '必须是包源目录下的相对路径（不得含盘符或 ..）',
-      ),
-    );
-  }
-  final String firstSegment = sourceDir.split(_pathSeparatorPattern).first;
-  if (firstSegment.toLowerCase() != presetSourceDirName) {
-    final String consequence = FileScan.shouldSkipDirectory(firstSegment)
-        ? '否则会在构建后的输出清理中被删除'
-        : '否则源码会被文件扫描打进 NuGet 包并在构建后的输出清理中被删除';
-    throw FormatException(
-      _invalidSourceDirMessage(
-        scriptPath,
-        sourceDir,
-        '必须位于包源目录的 $presetSourceDirName 目录下'
-        '（如 "$presetSourceDirName/vendor/zlib"），$consequence',
-      ),
-    );
-  }
-}
-
-String _invalidSourceDirMessage(
-  String scriptPath,
-  String sourceDir,
-  String reason,
-) {
-  return 'build.py 源码目录声明非法：$scriptPath 的 "$_sourceDirectivePrefix '
-      '$sourceDir" $reason';
-}
-
-/// 首行「缺少源码声明」的用户可见文案（单一事实来源，供构建入口复用）。
-String buildScriptSourceDeclarationMissingMessage(String scriptPath) =>
-    'build.py 首行缺少源码声明：$scriptPath 需要 '
-    '"$_sourceDirectivePrefix <包内相对目录>"，'
-    '仅提供预构建归档的配方写 "$_sourceDirectivePrefix none"';
-
-/// 解析 build.py 首行的源码来源声明（严格锚点 [_sourceDirectivePrefix]）。
-///
-/// [anchored] 为 false 表示首行 trim 后不以该前缀开头，调用方据此让整个头部
-/// 解析返回 null（fail-closed，不做旧写法兼容）；命中前缀时把剩余值 trim 后
-/// 原样存入 [sourceDir]（路径合法性留给 [requireValidSourceDirective]），
-/// 值为 `none`（大小写不敏感）时 [sourceDir] 为 null。
-({String? sourceDir, bool anchored}) _parseSourceDirLine(String rawLine) {
-  final String line = rawLine.trim();
-  if (!line.startsWith(_sourceDirectivePrefix)) {
-    return (sourceDir: null, anchored: false);
-  }
-  final String value = line.substring(_sourceDirectivePrefix.length).trim();
-  return (
-    sourceDir: value.toLowerCase() == 'none' ? null : value,
-    anchored: true,
+/// 备源分叉的唯一判据：备源实现（`build_runner.dart`）与构建对话框的
+/// `sourceNone` 标记共用本函数，任一侧改动都会同时生效，不存在判据漂移。
+Future<bool> hasPresetSource(String sourcePath) async {
+  final Directory directory = Directory(
+    joinPath(sourcePath, presetSourceDirName),
   );
+  if (!await directory.exists()) {
+    return false;
+  }
+  return _treeHasFile(directory);
+}
+
+/// 目录树内是否至少含一个文件（目录递归下探；不跟随链接）。
+Future<bool> _treeHasFile(Directory directory) async {
+  await for (final FileSystemEntity entry in directory.list(
+    followLinks: false,
+  )) {
+    if (entry is File) {
+      return true;
+    }
+    if (entry is Directory && await _treeHasFile(entry)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 BuildScriptTool? _parseToolLine(String line) {

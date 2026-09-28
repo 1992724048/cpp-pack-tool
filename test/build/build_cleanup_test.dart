@@ -37,7 +37,7 @@ void main() {
       }
     });
 
-    test('契约常量与清理白名单一致（# source: 唯一合法首段须被保留）', () {
+    test('契约常量与清理白名单一致（固定预置源码目录名须被保留）', () {
       expect(isPreservedEntryName(presetSourceDirName), isTrue);
     });
 
@@ -63,7 +63,7 @@ void main() {
 
     test('包内预置源码目录 .cnp-src 跨构建存活', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# source: .cnp-src\n');
+      final String sourcePath = _createSource(root, '# 配方说明\n');
       _writeFile(sourcePath, '.cnp-src/main.cpp', 'int main() {}');
       _writeFile(sourcePath, '.cnp-src/include/zlib.h', '#pragma once');
 
@@ -72,7 +72,7 @@ void main() {
       expect(
         File(joinPath(sourcePath, '.cnp-src/main.cpp')).existsSync(),
         isTrue,
-        reason: '预置源码目录缺失将使第二次构建报「找不到目录」，根因反直觉',
+        reason: '预置源码目录缺失将使第二次构建退化为空工作区，根因反直觉',
       );
       expect(
         File(joinPath(sourcePath, '.cnp-src/include/zlib.h')).existsSync(),

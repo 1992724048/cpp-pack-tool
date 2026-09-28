@@ -138,6 +138,9 @@ typedef PackBuildCacheProbe = Future<bool> Function(String packName);
 /// 包构建缓存删除；测试注入。
 typedef PackBuildCacheDeleter = Future<void> Function(String packName);
 
+/// 包内预置源码探测（`sourceNone` 判据）；测试注入。
+typedef PackPresetSourceProbe = Future<bool> Function(String sourcePath);
+
 class MainLayout extends StatefulWidget {
   const MainLayout({
     super.key,
@@ -152,6 +155,7 @@ class MainLayout extends StatefulWidget {
     this.retryElevatedBuild = runElevatedPackBuild,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
+    this.probePresetSource = hasPresetSource,
     this.fixIncludes = fixHeaderIncludes,
     this.now = DateTime.now,
     this.hasBuildCache = hasPackBuildCache,
@@ -175,6 +179,10 @@ class MainLayout extends StatefulWidget {
 
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
+
+  /// 探测包内是否有预置源码（缺省 [hasPresetSource]）；构建对话框的
+  /// `sourceNone` 标记据此展示下载/准备源码时间线，仅测试注入替代实现。
+  final PackPresetSourceProbe probePresetSource;
 
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
@@ -498,7 +506,7 @@ class _MainLayoutState extends State<MainLayout> {
           onCompilersDetected: onCompilersDetected,
           onDownloadProgress: onDownloadProgress,
         );
-    final bool sourceNone = await _loadSourceNone(pack);
+    final bool sourceNone = await _probeSourceNone(pack);
     if (!mounted) {
       return;
     }
@@ -584,11 +592,14 @@ class _MainLayoutState extends State<MainLayout> {
     _upsertPack(current);
   }
 
-  /// build.py 是否声明 `# source: none`（预构建配方）；读取失败按否处理。
-  Future<bool> _loadSourceNone(PackModel pack) async {
+  /// 包内是否有预置源码（即 `SRC_PATH` 是否为脚本自行下载的工作区）；读取失败按否处理。
+  Future<bool> _probeSourceNone(PackModel pack) async {
+    final String? sourcePath = pack.sourcePath;
+    if (sourcePath == null || sourcePath.isEmpty) {
+      return false;
+    }
     try {
-      final BuildScriptHeader? header = await widget.loadBuildHeader(pack);
-      return header?.sourceNone ?? false;
+      return await widget.probePresetSource(sourcePath);
     } catch (_) {
       return false;
     }

@@ -964,8 +964,8 @@ void main() {
       store: store,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async =>
-          const BuildScriptHeader(sourceDir: null),
+      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
+      probePresetSource: (String sourcePath) async => true,
       prepareBuildEnv:
           (
             PackModel pack, {
@@ -2146,6 +2146,7 @@ Future<void> _pumpMainLayout(
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
+  PackPresetSourceProbe? probePresetSource,
   PackHeaderIncludeFixer? fixIncludes,
   PackBuildCacheProbe? hasBuildCache,
   PackBuildCacheDeleter? deleteBuildCache,
@@ -2167,6 +2168,7 @@ Future<void> _pumpMainLayout(
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
         loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
+        probePresetSource: probePresetSource ?? _noPresetSource,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
         hasBuildCache: hasBuildCache ?? _noBuildCache,
@@ -2179,6 +2181,9 @@ Future<void> _pumpMainLayout(
 }
 
 Future<bool> _noBuildCache(String packName) async => false;
+
+/// 预置源码探测的缺省替身：无预置源码（走空工作区）。
+Future<bool> _noPresetSource(String sourcePath) async => false;
 
 Future<void> _noDeleteBuildCache(String packName) async {}
 

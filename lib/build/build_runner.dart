@@ -75,17 +75,15 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
   String cacheRoot,
 });
 
-/// 校验 `build.py` 头部、从包内预置源码目录备源并清空包源目录（构建流水线前半段）。
+/// 备源并清空包源目录（构建流水线前半段）。
 ///
-/// 流程：根级 `build.py` 存在性检查 → 解析头部（首行为严格锚点源码来源声明、
-/// 源码目录声明为包源目录下的相对路径，见 [requireValidSourceDirective]——任一
-/// 失败即在任何副作用前抛 [PackBuildException]）→ 校验预置源码目录存在且非空
-/// → 目标目录（`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，
-/// 保证同一工作目录下缓存稳定命中）备源 → 清空包源目录中白名单外的一切
-/// （见 [cleanupBuildOutput]）。
+/// 流程：根级 `build.py` 存在性检查 → 探测包源目录下的固定预置源码目录
+/// [presetSourceDirName]（见 [hasPresetSource]）→ 目标目录备源（目录口径
+/// `<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，保证同一工作
+/// 目录下缓存稳定命中）→ 清空包源目录中白名单外的一切（见 [cleanupBuildOutput]）。
 ///
-/// 备源按源码来源声明分叉，两条分支语义相反、**不得统一**：见
-/// [_stageEmptyWorkspace]（`# source: none`）与 [_stagePresetSource]。
+/// 备源按预置源码目录的存在性分叉，两条分支语义相反、**不得统一**：见
+/// [_stageEmptyWorkspace] 与 [_stagePresetSource]。
 Future<PackSourcePreparation> preparePackSource(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
@@ -104,53 +102,21 @@ Future<PackSourcePreparation> preparePackSource(
   if (!await scriptOnDisk.exists()) {
     throw const PackBuildException('源目录中找不到 build.py（可能已被移动）');
   }
-  final BuildScriptHeader? header = parseBuildScriptHeader(
-    await scriptOnDisk.readAsString(),
-  );
-  if (header == null) {
-    throw PackBuildException(
-      buildScriptSourceDeclarationMissingMessage(scriptOnDisk.path),
-    );
-  }
 
-  // 源码来源声明的前置校验（fail-closed）：在阶段回调、缓存目录创建、预置源码
-  // 拷贝与包源目录清理等一切副作用之前拒绝不合规配方。
-  try {
-    requireValidSourceDirective(header, scriptOnDisk.path);
-  } on FormatException catch (error) {
-    throw PackBuildException(formatError(error));
-  }
-
-  // 预置源码目录的存在性与非空性同样在副作用之前校验：否则错误只会指向配方
-  // 内部（在空 SRC_PATH 上炸），把排查方向带偏。
-  final String? sourceDir = header.sourceDir;
-  final Directory? presetSource = sourceDir == null
-      ? null
-      : Directory(joinPath(sourcePath, sourceDir));
-  if (presetSource != null) {
-    if (!await presetSource.exists()) {
-      throw PackBuildException(
-        '找不到包内预置源码目录：${presetSource.absolute.path}'
-        '（首行声明 "# source: $sourceDir"）',
-      );
-    }
-    if (!await _treeHasFile(presetSource)) {
-      throw PackBuildException(
-        '包内预置源码目录为空：${presetSource.absolute.path}'
-        '（首行声明 "# source: $sourceDir"）',
-      );
-    }
-  }
+  final bool hasPreset = await hasPresetSource(sourcePath);
 
   onStage(PackBuildStage.staging);
   final Directory target = packBuildCacheDirectory(
     pack.name,
     cacheRoot: cacheRoot,
   );
-  if (presetSource == null) {
-    await _stageEmptyWorkspace(target);
+  if (hasPreset) {
+    await _stagePresetSource(
+      Directory(joinPath(sourcePath, presetSourceDirName)),
+      target,
+    );
   } else {
-    await _stagePresetSource(presetSource, target);
+    await _stageEmptyWorkspace(target);
   }
 
   // 源码（或预构建工作区）就绪后、执行脚本前清空包源目录，保证产物不带
@@ -168,31 +134,17 @@ Future<PackSourcePreparation> preparePackSource(
   );
 }
 
-/// 目录树内是否至少含一个文件（目录递归下探；不跟随链接）。
-Future<bool> _treeHasFile(Directory directory) async {
-  await for (final FileSystemEntity entry in directory.list(
-    followLinks: false,
-  )) {
-    if (entry is File) {
-      return true;
-    }
-    if (entry is Directory && await _treeHasFile(entry)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/// 备源（`# source: none`，无预置源码）：只把 [target] 创建为 `SRC_PATH` 工作区，
-/// **绝不清理缓存目录**——脚本自行下载/解压的产物（可达数百 MB）须跨构建复用，
-/// 误清会让每次构建退化为全量重下且不报任何错。
+/// 备源（无预置源码，包源目录下无 [presetSourceDirName] 树）：只把 [target] 创建
+/// 为 `SRC_PATH` 工作区，**绝不清理缓存目录**——脚本自行下载/解压的产物（可达
+/// 数百 MB）须跨构建复用，误清会让每次构建退化为全量重下且不报任何错。
 ///
 /// 与 [_stagePresetSource] 语义相反，不得统一为同一条路径。
 Future<void> _stageEmptyWorkspace(Directory target) =>
     target.create(recursive: true);
 
-/// 备源（声明了包内预置源码目录）：先删 [target] 残留再把 [source] 整树拷入
-/// （含空目录），每次构建从干净状态开始（等价原 `git clean -ffdx`）。
+/// 备源（包源目录下存在 [presetSourceDirName] 树）：先删 [target] 残留再把
+/// [source] 整树拷入（含空目录），每次构建从干净状态开始（等价原 `git clean
+/// -ffdx`）。
 ///
 /// 与 [_stageEmptyWorkspace] 语义相反，不得统一为同一条路径。
 Future<void> _stagePresetSource(Directory source, Directory target) async {

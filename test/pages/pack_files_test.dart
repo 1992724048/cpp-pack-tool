@@ -1253,7 +1253,7 @@ const BuildScriptOption _accelOption = BuildScriptOption(
 BuildScriptHeader _header({
   List<BuildScriptOption> options = const <BuildScriptOption>[],
 }) {
-  return BuildScriptHeader(sourceDir: '.cnp-src', options: options);
+  return BuildScriptHeader(options: options);
 }
 
 ComboBox<String> _optionCombo(WidgetTester tester, String name) =>

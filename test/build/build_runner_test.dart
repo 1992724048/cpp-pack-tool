@@ -113,7 +113,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
@@ -149,127 +149,38 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('build.py 首行缺少源码声明时抛错', () async {
+    test('build.py 头部注释首行不参与分叉：无预置源码即走空工作区', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(root, 'print(1)\n');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<PackBuildStage> stages = <PackBuildStage>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          stages.add,
-          processRunner: _runner(calls, (_) async => _success()),
-          cacheRoot: joinPath(root.path, 'cache'),
-        ),
-        throwsA(_buildExceptionMatcher(contains('build.py 首行缺少源码声明'))),
-      );
-
-      expect(stages, isEmpty);
-      expect(calls, isEmpty);
-    });
-
-    test('首行只有 # 时同样抛错', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '#   \nprint(1)\n');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          (_) {},
-          processRunner: _runner(calls, (_) async => _success()),
-          cacheRoot: joinPath(root.path, 'cache'),
-        ),
-        throwsA(_buildExceptionMatcher(contains('build.py 首行缺少源码声明'))),
-      );
-
-      expect(calls, isEmpty);
-    });
-
-    test('首行为旧式仓库地址（裸 URL）时按缺少声明抛错', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# https://github.com/foo/bar.git\n',
-      );
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<PackBuildStage> stages = <PackBuildStage>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          stages.add,
-          processRunner: _runner(calls, (_) async => _success()),
-          cacheRoot: joinPath(root.path, 'cache'),
-        ),
-        throwsA(
-          _buildExceptionMatcher(
-            allOf(
-              contains('build.py 首行缺少源码声明'),
-              contains('# source: <包内相对目录>'),
-              contains('# source: none'),
-            ),
-          ),
-        ),
-      );
-
-      expect(stages, isEmpty);
-      expect(calls, isEmpty);
-    });
-
-    test('源码目录声明非法时前置失败（无进程/无阶段/不清源目录/不建缓存）', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# source: ../escape\n',
-      );
-      final String stalePath = joinPath(sourcePath, 'stale.txt');
-      File(stalePath).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
       final List<_ProcessCall> calls = <_ProcessCall>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
 
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          stages.add,
-          processRunner: _runner(calls, (_) async => _success()),
-          cacheRoot: cacheRoot,
-        ),
-        throwsA(
-          isA<PackBuildException>().having(
-            (PackBuildException error) => error.message,
-            'message',
-            allOf(
-              contains('build.py 源码目录声明非法'),
-              contains('# source: ../escape'),
-            ),
-          ),
-        ),
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        stages.add,
+        processRunner: _runner(calls, (_) async => _success()),
+        cacheRoot: cacheRoot,
       );
 
-      expect(stages, isEmpty, reason: '声明校验在下载阶段回调之前');
-      expect(calls, isEmpty, reason: '声明校验在任何子进程执行之前');
+      expect(stages, <PackBuildStage>[
+        PackBuildStage.staging,
+        PackBuildStage.building,
+      ]);
       expect(
-        File(stalePath).existsSync(),
-        isTrue,
-        reason: '声明校验在源目录清理之前',
-      );
-      expect(
-        Directory(joinPath(cacheRoot, 'build')).existsSync(),
-        isFalse,
-        reason: '声明校验在缓存目录创建之前',
+        calls.single.environment!['SRC_PATH'],
+        Directory(targetPath).absolute.path,
       );
     });
   });
 
-  group('预置源码（# source: <dir>）', () {
+  group('预置源码（.cnp-src）', () {
     test('整树拷入 SRC_PATH：内容一致、嵌套目录与空目录均保留', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\nprint(1)\n',
+        '# 配方说明\nprint(1)\n',
       );
       _createPresetSource(sourcePath, <String, String>{
         'main.cpp': 'int main() {}',
@@ -314,11 +225,11 @@ void main() {
       );
     });
 
-    test('目录声明为多级子目录时按相对路径解析，且构建后不被输出清理删除', () async {
+    test('.cnp-src 下的嵌套目录整树拷入，且构建后不被输出清理删除', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src/vendor/zlib\n',
+        '# 配方说明\n',
       );
       final String presetPath = joinPath(sourcePath, '.cnp-src/vendor/zlib');
       Directory(presetPath).createSync(recursive: true);
@@ -333,7 +244,11 @@ void main() {
         cacheRoot: cacheRoot,
       );
 
-      expect(File(joinPath(targetPath, 'zlib.h')).existsSync(), isTrue);
+      expect(
+        File(joinPath(targetPath, 'vendor/zlib/zlib.h')).existsSync(),
+        isTrue,
+        reason: '.cnp-src 整树为 SRC_PATH 的根，嵌套层级原样保留',
+      );
       expect(
         File(joinPath(presetPath, 'zlib.h')).existsSync(),
         isTrue,
@@ -341,18 +256,19 @@ void main() {
       );
     });
 
-    test('每次构建重置缓存：上次构建的残留文件消失', () async {
+    test('.cnp-src 存在且含文件时整树拷入，且缓存目录先被删除（残留文件与目录消失）', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n',
+        '# 配方说明\n',
       );
       _createPresetSource(sourcePath, <String, String>{'main.cpp': 'v1'});
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
-      final File residual = File(joinPath(targetPath, 'residual.txt'))
+      final File residualFile = File(joinPath(targetPath, 'residual.txt'))
         ..createSync(recursive: true);
-      residual.writeAsStringSync('residual');
+      residualFile.writeAsStringSync('residual');
+      Directory(joinPath(targetPath, 'residual-dir')).createSync();
 
       await runPackBuild(
         _pack(sourcePath: sourcePath),
@@ -361,113 +277,50 @@ void main() {
         cacheRoot: cacheRoot,
       );
 
-      expect(residual.existsSync(), isFalse, reason: '预置源码配方每次构建重置缓存');
+      expect(
+        residualFile.existsSync(),
+        isFalse,
+        reason: '预置源码配方每次构建重置缓存',
+      );
+      expect(
+        Directory(joinPath(targetPath, 'residual-dir')).existsSync(),
+        isFalse,
+        reason: '缓存目录整体先被删除（含残留子目录）',
+      );
       expect(File(joinPath(targetPath, 'main.cpp')).readAsStringSync(), 'v1');
     });
 
-    test('预置源码目录不存在时抛错且不建缓存、不清源目录', () async {
+    test('.cnp-src 存在但递归后零文件时按无预置源码处理（不拷入、也不清缓存）', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n',
+        '# 配方说明\n',
       );
-      final String stalePath = joinPath(sourcePath, 'stale.txt');
-      File(stalePath).writeAsStringSync('stale');
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<_ProcessCall> calls = <_ProcessCall>[];
-      final List<PackBuildStage> stages = <PackBuildStage>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          stages.add,
-          processRunner: _runner(calls, (_) async => _success()),
-          cacheRoot: cacheRoot,
-        ),
-        throwsA(
-          isA<PackBuildException>().having(
-            (PackBuildException error) => error.message,
-            'message',
-            allOf(
-              contains('找不到包内预置源码目录'),
-              contains(joinPath(sourcePath, '.cnp-src')),
-              contains('# source: .cnp-src'),
-            ),
-          ),
-        ),
-      );
-
-      expect(stages, isEmpty);
-      expect(calls, isEmpty);
-      expect(File(stalePath).existsSync(), isTrue);
-      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isFalse);
-    });
-
-    test('预置源码目录为空（递归后零文件）时单独报错', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# source: .cnp-src\n',
-      );
-      Directory(joinPath(sourcePath, '.cnp-src/nested'))
+      Directory(joinPath(sourcePath, '.cnp-src/nested/empty'))
           .createSync(recursive: true);
       final String cacheRoot = joinPath(root.path, 'cache');
-      final List<PackBuildStage> stages = <PackBuildStage>[];
+      final String targetPath = joinPath(cacheRoot, 'build/demo');
+      final File download = File(joinPath(targetPath, 'downloads/archive.zip'))
+        ..createSync(recursive: true);
+      download.writeAsStringSync('cached');
 
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          stages.add,
-          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
-          cacheRoot: cacheRoot,
-        ),
-        throwsA(
-          isA<PackBuildException>().having(
-            (PackBuildException error) => error.message,
-            'message',
-            allOf(
-              contains('包内预置源码目录为空'),
-              contains(joinPath(sourcePath, '.cnp-src')),
-              contains('# source: .cnp-src'),
-            ),
-          ),
-        ),
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        (_) {},
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+        cacheRoot: cacheRoot,
       );
 
-      expect(stages, isEmpty);
-      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isFalse);
-    });
-
-    test('声明值越界时前置失败（无副作用）', () async {
-      final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(
-        root,
-        '# source: ../escape\n',
+      expect(
+        download.existsSync(),
+        isTrue,
+        reason: '空 .cnp-src 等同无预置源码：走空工作区分支，绝不清理缓存',
       );
-      final String cacheRoot = joinPath(root.path, 'cache');
-      final List<PackBuildStage> stages = <PackBuildStage>[];
-
-      await expectLater(
-        runPackBuild(
-          _pack(sourcePath: sourcePath),
-          stages.add,
-          processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
-          cacheRoot: cacheRoot,
-        ),
-        throwsA(
-          isA<PackBuildException>().having(
-            (PackBuildException error) => error.message,
-            'message',
-            allOf(
-              contains('build.py 源码目录声明非法'),
-              contains('# source: ../escape'),
-            ),
-          ),
-        ),
+      expect(
+        Directory(joinPath(targetPath, '.cnp-src')).existsSync(),
+        isFalse,
+        reason: '空预置源码目录不拷入 SRC_PATH',
       );
-
-      expect(stages, isEmpty);
-      expect(Directory(joinPath(cacheRoot, 'build')).existsSync(), isFalse);
     });
   });
 
@@ -476,7 +329,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       Directory(joinPath(sourcePath, 'build-release'))
@@ -515,7 +368,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final File locked = File(joinPath(sourcePath, 'locked.dat'))
         ..writeAsStringSync('busy');
@@ -552,7 +405,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String scriptPath = joinPath(sourcePath, 'build.py');
       final String scriptBackup = File(scriptPath).readAsStringSync();
@@ -589,12 +442,12 @@ void main() {
     });
   });
 
-  group('预构建（# source: none）', () {
-    test('无预置源码：仅创建缓存目录并注入 SRC_PATH 执行构建', () async {
+  group('空工作区（无 .cnp-src）', () {
+    test('.cnp-src 不存在时走空工作区分支：仅创建缓存目录并注入 SRC_PATH 执行构建', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n'
+        '# 配方说明\n'
         'print(1)\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -616,7 +469,7 @@ void main() {
       expect(
         calls.where((_ProcessCall call) => call.executable != 'python'),
         isEmpty,
-        reason: 'source: none 除构建脚本外不启动任何取源子进程',
+        reason: '空工作区配方除构建脚本外不启动任何取源子进程',
       );
       expect(calls, hasLength(1));
 
@@ -640,7 +493,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -661,7 +514,8 @@ void main() {
           .createSync(recursive: true);
       expect(
         File(joinPath(sourcePath, 'build.py')).readAsStringSync(),
-        startsWith('# source: none'),
+        startsWith('# 配方说明'),
+        reason: '包源目录清理不得删除 build.py 本身（白名单保留）',
       );
 
       await runPackBuild(
@@ -679,12 +533,12 @@ void main() {
       expect(
         File(joinPath(targetPath, 'downloads/openvino.zip')).existsSync(),
         isTrue,
-        reason: 'source: none 缓存目录（downloads）跨构建保留',
+        reason: '空工作区缓存目录（downloads）跨构建保留',
       );
       expect(
         File(joinPath(targetPath, 'unpacked/.complete')).existsSync(),
         isTrue,
-        reason: 'source: none 缓存目录（unpacked）跨构建保留',
+        reason: '空工作区缓存目录（unpacked）跨构建保留',
       );
       expect(
         File(joinPath(sourcePath, 'stale.txt')).existsSync(),
@@ -698,11 +552,11 @@ void main() {
       );
     });
 
-    test('source: none 时注入环境仍透传到构建进程', () async {
+    test('空工作区时注入环境仍透传到构建进程', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -735,7 +589,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -774,7 +628,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
@@ -801,7 +655,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
@@ -842,7 +696,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -874,7 +728,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -899,7 +753,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -929,7 +783,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -967,7 +821,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
@@ -1013,7 +867,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n',
+        '# 配方说明\n',
       );
       _createPresetSource(sourcePath, <String, String>{'main.cpp': 'v1'});
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -1057,7 +911,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final List<String> lines = <String>[];
 
@@ -1079,7 +933,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
@@ -1110,7 +964,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
@@ -1140,7 +994,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final List<String> lines = <String>[];
       // GBK 编码的「中文」+ 合法 UTF-8 行：0xD6/0xD0/0xCE/0xC4 不构成合法 UTF-8。
@@ -1189,7 +1043,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n',
+        '# 配方说明\n',
       );
       final List<String> lines = <String>[];
 
@@ -1237,7 +1091,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n'
+        '# 配方说明\n'
         "import sys\n"
         "print('中文输出：构建开始')\n"
         "print('中文错误：诊断信息', file=sys.stderr)\n",
@@ -1266,7 +1120,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n'
+        '# 配方说明\n'
         "import sys\n"
         "print('开始构建')\n"
         "print('中文错误：编译失败', file=sys.stderr)\n"
@@ -1419,20 +1273,6 @@ PackProcessRunner _runner(
 }
 
 Matcher _buildException(String message, {Matcher? outputTail}) {
-  final TypeMatcher<PackBuildException> matcher = isA<PackBuildException>()
-      .having((PackBuildException error) => error.message, 'message', message);
-  if (outputTail == null) {
-    return matcher;
-  }
-  return matcher.having(
-    (PackBuildException error) => error.outputTail,
-    'outputTail',
-    outputTail,
-  );
-}
-
-/// [message] 允许子串/正则等 Matcher（错误信息含可变路径时使用）。
-Matcher _buildExceptionMatcher(Object message, {Matcher? outputTail}) {
   final TypeMatcher<PackBuildException> matcher = isA<PackBuildException>()
       .having((PackBuildException error) => error.message, 'message', message);
   if (outputTail == null) {
