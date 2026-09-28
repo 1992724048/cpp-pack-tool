@@ -220,11 +220,10 @@ void main() {
     expect(result!.iconPath, isNull);
   });
 
-  testWidgets('默认作者预填到作者字段', (tester) async {
+  testWidgets('作者字段初始留空（无默认作者预填）', (tester) async {
     await _pumpDialog(
       tester,
       scanFuture: Future<List<FileModel>>.value(const <FileModel>[]),
-      initialAuthor: '张三',
     );
 
     expect(
@@ -232,7 +231,7 @@ void main() {
           .widget<TextBox>(find.byKey(const Key('packAuthorField')))
           .controller
           ?.text,
-      '张三',
+      '',
     );
   });
 
@@ -269,7 +268,6 @@ Future<void> _pumpDialog(
   WidgetTester tester, {
   required Future<List<FileModel>> scanFuture,
   ValueChanged<PackModel?>? onResult,
-  String initialAuthor = '',
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -286,7 +284,6 @@ Future<void> _pumpDialog(
                 builder: (_) => AddDirectoryDialog(
                   directoryPath: _directoryPath,
                   scanFuture: scanFuture,
-                  initialAuthor: initialAuthor,
                 ),
               );
               onResult?.call(result);

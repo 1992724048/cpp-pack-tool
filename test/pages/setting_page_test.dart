@@ -7,19 +7,17 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('渲染四个分区标题与设置字段', (tester) async {
+  testWidgets('渲染三个分区标题与设置字段', (tester) async {
     await _pumpSetting(tester, onSave: (_) async {});
 
-    for (final String header in <String>['打包', '新包默认值', '外观', '编译器']) {
+    for (final String header in <String>['打包', '外观', '编译器']) {
       expect(find.text(header), findsOneWidget, reason: '缺少分区：$header');
     }
     expect(find.text('NuGet 打包输出目录'), findsOneWidget);
-    expect(find.text('默认作者'), findsOneWidget);
     expect(find.text('未设置'), findsOneWidget);
     expect(find.text('主题模式'), findsOneWidget);
     expect(find.byKey(const Key('settingPickDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingClearDirButton')), findsOneWidget);
-    expect(find.byKey(const Key('settingDefaultAuthorField')), findsOneWidget);
     expect(find.byKey(const Key('settingThemeModeField')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -143,14 +141,11 @@ void main() {
     expect(find.text('已保存'), findsNothing);
   });
 
-  testWidgets('主题变更保存时保留输出目录与默认作者字段', (tester) async {
+  testWidgets('主题变更保存时保留输出目录', (tester) async {
     SettingsModel? saved;
     await _pumpSetting(
       tester,
-      settings: const SettingsModel(
-        outputDirectory: r'D:\out\nuget',
-        defaultAuthor: '张三',
-      ),
+      settings: const SettingsModel(outputDirectory: r'D:\out\nuget'),
       onSave: (SettingsModel next) async {
         saved = next;
       },
@@ -159,93 +154,7 @@ void main() {
     await _selectCombo(tester, const Key('settingThemeModeField'), '深色');
 
     expect(saved!.outputDirectory, r'D:\out\nuget');
-    expect(saved!.defaultAuthor, '张三');
     expect(saved!.themeMode, ThemeModeSetting.dark);
-  });
-
-  testWidgets('默认作者失焦时保存并提示已保存', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      settings: SettingsModel(
-        compilerPriority: const <String>['icx'],
-        detectedCompilers: <DetectedCompiler>[
-          _compiler(CompilerKind.icx, '2026.1.0'),
-        ],
-      ),
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
-
-    await tester.enterText(
-      find.byKey(const Key('settingDefaultAuthorField')),
-      '张三',
-    );
-    await tester.pump();
-    expect(saved, isNull);
-
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(saved, isNotNull);
-    expect(saved!.defaultAuthor, '张三');
-    expect(find.text('已保存'), findsOneWidget);
-  });
-
-  testWidgets('默认作者回车时保存', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      settings: SettingsModel(
-        compilerPriority: const <String>['icx'],
-        detectedCompilers: <DetectedCompiler>[
-          _compiler(CompilerKind.icx, '2026.1.0'),
-        ],
-      ),
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
-
-    await tester.enterText(
-      find.byKey(const Key('settingDefaultAuthorField')),
-      '李四',
-    );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(saved!.defaultAuthor, '李四');
-  });
-
-  testWidgets('默认作者未变化时不写盘', (tester) async {
-    SettingsModel? saved;
-    await _pumpSetting(
-      tester,
-      settings: SettingsModel(
-        defaultAuthor: '张三',
-        compilerPriority: const <String>['icx'],
-        detectedCompilers: <DetectedCompiler>[
-          _compiler(CompilerKind.icx, '2026.1.0'),
-        ],
-      ),
-      onSave: (SettingsModel next) async {
-        saved = next;
-      },
-    );
-
-    await tester.enterText(
-      find.byKey(const Key('settingDefaultAuthorField')),
-      '张三',
-    );
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(saved, isNull);
-    expect(find.text('已保存'), findsNothing);
   });
 
   testWidgets('编译器列表按优先级顺序展示检测结果', (tester) async {

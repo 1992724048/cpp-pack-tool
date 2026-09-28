@@ -23,7 +23,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 构建 | 源目录根部存在 `build.py` 时显示构建入口；自动准备编译器与工具、准备源码、执行脚本、检查头文件引用并重新映射。 |
 | 打包设置 | 预览 NuGet 包内的文件树和文本内容后导出。 |
 | 历史记录 | 记录创建、版本变更、重新映射、打包导出和构建事件，时间线最多保留 100 条，可删除单条记录。 |
-| 设置与关于 | 配置 NuGet 输出目录、默认作者、主题与编译器优先级；关于页显示应用信息与项目主页。 |
+| 设置与关于 | 配置 NuGet 输出目录、主题与编译器优先级；关于页显示应用信息与项目主页。 |
 
 ## 打包产物
 
@@ -103,7 +103,6 @@ config/
 | 字段 | 说明 |
 | ---- | ---- |
 | `outputDirectory` | NuGet 打包输出目录。 |
-| `defaultAuthor` | 新包默认作者，并用于替换占位作者。 |
 | `themeMode` | `system`、`dark` 或 `light`。 |
 | `compilerPriority` / `detectedCompilers` | 编译器优先级（默认 `ICX > clang-cl > MSVC`）与检测缓存（ICX / clang-cl / MSVC）。 |
 

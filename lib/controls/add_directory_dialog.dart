@@ -10,14 +10,10 @@ class AddDirectoryDialog extends StatefulWidget {
     super.key,
     required this.directoryPath,
     required this.scanFuture,
-    this.initialAuthor = '',
   });
 
   final String directoryPath;
   final Future<List<FileModel>> scanFuture;
-
-  /// 新包作者预填值（全局默认作者）。
-  final String initialAuthor;
 
   @override
   State<AddDirectoryDialog> createState() => _AddDirectoryDialogState();
@@ -37,7 +33,6 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
   @override
   void initState() {
     super.initState();
-    _authorController.text = widget.initialAuthor;
     _idController.addListener(_refresh);
     _versionController.addListener(_refresh);
     _authorController.addListener(_refresh);

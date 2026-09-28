@@ -19,7 +19,6 @@ import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
-import 'package:cpp_nuget_pack/util/author_rules.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
@@ -198,23 +197,10 @@ class _MainLayoutState extends State<MainLayout> {
   List<PackModel> _packs = [];
   int? _selected;
 
-  /// 默认作者批量修正防重入（启动与设置变更可能相邻触发）。
-  bool _fixingAuthors = false;
-
   @override
   void initState() {
     super.initState();
     _loadPacks();
-  }
-
-  @override
-  void didUpdateWidget(covariant MainLayout oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final String previous = oldWidget.settings.defaultAuthor;
-    final String next = widget.settings.defaultAuthor;
-    if (previous != next && next.trim().isNotEmpty) {
-      unawaited(_fixPlaceholderAuthors());
-    }
   }
 
   Future<void> _loadPacks() async {
@@ -239,86 +225,6 @@ class _MainLayoutState extends State<MainLayout> {
     if (errors.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showLoadErrorsToast(errors));
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_fixPlaceholderAuthors()));
-  }
-
-  /// 占位作者批量修正：默认作者非空且自身不是占位值时逐个替换并写盘；
-  /// 单包失败不阻断其余。
-  Future<void> _fixPlaceholderAuthors() async {
-    if (_fixingAuthors) {
-      return;
-    }
-    final String defaultAuthor = widget.settings.defaultAuthor.trim();
-    if (defaultAuthor.isEmpty || isPlaceholderAuthor(defaultAuthor) || _packs.isEmpty) {
-      return;
-    }
-    _fixingAuthors = true;
-    int fixed = 0;
-    int failed = 0;
-    try {
-      final List<PackModel> updatedPacks = <PackModel>[];
-      for (final PackModel pack in List<PackModel>.of(_packs)) {
-        if (!isPlaceholderAuthor(pack.author)) {
-          continue;
-        }
-        final PackModel updated = _withAuthor(pack, defaultAuthor);
-        try {
-          await widget.store.savePack(updated);
-        } catch (_) {
-          failed++;
-          continue;
-        }
-        fixed++;
-        updatedPacks.add(updated);
-      }
-      if (updatedPacks.isNotEmpty && mounted) {
-        setState(() {
-          final Map<String, PackModel> replacements = <String, PackModel>{
-            for (final PackModel pack in updatedPacks) pack.name.toLowerCase(): pack,
-          };
-          for (int index = 0; index < _packs.length; index++) {
-            final PackModel? replacement = replacements[_packs[index].name.toLowerCase()];
-            if (replacement != null) {
-              _packs[index] = replacement;
-            }
-          }
-          _sortPacks();
-        });
-      }
-    } finally {
-      _fixingAuthors = false;
-    }
-    if (!mounted || (fixed == 0 && failed == 0)) {
-      return;
-    }
-    if (fixed > 0 && failed > 0) {
-      showFloatingToast(
-        context,
-        '已按默认作者修正 $fixed 个包的作者，$failed 个包保存失败',
-        type: FloatingToastType.error,
-        duration: const Duration(seconds: 5),
-      );
-      return;
-    }
-    if (failed > 0) {
-      showFloatingToast(
-        context,
-        '$failed 个包的作者修正保存失败',
-        type: FloatingToastType.error,
-        duration: const Duration(seconds: 5),
-      );
-      return;
-    }
-    showFloatingToast(context, '已按默认作者修正 $fixed 个包的作者', type: FloatingToastType.info);
-  }
-
-  /// 全字段拷贝并替换作者（`PackModel.author` 为 final，只能重建）。
-  PackModel _withAuthor(PackModel pack, String author) => pack.copyWith(author: author);
-
-  /// 写盘前的作者兜底：占位作者替换为默认作者（静默）。
-  PackModel _withResolvedAuthor(PackModel pack) {
-    final String resolved = resolveDefaultAuthor(pack.author, widget.settings.defaultAuthor);
-    return resolved == pack.author ? pack : _withAuthor(pack, resolved);
   }
 
   void _showLoadErrorsToast(List<PackLoadError> errors) {
@@ -345,8 +251,7 @@ class _MainLayoutState extends State<MainLayout> {
     final Future<List<FileModel>> scanFuture = widget.scanFiles(path);
     final PackModel? pack = await showDialog<PackModel>(
       context: context,
-      builder: (_) =>
-          AddDirectoryDialog(directoryPath: path, scanFuture: scanFuture, initialAuthor: widget.settings.defaultAuthor),
+      builder: (_) => AddDirectoryDialog(directoryPath: path, scanFuture: scanFuture),
     );
     if (pack == null || !mounted) {
       return;
@@ -364,7 +269,6 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<bool> _savePack(PackModel pack) async {
-    pack = _withResolvedAuthor(pack);
     final PackModel? previous = _findPack(pack.name);
     if (previous != null && previous.version != pack.version) {
       pack.history = appendHistoryEntry(
@@ -533,7 +437,6 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _applyRemap(PackModel pack) async {
-    pack = _withResolvedAuthor(pack);
     final PackModel? previous = _findPack(pack.name);
     if (previous != null) {
       final Set<String> oldPaths = <String>{for (final FileModel file in previous.files) file.path.toLowerCase()};

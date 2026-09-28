@@ -14,7 +14,6 @@ const Object _unset = Object();
 class SettingsModel {
   const SettingsModel({
     this.outputDirectory,
-    this.defaultAuthor = '',
     this.themeMode = ThemeModeSetting.system,
     this.compilerPriority = _defaultCompilerPriority,
     this.detectedCompilers = const <DetectedCompiler>[],
@@ -22,9 +21,6 @@ class SettingsModel {
 
   /// NuGet 打包输出目录。
   final String? outputDirectory;
-
-  /// 全局默认作者：新包预填，占位作者在保存/加载时自动替换。
-  final String defaultAuthor;
 
   final ThemeModeSetting themeMode;
 
@@ -38,7 +34,6 @@ class SettingsModel {
   /// 「传 null（清空）」。
   SettingsModel copyWith({
     Object? outputDirectory = _unset,
-    String? defaultAuthor,
     ThemeModeSetting? themeMode,
     List<String>? compilerPriority,
     List<DetectedCompiler>? detectedCompilers,
@@ -47,7 +42,6 @@ class SettingsModel {
       outputDirectory: identical(outputDirectory, _unset)
           ? this.outputDirectory
           : outputDirectory as String?,
-      defaultAuthor: defaultAuthor ?? this.defaultAuthor,
       themeMode: themeMode ?? this.themeMode,
       compilerPriority: compilerPriority ?? this.compilerPriority,
       detectedCompilers: detectedCompilers ?? this.detectedCompilers,
@@ -57,7 +51,6 @@ class SettingsModel {
   Map<String, Object?> toMap() {
     return <String, Object?>{
       if (outputDirectory != null) 'outputDirectory': outputDirectory,
-      if (defaultAuthor.isNotEmpty) 'defaultAuthor': defaultAuthor,
       'themeMode': themeMode.name,
       'compilerPriority': <String>[...compilerPriority],
       if (detectedCompilers.isNotEmpty)
@@ -71,7 +64,6 @@ class SettingsModel {
   factory SettingsModel.fromMap(Map<String, Object?> map) {
     return SettingsModel(
       outputDirectory: _optionalString(map['outputDirectory']),
-      defaultAuthor: _trimmedString(map['defaultAuthor']),
       themeMode: _themeModeFrom(map['themeMode']),
       compilerPriority: _compilerPriorityFrom(map['compilerPriority']),
       detectedCompilers: _detectedCompilersFrom(map['detectedCompilers']),
@@ -211,13 +203,6 @@ String? _optionalString(Object? value) {
     return null;
   }
   return value;
-}
-
-String _trimmedString(Object? value) {
-  if (value is! String) {
-    return '';
-  }
-  return value.trim();
 }
 
 ThemeModeSetting _themeModeFrom(Object? value) {

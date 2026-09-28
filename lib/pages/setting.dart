@@ -37,14 +37,10 @@ class _SettingState extends State<Setting> {
 
   List<toolchain.DetectedCompiler> _detected = const <toolchain.DetectedCompiler>[];
   bool _detecting = true;
-  late final TextEditingController _defaultAuthorController;
-  late final FocusNode _defaultAuthorFocusNode;
 
   @override
   void initState() {
     super.initState();
-    _defaultAuthorController = TextEditingController(text: widget.settings.defaultAuthor);
-    _defaultAuthorFocusNode = FocusNode()..addListener(_onAuthorFocusChanged);
     final List<toolchain.DetectedCompiler> cached = widget.settings.detectedCompilers;
     if (cached.isEmpty) {
       _detectCompilers(showLoading: false);
@@ -52,39 +48,6 @@ class _SettingState extends State<Setting> {
       _detected = cached;
       _detecting = false;
     }
-  }
-
-  @override
-  void didUpdateWidget(covariant Setting oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.settings.defaultAuthor != widget.settings.defaultAuthor && !_defaultAuthorFocusNode.hasFocus) {
-      _defaultAuthorController.text = widget.settings.defaultAuthor;
-    }
-  }
-
-  @override
-  void dispose() {
-    _defaultAuthorFocusNode
-      ..removeListener(_onAuthorFocusChanged)
-      ..dispose();
-    _defaultAuthorController.dispose();
-    super.dispose();
-  }
-
-  void _onAuthorFocusChanged() {
-    if (_defaultAuthorFocusNode.hasFocus) {
-      return;
-    }
-    _saveDefaultAuthor();
-  }
-
-  /// 失焦或回车时保存默认作者；值未变化不触发（防重复写盘 / 重复 toast）。
-  void _saveDefaultAuthor() {
-    final String value = _defaultAuthorController.text.trim();
-    if (value == widget.settings.defaultAuthor) {
-      return;
-    }
-    _apply(_defaultAuthorSettings(value));
   }
 
   Future<void> _detectCompilers({required bool showLoading}) async {
@@ -145,8 +108,6 @@ class _SettingState extends State<Setting> {
     return widget.settings.copyWith(outputDirectory: outputDirectory);
   }
 
-  SettingsModel _defaultAuthorSettings(String defaultAuthor) => widget.settings.copyWith(defaultAuthor: defaultAuthor);
-
   SettingsModel _themeSettings({ThemeModeSetting? themeMode}) => widget.settings.copyWith(themeMode: themeMode);
 
   SettingsModel _compilerSettings(List<String> compilerPriority) =>
@@ -180,7 +141,7 @@ class _SettingState extends State<Setting> {
   Widget build(BuildContext context) {
     return SettingsPage(
       title: '设置',
-      description: const Text('配置打包输出目录、默认作者、外观与编译器优先级。'),
+      description: const Text('配置打包输出目录、外观与编译器优先级。'),
       children: <Widget>[
         SettingsGroup(
           header: '打包',
@@ -196,7 +157,6 @@ class _SettingState extends State<Setting> {
             ),
           ],
         ),
-        SettingsGroup(header: '新包默认值', children: <Widget>[_buildDefaultAuthorCard()]),
         SettingsGroup(header: '外观', children: <Widget>[_buildThemeModeCard()]),
         SettingsGroup(header: '编译器', children: <Widget>[_buildCompilerCard()]),
       ],
@@ -246,23 +206,6 @@ class _SettingState extends State<Setting> {
         Button(key: pickKey, onPressed: onPick, child: const Text('选择目录…')),
         Button(key: clearKey, onPressed: path == null ? null : onClear, child: const Text('清除')),
       ],
-    );
-  }
-
-  Widget _buildDefaultAuthorCard() {
-    return SettingsCard(
-      padding: const .fromLTRB(8, 8, 8, 8),
-      header: const Text('默认作者'),
-      description: const Text('新包将预填此值；作者为空或占位（「无」「未知」等）的包将自动替换为默认作者。'),
-      content: SizedBox(
-        width: 320,
-        child: TextBox(
-          key: const Key('settingDefaultAuthorField'),
-          controller: _defaultAuthorController,
-          focusNode: _defaultAuthorFocusNode,
-          onSubmitted: (String _) => _saveDefaultAuthor(),
-        ),
-      ),
     );
   }
 

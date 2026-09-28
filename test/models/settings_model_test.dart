@@ -319,55 +319,42 @@ void main() {
     expect(loaded.detectedCompilers.single.kind, CompilerKind.icx);
   });
 
-  test('默认值与空映射：输出目录未设置、默认作者为空', () {
+  test('默认值与空映射：输出目录未设置', () {
     const SettingsModel settings = SettingsModel();
 
     expect(settings.outputDirectory, isNull);
-    expect(settings.defaultAuthor, '');
+    expect(settings.themeMode, ThemeModeSetting.system);
     expect(const SettingsModel().toMap().containsKey('outputDirectory'), isFalse);
-    expect(const SettingsModel().toMap().containsKey('defaultAuthor'), isFalse);
   });
 
-  test('toMap/fromMap 往返保留输出目录与默认作者', () {
-    const SettingsModel settings = SettingsModel(
-      outputDirectory: r'D:\out\nuget',
-      defaultAuthor: '张三',
-    );
+  /// 旧配置里的 `defaultAuthor` 键（功能已删除）应被 `fromMap` 宽容忽略，读回不
+  /// 报错；`toMap` 全量重写后该键自然消失，无需迁移代码。
+  test('旧配置的 defaultAuthor 键被忽略且不再写回', () {
+    final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
+      'defaultAuthor': '张三',
+      'outputDirectory': r'D:\out\nuget',
+    });
+
+    expect(loaded.outputDirectory, r'D:\out\nuget');
+    expect(loaded.toMap().containsKey('defaultAuthor'), isFalse);
+  });
+
+  test('toMap/fromMap 往返保留输出目录', () {
+    const SettingsModel settings = SettingsModel(outputDirectory: r'D:\out\nuget');
 
     final SettingsModel loaded = SettingsModel.fromMap(settings.toMap());
 
     expect(loaded.outputDirectory, r'D:\out\nuget');
-    expect(loaded.defaultAuthor, '张三');
-  });
-
-  test('默认作者读回 trim，非字符串/空白视为空', () {
-    expect(
-      SettingsModel.fromMap(<String, Object?>{'defaultAuthor': '  Alice  '})
-          .defaultAuthor,
-      'Alice',
-    );
-    expect(
-      SettingsModel.fromMap(<String, Object?>{'defaultAuthor': '   '})
-          .defaultAuthor,
-      '',
-    );
-    expect(
-      SettingsModel.fromMap(<String, Object?>{'defaultAuthor': 42})
-          .defaultAuthor,
-      '',
-    );
   });
 
   test('copyWith 覆盖字段并保留其余字段；可空字段用哨兵区分清空', () {
     const SettingsModel settings = SettingsModel(
       outputDirectory: r'D:\out',
-      defaultAuthor: '张三',
       themeMode: ThemeModeSetting.dark,
     );
 
     final SettingsModel same = settings.copyWith();
     expect(same.outputDirectory, r'D:\out');
-    expect(same.defaultAuthor, '张三');
     expect(same.themeMode, ThemeModeSetting.dark);
 
     final SettingsModel cleared = settings.copyWith(
@@ -376,6 +363,5 @@ void main() {
     );
     expect(cleared.outputDirectory, isNull);
     expect(cleared.themeMode, ThemeModeSetting.light);
-    expect(cleared.defaultAuthor, '张三');
   });
 }
