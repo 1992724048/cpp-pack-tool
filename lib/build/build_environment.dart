@@ -24,16 +24,6 @@ const String _cmakeCommandName = 'cmake';
 /// 注入子进程的 Ninja 可执行文件名；由子进程按 `PATH` 解析。
 const String _ninjaCommandName = 'ninja';
 
-/// 受控临时目录的父目录（相对 [toolsRoot]）；每次调用在其下创建独立子目录。
-const String _controlledTempRelativePath = '.tmp/build';
-
-/// 受控临时子目录名前缀；进程内序号与毫秒时间戳共同保证同一进程快速连续调用
-/// 也不重名。
-const String _controlledTempNamePrefix = 'run-';
-
-/// 受控临时子目录的进程内序号（同一毫秒内多次调用时的去重后缀）。
-int _controlledTempSequence = 0;
-
 /// 捕获编译器环境（vcvars/setvars）并与 [baseEnvironment] 合并。
 ///
 /// 无环境脚本时返回 base 拷贝；有脚本时把 `call <脚本> >nul 2>&1 && set` 写入
@@ -80,31 +70,24 @@ typedef ToolchainEnvironmentCapture = Future<Map<String, String>> Function(
   Map<String, String>? baseEnvironment,
 });
 
-/// 在受控 `TMP`/`TEMP`（[createControlledTempDirectory]）下检测编译器。
+/// 只读检测本机编译器：不建目录、不改写 `TMP`/`TEMP`、不注入额外环境变量。
 ///
-/// 设置页的检测入口，避免宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时探测失败
-/// （如 ICX 的 `error #10026`，见 [createControlledTempDirectory]）；[detect] 为
-/// 测试注入点，缺省经 [detectCompilers] 以受控环境探测。检测完成后删除本次临时
-/// 目录（检测自包含）。
-Future<List<DetectedCompiler>> detectCompilersWithControlledTemp({
+/// 子进程直接使用 [baseEnvironment]（缺省 `Platform.environment`），故宿主
+/// `TMP`/`TEMP` 不可用或指向他人所有目录时 ICX 仍可能报 `error #10026`（见
+/// [detectIcx]）——本入口不再为此改写环境。探测只起子进程跑 `--version` 与
+/// `vswhere`，不写任何文件。[detect] 为测试注入点。
+Future<List<DetectedCompiler>> detectCompilersReadOnly({
   PackProcessRunner runner = Process.run,
-  String toolsRoot = 'tools',
   Map<String, String>? baseEnvironment,
   CompilerDetector? detect,
 }) async {
-  final Map<String, String> base = baseEnvironment ?? Platform.environment;
-  final String tempPath = await createControlledTempDirectory(
-    toolsRoot: toolsRoot,
-  );
-  try {
-    final Map<String, String> childBase = _withControlledTemp(base, tempPath);
-    if (detect != null) {
-      return await detect();
-    }
-    return await detectCompilers(runner: runner, environment: childBase);
-  } finally {
-    await _deleteQuietly(Directory(tempPath));
+  if (detect != null) {
+    return await detect();
   }
+  return detectCompilers(
+    runner: runner,
+    environment: baseEnvironment ?? Platform.environment,
+  );
 }
 
 /// 构建子进程环境与工具信息。
@@ -235,101 +218,6 @@ List<DetectedCompiler> _usableCachedCompilers(
     for (final DetectedCompiler compiler in cachedCompilers)
       if (isCompilerUsable(compiler)) compiler,
   ];
-}
-
-/// 创建**本次调用**的受控构建临时目录并返回规范化路径（`\` 分隔）。
-///
-/// 目录必须由当前进程新建，不能复用既有目录：Intel ICX 在 `TMP` 下创建临时
-/// 目录时把访问权限限定为 `TMP` 目录的 owner，若 `TMP` 指向他人所有的既有目录
-/// （如同步/还原自其他机器的仓库树、以其他用户创建的历史目录），ICX 会在自己
-/// 刚建的临时目录内被 `ACCESS DENIED`、报 `error #10026`（stdout 空、退出码 1），
-/// 探测与构建全数失败（Q7 根因）。新建子目录的 owner 为当前用户，ICX 可正常
-/// 写入；同时避免历史失败尝试遗留的异物在后续运行中累积。
-///
-/// 优先 `<toolsRoot>/.tmp/build/run-<pid>-<毫秒>-<序号>`；[toolsRoot] 不可写
-/// （如工作目录为只读安装目录）时退回系统临时目录下的独立目录。两者都失败时
-/// 抛 [BuildPreparationException]。
-Future<String> createControlledTempDirectory({
-  String toolsRoot = 'tools',
-}) async {
-  final String parent = joinPath(
-    Directory(toolsRoot).absolute.path,
-    _controlledTempRelativePath,
-  );
-  final String name =
-      '$_controlledTempNamePrefix$pid-'
-      '${DateTime.now().millisecondsSinceEpoch}-${_controlledTempSequence++}';
-  try {
-    final Directory directory = Directory(joinPath(parent, name));
-    await directory.create(recursive: true);
-    return _windowsPath(directory.absolute.path);
-  } on FileSystemException catch (error) {
-    return _fallbackSystemTempDirectory(error);
-  }
-}
-
-Future<String> _fallbackSystemTempDirectory(Object cause) async {
-  try {
-    final Directory directory = await Directory.systemTemp.createTemp(
-      'cnp-build-',
-    );
-    return _windowsPath(directory.absolute.path);
-  } catch (error) {
-    throw BuildPreparationException('创建构建临时目录失败：$cause；系统临时目录同样失败：$error');
-  }
-}
-
-String _windowsPath(String path) => path.replaceAll('/', r'\');
-
-/// 返回注入了受控 `TMP`/`TEMP` 的环境副本（大小写不敏感替换已有键，键统一为
-/// 规范大写）；不修改 [base]。
-Map<String, String> _withControlledTemp(
-  Map<String, String> base,
-  String tempPath,
-) {
-  final Map<String, String> child = Map<String, String>.of(base);
-  _setEnvironmentValue(child, 'TMP', tempPath);
-  _setEnvironmentValue(child, 'TEMP', tempPath);
-  _copyEnvironmentValue(base, child, 'ProgramFiles');
-  _copyEnvironmentValue(base, child, 'ProgramFiles(x86)');
-  return child;
-}
-
-/// 创建本次调用的受控临时目录并把 `TMP`/`TEMP` 写入 base 副本（大小写不敏感
-/// 替换已有键，键统一为规范大写）。
-///
-/// 宿主 `TMP`/`TEMP` 不可用或指向他人所有目录时编译器探测会失败（如 ICX 的
-/// `error #10026: error generating temporary file`，见
-/// [createControlledTempDirectory]），故探测方改用本次新建的
-/// `<toolsRoot>/.tmp/build/run-*` 子目录。`Platform.environment` 的键迭代为
-/// 全大写、副本的精确键查找会落空，故同时把默认查找键复制为规范拼写。返回新
-/// map，不修改 [base]；目录创建失败抛 [BuildPreparationException]（toolsRoot
-/// 不可写时退回系统临时目录，仍失败才抛）。
-Future<Map<String, String>> withControlledTempEnvironment(
-  Map<String, String> base, {
-  String toolsRoot = 'tools',
-}) async {
-  final String tempPath = await createControlledTempDirectory(
-    toolsRoot: toolsRoot,
-  );
-  return _withControlledTemp(base, tempPath);
-}
-
-/// 把 [source] 中 [key]（大小写不敏感匹配）的值以规范键名写入 [target]。
-void _copyEnvironmentValue(
-  Map<String, String> source,
-  Map<String, String> target,
-  String key,
-) {
-  final String? existing = _findKeyIgnoreCase(source, key);
-  if (existing == null) {
-    return;
-  }
-  final String value = source[existing]!;
-  if (value.isEmpty) {
-    return;
-  }
-  _setEnvironmentValue(target, key, value);
 }
 
 /// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 透传

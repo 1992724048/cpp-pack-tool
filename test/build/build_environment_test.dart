@@ -163,134 +163,53 @@ void main() {
     });
   });
 
-  group('withControlledTempEnvironment', () {
-    test('注入受控 TMP/TEMP、复制 ProgramFiles 且不修改 base', () async {
+  group('detectCompilersReadOnly', () {
+    test('只读检测不在受控临时目录下进行：子进程环境即传入的 baseEnvironment', () async {
       final Directory root = _tempDirectory();
-      final String toolsRoot = joinPath(root.path, 'tools');
-      final Map<String, String> base = <String, String>{
-        'tmp': r'C:\hostile-tmp',
-        'TEMP': r'C:\hostile-temp',
-        'PROGRAMFILES(X86)': r'C:\pf86',
-        'KEEP': '1',
-      };
-
-      final Map<String, String> result = await withControlledTempEnvironment(
-        base,
-        toolsRoot: toolsRoot,
-      );
-
-      final String parent = joinPath(
-        Directory(toolsRoot).absolute.path,
-        '.tmp/build',
-      ).replaceAll('/', r'\');
-      expect(result['TMP'], startsWith('$parent\\run-'));
-      expect(result['TEMP'], result['TMP']);
-      expect(result['ProgramFiles(x86)'], r'C:\pf86');
-      expect(result['KEEP'], '1');
-      expect(Directory(result['TMP']!).existsSync(), isTrue);
-      expect(
-        result.keys.where((String key) => key.toLowerCase() == 'tmp').toList(),
-        <String>['TMP'],
-      );
-      expect(
-        result.keys.where((String key) => key.toLowerCase() == 'temp').toList(),
-        <String>['TEMP'],
-      );
-      expect(base['tmp'], r'C:\hostile-tmp');
-      expect(base['TEMP'], r'C:\hostile-temp');
-      expect(base.containsKey('TMP'), isFalse);
-    });
-
-    test('每次调用新建独立子目录（owner 为当前用户，避免既有目录污染）', () async {
-      final Directory root = _tempDirectory();
-      final String toolsRoot = joinPath(root.path, 'tools');
-
-      final String first = await createControlledTempDirectory(
-        toolsRoot: toolsRoot,
-      );
-      final String second = await createControlledTempDirectory(
-        toolsRoot: toolsRoot,
-      );
-
-      expect(first, isNot(second));
-      expect(Directory(first).existsSync(), isTrue);
-      expect(Directory(second).existsSync(), isTrue);
-      expect(baseName(first), startsWith('run-'));
-      expect(baseName(second), startsWith('run-'));
-    });
-
-    test('toolsRoot 不可写时退回系统临时目录下的独立目录', () async {
-      final Directory root = _tempDirectory();
-      final File blocker = File(joinPath(root.path, 'blocker'));
-      blocker.writeAsStringSync('not-a-directory');
-
-      final String path = await createControlledTempDirectory(
-        toolsRoot: joinPath(blocker.path, 'tools'),
-      );
-      addTearDown(() {
-        if (Directory(path).existsSync()) {
-          Directory(path).deleteSync(recursive: true);
-        }
-      });
-
-      expect(Directory(path).existsSync(), isTrue);
-      expect(path, startsWith(Directory.systemTemp.absolute.path));
-    });
-  });
-
-  group('detectCompilersWithControlledTemp', () {
-    test('默认检测以受控 TMP/TEMP 调用探测子进程', () async {
-      final Directory root = _tempDirectory();
-      final String toolsRoot = joinPath(root.path, 'tools');
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
+      final Map<String, String> base = <String, String>{
+        'ONEAPI_ROOT': oneApiRoot,
+        'PATH': r'C:\tools\bin',
+        'TMP': r'C:\hostile-tmp',
+        'TEMP': r'C:\hostile-temp',
+      };
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
-      final List<DetectedCompiler> compilers =
-          await detectCompilersWithControlledTemp(
-            toolsRoot: toolsRoot,
-            baseEnvironment: <String, String>{
-              'ONEAPI_ROOT': oneApiRoot,
-              'TMP': r'C:\hostile-tmp',
-            },
-            runner: _runner(
-              calls,
-              (_) async => ProcessResult(0, 0, 'Compiler 2026.1.0\n', ''),
-            ),
-          );
+      final List<DetectedCompiler> compilers = await detectCompilersReadOnly(
+        baseEnvironment: base,
+        runner: _runner(
+          calls,
+          (_) async => ProcessResult(0, 0, 'Compiler 2026.1.0\n', ''),
+        ),
+      );
 
-      final String parent = joinPath(
-        Directory(toolsRoot).absolute.path,
-        '.tmp/build',
-      ).replaceAll('/', r'\');
       expect(compilers.single.kind, CompilerKind.icx);
       expect(compilers.single.version, '2026.1.0');
-      expect(calls.single.environment?['TMP'], startsWith('$parent\\run-'));
+      expect(calls.single.environment, base, reason: '只读检测不得改写 TMP/TEMP 或注入任何变量');
+      expect(base['TMP'], r'C:\hostile-tmp');
+      expect(base['TEMP'], r'C:\hostile-temp');
       expect(
-        calls.single.environment?['TEMP'],
-        calls.single.environment?['TMP'],
-      );
-      expect(
-        Directory(calls.single.environment!['TMP']!).existsSync(),
-        isFalse,
-        reason: '检测完成后应清理本次受控临时目录',
+        Directory(root.path)
+            .listSync()
+            .map((FileSystemEntity entity) => baseName(entity.path))
+            .toList(),
+        <String>['oneAPI'],
+        reason: '只读检测不得创建任何临时目录',
       );
     });
 
     test('注入检测函数时直接采用其结果', () async {
-      final Directory root = _tempDirectory();
       final List<DetectedCompiler> injected = <DetectedCompiler>[_compiler()];
 
-      final List<DetectedCompiler> compilers =
-          await detectCompilersWithControlledTemp(
-            toolsRoot: joinPath(root.path, 'tools'),
-            baseEnvironment: <String, String>{},
-            detect: () async => injected,
-            runner: _runner(
-              <_ProcessCall>[],
-              (_) async => throw StateError('不应执行进程'),
-            ),
-          );
+      final List<DetectedCompiler> compilers = await detectCompilersReadOnly(
+        baseEnvironment: <String, String>{},
+        detect: () async => injected,
+        runner: _runner(
+          <_ProcessCall>[],
+          (_) async => throw StateError('不应执行进程'),
+        ),
+      );
 
       expect(compilers, same(injected));
     });

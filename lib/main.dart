@@ -153,7 +153,7 @@ class MainLayout extends StatefulWidget {
     this.exportPackage = exportNuGetPackage,
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
-    this.detectCompilers = detectCompilersWithControlledTemp,
+    this.detectCompilers = detectCompilersReadOnly,
     this.loadBuildHeader = loadBuildScriptHeader,
     this.probeSourceAbsent = absentByPresetSourceProbe,
     this.fixIncludes = fixHeaderIncludes,

@@ -104,10 +104,6 @@ const Map<String, ({List<String> tokens, String reason})> _allowedResidues =
         tokens: <String>['mingw'],
         reason: '负向断言：辅助模块输出不得出现已删除编译器种类',
       ),
-      'test/build/detect_compilers_real_smoke_test.dart': (
-        tokens: <String>['mingw'],
-        reason: '负向断言：真实探测仅覆盖受支持的三种编译器种类',
-      ),
       'test/build/build_environment_real_smoke_test.dart': (
         tokens: <String>['mingw'],
         reason: '负向断言：真实环境准备仅覆盖受支持的三种编译器种类',

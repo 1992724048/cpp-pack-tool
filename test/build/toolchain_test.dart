@@ -1108,7 +1108,6 @@ String _dartCodeWithoutComments(String source) {
 }
 
 const List<String> _gatedSmokePaths = <String>[
-  'test/build/detect_compilers_real_smoke_test.dart',
   'test/build/build_environment_real_smoke_test.dart',
 ];
 

@@ -944,7 +944,9 @@ void main() {
     );
   });
 
-  testWidgets('构建对话框透传 sourceNone 与下载进度回调', (tester) async {
+  testWidgets('构建对话框：sourceNone 为 true 时走下载时间线', (tester) async {
+    // 与下面那条成对，把 sourceNone 的两个极性都显式钉住：注入 true 时
+    // 走下载/分类时间线（无「准备环境」步骤），注入 false 时走准备源码时间线。
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -957,7 +959,6 @@ void main() {
     );
     final Completer<BuildEnvironment> prepareGate =
         Completer<BuildEnvironment>();
-    ToolDownloadProgressCallback? receivedProgress;
 
     await _pumpMainLayout(
       tester,
@@ -972,11 +973,7 @@ void main() {
             required List<String> compilerPriority,
             required List<DetectedCompiler> cachedCompilers,
             required CompilerDetectionCallback onCompilersDetected,
-            ToolDownloadProgressCallback? onDownloadProgress,
-          }) {
-            receivedProgress = onDownloadProgress;
-            return prepareGate.future;
-          },
+          }) => prepareGate.future,
       buildPack: (
         PackModel pack,
         void Function(PackBuildStage) onStage, {
@@ -994,18 +991,6 @@ void main() {
 
     expect(find.text('下载'), findsOneWidget);
     expect(find.text('准备环境'), findsNothing);
-    expect(receivedProgress, isNotNull);
-
-    receivedProgress!(
-      const ToolDownloadProgress(
-        name: 'cmake',
-        receivedBytes: 0,
-        totalBytes: 1024,
-        bytesPerSecond: 0,
-      ),
-    );
-    await tester.pump();
-    expect(find.byKey(const Key('buildDownloadProgress')), findsOneWidget);
 
     prepareGate.complete(_buildEnvironment());
     await tester.pump();
@@ -2487,8 +2472,6 @@ BuildEnvironment _buildEnvironment() {
       'CNP_COMPILER_KIND': 'icx',
       'Path': r'C:\tools\bin',
     },
-    cmakePath: r'C:\tools\cmake\bin\cmake.exe',
-    ninjaPath: r'C:\tools\ninja\ninja.exe',
     toolsDir: r'C:\tools',
   );
 }

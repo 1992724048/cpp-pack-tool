@@ -16,7 +16,7 @@ class Setting extends StatefulWidget {
     required this.settings,
     required this.onSave,
     this.pickDirectory = getDirectoryPath,
-    this.detectCompilers = detectCompilersWithControlledTemp,
+    this.detectCompilers = detectCompilersReadOnly,
   });
 
   final SettingsModel settings;
