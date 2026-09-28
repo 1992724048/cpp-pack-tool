@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/version_range.dart';
 
@@ -260,8 +261,9 @@ void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
 /// 判据按同文件的 [_pathSeparatorPattern] 取首段（与 `_isRelativeSubdir` 的 `..`
 /// 切分同源，不另造正则），大小写不敏感以对齐清理白名单 `isPreservedEntryName`：
 /// 首段不是 [presetSourceDirName] 的目录一律会在构建后的输出清理中被删除，故该
-/// 后果写进报错文案；首段同时可见（不隐藏）时还会被文件扫描打进 NuGet 包
-/// （`FileScan.shouldSkipDirectory` 跳过 `.` 前缀目录），故两种后果分文案表述。
+/// 后果写进报错文案；首段不被文件扫描跳过时还会被打进 NuGet 包，故两种后果分
+/// 文案表述——是否跳过的判据直接复用 [FileScan.shouldSkipDirectory]（隐藏目录与
+/// `build`/`out`），不在本地另写一份等价判断，否则扫描口径演进时必然漂移。
 /// 调用方在任何副作用之前调用（与 [requireSupportedBuildProfile] 同一 try 块）
 /// 并把异常映射为用户可见异常类型。
 void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
@@ -280,7 +282,7 @@ void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
   }
   final String firstSegment = sourceDir.split(_pathSeparatorPattern).first;
   if (firstSegment.toLowerCase() != presetSourceDirName) {
-    final String consequence = firstSegment.startsWith('.')
+    final String consequence = FileScan.shouldSkipDirectory(firstSegment)
         ? '否则会在构建后的输出清理中被删除'
         : '否则源码会被文件扫描打进 NuGet 包并在构建后的输出清理中被删除';
     throw FormatException(

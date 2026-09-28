@@ -267,8 +267,6 @@ Future<void> runElevatedPackBuild(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   required BuildEnvironment buildEnvironment,
-  PackProcessRunner processRunner = Process.run,
-  PackStreamingProcessRunner? streamRunner = Process.start,
   void Function(String line)? onOutput,
   String cacheRoot = 'cache',
   PackSourcePreparer prepareSource = preparePackSource,
@@ -279,7 +277,6 @@ Future<void> runElevatedPackBuild(
     pack,
     onStage,
     cacheRoot: cacheRoot,
-    environment: buildEnvironment.environment,
   );
   onStage(PackBuildStage.building);
   await _runElevatedBuildScript(

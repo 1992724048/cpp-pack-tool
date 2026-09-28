@@ -5,7 +5,7 @@ import '../util/svgs.dart';
 
 class LibraryItem extends PaneItem {
   LibraryItem(
-      {super.key, required Widget? icon, required String title, String? version, Widget? badge, required Widget body})
+      {super.key, required Widget? icon, required String title, String? version, required Widget body})
       : super(
     icon: icon ?? Svgs.cardboardBox,
     title: Row(
@@ -18,7 +18,6 @@ class LibraryItem extends PaneItem {
           children: [
             version != null ? Tag(text: version, fontSize: 10, maxWidth: 96, tooltip: version) : const SizedBox(
                 width: 8),
-            if (badge != null) ...[const SizedBox(width: 4), badge],
           ],
         ),
       ],

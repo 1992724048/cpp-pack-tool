@@ -73,7 +73,6 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   String cacheRoot,
-  Map<String, String>? environment,
 });
 
 /// 校验 `build.py` 头部、从包内预置源码目录备源并清空包源目录（构建流水线前半段）。
@@ -88,13 +87,10 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
 ///
 /// 备源按源码来源声明分叉，两条分支语义相反、**不得统一**：见
 /// [_stageEmptyWorkspace]（`# source: none`）与 [_stagePresetSource]。
-///
-/// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）。
 Future<PackSourcePreparation> preparePackSource(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
   String cacheRoot = 'cache',
-  Map<String, String>? environment,
 }) async {
   final String? sourcePath = pack.sourcePath;
   if (sourcePath == null) {
@@ -260,7 +256,6 @@ Future<void> runPackBuild(
     pack,
     onStage,
     cacheRoot: cacheRoot,
-    environment: environment,
   );
   onStage(PackBuildStage.building);
   await _runBuildScript(

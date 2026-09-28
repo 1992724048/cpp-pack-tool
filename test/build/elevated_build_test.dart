@@ -240,7 +240,6 @@ void main() {
       final Directory root = await _tempDirectory();
       final List<String> output = <String>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
-      Map<String, String>? prepareEnvironment;
 
       await runElevatedPackBuild(
         _pack(),
@@ -251,9 +250,7 @@ void main() {
               PackModel pack,
               void Function(PackBuildStage) onStage, {
               String cacheRoot = 'cache',
-              Map<String, String>? environment,
             }) async {
-              prepareEnvironment = environment;
               onStage(PackBuildStage.staging);
               return PackSourcePreparation(
                 sourcePath: r'C:\libs\demo',
@@ -275,7 +272,6 @@ void main() {
         PackBuildStage.building,
       ]);
       expect(output, <String>['line-1', '中文行', 'more']);
-      expect(prepareEnvironment?['TMP'], root.path);
 
       final File launcher = File(
         joinPath(
@@ -793,7 +789,6 @@ PackSourcePreparer _fakePrepareSource({
     PackModel pack,
     void Function(PackBuildStage) onStage, {
     String cacheRoot = 'cache',
-    Map<String, String>? environment,
   }) async {
     onStage(PackBuildStage.staging);
     return PackSourcePreparation(

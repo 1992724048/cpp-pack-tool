@@ -1,6 +1,7 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -563,9 +564,9 @@ void main() {
     const String scriptPath = r'C:\libs\demo\build.py';
     const String reservedNameReason = '必须位于包源目录的 .cnp-src 目录下'
         '（如 ".cnp-src/vendor/zlib"）';
-    const String visibleNameConsequence =
+    const String scannedNameConsequence =
         '否则源码会被文件扫描打进 NuGet 包并在构建后的输出清理中被删除';
-    const String hiddenNameConsequence = '否则会在构建后的输出清理中被删除';
+    const String skippedNameConsequence = '否则会在构建后的输出清理中被删除';
 
     void expectRejected(String firstLine, String value, String reason) {
       final BuildScriptHeader header = parseBuildScriptHeader('$firstLine\n')!;
@@ -586,11 +587,11 @@ void main() {
       );
     }
 
-    void expectRejectedVisible(String firstLine, String value) =>
-        expectRejected(firstLine, value, '$reservedNameReason，$visibleNameConsequence');
+    void expectRejectedScanned(String firstLine, String value) =>
+        expectRejected(firstLine, value, '$reservedNameReason，$scannedNameConsequence');
 
-    void expectRejectedHidden(String firstLine, String value) =>
-        expectRejected(firstLine, value, '$reservedNameReason，$hiddenNameConsequence');
+    void expectRejectedSkipped(String firstLine, String value) =>
+        expectRejected(firstLine, value, '$reservedNameReason，$skippedNameConsequence');
 
     test('# source: none 与保留名目录声明通过（大小写不敏感）', () {
       requireValidSourceDirective(
@@ -639,19 +640,42 @@ void main() {
       expectRejected(r'# source: \abs\path', r'\abs\path', '不得含盘符或 ..');
     });
 
-    test('首段非 .cnp-src 保留名的可见目录被拒绝（否则源码进包且构建后被删）', () {
-      expectRejectedVisible('# source: vendor/zlib', 'vendor/zlib');
-      expectRejectedVisible('# source: src', 'src');
-      expectRejectedVisible(r'# source: vendor\zlib', r'vendor\zlib');
-      expectRejectedVisible('# source: cnp-src', 'cnp-src');
+    test('首段非 .cnp-src 保留名的被扫描目录被拒绝（否则源码进包且构建后被删）', () {
+      expectRejectedScanned('# source: vendor/zlib', 'vendor/zlib');
+      expectRejectedScanned('# source: src', 'src');
+      expectRejectedScanned(r'# source: vendor\zlib', r'vendor\zlib');
+      expectRejectedScanned('# source: cnp-src', 'cnp-src');
     });
 
-    test('隐藏名但非保留名被拒绝（否则首次构建后被清理删除，源码丢失）', () {
-      expectRejectedHidden('# source: .my-cache', '.my-cache');
-      expectRejectedHidden(
+    test('首段非 .cnp-src 保留名的跳过目录被拒绝（否则首次构建后被清理删除）', () {
+      expectRejectedSkipped('# source: .my-cache', '.my-cache');
+      expectRejectedSkipped(
         '# source: .git-cache/vendor',
         '.git-cache/vendor',
       );
+    });
+
+    test('build/out 这类扫描跳过目录取到「仅被清理」文案而非「会进包」文案', () {
+      expectRejectedSkipped('# source: build/zlib', 'build/zlib');
+      expectRejectedSkipped('# source: out/zlib', 'out/zlib');
+      expectRejectedSkipped('# source: BUILD/foo', 'BUILD/foo');
+    });
+
+    test('首段被扫描跳过的判据与 FileScan.shouldSkipDirectory 同步', () {
+      for (final String segment in <String>['build', 'out', '.git', 'Build']) {
+        expect(
+          _sourceDirectiveConsequence(segment),
+          'skip',
+          reason: '$segment 应走「仅被清理」文案',
+        );
+      }
+      for (final String segment in <String>['vendor', 'src', 'cnp-src', 'outputs']) {
+        expect(
+          _sourceDirectiveConsequence(segment),
+          'scan',
+          reason: '$segment 应走「会进包」文案',
+        );
+      }
     });
 
     test('缺声明文案同时点出两种合法写法', () {
@@ -963,4 +987,28 @@ void main() {
       );
     });
   });
+}
+
+/// 源码声明被判到哪条后果分支：`skip`（仅构建后被清理）或 `scan`（会进包）。
+///
+/// 判据直接比对 [FileScan.shouldSkipDirectory]——文案分支一旦与扫描器跳过口径
+/// 漂移（如只判 `.` 前缀而漏掉 `build`/`out`），本函数即与真实扫描行为对不上。
+String _sourceDirectiveConsequence(String firstSegment) {
+  const String scriptPath = r'C:\libs\demo\build.py';
+  final BuildScriptHeader header = parseBuildScriptHeader(
+    '# source: $firstSegment/x\n',
+  )!;
+  try {
+    requireValidSourceDirective(header, scriptPath);
+  } on FormatException catch (error) {
+    final String message = error.message;
+    final bool scanned = message.contains('文件扫描打进 NuGet 包');
+    expect(
+      scanned,
+      !FileScan.shouldSkipDirectory(firstSegment),
+      reason: '$firstSegment 的文案分支与 FileScan.shouldSkipDirectory 不一致',
+    );
+    return scanned ? 'scan' : 'skip';
+  }
+  fail('$firstSegment/x 本应被拒绝，却通过了校验');
 }
