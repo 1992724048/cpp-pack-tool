@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
-import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_output_panel.dart';
 import 'package:cpp_nuget_pack/controls/build_timeline.dart';
@@ -17,18 +15,14 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 enum _BuildStage { preparing, staging, building, fixingIncludes, classifying, remapping, completed, failed }
 
-typedef BuildPackPrepare = Future<BuildEnvironment> Function(
-  PackModel pack, {
-  ToolDownloadProgressCallback? onDownloadProgress,
-});
+typedef BuildPackPrepare = Future<BuildEnvironment> Function(PackModel pack);
 
-const int _progressMinDeltaBytes = 256 * 1024;
 const int _maxOutputLineCount = 2000;
 const double _statusColumnWidth = 260;
 const double _panelHeight = 360;
 
 /// 构建对话框关闭载荷：[fixReport] 为头文件引用检查报告（未执行时为 null），
-/// [failureEntry] 为失败会话的历史条目（成功完成或提权重试成功后为 null）。
+/// [failureEntry] 为失败会话的历史条目（成功完成时为 null）。
 class BuildDialogResult {
   const BuildDialogResult({this.fixReport, this.failureEntry});
 
@@ -46,7 +40,6 @@ class BuildPackDialog extends StatefulWidget {
     required this.scanFiles,
     required this.onApply,
     this.fixIncludes = fixHeaderIncludes,
-    this.retryElevated,
     this.now = DateTime.now,
   });
 
@@ -57,7 +50,6 @@ class BuildPackDialog extends StatefulWidget {
   final Future<List<FileModel>> Function(String sourcePath) scanFiles;
   final Future<void> Function(PackModel pack) onApply;
   final PackHeaderIncludeFixer fixIncludes;
-  final ElevatedPackBuildRunner? retryElevated;
   final DateTime Function() now;
 
   @override
@@ -67,8 +59,7 @@ class BuildPackDialog extends StatefulWidget {
 class _BuildPackDialogState extends State<BuildPackDialog> {
   final Stopwatch _sessionWatch = Stopwatch();
 
-  /// 失败会话的历史条目：首次失败构造一次（重试再失败不重复构造），成功完成时
-  /// 连同提权重试后的失败条目一并丢弃。
+  /// 失败会话的历史条目：首次失败构造一次（重试再失败不重复构造），成功完成时丢弃。
   HistoryModel? _failureEntry;
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
@@ -79,10 +70,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   int _addedCount = 0;
   int _removedCount = 0;
   HeaderIncludeFixReport? _fixReport;
-  bool _elevatedRetry = false;
   BuildTimelineStepId _failedStep = BuildTimelineStepId.prepare;
   final Set<BuildTimelineStepId> _visitedSteps = <BuildTimelineStepId>{};
-  ToolDownloadProgress? _downloadProgress;
   int? _buildProgressPercent;
 
   @override
@@ -116,7 +105,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   Future<void> _prepare() async {
     final BuildEnvironment environment;
     try {
-      environment = await widget.prepare(widget.pack, onDownloadProgress: _onDownloadProgress);
+      environment = await widget.prepare(widget.pack);
     } catch (error) {
       _showFailure(error);
       return;
@@ -124,10 +113,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    setState(() {
-      _environment = environment;
-      _downloadProgress = null;
-    });
+    setState(() => _environment = environment);
     await _build(environment);
   }
 
@@ -137,36 +123,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         widget.pack,
         _onBuildStage,
         environment: environment.environment,
-        onOutput: _onBuildOutput,
-      );
-    } catch (error) {
-      _showFailure(error, outputTail: _tailOf(error));
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-    await _afterBuildSucceeded();
-  }
-
-  Future<void> _retryElevated() async {
-    final ElevatedPackBuildRunner? runner = widget.retryElevated;
-    final BuildEnvironment? environment = _environment;
-    if (runner == null || environment == null || _stage != _BuildStage.failed) {
-      return;
-    }
-    setState(() {
-      _elevatedRetry = true;
-      _advanceTo(_BuildStage.staging);
-      _error = null;
-      _downloadProgress = null;
-    });
-    _sessionWatch.start();
-    try {
-      await runner(
-        widget.pack,
-        _onBuildStage,
-        buildEnvironment: environment,
         onOutput: _onBuildOutput,
       );
     } catch (error) {
@@ -252,26 +208,11 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       return;
     }
     setState(() {
-      _downloadProgress = null;
       _advanceTo(switch (stage) {
         PackBuildStage.staging => _BuildStage.staging,
         PackBuildStage.building => _BuildStage.building,
       });
     });
-  }
-
-  void _onDownloadProgress(ToolDownloadProgress progress) {
-    if (!mounted) {
-      return;
-    }
-    final ToolDownloadProgress? current = _downloadProgress;
-    final bool isNewTool = current?.name != progress.name;
-    final int deltaBytes = current == null ? 0 : progress.receivedBytes - current.receivedBytes;
-    final bool isComplete = progress.totalBytes > 0 && progress.receivedBytes >= progress.totalBytes;
-    if (!isNewTool && !isComplete && deltaBytes < _progressMinDeltaBytes) {
-      return;
-    }
-    setState(() => _downloadProgress = progress);
   }
 
   void _onBuildOutput(String line) {
@@ -305,7 +246,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _failedStep = _activeStep;
       _advanceTo(_BuildStage.failed);
       _error = error;
-      _downloadProgress = null;
       if (outputTail != null && outputTail.isNotEmpty) {
         final Set<String> existing = _outputLines.toSet();
         for (final String line in outputTail.split('\n')) {
@@ -358,7 +298,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
                   : '编译器：${compilerKindLabel(environment.compiler.kind)} '
                         '${environment.compiler.version}',
               steps: _timelineSteps,
-              onRetryElevated: _canRetryElevated ? _retryElevated : null,
             ),
           ),
           Container(width: 1, height: _panelHeight, color: theme.resources.cardStrokeColorDefault),
@@ -406,9 +345,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         step: _activeStep,
         preparing: _stage == _BuildStage.preparing,
         sourceNone: widget.sourceNone,
-        downloadProgress: _downloadProgress,
         buildProgressPercent: _buildProgressPercent,
-        elevatedRetry: _elevatedRetry,
       ),
       doneDetails: buildCompletionDetails(
         fileCount: _files.length,
@@ -419,16 +356,4 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       failureText: failed ? '构建失败：${formatError(_error!)}' : null,
     );
   }
-
-  /// 仅当失败特征命中临时目录权限问题、且提权重试入口已就绪时才显示重试按钮。
-  bool get _canRetryElevated =>
-      widget.retryElevated != null &&
-      _environment != null &&
-      _stage == _BuildStage.failed &&
-      _error != null &&
-      detectTempPermissionFailure(_failureText);
-
-  /// 提权特征在异常信息与全部输出行（含补充的输出尾部）上扫描，避免诊断只写在
-  /// 截断后的异常首行时漏判。
-  String get _failureText => <String>[formatError(_error!), ..._outputLines].join('\n');
 }

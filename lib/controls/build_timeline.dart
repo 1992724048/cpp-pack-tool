@@ -1,4 +1,3 @@
-import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -122,24 +121,11 @@ List<BuildTimelineDetail> buildActiveStepDetails({
   required BuildTimelineStepId step,
   required bool preparing,
   required bool sourceNone,
-  ToolDownloadProgress? downloadProgress,
   int? buildProgressPercent,
-  bool elevatedRetry = false,
 }) {
   final List<BuildTimelineDetail> details = <BuildTimelineDetail>[];
-  if (preparing && downloadProgress != null) {
-    details.add(
-      BuildTimelineDetail(formatToolDownloadProgress(downloadProgress), key: const Key('buildDownloadProgress')),
-    );
-  }
   if (sourceNone && step == BuildTimelineStepId.download && buildProgressPercent != null) {
     details.add(BuildTimelineDetail('已下载 $buildProgressPercent%'));
-  }
-  if (!sourceNone && step == BuildTimelineStepId.download && elevatedRetry) {
-    details.add(const BuildTimelineDetail('正在以管理员身份准备源码…'));
-  }
-  if (!sourceNone && step == BuildTimelineStepId.build && elevatedRetry) {
-    details.add(const BuildTimelineDetail('正在以管理员身份执行构建…'));
   }
   return details;
 }
@@ -271,14 +257,12 @@ class BuildStatusColumn extends StatelessWidget {
     required this.sourcePath,
     required this.steps,
     this.compilerLabel,
-    this.onRetryElevated,
   });
 
   final String packName;
   final String sourcePath;
   final List<BuildTimelineStep> steps;
   final String? compilerLabel;
-  final VoidCallback? onRetryElevated;
 
   @override
   Widget build(BuildContext context) {
@@ -299,12 +283,6 @@ class BuildStatusColumn extends StatelessWidget {
         Expanded(
           child: SingleChildScrollView(child: BuildTimeline(steps: steps)),
         ),
-        if (onRetryElevated != null) ...<Widget>[
-          const SizedBox(height: 8),
-          const Text('检测到临时目录权限问题，可尝试以管理员身份重试。', key: Key('buildElevatedRetryHint'), style: TextStyle(fontSize: 12)),
-          const SizedBox(height: 8),
-          Button(key: const Key('buildElevatedRetryButton'), onPressed: onRetryElevated, child: const Text('以管理员身份重试')),
-        ],
       ],
     );
   }

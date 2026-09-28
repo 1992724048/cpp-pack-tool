@@ -5,9 +5,7 @@ import 'package:cpp_nuget_pack/build/build_cache.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
-import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -105,14 +103,12 @@ Future<void> _noopSaveSettings(SettingsModel settings) async {}
 
 /// 构建环境准备函数：由 MainLayout 注入设置中的编译器优先级与检测缓存，
 /// 缓存缺失/失效并完成重检时经 [onCompilersDetected] 回调新检测结果
-/// （MainLayout 把它写回配置）；[onDownloadProgress] 为工具下载进度回调
-/// （对话框传入）；测试注入以绕过真实检测与工具供给。
+/// （MainLayout 把它写回配置）；测试注入以绕过真实检测。
 typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   PackModel pack, {
   required List<String> compilerPriority,
   required List<toolchain.DetectedCompiler> cachedCompilers,
   required CompilerDetectionCallback onCompilersDetected,
-  ToolDownloadProgressCallback? onDownloadProgress,
 });
 
 /// 默认构建环境准备：读取包内 build.py 头部并释放分类辅助模块。
@@ -121,14 +117,12 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
   required List<String> compilerPriority,
   required List<toolchain.DetectedCompiler> cachedCompilers,
   required CompilerDetectionCallback onCompilersDetected,
-  ToolDownloadProgressCallback? onDownloadProgress,
 }) {
   return preparePackBuildEnvironment(
     pack,
     priority: compilerPriority,
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
-    onDownloadProgress: onDownloadProgress,
     loadSupportModule: () => rootBundle.loadString('assets/build/cnp_build_support.py'),
   );
 }
@@ -161,7 +155,6 @@ class MainLayout extends StatefulWidget {
     this.exportPackage = exportNuGetPackage,
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
-    this.retryElevatedBuild = runElevatedPackBuild,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
     this.probeSourceAbsent = absentByPresetSourceProbe,
@@ -179,10 +172,6 @@ class MainLayout extends StatefulWidget {
   final Future<PackageExportResult> Function(PackModel pack, String outputDirectory) exportPackage;
   final PackBuildRunner buildPack;
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
-
-  /// 临时目录权限失败时的提权重试入口（缺省 [runElevatedPackBuild]）；
-  /// 测试注入替代实现以避免触发真实 UAC 弹窗。
-  final ElevatedPackBuildRunner retryElevatedBuild;
 
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
 
@@ -510,13 +499,11 @@ class _MainLayoutState extends State<MainLayout> {
           required List<String> compilerPriority,
           required List<toolchain.DetectedCompiler> cachedCompilers,
           required CompilerDetectionCallback onCompilersDetected,
-          ToolDownloadProgressCallback? onDownloadProgress,
         }) => _preparePackBuildEnvironment(
           pack,
           compilerPriority: compilerPriority,
           cachedCompilers: cachedCompilers,
           onCompilersDetected: onCompilersDetected,
-          onDownloadProgress: onDownloadProgress,
         );
     final bool sourceNone = await _probeSourceNone(pack);
     if (!mounted) {
@@ -541,17 +528,15 @@ class _MainLayoutState extends State<MainLayout> {
               environment: environment,
               onOutput: onOutput,
             ),
-        prepare: (PackModel pack, {ToolDownloadProgressCallback? onDownloadProgress}) => prepare(
+        prepare: (PackModel pack) => prepare(
           pack,
           compilerPriority: widget.settings.compilerPriority,
           cachedCompilers: widget.settings.detectedCompilers,
           onCompilersDetected: _persistDetectedCompilers,
-          onDownloadProgress: onDownloadProgress,
         ),
         scanFiles: widget.scanFiles,
         onApply: _applyRemap,
         fixIncludes: widget.fixIncludes,
-        retryElevated: widget.retryElevatedBuild,
         now: widget.now,
       ),
     );

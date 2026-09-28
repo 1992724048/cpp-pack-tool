@@ -3,9 +3,7 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
-import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/controls/build_output_panel.dart';
 import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
@@ -32,10 +30,7 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare: (
-        PackModel pack, {
-        ToolDownloadProgressCallback? onDownloadProgress,
-      }) => prepareGate.future,
+      prepare: (PackModel pack) => prepareGate.future,
       build:
           (
             PackModel pack,
@@ -279,44 +274,6 @@ void main() {
     expect(entry.time, now);
   });
 
-  testWidgets('提权重试成功后失败条目被丢弃', (tester) async {
-    BuildDialogResult? closedWith;
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      onResult: (BuildDialogResult? value) => closedWith = value,
-      retryElevated: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        required BuildEnvironment buildEnvironment,
-        void Function(String line)? onOutput,
-      }) async {},
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(_stepIsDone(tester, 'done'), isTrue);
-
-    await tester.tap(find.byKey(const Key('buildCloseButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(closedWith!.failureEntry, isNull);
-    expect(applied!.history, hasLength(1));
-    expect(applied!.history.single.type, HistoryType.built);
-    expect(applied!.history.single.message, startsWith('构建成功：耗时 '));
-  });
-
   testWidgets('完成后点击关闭按钮关闭对话框', (tester) async {
     await _pumpDialog(
       tester,
@@ -345,10 +302,7 @@ void main() {
     await _pumpDialog(
       tester,
       prepare:
-          (
-            PackModel pack, {
-            ToolDownloadProgressCallback? onDownloadProgress,
-          }) async => throw const BuildPreparationException(
+          (PackModel pack) async => throw const BuildPreparationException(
             '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
           ),
       build:
@@ -385,10 +339,7 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare: (
-        PackModel pack, {
-        ToolDownloadProgressCallback? onDownloadProgress,
-      }) async => prepared,
+      prepare: (PackModel pack) async => prepared,
       build:
           (
             PackModel pack,
@@ -810,10 +761,7 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare: (
-        PackModel pack, {
-        ToolDownloadProgressCallback? onDownloadProgress,
-      }) => prepareGate.future,
+      prepare: (PackModel pack) => prepareGate.future,
       build: _emitLines(const <String>['INFO: 开始构建', 'error: 编译失败']),
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -851,75 +799,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('已复制'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('准备环境阶段展示工具下载进度与瞬时速度', (tester) async {
-    final Completer<BuildEnvironment> prepareGate =
-        Completer<BuildEnvironment>();
-    ToolDownloadProgressCallback? progressCallback;
-
-    await _pumpDialog(
-      tester,
-      prepare:
-          (PackModel pack, {ToolDownloadProgressCallback? onDownloadProgress}) {
-            progressCallback = onDownloadProgress;
-            return prepareGate.future;
-          },
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-      }) async {},
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-
-    expect(find.text('准备环境'), findsOneWidget);
-    expect(_stepIsActive(tester, 'prepare'), isTrue);
-    expect(find.byKey(const Key('buildDownloadProgress')), findsNothing);
-    expect(progressCallback, isNotNull);
-
-    progressCallback!(
-      const ToolDownloadProgress(
-        name: 'cmake',
-        receivedBytes: 0,
-        totalBytes: 4 * 1024 * 1024,
-        bytesPerSecond: 0,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('正在下载 cmake：0%（0 B / 4.0 MB）'), findsOneWidget);
-
-    progressCallback!(
-      const ToolDownloadProgress(
-        name: 'cmake',
-        receivedBytes: 2 * 1024 * 1024,
-        totalBytes: 4 * 1024 * 1024,
-        bytesPerSecond: 1024 * 1024,
-      ),
-    );
-    await tester.pump();
-    expect(
-      find.text('正在下载 cmake：50%（2.0 MB / 4.0 MB），1.0 MB/s'),
-      findsOneWidget,
-    );
-
-    progressCallback!(
-      const ToolDownloadProgress(
-        name: 'ninja',
-        receivedBytes: 512,
-        totalBytes: -1,
-        bytesPerSecond: 0,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('正在下载 ninja：512 B'), findsOneWidget);
-
-    prepareGate.complete(_environment());
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.byKey(const Key('buildDownloadProgress')), findsNothing);
   });
 
   testWidgets('预构建包阶段：下载 → 分类 → 重新映射 → 完成', (tester) async {
@@ -1091,252 +970,6 @@ void main() {
       findsOneWidget,
     );
   });
-
-  testWidgets('命中临时目录权限特征时显示提权重试入口', (tester) async {
-    await _pumpDialog(
-      tester,
-      retryElevated: _noopElevatedRunner(),
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
-    expect(find.byKey(const Key('buildElevatedRetryHint')), findsOneWidget);
-    expect(find.text('检测到临时目录权限问题，可尝试以管理员身份重试。'), findsOneWidget);
-    expect(find.text('以管理员身份重试'), findsOneWidget);
-    expect(_closeButton(tester).onPressed, isNotNull);
-  });
-
-  testWidgets('未命中临时目录权限特征时不显示提权按钮', (tester) async {
-    await _pumpDialog(
-      tester,
-      retryElevated: _noopElevatedRunner(),
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-          }) async {
-            throw const PackBuildException(
-              '构建失败（退出码 1）',
-              outputTail: 'error: cannot find file foo.h',
-            );
-          },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
-    expect(
-      find.textContaining('error: cannot find file foo.h', findRichText: true),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('buildElevatedRetryButton')), findsNothing);
-    expect(find.byKey(const Key('buildElevatedRetryHint')), findsNothing);
-  });
-
-  testWidgets('命中临时目录权限特征但未提供提权入口时不显示按钮', (tester) async {
-    await _pumpDialog(
-      tester,
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('buildPackDialog')), findsOneWidget);
-    expect(
-      find.textContaining(
-        'icx: error #10026: error generating temporary file',
-        findRichText: true,
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('buildElevatedRetryButton')),
-      findsNothing,
-      reason: '未注入提权入口（retryElevated 为 null）时不显示按钮',
-    );
-  });
-
-  testWidgets('点击以管理员身份重试成功后继续重新映射并完成', (tester) async {
-    final List<String> order = <String>[];
-    BuildEnvironment? receivedEnvironment;
-
-    await _pumpDialog(
-      tester,
-      retryElevated:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            required BuildEnvironment buildEnvironment,
-            void Function(String line)? onOutput,
-          }) async {
-            order.add('elevated');
-            receivedEnvironment = buildEnvironment;
-            onStage(PackBuildStage.staging);
-            onOutput?.call('管理员构建输出');
-            onStage(PackBuildStage.building);
-          },
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async {
-        order.add('scan');
-        return const <FileModel>[];
-      },
-      onApply: (PackModel pack) async => order.add('apply'),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(order, <String>['elevated', 'scan', 'apply']);
-    expect(receivedEnvironment?.environment['CNP_COMPILER_KIND'], 'icx');
-    expect(_stepIsDone(tester, 'done'), isTrue);
-    expect(find.byKey(const Key('buildElevatedRetryButton')), findsNothing);
-    expect(find.textContaining('管理员构建输出', findRichText: true), findsOneWidget);
-  });
-
-  testWidgets('提权重试期间显示管理员阶段文案', (tester) async {
-    final Completer<void> downloadGate = Completer<void>();
-    final Completer<void> buildGate = Completer<void>();
-
-    await _pumpDialog(
-      tester,
-      retryElevated:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            required BuildEnvironment buildEnvironment,
-            void Function(String line)? onOutput,
-          }) async {
-            onStage(PackBuildStage.staging);
-            await downloadGate.future;
-            onStage(PackBuildStage.building);
-            await buildGate.future;
-          },
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
-    await tester.pump();
-    expect(find.text('正在以管理员身份准备源码…'), findsOneWidget);
-    expect(_closeButton(tester).onPressed, isNull);
-
-    downloadGate.complete();
-    await tester.pump();
-    expect(find.text('正在以管理员身份执行构建…'), findsOneWidget);
-
-    buildGate.complete();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(_stepIsDone(tester, 'done'), isTrue);
-  });
-
-  testWidgets('提权重试被取消时显示提示并保留重试入口', (tester) async {
-    await _pumpDialog(
-      tester,
-      retryElevated:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            required BuildEnvironment buildEnvironment,
-            void Function(String line)? onOutput,
-          }) async {
-            throw const PackBuildException('已取消以管理员身份重试（UAC 授权被拒绝）');
-          },
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('构建失败：已取消以管理员身份重试（UAC 授权被拒绝）'), findsOneWidget);
-    expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
-    expect(_closeButton(tester).onPressed, isNotNull);
-  });
-
-  testWidgets('提权重试失败保留输出并回到失败态', (tester) async {
-    int scanCount = 0;
-
-    await _pumpDialog(
-      tester,
-      retryElevated:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            required BuildEnvironment buildEnvironment,
-            void Function(String line)? onOutput,
-          }) async {
-            onOutput?.call('管理员构建输出行');
-            throw const PackBuildException(
-              '以管理员身份构建失败（退出码 3）',
-              outputTail: '管理员输出尾部',
-            );
-          },
-      build: _permissionFailureBuild(),
-      scanFiles: (String sourcePath) async {
-        scanCount++;
-        return const <FileModel>[];
-      },
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    await tester.tap(find.byKey(const Key('buildElevatedRetryButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('构建失败：以管理员身份构建失败（退出码 3）'), findsOneWidget);
-    expect(find.textContaining('管理员构建输出行', findRichText: true), findsOneWidget);
-    expect(find.textContaining('管理员输出尾部', findRichText: true), findsOneWidget);
-    expect(scanCount, 0);
-    expect(find.byKey(const Key('buildElevatedRetryButton')), findsOneWidget);
-  });
-}
-
-/// 失败于临时目录权限特征的构建函数（ICX `error #10026`）。
-PackBuildRunner _permissionFailureBuild() {
-  return (
-    PackModel pack,
-    void Function(PackBuildStage) onStage, {
-    Map<String, String>? environment,
-    void Function(String line)? onOutput,
-  }) async {
-    throw const PackBuildException(
-      '构建失败（退出码 1）',
-      outputTail: 'icx: error #10026: error generating temporary file',
-    );
-  };
-}
-
-/// 不做任何事的提权构建替身（仅用于让按钮可渲染）。
-ElevatedPackBuildRunner _noopElevatedRunner() {
-  return (
-    PackModel pack,
-    void Function(PackBuildStage) onStage, {
-    required BuildEnvironment buildEnvironment,
-    void Function(String line)? onOutput,
-  }) async {};
 }
 
 /// 输出面板中某行的关键字颜色（无关键字行取常规文本色）。
@@ -1458,7 +1091,6 @@ Future<void> _pumpDialog(
   PackModel? pack,
   bool sourceNone = false,
   PackHeaderIncludeFixer? fixIncludes,
-  ElevatedPackBuildRunner? retryElevated,
   ValueChanged<BuildDialogResult?>? onResult,
   DateTime Function()? now,
 }) async {
@@ -1479,16 +1111,10 @@ Future<void> _pumpDialog(
                       pack: pack ?? _pack(),
                       sourceNone: sourceNone,
                       build: build,
-                      prepare:
-                          prepare ??
-                          (
-                            PackModel pack, {
-                            ToolDownloadProgressCallback? onDownloadProgress,
-                          }) async => _environment(),
+                      prepare: prepare ?? (PackModel pack) async => _environment(),
                       scanFiles: scanFiles,
                       onApply: onApply,
                       fixIncludes: fixIncludes ?? _emptyFixIncludes,
-                      retryElevated: retryElevated,
                       now: now ?? DateTime.now,
                     ),
                   );

@@ -1,4 +1,3 @@
-import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/controls/build_timeline.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -148,23 +147,6 @@ void main() {
   });
 
   group('buildActiveStepDetails', () {
-    test('准备环境阶段展示工具下载进度并带 Key', () {
-      final List<BuildTimelineDetail> details = buildActiveStepDetails(
-        step: BuildTimelineStepId.prepare,
-        preparing: true,
-        sourceNone: false,
-        downloadProgress: const ToolDownloadProgress(
-          name: 'cmake',
-          receivedBytes: 1024,
-          totalBytes: 4096,
-          bytesPerSecond: 0,
-        ),
-      );
-
-      expect(details.single.text, '正在下载 cmake：25%（1.0 KB / 4.0 KB）');
-      expect(details.single.key, const Key('buildDownloadProgress'));
-    });
-
     test('预构建配方下载步骤展示已下载百分比', () {
       final List<BuildTimelineDetail> details = buildActiveStepDetails(
         step: BuildTimelineStepId.download,
@@ -175,24 +157,6 @@ void main() {
 
       expect(details.single.text, '已下载 42%');
       expect(details.single.key, isNull);
-    });
-
-    test('管理员重试期间下载/构建步骤切管理员文案', () {
-      final List<BuildTimelineDetail> download = buildActiveStepDetails(
-        step: BuildTimelineStepId.download,
-        preparing: false,
-        sourceNone: false,
-        elevatedRetry: true,
-      );
-      final List<BuildTimelineDetail> build = buildActiveStepDetails(
-        step: BuildTimelineStepId.build,
-        preparing: false,
-        sourceNone: false,
-        elevatedRetry: true,
-      );
-
-      expect(download.single.text, '正在以管理员身份准备源码…');
-      expect(build.single.text, '正在以管理员身份执行构建…');
     });
   });
 
