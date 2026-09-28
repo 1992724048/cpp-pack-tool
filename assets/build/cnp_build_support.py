@@ -20,12 +20,14 @@
     <out>/<原文件名>                root 根部的许可证文件
 
 CMake 相关函数读取 cpp_nuget_pack 注入的子进程环境变量：CNP_CMAKE、CNP_NINJA、
-CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND、CNP_RUNTIME_LIBRARY、
-CNP_RC_COMPILER；CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 按编译器
-注入 AVX2（全部配置）与 Release 最高优化 / IPO（不支持或经 CNP_NO_IPO /
-enable_ipo=False 时自动退化），按 CNP_RUNTIME_LIBRARY 注入 MSVC 运行库家族
-（`md` 默认 / `mt`，Debug 自动 d 变体）；`CNP_RC_COMPILER` 存在时注入
-`CMAKE_RC_COMPILER`（资源编译器）；不注入任何语言标准参数；`cmake_build`
+CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND、CNP_RC_COMPILER，以及编译器
+Profile 九变量（CNP_BUILD_PROFILE_VERSION 加各配置的 RUNTIME/INSTRUCTION_SET/
+OPTIMIZATION/IPO）；CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 首行经
+`require_profile(config)` 取配置 Profile 并以它为事实源注入运行库家族
+（`follow` → `md` / `mt`，Debug 自动 d 变体）、AVX2（仅显式 `avx2`）、Release
+优化（`standard` / `maximum`，Debug 不注入）与 IPO（`follow` 按 `enable_ipo`
+默认，显式 `1` / `0` 优先）；`CNP_RC_COMPILER` 存在时注入 `CMAKE_RC_COMPILER`
+（资源编译器）；不注入任何语言标准参数；`cmake_build`
 缺省以 CPU 逻辑核数并行构建。
 """
 
@@ -35,13 +37,15 @@ import re
 import shutil
 import subprocess
 
-VERSION = "9"
+VERSION = "10"
 
 __all__ = (
     "VERSION",
     "cmake_build",
     "cmake_configure",
     "classify_tree",
+    "profile_for",
+    "require_profile",
     "stage_binaries",
     "stage_headers",
     "stage_license",
@@ -62,8 +66,23 @@ LICENSE_NAME_PATTERN = re.compile(
 )
 LICENSE_CORE_PRIORITY = ("license", "licence", "copying", "unlicense", "notice")
 
-_CMAKE_RUNTIME_LIBRARY_ENV = "CNP_RUNTIME_LIBRARY"
-_DEFAULT_RUNTIME_LIBRARY = "md"
+# 编译器 Profile 九变量：版本键全局，四个字段键按配置前缀。键为小写配置名，
+# require_profile 以 config.lower() 归一后查表。
+_PROFILE_CONFIG_KEYS = ("runtime", "instructionSet", "optimization", "ipo")
+_PROFILE_ENV = {
+    "release": {
+        "runtime": "CNP_BUILD_PROFILE_RELEASE_RUNTIME",
+        "instructionSet": "CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET",
+        "optimization": "CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION",
+        "ipo": "CNP_BUILD_PROFILE_RELEASE_IPO",
+    },
+    "debug": {
+        "runtime": "CNP_BUILD_PROFILE_DEBUG_RUNTIME",
+        "instructionSet": "CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET",
+        "optimization": "CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION",
+        "ipo": "CNP_BUILD_PROFILE_DEBUG_IPO",
+    },
+}
 # 运行库家族 → CMAKE_MSVC_RUNTIME_LIBRARY 取值（Debug 自动 d 变体：
 # md → /MD 与 /MDd，mt → /MT 与 /MTd），三种编译器种类一致。
 _RUNTIME_LIBRARY_VARIANTS = {
@@ -76,7 +95,7 @@ _INTERMEDIATE_DIR_SUFFIXES = (".dir", "-c")
 # 编译器种类标识与 lib/build/toolchain.dart 的 CNP_COMPILER_KIND 对应。
 _COMPILER_KINDS = ("icx", "clang-cl", "msvc")
 
-# AVX2 向量化（全部配置）。
+# AVX2 向量化（两配置，仅 Profile instructionSet=avx2 且种类已知时注入）。
 _AVX2_FLAGS = {
     "icx": ("/QxCORE-AVX2", "/QaxCORE-AVX2"),
     "clang-cl": ("/arch:AVX2",),
@@ -93,54 +112,56 @@ _RELEASE_OPTIMIZATION_FLAGS = {
     "msvc": ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy"),
 }
 
+# Release standard 优化：三种编译器统一 /O2 系（/Ob2 /Oi /Ot 内联与内建、
+# /GF 字符串池、/Gy 函数级链接）。
+_STANDARD_OPTIMIZATION_FLAGS = ("/O2", "/Ob2", "/Oi", "/Ot", "/GF", "/Gy")
+
 # NDEBUG 定义前缀按编译器习惯书写（cl / icx-cl 兼容 `-D`，此处保留 MSVC 风格）。
 _DEFINE_FLAG_PREFIX = {"icx": "/D", "clang-cl": "-D", "msvc": "/D"}
 
 # CMake IPO（Release）：msvc → /GL + /LTCG；icx → -Qipo；clang-cl → -flto=thin。
 _IPO_CMAKE_VARIABLE = "CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE"
 _IPO_LINKER_PROBE = "lld-link"
-_DISABLE_IPO_ENV = "CNP_NO_IPO"
 
 
 def cmake_configure(
     source, build_dir, config="Release", extra_args=(), enable_ipo=None
 ):
-    """以 Ninja 生成器配置 CMake 工程（单配置，运行库按 CNP_RUNTIME_LIBRARY）。
+    """以 Ninja 生成器配置 CMake 工程（单配置，旗标按编译器 Profile）。
 
-    固定拼接 `-G Ninja`、`-DCMAKE_BUILD_TYPE`；`CNP_NINJA`/`CNP_C_COMPILER`/
-    `CNP_CXX_COMPILER` 存在时追加对应 `-D` 参数；`CNP_RC_COMPILER`（资源编译器）
-    存在时追加 `-DCMAKE_RC_COMPILER`；`extra_args` 原样追加（其中同名
-    `-DCMAKE_*` 优先于本函数注入的参数）。
+    固定拼接 `-G Ninja`、`-DCMAKE_BUILD_TYPE`；首行 `require_profile(config)`
+    解析配置 Profile（缺版本/字段、取值非法或配置不支持时抛中文错误）；
+    `CNP_NINJA`/`CNP_C_COMPILER`/`CNP_CXX_COMPILER` 存在时追加对应 `-D` 参数；
+    `CNP_RC_COMPILER`（资源编译器）存在时追加 `-DCMAKE_RC_COMPILER`；
+    `extra_args` 原样追加（其中同名 `-DCMAKE_*` 优先于本函数注入的参数）。
 
-    运行库家族读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感）：`md`（缺省/非法回退）
-    → `/MD` 与 Debug `/MDd`、`mt` → `/MT` 与 Debug `/MTd`，无条件写入
-    `CMAKE_MSVC_RUNTIME_LIBRARY`。
+    旗标矩阵（Profile 为事实源）：
 
-    优化参数按编译器种类（`CNP_COMPILER_KIND`，回退从编译器路径推断）注入，
-    **不注入任何语言标准（std/c++ 标准）参数**：
-
-    - AVX2 全部配置：icx → `/QxCORE-AVX2 /QaxCORE-AVX2`；clang-cl / msvc →
-      `/arch:AVX2`（写入两配置共用的 `CMAKE_C_FLAGS` / `CMAKE_CXX_FLAGS`）；
-    - Release 最高优化：icx `/O3`、clang-cl `/O2`、msvc `/O2`，并追加
-      `/Ob2 /Oi /Ot /GF /Gy`；均保留 `NDEBUG`（写入 `CMAKE_C_FLAGS_RELEASE` /
-      `CMAKE_CXX_FLAGS_RELEASE`）；
-    - Release 启用 CMake IPO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE=ON`）：
-      msvc `/GL`+`/LTCG`、icx `-Qipo`；clang-cl 需 PATH 中可解析 `lld-link`，
-      缺失时自动退化；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可显式关闭；
-    - Debug 不注入任何优化参数（保留调试信息），AVX2 仍保留。
-
-    编译器种类未知时不注入优化参数；子进程失败抛 RuntimeError（含输出尾部）。
+    - 运行库：`follow` → `md`（`/MD`，Debug 即 `/MDd`）、`mt` → `/MT`
+      （Debug 即 `/MTd`），无条件写入 `CMAKE_MSVC_RUNTIME_LIBRARY`；
+    - AVX2（两配置）：仅 `instructionSet=avx2` 且编译器种类已知时注入
+      （icx `/QxCORE-AVX2 /QaxCORE-AVX2`、clang-cl/msvc `/arch:AVX2`），
+      `follow`/`baseline` 不注入；
+    - Release 优化：`maximum`/`follow` 按编译器上限（icx `/O3` 系、clang-cl/
+      msvc `/O2` 系），`standard` 三编译器统一 `/O2` 系，均追加 NDEBUG；
+      Debug 任何取值都不注入优化（不得静默变优化构建）；
+    - Release IPO：`follow` 按 `enable_ipo` 默认（种类未知 / clang-cl 缺
+      lld-link 时退化并打印原因），显式 `1`（缺 lld-link、种类未知抛错）与
+      `0` 不被 `enable_ipo` 改写；Debug 恒关闭，`1` 抛「Debug 不支持 IPO」；
+    - **不注入任何语言标准（std/c++ 标准）参数**；编译器种类未知时不注入
+      优化参数；子进程失败抛 RuntimeError（含输出尾部）。
     """
+    profile = require_profile(config)
     cmake = _required_environment_path("CNP_CMAKE")
     extra = [str(argument) for argument in extra_args]
     provided = _provided_definition_variables(extra)
     kind = _compiler_kind()
-    runtime, runtime_library = _runtime_library()
-    avx2_flags = _AVX2_FLAGS.get(kind, ()) if kind else ()
-    is_release = str(config).lower() == "release"
-    optimization_flags = ()
-    if is_release and kind:
-        optimization_flags = _RELEASE_OPTIMIZATION_FLAGS.get(kind, ())
+    runtime, runtime_library = _runtime_arguments(profile)
+    is_release = str(config).strip().lower() == "release"
+    avx2_arguments, avx2_flags = _instruction_arguments(profile, kind, provided)
+    optimization_arguments, optimization_flags = _optimization_arguments(
+        profile, kind, is_release, provided
+    )
 
     command = [
         cmake,
@@ -165,12 +186,11 @@ def cmake_configure(
     rc_compiler = _optional_environment_path("CNP_RC_COMPILER")
     if rc_compiler:
         command.append("-DCMAKE_RC_COMPILER=" + rc_compiler)
-    command.extend(
-        _optimization_arguments(avx2_flags, optimization_flags, kind, provided)
-    )
+    command.extend(avx2_arguments)
+    command.extend(optimization_arguments)
 
-    ipo_state, ipo_reason = _resolve_ipo_state(
-        kind, config, enable_ipo, provided
+    ipo_state, ipo_reason = _ipo_state(
+        profile, kind, is_release, enable_ipo, provided
     )
     if ipo_state == "on":
         command.append("-D%s=ON" % _IPO_CMAKE_VARIABLE)
@@ -490,6 +510,50 @@ def summary(out):
     return result
 
 
+def require_profile(config, *, require_fields=True):
+    """解析并校验编译器 Profile 的配置区：返回 `{"version": 1, 字段...}`。
+
+    校验顺序：版本 → 配置名 → 字段（缺失或取值非法抛中文错误）；
+    `require_fields=False` 时仅校验版本与配置名并返回 `{"version": 1}`。
+    """
+    version = os.environ.get("CNP_BUILD_PROFILE_VERSION", "").strip()
+    if version != "1":
+        raise RuntimeError(
+            "编译器 Profile 版本不支持：CNP_BUILD_PROFILE_VERSION=%s（仅支持 1）"
+            % version
+        )
+    normalized = str(config).strip().lower()
+    if normalized not in _PROFILE_ENV:
+        raise RuntimeError("不支持的构建配置：%s" % config)
+    if not require_fields:
+        return {"version": 1}
+    values = {}
+    allowed = {
+        "runtime": ("follow", "md", "mt"),
+        "instructionSet": ("follow", "baseline", "avx2"),
+        "optimization": ("follow", "standard", "maximum"),
+        "ipo": ("follow", "1", "0"),
+    }
+    for key in _PROFILE_CONFIG_KEYS:
+        raw = os.environ.get(_PROFILE_ENV[normalized][key], "").strip().lower()
+        if raw == "":
+            raise RuntimeError(
+                "编译器 Profile 缺少 %s" % _PROFILE_ENV[normalized][key]
+            )
+        if raw not in allowed[key]:
+            raise RuntimeError(
+                "编译器 Profile 字段 %s=%s 非法（允许 %s）"
+                % (key, raw, "/".join(allowed[key]))
+            )
+        values[key] = raw
+    return {"version": 1, **values}
+
+
+def profile_for(config):
+    """`require_profile` 的便捷包装（按字段必填解析）。"""
+    return require_profile(config)
+
+
 def _required_environment_path(name):
     value = os.environ.get(name, "").strip()
     if not value:
@@ -525,17 +589,31 @@ def _compiler_kind():
     return None
 
 
-def _runtime_library():
+def _runtime_arguments(profile):
     """运行库家族与 `CMAKE_MSVC_RUNTIME_LIBRARY` 取值：`(家族, 取值)`。
 
-    读取 `CNP_RUNTIME_LIBRARY`（大小写不敏感、允许两侧空白）；缺失或非法回退
-    `md`（动态运行库，Debug 自动 d 变体）。两种家族的取值经
-    `CMAKE_MSVC_RUNTIME_LIBRARY` 无条件写入。
+    `follow` 回落缺省 `md`（动态运行库，Debug 自动 d 变体）；两种家族的取值
+    经 `CMAKE_MSVC_RUNTIME_LIBRARY` 无条件写入。
     """
-    family = os.environ.get(_CMAKE_RUNTIME_LIBRARY_ENV, "").strip().lower()
-    if family not in _RUNTIME_LIBRARY_VARIANTS:
-        family = _DEFAULT_RUNTIME_LIBRARY
+    family = profile["runtime"]
+    if family == "follow":
+        family = "md"
     return family, _RUNTIME_LIBRARY_VARIANTS[family]
+
+
+def _instruction_arguments(profile, kind, provided):
+    """AVX2 指令集 `-D` 参数与注入旗标：仅显式 `avx2` 且种类已知。"""
+    flags = ()
+    if profile["instructionSet"] == "avx2" and kind:
+        flags = _AVX2_FLAGS.get(kind, ())
+    arguments = []
+    joined = " ".join(flags)
+    if joined:
+        if "CMAKE_C_FLAGS" not in provided:
+            arguments.append("-DCMAKE_C_FLAGS=" + joined)
+        if "CMAKE_CXX_FLAGS" not in provided:
+            arguments.append("-DCMAKE_CXX_FLAGS=" + joined)
+    return arguments, flags
 
 
 def _provided_definition_variables(extra_args):
@@ -550,57 +628,68 @@ def _provided_definition_variables(extra_args):
     return provided
 
 
-def _optimization_arguments(avx2_flags, optimization_flags, kind, provided):
-    """组装优化 `-D` 参数；配方已提供的同名变量不重复注入。"""
+def _optimization_arguments(profile, kind, is_release, provided):
+    """Release 优化 `-D` 参数与注入旗标；Debug 或种类未知返回空。
+
+    `standard` 三编译器统一 `/O2` 系，`maximum`/`follow` 按编译器上限；
+    配方已提供的同名变量不重复注入。
+    """
+    flags = ()
+    if is_release and kind:
+        if profile["optimization"] == "standard":
+            flags = _STANDARD_OPTIMIZATION_FLAGS
+        else:
+            flags = _RELEASE_OPTIMIZATION_FLAGS.get(kind, ())
     arguments = []
-    joined_avx2 = " ".join(avx2_flags)
-    if joined_avx2:
-        if "CMAKE_C_FLAGS" not in provided:
-            arguments.append("-DCMAKE_C_FLAGS=" + joined_avx2)
-        if "CMAKE_CXX_FLAGS" not in provided:
-            arguments.append("-DCMAKE_CXX_FLAGS=" + joined_avx2)
-    if optimization_flags:
+    if flags:
         ndebug = _DEFINE_FLAG_PREFIX.get(kind, "-D") + "NDEBUG"
-        joined_release = " ".join(tuple(optimization_flags) + (ndebug,))
+        joined_release = " ".join(tuple(flags) + (ndebug,))
         if "CMAKE_C_FLAGS_RELEASE" not in provided:
             arguments.append("-DCMAKE_C_FLAGS_RELEASE=" + joined_release)
         if "CMAKE_CXX_FLAGS_RELEASE" not in provided:
             arguments.append("-DCMAKE_CXX_FLAGS_RELEASE=" + joined_release)
-    return arguments
+    return arguments, flags
 
 
-def _resolve_ipo_state(kind, config, enable_ipo, provided):
-    """判定 Release IPO 状态：("on"/"off"/"preset", 退化原因或 None)。
+def _ipo_state(profile, kind, is_release, enable_ipo, provided):
+    """判定 IPO 状态：("on"/"off"/"preset", 退化原因或 None)。
 
-    - 非 Release 配置不启用（不算退化）；
+    - 非 Release 配置恒 "off"（Profile 显式 `1` 抛「Debug 不支持 IPO」）；
     - 配方经 `extra_args` 自带 IPO 变量时保持其取值（"preset"）；
-    - `enable_ipo=False` / 环境变量 `CNP_NO_IPO` 显式关闭；`enable_ipo=True` 强制；
-    - auto：编译器种类未知 → 退化；clang-cl 无 `lld-link` → 退化（需 lld
-      链接器）；其余种类直接开启。
+    - Profile 显式 `0` → "off"、显式 `1` → "on"（clang-cl 缺 lld-link、编译器
+      种类未知时抛中文错误），均不被 `enable_ipo` 改写；
+    - `follow`：`enable_ipo=False` 关闭、`True` 已知种类强制开启（未知种类按
+      unknown-compiler 退化）；auto 路径种类未知 / clang-cl 无 lld-link 时
+      退化并给出原因。
     """
-    if str(config).lower() != "release":
+    ipo = profile["ipo"]
+    if not is_release:
+        if ipo == "1":
+            raise RuntimeError("Debug 不支持 IPO（Profile ipo=1）")
         return "off", None
     if _IPO_CMAKE_VARIABLE in provided:
         return "preset", None
+    if ipo == "0":
+        return "off", None
+    if ipo == "1":
+        if kind is None:
+            raise RuntimeError("编译器种类未知，无法启用 IPO（Profile ipo=1）")
+        if kind == "clang-cl" and shutil.which(_IPO_LINKER_PROBE) is None:
+            raise RuntimeError(
+                "clang-cl 缺少 lld-link，无法启用 IPO（Profile ipo=1）"
+            )
+        return "on", None
     if enable_ipo is False:
         return "off", "disabled-by-call"
-    if _environment_flag(_DISABLE_IPO_ENV):
-        return "off", "disabled-by-env"
     if enable_ipo is True:
-        if kind is not None:
-            return "on", None
-        return "off", "unknown-compiler"
+        if kind is None:
+            return "off", "unknown-compiler"
+        return "on", None
     if kind is None:
         return "off", "unknown-compiler"
     if kind == "clang-cl" and shutil.which(_IPO_LINKER_PROBE) is None:
         return "off", "lld-link-missing"
     return "on", None
-
-
-def _environment_flag(name):
-    """环境变量视为开启：非空且不是 0/false/no/off。"""
-    value = os.environ.get(name, "").strip().lower()
-    return value not in ("", "0", "false", "no", "off")
 
 
 def _run_process(command, label):

@@ -57,7 +57,7 @@ description: Use when creating, generating, updating, or maintaining a build.py 
 | `CNP_RC_COMPILER` | 资源编译器路径：工具**不自动探测**，仅当子进程环境已显式声明该变量时原样透传；辅助模块据此注入 `CMAKE_RC_COMPILER`。缺失时不下发，由 CMake 经 PATH 自行解析。 |
 | `CNP_TOOLS_DIR` | `tools/` 绝对路径（`# tool` 下载的工具都在这里）。 |
 | `CNP_OPTION_<NAME>` | `# option` / `# checkbox` / `# multiselect` 声明的选项当前值（名称大写；多选为声明序 `;` 连接、可空串）。 |
-| `CNP_RUNTIME_LIBRARY` | 运行库家族：`md`（缺省/非法回退）或 `mt`；由工具按「用户选择 > `# runtime:` > `md`」解析后下发，辅助模块统一消费。 |
+| `CNP_RUNTIME_LIBRARY` | 运行库家族旧口径：`md`（缺省）或 `mt`；工具按「用户选择 > `# runtime:` > `md`」解析后经编译器 Profile（九变量）下发子进程，本变量自身已被清理、不进入构建环境，此处保留说明供旧配方迁移。 |
 | `PYTHONPATH` | 已前置 `tools/`，脚本可直接 `import cnp_build_support`。 |
 | `PYTHONIOENCODING` | 恒为 `utf-8`：脚本 stdout/stderr 统一按 UTF-8 编码（中文 Windows 下管道默认 GBK），中文输出可直接 `print`，无需自行处理编码。 |
 
@@ -79,7 +79,7 @@ from cnp_build_support import (
 
 | 函数 | 用途 |
 | --- | --- |
-| `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：单配置（`CMAKE_BUILD_TYPE`）+ 运行库按 `CNP_RUNTIME_LIBRARY` 注入（`md` 缺省/非法回退 → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`，统一写入 `CMAKE_MSVC_RUNTIME_LIBRARY`），自动附加 `CMAKE_MAKE_PROGRAM`、`CMAKE_C(XX)_COMPILER`，以及存在时的显式 `CNP_RC_COMPILER`（→ `CMAKE_RC_COMPILER`）；按编译器种类注入 AVX2（全配置）与 Release 最高优化 / IPO，**不注入语言标准参数**；`enable_ipo=False` 或环境变量 `CNP_NO_IPO=1` 可对单个库退化 LTO。 |
+| `cmake_configure(source, build_dir, config="Release", extra_args=(), enable_ipo=None)` | 以 Ninja 生成器配置 CMake 工程：首行解析并校验工具下发的编译器 Profile（缺版本/缺字段/非法值抛中文错误），据此注入运行库（`follow` → `md` 缺省 → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`，统一写入 `CMAKE_MSVC_RUNTIME_LIBRARY`）、AVX2（仅显式 `avx2`）、Release 优化与 IPO（`standard` 三编译器统一 `/O2` 系、`maximum`/`follow` 按编译器上限，Debug 不注入优化；`follow` 受 `enable_ipo` 控制，显式 `1`/`0` 优先），自动附加 `CMAKE_MAKE_PROGRAM`、`CMAKE_C(XX)_COMPILER`，以及存在时的显式 `CNP_RC_COMPILER`（→ `CMAKE_RC_COMPILER`），**不注入语言标准参数**；`enable_ipo=False` 可对单个库退化 LTO。 |
 | `cmake_build(build_dir, config="Release", jobs=None)` | `cmake --build` 构建（Ninja 单配置）；`jobs` 缺省为 CPU 逻辑核数（`--parallel`），显式传 0/负值禁用并行。 |
 | `stage_headers(paths, out)` | 头文件 → `<out>/include/`。传目录时镜像其内容（保留子结构）；传文件时复制单个文件。 |
 | `stage_binaries(build_dir, out, config="Release", reset=False)` | 递归收集 `.lib/.a/.dll/.pdb`：Release → `release/lib/` + `release/bin/`；Debug → `debug/lib/` + `debug/bin/`（库类产物不落输出根；`.a` 为通用静态归档，落 `lib/`）。跳过 CMake 中间目录；同名不同内容按父目录后缀去重（去重残留形如 `_build-*`）。`reset=True` 先递归删除本配置段再 staging，杜绝陈旧文件与去重改名跨构建累积；默认 `False` 保持「只增量补入」旧语义。 |
@@ -97,7 +97,7 @@ from cnp_build_support import (
 - **架构**：只构建 x64（工具侧环境已按 x64 准备）。
 - **双配置**：一次构建同时产出 Release 与 Debug（各自独立 build 目录）；运行时库与构建类型由辅助模块固定，不要重复指定。**staging 用 `stage_binaries(..., reset=True)` 重置本配置段**——同名不同内容会按父目录后缀去重改名（`_build-*`），不重置会跨构建永久累积。
 - **生成器**：统一 CMake + Ninja（单配置），不要使用 Visual Studio 生成器。
-- **运行库（CRT）**：由 `cmake_configure` 按 `CNP_RUNTIME_LIBRARY` 统一注入——`md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`（写入 `CMAKE_MSVC_RUNTIME_LIBRARY`）。配方不要自行注入 `CMAKE_MSVC_RUNTIME_LIBRARY` 或运行库旗标；需要默认静态运行库时在头部声明 `# runtime: mt`（用户仍可在 UI 覆盖）。**支持时优先构建独立 dll + lib（共享依赖省体积）**：动态运行库 + 独立 dll 让多个消费模块共用同一份 CRT 与库代码，产物体积显著更小；静态运行库（`mt`）仅在需要免依赖分发时选用。
+- **运行库（CRT）**：由 `cmake_configure` 按工具下发的 Profile 统一注入（`CNP_RUNTIME_LIBRARY` 旧口径在工具侧解析后投影，`follow` → `md`）——`md` → Release `/MD`、Debug `/MDd`；`mt` → `/MT`、`/MTd`（写入 `CMAKE_MSVC_RUNTIME_LIBRARY`）。配方不要自行注入 `CMAKE_MSVC_RUNTIME_LIBRARY` 或运行库旗标；需要默认静态运行库时在头部声明 `# runtime: mt`（用户仍可在 UI 覆盖）。**支持时优先构建独立 dll + lib（共享依赖省体积）**：动态运行库 + 独立 dll 让多个消费模块共用同一份 CRT 与库代码，产物体积显著更小；静态运行库（`mt`）仅在需要免依赖分发时选用。
 - **`.a` 归档与资源编译器**：`.a` 是通用静态归档，`stage_binaries` 按扩展名归入 `lib/`——静态库 `lib*.a` 与导入库 `lib*.dll.a` 都落 `lib/`，只有 `*.dll` 落 `bin/`；不要因为文件名带 `dll` 就改放 `bin/`。资源编译器不自动探测：需要 `.rc` 时在构建环境里显式声明 `CNP_RC_COMPILER`，或经 `extra_args` 传 `-DCMAKE_RC_COMPILER`。
 - **产物布局（release/debug 分层）**：`include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`。**库类产物禁止落 `BUILD_OUT` 根**（`lib/`、`bin/`）——打包侧按 `release`/`debug` 路径段识别构建类型，根目录产物会被判为“不限配置”（ALL），消费者无法按配置取库。
 - **优化参数（辅助模块自动注入，配方不要重复指定）**：
@@ -108,9 +108,9 @@ from cnp_build_support import (
   | clang-cl | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`-flto=thin`；需 `lld-link`，缺失自动退化） |
   | MSVC | `/arch:AVX2` | `/O2 /Ob2 /Oi /Ot /GF /Gy` | CMake IPO（`/GL` + `/LTCG`） |
 
-  - Debug 不注入任何优化参数（保留调试信息，优先保证调试用途），AVX2 仍保留；
+  - Debug 不注入任何优化参数（保留调试信息，优先保证调试用途），AVX2 仍保留（仅当 Profile 指令集为 `avx2`，`follow`/`baseline` 不注入）；
   - **语言标准不动原则**：辅助模块与配方都不得注入 `/std:`、`-std=` 等语言标准参数，保持库工程原有设定；
-  - **LTO 退化**：某库与 IPO 不兼容时，设 `CNP_NO_IPO=1`，或调用 `cmake_configure(..., enable_ipo=False)`；也可经 `extra_args` 自带同名 `-DCMAKE_*` 变量覆盖（此时模块对该变量不再重复注入）；
+  - **LTO 退化**：某库与 IPO 不兼容时，调用 `cmake_configure(..., enable_ipo=False)`；也可经 `extra_args` 自带同名 `-DCMAKE_*` 变量覆盖（此时模块对该变量不再重复注入）；
   - **多线程**：`cmake_build` 缺省 `--parallel` 到 CPU 逻辑核数，无需手动传 `jobs`。
 - **许可证**：经 `stage_license` 落到 `BUILD_OUT` 根，打包器会自动识别并生成部署目标。
 - **工作目录**：中间构建目录放在 `SRC_PATH` 下（如 `SRC_PATH/build-release`）；`BUILD_OUT` 下的一切都会入包，不要残留临时文件。
@@ -219,7 +219,7 @@ BUILD_OUT = os.environ["BUILD_OUT"]
 - [ ] 首行是 `# <git仓库地址>`；`# tool` / `# option` / `# source` 指令紧随其后且连续（无空行打断）。
 - [ ] `python build.py` 以退出码表达结果：0 = 成功，非 0 = 失败。
 - [ ] Release 与 Debug 双配置产物均已分类到 `BUILD_OUT` 的 `include/`、`release/lib/`、`release/bin/`、`debug/lib/`、`debug/bin/`；输出根无 `lib/`、`bin/` 残留。
-- [ ] 未在 `build.py` 中重复注入 AVX2 / 最高优化 / IPO / 运行库 / 语言标准参数（由辅助模块负责；确需覆盖时用 `extra_args` 同名变量或 `CNP_NO_IPO`）。
+- [ ] 未在 `build.py` 中重复注入 AVX2 / 最高优化 / IPO / 运行库 / 语言标准参数（由辅助模块负责；确需覆盖时用 `extra_args` 同名变量）。
 - [ ] 头文件走 `stage_headers`；库与动态库走 `stage_binaries`（`reset=True` 重置本配置段）；许可证（若有）走 `stage_license` 落 `BUILD_OUT` 根。
 - [ ] 路径全部由 `SRC_PATH` / `BUILD_OUT` 派生（或 `os.path.join` 拼接），无硬编码本机路径。
 - [ ] 未修改系统环境，未依赖本机预装软件；缺失工具在头部用 `# tool` 声明。

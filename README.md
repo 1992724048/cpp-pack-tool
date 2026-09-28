@@ -65,7 +65,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 - 第一行必须是 `# <git仓库地址>`；其后连续的 `#` 行可声明 `# tool`、`# option`、`# checkbox`、`# multiselect`、`# runtime`、`# source: none` 和 `# depends` 指令。
 - 默认流程是准备构建环境、拉取或复用源码缓存、对齐版本、执行 `python -u build.py`、检查头文件引用并自动重新映射。
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链与选项变量以及 `PYTHONIOENCODING=utf-8`。
-- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。运行库家族经 `CNP_RUNTIME_LIBRARY` 下发 `md` / `mt`。
+- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。运行库家族 `md` / `mt` 由工具按「用户选择 > `# runtime:` > `md`」解析后经编译器 Profile 下发子进程，`CNP_RUNTIME_LIBRARY` 旧口径不再进入构建环境。
 - `assets/build/cnp_build_support.py` 会在构建前释放到 `tools/`，供配方统一处理 CMake/Ninja、编译参数、产物分层、许可证和预构建归档分类。
 - 设置页的「生成 SKILL.md…」会写出内置模板 `assets/build/SKILL.md`，其用途是指导 AI 为远程仓库编写兼容本工具的 `build.py`，不是直接生成一个包。
 

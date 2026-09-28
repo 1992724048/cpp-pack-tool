@@ -124,14 +124,97 @@ List<String> _relativeFiles(String root) {
   return files;
 }
 
-/// cmake_configure 命令装配、优化参数注入与缺 CNP_CMAKE 报错：monkeypatch
-/// subprocess.run 捕获命令，不真实执行 cmake。
+/// cmake_configure 的编译器 Profile 校验（九变量）、命令装配、优化参数注入与
+/// 缺 CNP_CMAKE 报错：monkeypatch subprocess.run 捕获命令，不真实执行 cmake。
 const String _cmakeDriver = r'''
 import builtins
 import io
 import os
 
 import cnp_build_support
+
+PROFILE_KEYS = (
+    'CNP_BUILD_PROFILE_VERSION',
+    'CNP_BUILD_PROFILE_RELEASE_RUNTIME',
+    'CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET',
+    'CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION',
+    'CNP_BUILD_PROFILE_RELEASE_IPO',
+    'CNP_BUILD_PROFILE_DEBUG_RUNTIME',
+    'CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET',
+    'CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION',
+    'CNP_BUILD_PROFILE_DEBUG_IPO',
+)
+
+# Step 1：注入九变量并打印解析结果（协议契约：version=10 / release= / debug=）。
+for profile_key in PROFILE_KEYS:
+    os.environ.pop(profile_key, None)
+os.environ['CNP_BUILD_PROFILE_VERSION'] = '1'
+os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'mt'
+os.environ['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'] = 'avx2'
+os.environ['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'] = 'maximum'
+os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = '1'
+os.environ['CNP_BUILD_PROFILE_DEBUG_RUNTIME'] = 'follow'
+os.environ['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'] = 'avx2'
+os.environ['CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION'] = 'maximum'
+os.environ['CNP_BUILD_PROFILE_DEBUG_IPO'] = 'follow'
+print('version=%s' % cnp_build_support.VERSION)
+print('release=%s' % cnp_build_support.profile_for('Release'))
+print('debug=%s' % cnp_build_support.profile_for('Debug'))
+
+# Step 2：校验错误串与缺字段降级（探针之间经快照恢复互不影响）。
+_saved_profile = dict(
+    (key, os.environ[key]) for key in PROFILE_KEYS if key in os.environ)
+
+
+def restore_profile():
+    for profile_key in PROFILE_KEYS:
+        os.environ.pop(profile_key, None)
+    os.environ.update(_saved_profile)
+
+
+def profile_error(label, mutate):
+    mutate()
+    try:
+        cnp_build_support.cmake_configure('src', 'build')
+        print('%s=no-error' % label)
+    except RuntimeError as error:
+        print('%s=RuntimeError:%s' % (label, error))
+    except Exception as error:
+        print('%s=unexpected:%s' % (label, type(error).__name__))
+    finally:
+        restore_profile()
+
+
+profile_error(
+    'profile_missing_version',
+    lambda: os.environ.pop('CNP_BUILD_PROFILE_VERSION', None))
+profile_error(
+    'profile_unsupported_version',
+    lambda: os.environ.__setitem__('CNP_BUILD_PROFILE_VERSION', '2'))
+profile_error(
+    'profile_missing_field',
+    lambda: os.environ.pop('CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION', None))
+profile_error(
+    'profile_invalid_field',
+    lambda: os.environ.__setitem__('CNP_BUILD_PROFILE_RELEASE_RUNTIME', 'gnu'))
+
+try:
+    cnp_build_support.cmake_configure('src', 'build', 'X')
+    print('profile_unsupported_config=no-error')
+except RuntimeError as error:
+    print('profile_unsupported_config=RuntimeError:%s' % error)
+except Exception as error:
+    print('profile_unsupported_config=unexpected:%s' % type(error).__name__)
+finally:
+    restore_profile()
+
+for profile_key in PROFILE_KEYS[1:]:
+    os.environ.pop(profile_key, None)
+try:
+    print('profile_partial=%s' % cnp_build_support.require_profile(
+        'Release', require_fields=False))
+finally:
+    restore_profile()
 
 os.environ.pop('CNP_CMAKE', None)
 try:
@@ -194,6 +277,9 @@ cnp_build_support.subprocess.Popen = fake_popen
 cnp_build_support.shutil.which = lambda name: (
     'C:/llvm/lld-link.exe' if name == 'lld-link' else None)
 try:
+    # 场景基线：运行库与 IPO 回落配方默认（follow），指令集/优化保持 Step 1 声明。
+    os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'follow'
+    os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = 'follow'
     os.environ['CNP_CMAKE'] = 'C:/tools/cmake/bin/cmake.exe'
     os.environ['CNP_NINJA'] = 'C:/tools/ninja/ninja.exe'
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
@@ -240,12 +326,22 @@ try:
     os.environ['CNP_COMPILER_KIND'] = 'msvc'
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
     os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
-    os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
+    os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'mt'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     static_runtime = list(captured[-1])
-    os.environ['CNP_RUNTIME_LIBRARY'] = 'gnu'
+    try:
+        os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'gnu'
+        cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+        invalid_runtime = 'no-error'
+    except RuntimeError as error:
+        invalid_runtime = 'RuntimeError:%s' % error
+    finally:
+        os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'follow'
+
+    # 旧键残留（CNP_RUNTIME_LIBRARY）被忽略：Profile follow → 回落缺省 md。
+    os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    invalid_runtime = list(captured[-1])
+    legacy_runtime = list(captured[-1])
     os.environ.pop('CNP_RUNTIME_LIBRARY', None)
 
     os.environ.pop('CNP_COMPILER_KIND', None)
@@ -300,9 +396,10 @@ try:
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
     os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
 
+    # 旧键残留（CNP_NO_IPO）被忽略：Profile follow → auto 路径照常解析为 ON。
     os.environ['CNP_NO_IPO'] = '1'
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    disabled_env = list(captured[-1])
+    legacy_env = list(captured[-1])
     os.environ.pop('CNP_NO_IPO', None)
 
     cnp_build_support.shutil.which = lambda name: None
@@ -315,6 +412,55 @@ try:
     cnp_build_support.cmake_configure(
         'C:/src', 'C:/build', 'Release', enable_ipo=True)
     forced_clang_no_lld = list(captured[-1])
+
+    # 显式 Profile ipo=0（off）：msvc 不注入 IPO 变量，无退化原因；Profile 优先于
+    # 调用参数（enable_ipo=True 不覆盖显式值）。
+    forced_traces[:] = []
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = '0'
+    builtins.print = tracing_print
+    try:
+        cnp_build_support.cmake_configure(
+            'C:/src', 'C:/build', 'Release', enable_ipo=True)
+    finally:
+        builtins.print = original_print
+    explicit_off = list(captured[-1])
+    explicit_off_trace = list(forced_traces)
+    # 显式 ipo=1 必须覆盖到随后的两个报错场景（clang-cl 缺 lld / 种类未知），
+    # 场景结束后由下方恢复为 follow。
+    os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = '1'
+
+    # 显式 Profile ipo=1：clang-cl 缺 lld-link 报错（不静默关闭）。
+    os.environ['CNP_COMPILER_KIND'] = 'clang-cl'
+    try:
+        cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+        explicit_clang_error = 'no-error'
+    except RuntimeError as error:
+        explicit_clang_error = 'RuntimeError:%s' % error
+
+    # 显式 Profile ipo=1：编译器种类未知报错（不静默关闭）。
+    os.environ.pop('CNP_COMPILER_KIND', None)
+    os.environ.pop('CNP_C_COMPILER', None)
+    os.environ.pop('CNP_CXX_COMPILER', None)
+    try:
+        cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
+        explicit_unknown_error = 'no-error'
+    except RuntimeError as error:
+        explicit_unknown_error = 'RuntimeError:%s' % error
+    os.environ['CNP_COMPILER_KIND'] = 'msvc'
+    os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
+    os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = 'follow'
+
+    # 显式 Profile ipo=1：Debug 配置报错。
+    os.environ['CNP_BUILD_PROFILE_DEBUG_IPO'] = '1'
+    try:
+        cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
+        debug_ipo_error = 'no-error'
+    except RuntimeError as error:
+        debug_ipo_error = 'RuntimeError:%s' % error
+    finally:
+        os.environ['CNP_BUILD_PROFILE_DEBUG_IPO'] = 'follow'
 
     os.environ['CNP_COMPILER_KIND'] = 'msvc'
     cnp_build_support.cmake_configure(
@@ -344,7 +490,8 @@ print('debug_avx2=%s' % option(msvc_debug, 'CMAKE_C_FLAGS'))
 print('debug_opt=%s' % option(msvc_debug, 'CMAKE_C_FLAGS_RELEASE'))
 print('debug_ipo=%s' % option(msvc_debug, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
 print('runtime_mt=%s' % option(static_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
-print('runtime_invalid=%s' % option(invalid_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
+print('runtime_invalid=%s' % invalid_runtime)
+print('legacy_runtime=%s' % option(legacy_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
 print('unknown_avx2=%s' % option(unknown_release, 'CMAKE_C_FLAGS'))
 print('unknown_opt=%s' % option(unknown_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('disabled_call_ipo=%s' % option(
@@ -357,15 +504,14 @@ print('forced_trace=%s' % ipo_trace(forced_msvc_trace))
 print('forced_unknown_trace=%s' % ipo_trace(forced_unknown_trace))
 print('forced_clang_ipo=%s' % option(
     forced_clang_no_lld, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('disabled_env_ipo=%s' % option(
-    disabled_env, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('legacy_env_ipo=%s' % option(
+    legacy_env, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
 print('clang_no_lld_ipo=%s' % option(
     clang_no_lld, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
 print('preset_opt_cxx=%s' % option(preset_release, 'CMAKE_CXX_FLAGS_RELEASE'))
 print('preset_opt_c=%s' % option(preset_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('preset_ipo=%s' % option(
     preset_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('version=%s' % cnp_build_support.VERSION)
 print('icx_runtime=%s' % option(icx_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
 print('gnu_path_avx2=%s' % option(gnu_path_release, 'CMAKE_C_FLAGS'))
 print('gnu_path_opt=%s' % option(gnu_path_release, 'CMAKE_C_FLAGS_RELEASE'))
@@ -374,6 +520,12 @@ print('gnu_path_runtime=%s' % option(
 print('gnu_path_cxx=%s' % [item for item in gnu_path_release
                            if item.startswith('-DCMAKE_CXX_COMPILER=')][0])
 print('rc_compiler=%s' % option(rc_passthrough, 'CMAKE_RC_COMPILER'))
+print('explicit_off_ipo=%s' % option(
+    explicit_off, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
+print('explicit_off_trace=%s' % ipo_trace(explicit_off_trace))
+print('explicit_clang_error=%s' % explicit_clang_error)
+print('explicit_unknown_error=%s' % explicit_unknown_error)
+print('debug_ipo_error=%s' % debug_ipo_error)
 
 command = captured[0]
 print('generator=%s' % command[command.index('-G') + 1])
@@ -804,7 +956,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "9"'));
+      expect(source, contains('VERSION = "10"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -821,7 +973,7 @@ void main() {
       );
     }, skip: _skipReason);
 
-    test('cmake_configure：命令装配、优化注入与缺 CNP_CMAKE 明确报错', () async {
+    test('cmake_configure：Profile 校验、命令装配、优化注入与缺 CNP_CMAKE 明确报错', () async {
       final Directory tempDir = _createTempDir('cnp_support_cmake_');
       final File driver = _writeDriver(tempDir, _cmakeDriver);
       _installModule(tempDir, await _loadModuleSource());
@@ -835,6 +987,58 @@ void main() {
       final String stdout = result.stdout.toString();
       expect(stdout, contains('missing=RuntimeError'));
       expect(stdout, contains('empty=RuntimeError'));
+      // Step 1：编译器 Profile 九变量解析（version / release / debug 字典）。
+      expect(stdout, contains('version=10'));
+      expect(
+        stdout,
+        contains(
+          "release={'version': 1, 'runtime': 'mt', 'instructionSet': 'avx2', "
+          "'optimization': 'maximum', 'ipo': '1'}",
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          "debug={'version': 1, 'runtime': 'follow', 'instructionSet': 'avx2', "
+          "'optimization': 'maximum', 'ipo': 'follow'}",
+        ),
+      );
+      // Step 2：校验错误串（版本/缺字段/非法值/坏配置）与缺字段降级。
+      expect(
+        stdout,
+        contains(
+          'profile_missing_version=RuntimeError:编译器 Profile 版本不支持：'
+          'CNP_BUILD_PROFILE_VERSION=（仅支持 1）',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'profile_unsupported_version=RuntimeError:编译器 Profile 版本不支持：'
+          'CNP_BUILD_PROFILE_VERSION=2（仅支持 1）',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'profile_missing_field=RuntimeError:编译器 Profile 缺少 '
+          'CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'profile_invalid_field=RuntimeError:编译器 Profile 字段 '
+          'runtime=gnu 非法（允许 follow/md/mt）',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'profile_unsupported_config=RuntimeError:不支持的构建配置：X',
+        ),
+      );
+      expect(stdout, contains("profile_partial={'version': 1}"));
       expect(stdout, contains('generator=Ninja'));
       expect(stdout, contains('build_type=-DCMAKE_BUILD_TYPE=Release'));
       expect(
@@ -886,21 +1090,28 @@ void main() {
       expect(stdout, contains('debug_avx2=/arch:AVX2'));
       expect(stdout, contains('debug_opt=none'));
       expect(stdout, contains('debug_ipo=none'));
-      // 运行库家族：缺省 md（/MD + Debug /MDd）、显式 mt（/MT + Debug /MTd）、非法回退 md。
+      // 运行库家族：Profile mt（/MT + Debug /MTd）、非法值报错、旧键残留被忽略回落缺省 md。
       expect(
         stdout,
         contains('runtime_mt=MultiThreaded\$<\$<CONFIG:Debug>:Debug>'),
       );
       expect(
         stdout,
-        contains('runtime_invalid=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL'),
+        contains(
+          'runtime_invalid=RuntimeError:编译器 Profile 字段 '
+          'runtime=gnu 非法（允许 follow/md/mt）',
+        ),
+      );
+      expect(
+        stdout,
+        contains('legacy_runtime=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL'),
       );
       // 编译器种类未知时不注入任何优化参数。
       expect(stdout, contains('unknown_avx2=none'));
       expect(stdout, contains('unknown_opt=none'));
-      // 退化路径：调用参数 / 环境变量 / clang-cl 缺 lld。
+      // 退化路径：调用参数 / 旧键残留被忽略 / clang-cl 缺 lld。
       expect(stdout, contains('disabled_call_ipo=none'));
-      expect(stdout, contains('disabled_env_ipo=none'));
+      expect(stdout, contains('legacy_env_ipo=ON'));
       expect(stdout, contains('clang_no_lld_ipo=none'));
       // 强制开启（enable_ipo=True）：已知种类直接 ON；未知种类按 unknown-compiler 退化。
       expect(stdout, contains('forced_ipo=ON'));
@@ -910,7 +1121,6 @@ void main() {
       // 强制开启优先于 lld-link 探测（auto 此时退化为 off/lld-link-missing）。
       expect(stdout, contains('forced_clang_ipo=ON'));
       expect(stdout, contains('ipo=off reason=disabled-by-call'));
-      expect(stdout, contains('ipo=off reason=disabled-by-env'));
       expect(stdout, contains('ipo=off reason=lld-link-missing'));
       expect(stdout, contains('ipo=off reason=unknown-compiler'));
       // 配方自带同名变量时保持其取值，模块不重复注入。
@@ -920,8 +1130,31 @@ void main() {
         contains('preset_opt_c=/O2 /Ob2 /Oi /Ot /GF /Gy /DNDEBUG'),
       );
       expect(stdout, contains('preset_ipo=OFF'));
-      // 辅助模块版本已升 9（删除 GNU 分支后的版本契约）。
-      expect(stdout, contains('version=9'));
+      // 显式 Profile ipo：0 不注入且无退化原因；1 在缺 lld /种类未知 / Debug 报错。
+      expect(stdout, contains('explicit_off_ipo=none'));
+      expect(stdout, contains('explicit_off_trace=off/none'));
+      expect(
+        stdout,
+        contains(
+          'explicit_clang_error=RuntimeError:clang-cl 缺少 lld-link，'
+          '无法启用 IPO（Profile ipo=1）',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'explicit_unknown_error=RuntimeError:编译器种类未知，'
+          '无法启用 IPO（Profile ipo=1）',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'debug_ipo_error=RuntimeError:Debug 不支持 IPO（Profile ipo=1）',
+        ),
+      );
+      // 辅助模块版本已升 10（切换编译器 Profile 九变量后的版本契约）。
+      expect(stdout, contains('version=10'));
       // 三编译器矩阵收敛后，icx 无条件写入 MSVC 运行库变量。
       expect(
         stdout,
