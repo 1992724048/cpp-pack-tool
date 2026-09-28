@@ -138,8 +138,16 @@ typedef PackBuildCacheProbe = Future<bool> Function(String packName);
 /// 包构建缓存删除；测试注入。
 typedef PackBuildCacheDeleter = Future<void> Function(String packName);
 
-/// 包内预置源码探测（`sourceNone` 判据）；测试注入。
-typedef PackPresetSourceProbe = Future<bool> Function(String sourcePath);
+/// 包内预置源码缺席探测（构建对话框 `sourceNone` 判据）；测试注入。
+///
+/// 返回 `true` 表示**包内无预置源码**（`SRC_PATH` 为脚本自行下载的工作区），
+/// 与消费方 `sourceNone` 同极性。
+typedef PackSourceAbsentProbe = Future<bool> Function(String sourcePath);
+
+/// 生产默认的预置源码缺席探测：全仓唯一把 [hasPresetSource] 取反成 `sourceNone`
+/// 极性的地方，提取为具名函数是因为 const 默认值不接受 `async` 闭包。
+Future<bool> absentByPresetSourceProbe(String sourcePath) async =>
+    !await hasPresetSource(sourcePath);
 
 class MainLayout extends StatefulWidget {
   const MainLayout({
@@ -155,7 +163,7 @@ class MainLayout extends StatefulWidget {
     this.retryElevatedBuild = runElevatedPackBuild,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
-    this.probePresetSource = hasPresetSource,
+    this.probeSourceAbsent = absentByPresetSourceProbe,
     this.fixIncludes = fixHeaderIncludes,
     this.now = DateTime.now,
     this.hasBuildCache = hasPackBuildCache,
@@ -180,9 +188,12 @@ class MainLayout extends StatefulWidget {
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
 
-  /// 探测包内是否有预置源码（缺省 [hasPresetSource]）；构建对话框的
+  /// 探测包内**无**预置源码（缺省 [absentByPresetSourceProbe]）；构建对话框的
   /// `sourceNone` 标记据此展示下载/准备源码时间线，仅测试注入替代实现。
-  final PackPresetSourceProbe probePresetSource;
+  ///
+  /// 极性见 [PackSourceAbsentProbe]：`true` = 无预置源码。取反只写在默认值指向的
+  /// 那一个函数里，调用点原样透传，从命名上即排除再次接反。
+  final PackSourceAbsentProbe probeSourceAbsent;
 
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
@@ -592,14 +603,18 @@ class _MainLayoutState extends State<MainLayout> {
     _upsertPack(current);
   }
 
-  /// 包内是否有预置源码（即 `SRC_PATH` 是否为脚本自行下载的工作区）；读取失败按否处理。
+  /// 取构建对话框的 `sourceNone` 标记：**包内无预置源码时为 true**（此时
+  /// `SRC_PATH` 是脚本自行下载的工作区，时间线走下载/分类）。
+  ///
+  /// 极性由 [MainLayout.probeSourceAbsent] 自身定义，本方法只做缺省与异常兜底，
+  /// 取值原样透传，不再取反。探测失败按「有预置源码」（false）兜底。
   Future<bool> _probeSourceNone(PackModel pack) async {
     final String? sourcePath = pack.sourcePath;
     if (sourcePath == null || sourcePath.isEmpty) {
       return false;
     }
     try {
-      return await widget.probePresetSource(sourcePath);
+      return await widget.probeSourceAbsent(sourcePath);
     } catch (_) {
       return false;
     }

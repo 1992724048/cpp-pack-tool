@@ -113,6 +113,10 @@ class BuildScriptHeader {
 /// 非法或未知指令行按注释忽略；同名声明以首次为准；遇到首个非 `#` 行（含空行）
 /// 即终止头部连续段。源码来源不再由配方声明（改由 [presetSourceDirName] 目录
 /// 探测），故任意首行均正常解析。
+///
+/// 注意首行必须是 `#` 注释行：首行若非注释，解析循环立即终止，其后所有
+/// `# tool:` / `# option:` / `# depends:` 指令被静默丢弃（不报错），表现为工具链
+/// 下载、选项注入与依赖校验全部失效。
 BuildScriptHeader parseBuildScriptHeader(String content) {
   final List<String> lines = content.split('\n');
   final List<BuildScriptTool> tools = <BuildScriptTool>[];

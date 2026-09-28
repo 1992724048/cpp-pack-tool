@@ -71,6 +71,9 @@ void main() {
       );
     });
 
+    // 各形态走同一条「未知注释」分支，故本例对「首行内容」这一维度是恒真的；
+    // 它的作用是防回归——一旦有人重新为 `# source:` 行加特判（如再当作源码声明
+    // 或直接报错），本例会因首行被区别对待而失败。
     test('旧式首行（裸 URL / # source: none / # source: <dir>）按普通注释忽略，其余指令照常解析', () {
       for (final String legacy in <String>[
         '# https://github.com/foo/bar.git',
@@ -633,7 +636,7 @@ void main() {
         pack,
         readFile: (String path) async {
           readCalls++;
-          return '# source: .cnp-src';
+          return '# 配方说明\n';
         },
       );
 
@@ -651,7 +654,7 @@ void main() {
         pack,
         readFile: (String path) async {
           readCalls++;
-          return '# source: .cnp-src';
+          return '# 配方说明\n';
         },
       );
 

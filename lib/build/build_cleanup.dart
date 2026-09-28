@@ -26,8 +26,9 @@ const Set<String> _reservedEntryNames = <String>{
   'pre.bat',
   'post.bat',
   '.git',
-  // 与 `.git` 同构：包内预置源码目录（`# source: <dir>`），不在白名单会被首次
-  // 构建后的清理删掉，第二次构建报「找不到目录」而根因反直觉。
+  // 与 `.git` 同构：包内预置源码目录（契约常量 presetSourceDirName，工具自动探测、
+  // 配方无需声明），不在白名单会被首次构建后的清理删掉，第二次构建报「找不到目录」
+  // 而根因反直觉。
   '.cnp-src',
 };
 
@@ -38,8 +39,7 @@ const Set<String> _reservedEntryNames = <String>{
 /// - `pre.bat` / `post.bat`：注册为系统编译命令的钩子脚本；
 /// - `.git`（精确名，大小写不敏感）：用户把源目录当工作仓库时保留，
 ///   防灾难性删除（打包扫描本就跳过隐藏目录）；
-/// - `.cnp-src`（精确名，大小写不敏感）：包内预置源码目录（build.py 首行
-///   `# source:` 声明的目录），同理保留；
+/// - `.cnp-src`（精确名，大小写不敏感）：固定名的包内预置源码目录，同理保留；
 /// - 许可证类文件（[isLicenseLikeFileName]）。
 bool isPreservedEntryName(String name) {
   final String lowered = name.toLowerCase();

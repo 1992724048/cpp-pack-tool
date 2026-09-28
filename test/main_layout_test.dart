@@ -965,7 +965,7 @@ void main() {
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
       loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
-      probePresetSource: (String sourcePath) async => true,
+      probeSourceAbsent: (String sourcePath) async => true,
       prepareBuildEnv:
           (
             PackModel pack, {
@@ -1010,6 +1010,43 @@ void main() {
     prepareGate.complete(_buildEnvironment());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+  });
+
+  // 本组不注入 probeSourceAbsent，走 MainLayout 构造函数的**生产默认实现**
+  // （absentByPresetSourceProbe）对真实临时目录求值。替身对默认值零判别力：
+  // 上面那条用例即使把替身值与实现同步翻转也照样通过，故默认值极性只能由本组钉住。
+  testWidgets('生产默认实现：有 .cnp-src 的包走准备环境时间线', (tester) async {
+    final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
+    addTearDown(() => sourceDir.deleteSync(recursive: true));
+    Directory('${sourceDir.path}${Platform.pathSeparator}$presetSourceDirName')
+        .createSync(recursive: true);
+    File(
+      '${sourceDir.path}${Platform.pathSeparator}$presetSourceDirName'
+      '${Platform.pathSeparator}lib.h',
+    ).writeAsStringSync('#pragma once\n');
+
+    await _openBuildDialogWithProductionProbe(
+      tester,
+      sourcePath: sourceDir.path,
+    );
+
+    expect(find.text('准备环境'), findsOneWidget);
+    expect(find.text('下载'), findsNothing);
+    expect(find.text('准备源码'), findsOneWidget);
+  });
+
+  testWidgets('生产默认实现：无 .cnp-src 的包走下载时间线', (tester) async {
+    final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
+    addTearDown(() => sourceDir.deleteSync(recursive: true));
+
+    await _openBuildDialogWithProductionProbe(
+      tester,
+      sourcePath: sourceDir.path,
+    );
+
+    expect(find.text('下载'), findsOneWidget);
+    expect(find.text('准备环境'), findsNothing);
+    expect(find.text('准备源码'), findsNothing);
   });
 
   testWidgets('构建后自动修复头文件引用并以悬浮提示与待处理对话框上报', (tester) async {
@@ -2146,7 +2183,7 @@ Future<void> _pumpMainLayout(
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
-  PackPresetSourceProbe? probePresetSource,
+  PackSourceAbsentProbe? probeSourceAbsent,
   PackHeaderIncludeFixer? fixIncludes,
   PackBuildCacheProbe? hasBuildCache,
   PackBuildCacheDeleter? deleteBuildCache,
@@ -2168,7 +2205,7 @@ Future<void> _pumpMainLayout(
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
         loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
-        probePresetSource: probePresetSource ?? _noPresetSource,
+        probeSourceAbsent: probeSourceAbsent ?? _hasPresetSource,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
         hasBuildCache: hasBuildCache ?? _noBuildCache,
@@ -2180,10 +2217,71 @@ Future<void> _pumpMainLayout(
   await tester.pump(const Duration(milliseconds: 300));
 }
 
+/// 铺好 `MainLayout` 并打开构建对话框，**刻意不传 probeSourceAbsent**，使其落到
+/// 构造函数的默认实现（[absentByPresetSourceProbe]）；对话框停在准备阶段（由
+/// 未完成的 gate 保持），便于断言时间线文案。构建与环境准备均为桩，避免真实工具链。
+Future<void> _openBuildDialogWithProductionProbe(
+  WidgetTester tester, {
+  required String sourcePath,
+}) async {
+  tester.view.physicalSize = const Size(1280, 800);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  final Completer<BuildEnvironment> prepareGate = Completer<BuildEnvironment>();
+  final _FakePackStore store = _FakePackStore(
+    packs: <PackModel>[
+      _pack('demo', '1.0.0', sourcePath: sourcePath, files: _buildPyFiles()),
+    ],
+  );
+
+  await tester.pumpWidget(
+    FluentApp(
+      home: MainLayout(
+        pickDirectory: () async => null,
+        scanFiles: (_) async => <FileModel>[],
+        store: store,
+        buildPack:
+            (
+              PackModel pack,
+              void Function(PackBuildStage) onStage, {
+              Map<String, String>? environment,
+              void Function(String line)? onOutput,
+            }) async {},
+        prepareBuildEnv:
+            (
+              PackModel pack, {
+              required List<String> compilerPriority,
+              required List<DetectedCompiler> cachedCompilers,
+              required CompilerDetectionCallback onCompilersDetected,
+              ToolDownloadProgressCallback? onDownloadProgress,
+            }) => prepareGate.future,
+        detectCompilers: _noCompilers,
+        loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+
+  await tester.tap(find.text('文件管理'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  // 生产默认探测含真实文件 I/O，须在 runAsync 的真实事件循环中完成，
+  // 否则 fake_async 测试区里该 future 永不落定、构建对话框不会打开。
+  await tester.runAsync(() async {
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  });
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+}
+
 Future<bool> _noBuildCache(String packName) async => false;
 
-/// 预置源码探测的缺省替身：无预置源码（走空工作区）。
-Future<bool> _noPresetSource(String sourcePath) async => false;
+/// 预置源码探测的缺省替身：**有**预置源码（`sourceNone` 为 false，走
+/// 准备环境/准备源码时间线）。极性见 `PackSourceAbsentProbe`。
+Future<bool> _hasPresetSource(String sourcePath) async => false;
 
 Future<void> _noDeleteBuildCache(String packName) async {}
 
