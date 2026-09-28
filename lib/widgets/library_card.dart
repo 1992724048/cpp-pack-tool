@@ -13,13 +13,7 @@ class LibraryItem extends PaneItem {
       children: [
         Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
         const SizedBox(width: 8),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            version != null ? Tag(text: version, fontSize: 10, maxWidth: 96, tooltip: version) : const SizedBox(
-                width: 8),
-          ],
-        ),
+        version != null ? Tag(text: version, fontSize: 10, maxWidth: 96, tooltip: version) : const SizedBox(width: 8),
       ],
     ),
     body: body,

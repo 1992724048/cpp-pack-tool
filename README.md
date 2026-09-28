@@ -9,7 +9,7 @@
 
 </div>
 
-CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把 C/C++ 头文件、源码和库组织为 NuGet 包或 CMake 配置包。它既支持从本地目录添加包，也支持依据包内预置源码目录的 `build.py` 准备源码、准备编译环境、执行构建并重新映射；节点脚本编辑器可生成 PowerShell 5.1 脚本并随 NuGet 包发布。设置页可导出 `SKILL.md`，用于指导 AI 为源码包编写 `build.py`。
+CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把 C/C++ 头文件、源码和库组织为 NuGet 包或 CMake 配置包。它既支持从本地目录添加包，也支持依据包内预置源码目录的 `build.py` 准备源码、准备编译环境、执行构建并重新映射；节点脚本编辑器可生成 PowerShell 5.1 脚本并随 NuGet 包发布。
 
 ## 功能特性
 
@@ -23,7 +23,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 构建 | 源目录根部存在 `build.py` 时显示构建入口；自动准备编译器与工具、准备源码、执行脚本、检查头文件引用并重新映射。 |
 | 打包设置 | 为每个包启用 NuGet 或 CMake 格式，预览包内文件树和文本内容后导出；CMake 格式提供 `find_package` 配置包。 |
 | 历史记录 | 记录创建、版本变更、重新映射、打包导出和构建事件，时间线最多保留 100 条，可删除单条记录。 |
-| 设置与关于 | 配置 NuGet/CMake 输出目录、默认作者、主题、编译器优先级、系统代理和 SKILL.md 生成；关于页显示应用信息与项目主页。 |
+| 设置与关于 | 配置 NuGet/CMake 输出目录、默认作者、主题、编译器优先级与系统代理；关于页显示应用信息与项目主页。 |
 
 ## 打包产物
 
@@ -58,7 +58,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 
 解压后把包根加入 `CMAKE_PREFIX_PATH`，即可使用 `find_package(<包名> CONFIG REQUIRED)`，并链接 `<包名>::<包名>`。两种格式都把 `.a` 视为通用静态归档：与 `.lib` 一样归入库目录并保留 `release`/`debug` 路径段（CMake 格式中按配置分组写入链接列表）。CMake 格式不包含节点脚本，根级 `build.py` 同样排除。
 
-## 构建配方与 SKILL.md
+## 构建配方
 
 源目录根部存在 `build.py` 时，应用按以下约定执行构建：
 
@@ -67,7 +67,6 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链与选项变量以及 `PYTHONIOENCODING=utf-8`。
 - 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。运行库家族 `md` / `mt` 由工具按「用户选择 > `# runtime:` > `md`」解析后经编译器 Profile 下发子进程，`CNP_RUNTIME_LIBRARY` 旧口径不再进入构建环境。
 - `assets/build/cnp_build_support.py` 会在构建前释放到 `tools/`，供配方统一处理 CMake/Ninja、编译参数、产物分层、许可证和预构建归档分类。
-- 设置页的「生成 SKILL.md…」会写出内置模板 `assets/build/SKILL.md`，其用途是指导 AI 为源码包编写兼容本工具的 `build.py`，不是直接生成一个包。
 
 ### 预置源码目录的硬约束
 
@@ -157,7 +156,7 @@ config/
 | [flutter_svg](https://pub.dev/packages/flutter_svg) | SVG 图标渲染。 |
 | [yaml](https://pub.dev/packages/yaml) / [yaml_edit](https://pub.dev/packages/yaml_edit) | YAML 配置读取与生成。 |
 | [archive](https://pub.dev/packages/archive) | NuGet OPC/ZIP 与 CMake 配置包压缩。 |
-| `assets/build/cnp_build_support.py` | 远程 `build.py` 配方使用的构建与产物分类辅助模块。 |
+| `assets/build/cnp_build_support.py` | 包内 `build.py` 配方使用的构建与产物分类辅助模块。 |
 
 ## 第三方声明
 

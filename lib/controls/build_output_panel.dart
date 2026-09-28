@@ -5,7 +5,8 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show SelectionRegistrar;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
-/// `cnp_build_support.classify_tree` 的开始标记前缀（见 SKILL.md「分类标记」）；
+/// `cnp_build_support.classify_tree` 的开始标记前缀（该函数首行即输出
+/// `[cnp_build_support] classify: <root> -> <out>`）；
 /// 预构建配方据此把阶段从「下载」切换到「分类」。
 const String classifyStartMarkerPrefix = '[cnp_build_support] classify:';
 

@@ -1,15 +1,13 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('渲染六个分区标题与设置字段', (tester) async {
+  testWidgets('渲染五个分区标题与设置字段', (tester) async {
     await _pumpSetting(tester, onSave: (_) async {});
 
     for (final String header in <String>[
@@ -18,7 +16,6 @@ void main() {
       '外观',
       '编译器',
       '网络',
-      'AI 技能',
     ]) {
       expect(find.text(header), findsOneWidget, reason: '缺少分区：$header');
     }
@@ -28,7 +25,6 @@ void main() {
     expect(find.text('未设置'), findsNWidgets(2));
     expect(find.text('主题模式'), findsOneWidget);
     expect(find.text('代理模式'), findsOneWidget);
-    expect(find.text('SKILL.md'), findsOneWidget);
     expect(find.byKey(const Key('settingPickDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingClearDirButton')), findsOneWidget);
     expect(find.byKey(const Key('settingPickCmakeDirButton')), findsOneWidget);
@@ -717,118 +713,6 @@ void main() {
     expect(saved, isNull);
   });
 
-  testWidgets('渲染 SKILL.md 分区与生成按钮', (tester) async {
-    await _pumpSetting(tester, onSave: (_) async {});
-
-    expect(find.text('SKILL.md'), findsOneWidget);
-    expect(find.text('生成 SKILL.md…'), findsOneWidget);
-    expect(find.byKey(const Key('settingGenerateSkillButton')), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('生成 SKILL.md 写入所选路径并提示已生成', (tester) async {
-    final Directory directory = _createTempDir('setting_skill');
-    final String targetPath = _join(directory.path, 'SKILL.md');
-    String? suggestedName;
-
-    await _pumpSetting(
-      tester,
-      onSave: (_) async {},
-      pickSaveFile: (String name) async {
-        suggestedName = name;
-        return targetPath;
-      },
-      loadSkillTemplate: () async => '# 模板内容',
-    );
-
-    await _tapSkillButton(tester);
-    await _drainRealIo(
-      tester,
-      () => find.text('已生成 SKILL.md').evaluate().isNotEmpty,
-    );
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(suggestedName, 'SKILL.md');
-    expect(File(targetPath).readAsStringSync(), '# 模板内容');
-    expect(find.text('已生成 SKILL.md'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('取消保存位置时不写入也不加载模板', (tester) async {
-    int loadCalls = 0;
-
-    await _pumpSetting(
-      tester,
-      onSave: (_) async {},
-      pickSaveFile: (_) async => null,
-      loadSkillTemplate: () async {
-        loadCalls++;
-        return '# 模板内容';
-      },
-    );
-
-    await _tapSkillButton(tester);
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(loadCalls, 0);
-    expect(find.text('已生成 SKILL.md'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('模板加载失败时提示生成失败', (tester) async {
-    final Directory directory = _createTempDir('setting_skill_load_fail');
-    final String targetPath = _join(directory.path, 'SKILL.md');
-
-    await _pumpSetting(
-      tester,
-      onSave: (_) async {},
-      pickSaveFile: (_) async => targetPath,
-      loadSkillTemplate: () async => throw Exception('模板缺失'),
-    );
-
-    await _tapSkillButton(tester);
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.textContaining('生成失败'), findsOneWidget);
-    expect(find.textContaining('模板缺失'), findsOneWidget);
-    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
-    expect(File(targetPath).existsSync(), isFalse);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('写入失败时提示生成失败', (tester) async {
-    final Directory directory = _createTempDir('setting_skill_write_fail');
-
-    await _pumpSetting(
-      tester,
-      onSave: (_) async {},
-      // 以目录路径作为保存目标：写入必然失败。
-      pickSaveFile: (_) async => directory.path,
-      loadSkillTemplate: () async => '# 模板内容',
-    );
-
-    await _tapSkillButton(tester);
-    await _drainRealIo(
-      tester,
-      () => find.textContaining('生成失败').evaluate().isNotEmpty,
-    );
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.textContaining('生成失败'), findsOneWidget);
-    expect(find.byIcon(WindowsIcons.error_badge), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('SKILL.md 模板 asset 可载入且含 frontmatter', (tester) async {
-    final String source = await rootBundle.loadString('assets/build/SKILL.md');
-    // CI 检出可能因 git autocrlf 将文本资产转为 CRLF（本机为 LF），统一行尾后再断言。
-    final String normalizedSource = source.replaceAll('\r\n', '\n');
-
-    expect(normalizedSource, startsWith('---\n'));
-    expect(normalizedSource, contains('name: generating-build-py'));
-    expect(normalizedSource, contains('description: Use when'));
-  });
-
   testWidgets('宽松约束下铺满可用区域且页面表面无背景装饰', (tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
@@ -841,8 +725,6 @@ void main() {
           child: Setting(
             settings: const SettingsModel(),
             pickDirectory: () async => null,
-            pickSaveFile: _noSaveLocation,
-            loadSkillTemplate: _fakeSkillTemplate,
             onSave: (_) async {},
             detectCompilers: _noCompilers,
           ),
@@ -873,8 +755,6 @@ Future<void> _pumpSetting(
   required Future<void> Function(SettingsModel settings) onSave,
   Future<String?> Function()? pickDirectory,
   Future<List<DetectedCompiler>> Function()? detectCompilers,
-  Future<String?> Function(String suggestedName)? pickSaveFile,
-  Future<String> Function()? loadSkillTemplate,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -887,8 +767,6 @@ Future<void> _pumpSetting(
           return Setting(
             settings: settings,
             pickDirectory: pickDirectory ?? () async => null,
-            pickSaveFile: pickSaveFile ?? _noSaveLocation,
-            loadSkillTemplate: loadSkillTemplate ?? _fakeSkillTemplate,
             onSave: (SettingsModel next) async {
               await onSave(next);
               setState(() => settings = next);
@@ -905,35 +783,6 @@ Future<void> _pumpSetting(
 
 Future<List<DetectedCompiler>> _noCompilers() async =>
     const <DetectedCompiler>[];
-
-Future<String?> _noSaveLocation(String suggestedName) async => null;
-
-Future<String> _fakeSkillTemplate() async => '# 模板内容';
-
-/// 交替 runAsync（推进真实文件 I/O）与 pump（冲刷微任务并刷新帧），直至 [done] 成立。
-Future<void> _drainRealIo(WidgetTester tester, bool Function() done) async {
-  for (var cycle = 0; cycle < 30; cycle++) {
-    if (done()) {
-      return;
-    }
-    await tester.runAsync(() async {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    });
-    await tester.pump();
-  }
-}
-
-Directory _createTempDir(String prefix) {
-  final Directory directory = Directory.systemTemp.createTempSync(prefix);
-  addTearDown(() {
-    if (directory.existsSync()) {
-      directory.deleteSync(recursive: true);
-    }
-  });
-  return directory;
-}
-
-String _join(String base, String name) => '$base${Platform.pathSeparator}$name';
 
 DetectedCompiler _compiler(CompilerKind kind, String version) {
   return DetectedCompiler(
@@ -960,15 +809,6 @@ Future<void> _selectCombo(WidgetTester tester, Key key, String label) async {
   await tester.tap(find.text(label).last);
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 400));
-}
-
-/// 滚动到 SKILL.md 分区后点击生成按钮（页面分区增多后按钮可能位于视口外）。
-Future<void> _tapSkillButton(WidgetTester tester) async {
-  final Finder button = find.byKey(const Key('settingGenerateSkillButton'));
-  await tester.ensureVisible(button);
-  await tester.pump();
-  await tester.tap(button);
-  await tester.pump();
 }
 
 Button _clearButton(WidgetTester tester) =>

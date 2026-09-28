@@ -368,7 +368,7 @@ def classify_tree(root, out, exclude=(), debug_name_suffix="_debug"):
     release 分层）。
 
     调用开始时打印开始标记 `[cnp_build_support] classify: <root> -> <out>`
-    （工具据此把构建阶段从「正在下载」切换为「正在分类」，见 SKILL.md）。
+    （工具据此把构建阶段从「正在下载」切换为「正在分类」）。
     """
     root = os.path.abspath(os.fspath(root))
     out = os.path.abspath(os.fspath(out))

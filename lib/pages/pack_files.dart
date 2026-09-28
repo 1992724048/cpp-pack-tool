@@ -261,22 +261,20 @@ class _PackFilesState extends State<PackFiles> {
       padding: const EdgeInsets.fromLTRB(8, 3, 8, 0),
       child: Card(
         padding: EdgeInsetsGeometry.all(5),
-        child: Row(
-          children: [
-            Expanded(
-              child: Wrap(
-                spacing: 5,
-                runSpacing: 0,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  FilledButton(key: const Key('buildPackButton'),
-                      onPressed: () => widget.onBuildPack!(widget.pack),
-                      child: const Text('构建')),
-                  _buildRuntimeGroup(),
-                ],
-              ),
-            ),
-          ],
+        // `Wrap` 需按工具条可用宽度换行，`double.infinity` 在有界父约束下收紧为满宽。
+        child: SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            spacing: 5,
+            runSpacing: 0,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FilledButton(key: const Key('buildPackButton'),
+                  onPressed: () => widget.onBuildPack!(widget.pack),
+                  child: const Text('构建')),
+              _buildRuntimeGroup(),
+            ],
+          ),
         ),
       ),
     );
@@ -284,19 +282,14 @@ class _PackFilesState extends State<PackFiles> {
 
   Widget _buildRuntimeGroup() {
     final String? runtimeValue = _savedRuntimeLibrary();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        RuntimeLibrarySelector(
-          value: runtimeValue,
-          enabled: widget.onSave != null && !_savingOption,
-          onChanged: (String? value) {
-            if (value != runtimeValue) {
-              _changeBuildOption(runtimeOptionName, value);
-            }
-          },
-        ),
-      ],
+    return RuntimeLibrarySelector(
+      value: runtimeValue,
+      enabled: widget.onSave != null && !_savingOption,
+      onChanged: (String? value) {
+        if (value != runtimeValue) {
+          _changeBuildOption(runtimeOptionName, value);
+        }
+      },
     );
   }
 

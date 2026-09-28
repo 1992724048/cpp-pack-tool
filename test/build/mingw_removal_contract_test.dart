@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 const List<String> _projectDocuments = <String>[
   'AGENTS.md',
   'README.md',
-  'assets/build/SKILL.md',
 ];
 
 /// 已删除的 MinGW 工具链术语（编译器、安装根、子环境、资源编译器）。
@@ -214,7 +213,7 @@ void main() {
   });
 
   group('项目文档契约', () {
-    test('三份项目文档均被真实读取且内容非空', () {
+    test('两份项目文档均被真实读取且内容非空', () {
       final Map<String, String> documents = _readProjectDocuments();
       expect(documents.keys.toSet(), _projectDocuments.toSet());
       for (final MapEntry<String, String> document in documents.entries) {
@@ -254,25 +253,8 @@ void main() {
       );
     });
 
-    test('README 与 SKILL.md 的编译器优先级为 ICX > clang-cl > MSVC', () {
-      final Map<String, String> documents = _readProjectDocuments();
-      expect(documents['README.md'], contains('ICX > clang-cl > MSVC'));
-      expect(
-        documents['assets/build/SKILL.md'],
-        contains('ICX > clang-cl > MSVC'),
-      );
-    });
-
-    test('SKILL.md 的 CNP_COMPILER_KIND 覆盖当前全部编译器标识', () {
-      final String skill = _readProjectDocuments()['assets/build/SKILL.md']!;
-      expect(skill, contains('CNP_COMPILER_KIND'));
-      for (final CompilerKind kind in CompilerKind.values) {
-        expect(
-          skill,
-          contains(compilerKindId(kind)),
-          reason: 'SKILL.md 缺少编译器标识 ${compilerKindId(kind)}',
-        );
-      }
+    test('README 的编译器优先级为 ICX > clang-cl > MSVC', () {
+      expect(_readProjectDocuments()['README.md'], contains('ICX > clang-cl > MSVC'));
     });
 
     test('AGENTS.md 记录检测缓存整表作废并等待重检的核心不变量', () {
@@ -318,16 +300,12 @@ void main() {
       final Map<String, String> documents = _readProjectDocuments();
       expect(documents['AGENTS.md'], contains('CNP_RC_COMPILER'));
       expect(documents['AGENTS.md'], contains('显式'));
-      expect(documents['assets/build/SKILL.md'], contains('CNP_RC_COMPILER'));
-      expect(documents['assets/build/SKILL.md'], contains('不自动探测'));
     });
 
     test('.a 作为通用归档并按 Release/Debug 归入 lib 目录', () {
       final Map<String, String> documents = _readProjectDocuments();
       expect(documents['AGENTS.md'], contains('FileType.lib'));
       expect(documents['README.md'], contains('.a'));
-      expect(documents['assets/build/SKILL.md'], contains('release/lib'));
-      expect(documents['assets/build/SKILL.md'], contains('debug/lib'));
     });
 
     test('AGENTS.md 记录 .a 的构建器落点与 NuGet 不自动派生附加库', () {
@@ -357,20 +335,14 @@ void main() {
     });
 
     test('CNP_RUNTIME_LIBRARY 的 md/mt 说明仍然保留', () {
-      final Map<String, String> documents = _readProjectDocuments();
-      for (final String path in <String>[
-        'AGENTS.md',
-        'assets/build/SKILL.md',
-      ]) {
-        final String text = documents[path]!;
-        expect(
-          text,
-          contains('CNP_RUNTIME_LIBRARY'),
-          reason: '$path 缺少运行库家族说明',
-        );
-        expect(text, contains('`md`'), reason: '$path 缺少 md 说明');
-        expect(text, contains('`mt`'), reason: '$path 缺少 mt 说明');
-      }
+      final String text = _readProjectDocuments()['AGENTS.md']!;
+      expect(
+        text,
+        contains('CNP_RUNTIME_LIBRARY'),
+        reason: 'AGENTS.md 缺少运行库家族说明',
+      );
+      expect(text, contains('`md`'), reason: 'AGENTS.md 缺少 md 说明');
+      expect(text, contains('`mt`'), reason: 'AGENTS.md 缺少 mt 说明');
     });
   });
 
