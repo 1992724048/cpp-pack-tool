@@ -72,9 +72,6 @@ class PackSourcePreparation {
 typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  void Function(String line)? onOutput,
   String cacheRoot,
   Map<String, String>? environment,
 });
@@ -89,24 +86,13 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
 /// 保证同一工作目录下缓存稳定命中）备源 → 清空包源目录中白名单外的一切
 /// （见 [cleanupBuildOutput]）。
 ///
-/// 两条备源分支语义相反，不得统一：
-/// - 声明了预置源码目录：先删目标目录残留再整树拷贝，每次构建从干净状态开始
-///   （等价原 `git clean -ffdx`），空目录一并复制以保持树形结构；
-/// - 声明 `# source: none`（无预置源码）：只创建目标目录作为 `SRC_PATH`
-///   工作区，**绝不清理缓存目录**——脚本自行下载/解压的产物（可达数百 MB）
-///   须跨构建复用，误清会让每次构建退化为全量重下且不报任何错。
+/// 备源按源码来源声明分叉，两条分支语义相反、**不得统一**：见
+/// [_stageEmptyWorkspace]（`# source: none`）与 [_stagePresetSource]。
 ///
 /// [environment] 为子进程环境的附加覆盖层（null 时不注入额外变量）。
-/// [onOutput] 非空时逐行转发构建脚本子进程输出，同时汇聚完整输出用于失败诊断。
-/// [streamRunner] 为 null 时保持一次性捕获（无流式；[onOutput] 被忽略），
-/// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
-/// `Process.start`，测试注入替代实现）。
 Future<PackSourcePreparation> preparePackSource(
   PackModel pack,
   void Function(PackBuildStage) onStage, {
-  PackProcessRunner processRunner = Process.run,
-  PackStreamingProcessRunner? streamRunner,
-  void Function(String line)? onOutput,
   String cacheRoot = 'cache',
   Map<String, String>? environment,
 }) async {
@@ -168,11 +154,9 @@ Future<PackSourcePreparation> preparePackSource(
     cacheRoot: cacheRoot,
   );
   if (presetSource == null) {
-    // 预构建配方（`# source: none`）：缓存目录只建不清，脚本自行下载/解压的
-    // 产物跨构建复用。
-    await target.create(recursive: true);
+    await _stageEmptyWorkspace(target);
   } else {
-    await _materializeSource(presetSource, target);
+    await _stagePresetSource(presetSource, target);
   }
 
   // 源码（或预构建工作区）就绪后、执行脚本前清空包源目录，保证产物不带
@@ -205,8 +189,19 @@ Future<bool> _treeHasFile(Directory directory) async {
   return false;
 }
 
-/// 备源：删除 [target] 残留后把 [source] 整树拷入（含空目录）。
-Future<void> _materializeSource(Directory source, Directory target) async {
+/// 备源（`# source: none`，无预置源码）：只把 [target] 创建为 `SRC_PATH` 工作区，
+/// **绝不清理缓存目录**——脚本自行下载/解压的产物（可达数百 MB）须跨构建复用，
+/// 误清会让每次构建退化为全量重下且不报任何错。
+///
+/// 与 [_stagePresetSource] 语义相反，不得统一为同一条路径。
+Future<void> _stageEmptyWorkspace(Directory target) =>
+    target.create(recursive: true);
+
+/// 备源（声明了包内预置源码目录）：先删 [target] 残留再把 [source] 整树拷入
+/// （含空目录），每次构建从干净状态开始（等价原 `git clean -ffdx`）。
+///
+/// 与 [_stageEmptyWorkspace] 语义相反，不得统一为同一条路径。
+Future<void> _stagePresetSource(Directory source, Directory target) async {
   await _deleteResidual(target.path);
   await target.create(recursive: true);
   try {
@@ -264,9 +259,6 @@ Future<void> runPackBuild(
   final PackSourcePreparation source = await preparePackSource(
     pack,
     onStage,
-    processRunner: processRunner,
-    streamRunner: streamRunner,
-    onOutput: onOutput,
     cacheRoot: cacheRoot,
     environment: environment,
   );

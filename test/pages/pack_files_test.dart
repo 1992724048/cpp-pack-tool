@@ -1339,7 +1339,7 @@ void main() {
   });
 
   testWidgets('选项分区位于工具栏下方', (tester) async {
-    final PackModel pack = _buildPack('demo')..sourceVersion = 'v1.0.0';
+    final PackModel pack = _buildPack('demo');
 
     await _pumpPage(
       tester,

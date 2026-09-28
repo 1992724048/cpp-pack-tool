@@ -129,7 +129,7 @@ config/
 | 字段 | 说明 |
 | ---- | ---- |
 | `name` / `version` / `author` | 必填；`name` 同时决定配置文件名和包 ID。 |
-| `description` / `license` / `iconPath` / `sourcePath` / `sourceVersion` | 可选的包元数据、源目录和上次构建版本。 |
+| `description` / `license` / `iconPath` / `sourcePath` | 可选的包元数据与源目录。 |
 | `files` | 文件快照（`path`/`size`）。 |
 | `dependencies` | 包依赖（`name`/`version`）。 |
 | `commands` / `macros` / `libDirectories` / `libraries` | 编译集成配置，条目可带 `buildModel`。 |
@@ -161,7 +161,7 @@ config/
 
 ## 第三方声明
 
-第三方组件许可与来源声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。其中包括 Catppuccin Icons for VSCode v1.26.0 的图标子集，以及作为平台指示图标使用的 GitHub 官方标志；`assets/icons/repo_remote.svg` 为项目自绘的通用远程仓库图标。
+第三方组件许可与来源声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。其中包括 Catppuccin Icons for VSCode v1.26.0 的图标子集。
 
 ## 交流群
 

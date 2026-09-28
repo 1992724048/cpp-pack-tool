@@ -7,7 +7,6 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
-import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -25,7 +24,6 @@ import 'package:cpp_nuget_pack/util/author_rules.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/proxy.dart';
-import 'package:cpp_nuget_pack/util/repo_icon.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:cpp_nuget_pack/util/system_entries.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
@@ -161,9 +159,7 @@ class MainLayout extends StatefulWidget {
     this.retryElevatedBuild = runElevatedPackBuild,
     this.detectCompilers = detectCompilersWithControlledTemp,
     this.loadBuildHeader = loadBuildScriptHeader,
-    this.loadRemoteTags,
     this.fixIncludes = fixHeaderIncludes,
-    this.loadRepoIcon,
     this.now = DateTime.now,
     this.hasBuildCache = hasPackBuildCache,
     this.deleteBuildCache = deletePackBuildCache,
@@ -188,16 +184,8 @@ class MainLayout extends StatefulWidget {
   /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
 
-  /// 查询仓库远端 tag 列表（懒查询 + 按 URL 会话缓存的底层入口）；测试注入避免触网；
-  /// null 时走默认实现（注入代理解析）。
-  final Future<List<String>?> Function(String repoUrl)? loadRemoteTags;
-
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
-
-  /// 解析并缓存远程仓库头像（磁盘缓存优先）；测试注入避免触网；
-  /// null 时走默认实现（注入代理解析）。
-  final Future<String?> Function(String repoUrl)? loadRepoIcon;
 
   final DateTime Function() now;
 
@@ -218,27 +206,6 @@ class _MainLayoutState extends State<MainLayout> {
   List<PackModel> _packs = [];
   int? _selected;
   PackageBuilder _packagingBuilder = PackageBuilderRegistry.all.first;
-
-  /// 包名（小写）→ 远程仓库地址；已解析但无仓库时为 null。
-  final Map<String, String?> _packRepos = <String, String?>{};
-
-  /// 包名（小写）→ 上次解析头部时的源目录/脚本路径指纹，避免重复读取。
-  final Map<String, String> _resolvedHeaderKeys = <String, String>{};
-
-  /// 包名（小写）→ 远程仓库平台；已解析但无远程平台时为 null。
-  final Map<String, RepoPlatform?> _repoPlatforms = <String, RepoPlatform?>{};
-
-  /// 包名（小写）→ 头像文件绝对路径（磁盘缓存命中或获取成功时非空）。
-  final Map<String, String?> _repoIcons = <String, String?>{};
-
-  /// 仓库地址 → 进行中/已完成头像查询（去重同一仓库的并发查询）。
-  final Map<String, Future<String?>> _repoIconQueries = <String, Future<String?>>{};
-
-  /// 仓库地址 → 远端最新 tag 查询 Future（去重同一仓库的并发查询）。
-  final Map<String, Future<String?>> _latestTagQueries = <String, Future<String?>>{};
-
-  /// 仓库地址 → 已完成的远端最新 tag；查询失败/无可用 tag 时为 null。
-  final Map<String, String?> _latestTags = <String, String?>{};
 
   /// 默认作者批量修正防重入（启动与设置变更可能相邻触发）。
   bool _fixingAuthors = false;
@@ -282,7 +249,6 @@ class _MainLayoutState extends State<MainLayout> {
       _sortPacks();
       _selected = _packs.isEmpty ? null : 0;
     });
-    _resolveRepos();
     if (errors.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showLoadErrorsToast(errors));
     }
@@ -460,7 +426,6 @@ class _MainLayoutState extends State<MainLayout> {
         _selected = selected;
       }
     });
-    _resolveRepos();
   }
 
   bool get _hasSelectedPack {
@@ -478,78 +443,6 @@ class _MainLayoutState extends State<MainLayout> {
     return null;
   }
 
-  static String _packRepoKey(PackModel pack) {
-    final FileModel? script = findBuildScript(pack.files);
-    return '${pack.sourcePath ?? ''}\u0000${script?.path ?? ''}';
-  }
-
-  /// 低优先级解析全部包的 build.py 头部（非阻塞）；键未变化时跳过重复读取。
-  void _resolveRepos() {
-    for (final PackModel pack in List<PackModel>.of(_packs)) {
-      unawaited(_resolveRepoFor(pack));
-    }
-  }
-
-  Future<void> _resolveRepoFor(PackModel pack) async {
-    final String name = pack.name.toLowerCase();
-    final String key = _packRepoKey(pack);
-    if (_resolvedHeaderKeys[name] == key) {
-      return;
-    }
-    _resolvedHeaderKeys[name] = key;
-    // 仓库元数据链路待删除：本阶段不再从头部解析仓库地址，恒为 null（仓库相关
-    // UI 静默不渲染）
-    const String? resolvedRepo = null;
-    if (!mounted) {
-      return;
-    }
-    final String? repo = resolvedRepo;
-    final RepoLocation? location = repo == null ? null : parseRepoLocation(repo);
-    final String? previousRepo = _packRepos[name];
-    setState(() {
-      _packRepos[name] = repo;
-      _repoPlatforms[name] = location?.platform;
-      // 仓库地址变化时先清空旧头像：新头像查询完成前不得沿用上一仓库的图标
-      if (location == null || repo != previousRepo) {
-        _repoIcons[name] = null;
-      }
-    });
-    if (resolvedRepo == null) {
-      return;
-    }
-    unawaited(_latestTagFor(resolvedRepo));
-    if (location != null) {
-      unawaited(_resolveRepoAvatar(name, resolvedRepo));
-    }
-  }
-
-  /// 解析并缓存侧栏头像：同一仓库 URL 复用进行中的查询，成功后写入 [_repoIcons]。
-  Future<void> _resolveRepoAvatar(String packName, String repoUrl) async {
-    final Future<String?> query = _repoIconQueries.putIfAbsent(repoUrl, () => _queryRepoIcon(repoUrl));
-    String? path;
-    try {
-      path = await query;
-    } catch (_) {
-      path = null;
-    }
-    if (!mounted) {
-      return;
-    }
-    setState(() => _repoIcons[packName] = path);
-  }
-
-  Future<String?> _queryRepoIcon(String repoUrl) async {
-    try {
-      final Future<String?> Function(String repoUrl)? loader = widget.loadRepoIcon;
-      if (loader != null) {
-        return await loader(repoUrl);
-      }
-      return await ensureRepoAvatar(repoUrl, proxy: await _proxyResolution());
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// 当前设置的代理解析（同一设置对象复用；设置变更后重新解析，自动模式读注册表）。
   Future<ProxyResolution> _proxyResolution() {
     final SettingsModel settings = widget.settings;
@@ -561,50 +454,6 @@ class _MainLayoutState extends State<MainLayout> {
     final Future<ProxyResolution> resolved = resolveProxyFromSettings(settings);
     _proxyResolutionFuture = resolved;
     return resolved;
-  }
-
-  /// 仓库远端最新 tag：命中缓存直接返回，进行中的查询去重复用。
-  Future<String?> _latestTagFor(String repoUrl) {
-    final Future<String?>? pending = _latestTagQueries[repoUrl];
-    if (pending != null) {
-      return pending;
-    }
-    final Future<String?> query = _queryLatestTag(repoUrl);
-    _latestTagQueries[repoUrl] = query;
-    return query;
-  }
-
-  Future<String?> _queryLatestTag(String repoUrl) async {
-    List<String>? tags;
-    try {
-      final Future<List<String>?> Function(String repoUrl)? loader = widget.loadRemoteTags;
-      if (loader != null) {
-        tags = await loader(repoUrl);
-      } else {
-        final ProxyResolution proxy = await _proxyResolution();
-        tags = await listRemoteTags(repoUrl, environment: proxyEnvironmentOverrides(proxy));
-      }
-    } catch (_) {
-      tags = null;
-    }
-    final String? latest = tags == null ? null : latestTag(tags);
-    if (mounted) {
-      setState(() => _latestTags[repoUrl] = latest);
-    }
-    return latest;
-  }
-
-  RepoBadge? _repoBadgeFor(PackModel pack) {
-    final String? repo = _packRepos[pack.name.toLowerCase()];
-    if (repo == null) {
-      return null;
-    }
-    final String? current = pack.sourceVersion;
-    final String? latest = _latestTags[repo];
-    if (current != null && latest != null && compareTagVersions(latest, current) > 0) {
-      return RepoBadge.update;
-    }
-    return RepoBadge.git;
   }
 
   Future<void> _deleteSelectedPack() async {
@@ -647,15 +496,6 @@ class _MainLayoutState extends State<MainLayout> {
     }
     setState(() {
       _packs.removeAt(selected);
-      final String packKey = pack.name.toLowerCase();
-      final String? deletedRepo = _packRepos[packKey];
-      _packRepos.remove(packKey);
-      _resolvedHeaderKeys.remove(packKey);
-      _repoPlatforms.remove(packKey);
-      _repoIcons.remove(packKey);
-      if (deletedRepo != null) {
-        _repoIconQueries.remove(deletedRepo);
-      }
       if (_packs.isEmpty) {
         _selected = null;
       } else if (selected >= _packs.length) {
@@ -742,8 +582,6 @@ class _MainLayoutState extends State<MainLayout> {
       }
     }
     final PackModel updated = await _syncSystemEntries(pack);
-    // 系统条目与重映射拷贝均为全字段重建：构建流程携带的新版本优先，否则保留原记录
-    updated.sourceVersion = pack.sourceVersion ?? previous?.sourceVersion;
     await widget.store.savePack(updated);
     if (!mounted) {
       return;
@@ -1122,12 +960,6 @@ class _MainLayoutState extends State<MainLayout> {
           onBuildPack: _buildPack,
           packagingBuilder: _packagingBuilder,
           onPackagingBuilderChanged: _selectPackagingBuilder,
-          loadLatestVersion: _latestTagFor,
-          repoBadgeFor: _repoBadgeFor,
-          repoIconFor: (PackModel pack) {
-            final String name = pack.name.toLowerCase();
-            return (platform: _repoPlatforms[name], avatarPath: _repoIcons[name]);
-          },
           loadHeader: widget.loadBuildHeader,
         ),
         footerItems: [

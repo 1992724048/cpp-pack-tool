@@ -45,8 +45,3 @@ PackFilesDiff comparePackFiles(
 PackModel copyPackWithFiles(PackModel pack, List<FileModel> files) {
   return pack.copyWith(files: files, iconPath: findIconFile(files)?.path);
 }
-
-/// 以 [version] 替换版本号的整包拷贝（`PackModel.version` 为 final，只能重建）。
-PackModel copyPackWithVersion(PackModel pack, String version) {
-  return pack.copyWith(version: version);
-}

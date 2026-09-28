@@ -1,5 +1,4 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/build/repo_version.dart';
 import 'package:cpp_nuget_pack/controls/build_options.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -8,7 +7,6 @@ import 'package:cpp_nuget_pack/util/catppuccin_icons.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/file_opener.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/util/repo_icon.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -19,18 +17,13 @@ class PackFiles extends StatefulWidget {
     super.key,
     required this.pack,
     this.openFile = openWithDefaultApp,
-    this.openUrl = openExternalUrl,
     this.onBuildPack,
     this.onSave,
     this.loadHeader = loadBuildScriptHeader,
-    this.loadLatestVersion,
   });
 
   final PackModel pack;
   final Future<bool> Function(String path) openFile;
-
-  /// 打开远程仓库网页；测试可注入。
-  final Future<bool> Function(String url) openUrl;
 
   final Future<void> Function(PackModel pack)? onBuildPack;
 
@@ -39,9 +32,6 @@ class PackFiles extends StatefulWidget {
 
   /// 读取包内 build.py 头部；测试可注入。
   final Future<BuildScriptHeader?> Function(PackModel pack) loadHeader;
-
-  /// 按仓库地址懒查询远端最新 tag；为 null 时不查询（最新版本显示 —）。
-  final Future<String?> Function(String repoUrl)? loadLatestVersion;
 
   @override
   State<PackFiles> createState() => _PackFilesState();
@@ -67,9 +57,6 @@ class _PackFilesState extends State<PackFiles> {
   bool _savingOption = false;
   bool _optionsExpanded = true;
   int _headerLoadId = 0;
-  String? _latestVersion;
-  bool _latestLoaded = false;
-  int _latestLoadId = 0;
 
   @override
   void initState() {
@@ -108,45 +95,6 @@ class _PackFilesState extends State<PackFiles> {
       return;
     }
     setState(() => _header = header);
-    _refreshLatestVersion();
-  }
-
-  Future<void> _refreshLatestVersion() async {
-    // 仓库元数据链路待删除：本阶段恒为 null，版本胶囊与远端 tag 查询静默不触发
-    const String? repo = null;
-    final Future<String?> Function(String repoUrl)? loader = widget.loadLatestVersion;
-    final int loadId = ++_latestLoadId;
-    if (repo == null) {
-      setState(() {
-        _latestVersion = null;
-        _latestLoaded = false;
-      });
-      return;
-    }
-    if (loader == null) {
-      setState(() {
-        _latestVersion = null;
-        _latestLoaded = true;
-      });
-      return;
-    }
-    setState(() {
-      _latestVersion = null;
-      _latestLoaded = false;
-    });
-    String? latest;
-    try {
-      latest = await loader(repo);
-    } catch (_) {
-      latest = null;
-    }
-    if (!mounted || loadId != _latestLoadId) {
-      return;
-    }
-    setState(() {
-      _latestVersion = latest;
-      _latestLoaded = true;
-    });
   }
 
   static List<String> _pathSegments(String path) =>
@@ -308,7 +256,7 @@ class _PackFilesState extends State<PackFiles> {
     }
   }
 
-  Widget _buildToolbar({required String? openRepoUrl, required bool canBuild, required bool showVersionChip}) {
+  Widget _buildToolbar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 3, 8, 0),
       child: Card(
@@ -321,54 +269,24 @@ class _PackFilesState extends State<PackFiles> {
                 runSpacing: 0,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
-                  if (canBuild) FilledButton(key: const Key('buildPackButton'),
+                  FilledButton(key: const Key('buildPackButton'),
                       onPressed: () => widget.onBuildPack!(widget.pack),
                       child: const Text('构建')),
-                  if (openRepoUrl != null) _buildOpenRepoButton(openRepoUrl),
-                  if (canBuild)
-                    _buildRuntimeGroup(showSeparator: openRepoUrl != null),
+                  _buildRuntimeGroup(),
                 ],
               ),
             ),
-            if (showVersionChip) ...[_buildVersionChip()],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildOpenRepoButton(String url) {
-    return Tooltip(
-      message: url,
-      child: Button(key: const Key('openRepoButton'), onPressed: () => _openRepo(url), child: Text('远程仓库')),
-    );
-  }
-
-  Future<void> _openRepo(String url) async {
-    final bool opened = await widget.openUrl(url);
-    if (!mounted) {
-      return;
-    }
-    if (!opened) {
-      showFloatingToast(context, '无法打开链接', type: FloatingToastType.error, duration: const Duration(seconds: 5));
-    }
-  }
-
-  Widget _buildRuntimeGroup({required bool showSeparator}) {
+  Widget _buildRuntimeGroup() {
     final String? runtimeValue = _savedRuntimeLibrary();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (showSeparator) ...<Widget>[
-          const SizedBox(width: 4),
-          Container(
-            key: const Key('packRepoRuntimeSeparator'),
-            width: 1,
-            height: 20,
-            color: FluentTheme.of(context).resources.dividerStrokeColorDefault,
-          ),
-          const SizedBox(width: 4),
-        ],
         RuntimeLibrarySelector(
           value: runtimeValue,
           enabled: widget.onSave != null && !_savingOption,
@@ -386,59 +304,6 @@ class _PackFilesState extends State<PackFiles> {
   String? _savedRuntimeLibrary() {
     final String? normalized = normalizeRuntimeLibrary(widget.pack.buildOptions[runtimeOptionName]);
     return normalized?.toUpperCase();
-  }
-
-  /// 版本胶囊：纯展示（不可点击、不参与 Tab 序），四态见设计规格 §5.3。
-  Widget _buildVersionChip() {
-    final String current = widget.pack.sourceVersion ?? '不可用';
-    final bool querying = !_latestLoaded;
-    final String? latestVersion = _latestVersion;
-    final String latestText = querying ? '查询中…' : (latestVersion ?? '不可用');
-    final bool hasUpdate = !querying && latestVersion != null && compareTagVersions(latestVersion, current) > 0;
-    final String latestTooltip;
-    if (querying) {
-      latestTooltip = '最新版本：查询中…';
-    } else if (hasUpdate) {
-      latestTooltip = '最新版本：$latestText（有新版本可用）';
-    } else if (latestVersion != null) {
-      latestTooltip = '最新版本：$latestText（已是最新）';
-    } else {
-      latestTooltip = '最新版本：不可用';
-    }
-    final FluentThemeData theme = FluentTheme.of(context);
-    final Color valueColor = theme.resources.textFillColorPrimary;
-    final Color placeholderColor = theme.resources.textFillColorTertiary;
-    final TextStyle labelStyle = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
-    return Container(
-      key: const Key('packRepoVersionLabel'),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-          color: theme.resources.solidBackgroundFillColorSecondary, borderRadius: BorderRadius.circular(999)),
-      child: Tooltip(
-        message: '当前版本：$current\n$latestTooltip',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (hasUpdate) ...<Widget>[
-              const Icon(FluentIcons.update_restore, size: 12, color: MarkerColors.green),
-              const SizedBox(width: 6)
-            ],
-            Text('当前', style: labelStyle),
-            const SizedBox(width: 4),
-            Text(current, style: TextStyle(
-                fontSize: 12, color: widget.pack.sourceVersion == null ? placeholderColor : valueColor)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(FluentIcons.chevron_right, size: 12, color: placeholderColor),
-            ),
-            Text('最新', style: labelStyle),
-            const SizedBox(width: 4),
-            Text(latestText, style: TextStyle(
-                fontSize: 12, color: querying || latestVersion == null ? placeholderColor : valueColor)),
-          ],
-        ),
-      ),
-    );
   }
 
   /// 保存选项变更：全字段拷贝 → onSave → 悬浮提示；保存挂起期间全控件禁用。
@@ -470,9 +335,6 @@ class _PackFilesState extends State<PackFiles> {
   @override
   Widget build(BuildContext context) {
     final bool canBuild = widget.onBuildPack != null && findBuildScript(widget.pack.files) != null;
-    // 仓库元数据链路待删除：本阶段恒为 null，仓库按钮与版本胶囊静默不渲染
-    final String? openRepoUrl = openableRepoWebUrl('');
-    final bool showVersionChip = false;
     final List<BuildScriptOption> options = canBuild && widget.onSave != null ? (_header?.options ??
         const <BuildScriptOption>[]) : const <BuildScriptOption>[];
     final Color sizeColor = FluentTheme
@@ -483,8 +345,7 @@ class _PackFilesState extends State<PackFiles> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Divider(),
-        if (openRepoUrl != null || canBuild || showVersionChip) _buildToolbar(
-            openRepoUrl: openRepoUrl, canBuild: canBuild, showVersionChip: showVersionChip),
+        if (canBuild) _buildToolbar(),
         if (options.isNotEmpty)
           BuildOptionsPanel(
             options: options,

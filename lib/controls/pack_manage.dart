@@ -20,7 +20,6 @@ class PackManage extends StatefulWidget {
     this.onBuildPack,
     this.packagingBuilder,
     this.onPackagingBuilderChanged,
-    this.loadLatestVersion,
     this.loadHeader,
   });
 
@@ -31,9 +30,6 @@ class PackManage extends StatefulWidget {
   final Future<void> Function(PackModel pack)? onBuildPack;
   final PackageBuilder? packagingBuilder;
   final ValueChanged<PackageBuilder>? onPackagingBuilderChanged;
-
-  /// 按仓库地址懒查询远端最新 tag；测试可注入。
-  final Future<String?> Function(String repoUrl)? loadLatestVersion;
 
   /// 读取包内 build.py 头部；为 null 时由文件管理页使用默认真实读取。
   final Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader;
@@ -89,7 +85,6 @@ class _PackManageState extends State<PackManage> {
             pack: pack,
             onBuildPack: widget.onBuildPack,
             onSave: widget.onSave,
-            loadLatestVersion: widget.loadLatestVersion,
             loadHeader: widget.loadHeader ?? loadBuildScriptHeader,
           ),
     );

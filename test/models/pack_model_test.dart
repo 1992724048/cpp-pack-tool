@@ -46,7 +46,6 @@ void main() {
         license: 'MIT',
         iconPath: 'icon.png',
         sourcePath: r'D:\src',
-        sourceVersion: 'v1.2.3',
       );
 
       final PackModel cleared = source.copyWith(description: null);
@@ -55,7 +54,6 @@ void main() {
       expect(cleared.license, 'MIT');
       expect(cleared.iconPath, 'icon.png');
       expect(cleared.sourcePath, r'D:\src');
-      expect(cleared.sourceVersion, 'v1.2.3');
 
       final PackModel replaced = source.copyWith(description: '新说明');
       expect(replaced.description, '新说明');
@@ -803,50 +801,6 @@ void main() {
       expect(pack.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.md);
       expect(pack.effectiveCompilerProfile.debug.runtime, CompilerRuntimeChoice.follow);
       expect(warnings, isEmpty);
-    });
-
-    test('toMap 空 sourceVersion 省略键', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      );
-
-      expect(pack.toMap().containsKey('sourceVersion'), isFalse);
-    });
-
-    test('toMap/fromMap 往返保留仓库版本', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-        sourceVersion: 'v1.2.3',
-      );
-
-      final Map<String, Object?> map = pack.toMap();
-
-      expect(map['sourceVersion'], 'v1.2.3');
-      expect(PackModel.fromMap(map).sourceVersion, 'v1.2.3');
-    });
-
-    test('fromMap sourceVersion 缺失或非法时容错为 null', () {
-      final PackModel missing = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-      });
-      expect(missing.sourceVersion, isNull);
-
-      for (final Object? value in <Object?>['', 42, <Object?>[]]) {
-        final PackModel pack = PackModel.fromMap(<String, Object?>{
-          'name': 'demo',
-          'version': '1.0.0',
-          'author': 'tester',
-          'sourceVersion': value,
-        });
-
-        expect(pack.sourceVersion, isNull);
-      }
     });
 
     test('enabledFormats 默认空列表（= 全部启用）且空时省略键', () {

@@ -930,7 +930,6 @@ void main() {
           scanFiles: (_) async => <FileModel>[],
           store: _FakePackStore(),
           detectCompilers: _noCompilers,
-          loadRemoteTags: _noRemoteTags,
         ),
       ),
     );
@@ -2057,41 +2056,6 @@ void main() {
     expect(store.packs.single.history.single.message, '创建包：1 个文件，总大小 128 B');
   });
 
-  testWidgets('手工重新映射保留已记录的仓库版本', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
-        )..sourceVersion = 'v1.0.0',
-      ],
-    );
-    final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (String path) => completer.future,
-    );
-
-    await tester.tap(find.byTooltip('重新映射'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    completer.complete(<FileModel>[
-      FileModel(name: 'new.h', path: 'new/new.h', size: 128),
-    ]);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(store.packs.single.sourceVersion, 'v1.0.0');
-    expect(store.packs.single.files.single.path, 'new/new.h');
-  });
-
   testWidgets('导出成功后追加打包历史条目', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[_pack('demo', '1.0.0', sourcePath: r'C:\libs\demo')],
@@ -2609,8 +2573,6 @@ Future<void> _pumpMainLayout(
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
   Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
-  Future<List<String>?> Function(String repoUrl)? loadRemoteTags,
-  Future<String?> Function(String repoUrl)? loadRepoIcon,
   PackHeaderIncludeFixer? fixIncludes,
   PackBuildCacheProbe? hasBuildCache,
   PackBuildCacheDeleter? deleteBuildCache,
@@ -2634,8 +2596,6 @@ Future<void> _pumpMainLayout(
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
         loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
-        loadRemoteTags: loadRemoteTags ?? _noRemoteTags,
-        loadRepoIcon: loadRepoIcon ?? _noRepoIcon,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
         hasBuildCache: hasBuildCache ?? _noBuildCache,
@@ -2658,10 +2618,6 @@ Future<HeaderIncludeFixReport> _emptyFixIncludes(
 
 Future<List<DetectedCompiler>> _noCompilers() async =>
     const <DetectedCompiler>[];
-
-Future<List<String>?> _noRemoteTags(String repoUrl) async => null;
-
-Future<String?> _noRepoIcon(String repoUrl) async => null;
 
 DetectedCompiler _compiler(CompilerKind kind, String version) {
   return DetectedCompiler(

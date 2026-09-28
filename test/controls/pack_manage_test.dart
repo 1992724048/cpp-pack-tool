@@ -50,7 +50,6 @@ Future<void> _pumpPackManage(WidgetTester tester, PackModel pack) async {
         allPacks: <PackModel>[pack],
         onSave: (_) async => false,
         pickDirectory: () async => null,
-        loadLatestVersion: (_) async => null,
         loadHeader: (_) async => null,
       ),
     ),

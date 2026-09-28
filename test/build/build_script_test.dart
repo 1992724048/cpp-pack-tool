@@ -561,7 +561,11 @@ void main() {
 
   group('requireValidSourceDirective', () {
     const String scriptPath = r'C:\libs\demo\build.py';
-    const String reservedNameReason = '必须位于包源目录的 .cnp-src 目录下';
+    const String reservedNameReason = '必须位于包源目录的 .cnp-src 目录下'
+        '（如 ".cnp-src/vendor/zlib"）';
+    const String visibleNameConsequence =
+        '否则源码会被文件扫描打进 NuGet 包并在构建后的输出清理中被删除';
+    const String hiddenNameConsequence = '否则会在构建后的输出清理中被删除';
 
     void expectRejected(String firstLine, String value, String reason) {
       final BuildScriptHeader header = parseBuildScriptHeader('$firstLine\n')!;
@@ -581,6 +585,12 @@ void main() {
         ),
       );
     }
+
+    void expectRejectedVisible(String firstLine, String value) =>
+        expectRejected(firstLine, value, '$reservedNameReason，$visibleNameConsequence');
+
+    void expectRejectedHidden(String firstLine, String value) =>
+        expectRejected(firstLine, value, '$reservedNameReason，$hiddenNameConsequence');
 
     test('# source: none 与保留名目录声明通过（大小写不敏感）', () {
       requireValidSourceDirective(
@@ -629,23 +639,18 @@ void main() {
       expectRejected(r'# source: \abs\path', r'\abs\path', '不得含盘符或 ..');
     });
 
-    test('首段非 .cnp-src 保留名的目录被拒绝（否则源码进包且构建后被删）', () {
-      expectRejected(
-        '# source: vendor/zlib',
-        'vendor/zlib',
-        reservedNameReason,
-      );
-      expectRejected('# source: src', 'src', reservedNameReason);
-      expectRejected(r'# source: vendor\zlib', r'vendor\zlib', reservedNameReason);
-      expectRejected('# source: cnp-src', 'cnp-src', reservedNameReason);
+    test('首段非 .cnp-src 保留名的可见目录被拒绝（否则源码进包且构建后被删）', () {
+      expectRejectedVisible('# source: vendor/zlib', 'vendor/zlib');
+      expectRejectedVisible('# source: src', 'src');
+      expectRejectedVisible(r'# source: vendor\zlib', r'vendor\zlib');
+      expectRejectedVisible('# source: cnp-src', 'cnp-src');
     });
 
     test('隐藏名但非保留名被拒绝（否则首次构建后被清理删除，源码丢失）', () {
-      expectRejected('# source: .my-cache', '.my-cache', reservedNameReason);
-      expectRejected(
+      expectRejectedHidden('# source: .my-cache', '.my-cache');
+      expectRejectedHidden(
         '# source: .git-cache/vendor',
         '.git-cache/vendor',
-        reservedNameReason,
       );
     });
 

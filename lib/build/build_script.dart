@@ -23,9 +23,10 @@ const String supportedBuildProfile = 'v1';
 /// 包内预置源码目录保留名。
 ///
 /// 双重身份：既是 `# source:` 唯一合法的首段（见
-/// [requireValidSourceDirective]），也是构建输出清理的白名单项（见
-/// `isPreservedEntryName`）。两者共用这一个字面量，使「校验放行却在首次构建后
-/// 被清理删除」这种源码丢失的错配在结构上不可能发生。
+/// [requireValidSourceDirective]），也须出现在构建输出清理的白名单
+/// （`isPreservedEntryName`）中。白名单是 `build_cleanup.dart` 内的独立字面量，
+/// 两者的一致性由清理侧的契约测试钉住：改动任一处都必须同步另一处，否则源码
+/// 会在首次构建后的输出清理中被删除。
 const String presetSourceDirName = '.cnp-src';
 
 /// 运行库选项在 `PackModel.buildOptions` 中的保留键。
@@ -258,9 +259,11 @@ void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
 /// 相对路径判据复用 `_isRelativeSubdir`（与 `# tool` 的 `bin=` 同一口径），保留名
 /// 判据按同文件的 [_pathSeparatorPattern] 取首段（与 `_isRelativeSubdir` 的 `..`
 /// 切分同源，不另造正则），大小写不敏感以对齐清理白名单 `isPreservedEntryName`：
-/// 首段不是 [presetSourceDirName] 的目录会被文件扫描扫进包、并在构建后的输出清理
-/// 中被删除，故该用户可见后果一并写进报错文案。调用方在任何副作用之前调用（与
-/// [requireSupportedBuildProfile] 同一 try 块）并把异常映射为用户可见异常类型。
+/// 首段不是 [presetSourceDirName] 的目录一律会在构建后的输出清理中被删除，故该
+/// 后果写进报错文案；首段同时可见（不隐藏）时还会被文件扫描打进 NuGet 包
+/// （`FileScan.shouldSkipDirectory` 跳过 `.` 前缀目录），故两种后果分文案表述。
+/// 调用方在任何副作用之前调用（与 [requireSupportedBuildProfile] 同一 try 块）
+/// 并把异常映射为用户可见异常类型。
 void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
   final String? sourceDir = header.sourceDir;
   if (sourceDir == null) {
@@ -275,15 +278,17 @@ void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
       ),
     );
   }
-  if (sourceDir.split(_pathSeparatorPattern).first.toLowerCase() !=
-      presetSourceDirName) {
+  final String firstSegment = sourceDir.split(_pathSeparatorPattern).first;
+  if (firstSegment.toLowerCase() != presetSourceDirName) {
+    final String consequence = firstSegment.startsWith('.')
+        ? '否则会在构建后的输出清理中被删除'
+        : '否则源码会被文件扫描打进 NuGet 包并在构建后的输出清理中被删除';
     throw FormatException(
       _invalidSourceDirMessage(
         scriptPath,
         sourceDir,
         '必须位于包源目录的 $presetSourceDirName 目录下'
-        '（如 "$presetSourceDirName/vendor/zlib"），否则源码会被文件扫描打进 '
-        'NuGet 包并在构建后的输出清理中被删除',
+        '（如 "$presetSourceDirName/vendor/zlib"），$consequence',
       ),
     );
   }

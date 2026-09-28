@@ -261,7 +261,6 @@ void main() {
             message: '创建包',
           ),
         ]
-        ..sourceVersion = 'v5.6.7'
         ..enabledFormats = <String>['nuget']
         ..compilerProfile = const CompilerProfile(
           release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
@@ -293,7 +292,6 @@ void main() {
       expect(updated.dependencies[1].version, '[1.2.3,)');
       expect(updated.macros.single.value, 'A=1');
       expect(updated.history.single.message, '创建包');
-      expect(updated.sourceVersion, 'v5.6.7');
       expect(updated.buildOptions, <String, String>{'tbb': 'on'});
       expect(updated.enabledFormats, <String>['nuget']);
       expect(updated.compilerProfile, same(pack.compilerProfile));

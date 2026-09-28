@@ -278,9 +278,6 @@ Future<void> runElevatedPackBuild(
   final PackSourcePreparation source = await prepareSource(
     pack,
     onStage,
-    processRunner: processRunner,
-    streamRunner: streamRunner,
-    onOutput: onOutput,
     cacheRoot: cacheRoot,
     environment: buildEnvironment.environment,
   );

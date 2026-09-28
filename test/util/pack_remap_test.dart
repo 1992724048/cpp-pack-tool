@@ -75,7 +75,6 @@ void main() {
               license: 'MIT',
               iconPath: 'assets/old.png',
               sourcePath: r'D:\src',
-              sourceVersion: 'v2.3.4',
             )
             ..files = <FileModel>[
               FileModel(name: 'old.h', path: 'include/old.h', size: 64),
@@ -128,7 +127,6 @@ void main() {
       expect(updated.description, '描述');
       expect(updated.license, 'MIT');
       expect(updated.sourcePath, r'D:\src');
-      expect(updated.sourceVersion, 'v2.3.4');
       expect(updated.iconPath, 'assets/logo.svg');
       expect(updated.compilerProfile, same(pack.compilerProfile));
       expect(updated.files, same(files));
@@ -168,33 +166,6 @@ void main() {
       final PackModel updated = copyPackWithFiles(pack, const <FileModel>[]);
 
       expect(updated.buildOptions, isEmpty);
-    });
-  });
-
-  group('copyPackWithVersion', () {
-    test('仅替换版本并保留 compilerProfile 与全部列表', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      )
-        ..files = <FileModel>[
-          FileModel(name: 'a.h', path: 'include/a.h', size: 10),
-        ]
-        ..buildOptions = <String, String>{'tbb': 'on'}
-        ..enabledFormats = <String>['nuget']
-        ..compilerProfile = const CompilerProfile(
-          debug: CompilerConfigProfile(runtime: CompilerRuntimeChoice.md),
-        );
-
-      final PackModel updated = copyPackWithVersion(pack, '2.0.0');
-
-      expect(updated.version, '2.0.0');
-      expect(updated.compilerProfile, same(pack.compilerProfile));
-      expect(updated.files, same(pack.files));
-      expect(updated.buildOptions, same(pack.buildOptions));
-      expect(updated.enabledFormats, same(pack.enabledFormats));
-      expect(pack.version, '1.0.0');
     });
   });
 }

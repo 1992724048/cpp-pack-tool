@@ -250,9 +250,6 @@ void main() {
             (
               PackModel pack,
               void Function(PackBuildStage) onStage, {
-              PackProcessRunner processRunner = Process.run,
-              PackStreamingProcessRunner? streamRunner,
-              void Function(String line)? onOutput,
               String cacheRoot = 'cache',
               Map<String, String>? environment,
             }) async {
@@ -795,9 +792,6 @@ PackSourcePreparer _fakePrepareSource({
   return (
     PackModel pack,
     void Function(PackBuildStage) onStage, {
-    PackProcessRunner processRunner = Process.run,
-    PackStreamingProcessRunner? streamRunner,
-    void Function(String line)? onOutput,
     String cacheRoot = 'cache',
     Map<String, String>? environment,
   }) async {

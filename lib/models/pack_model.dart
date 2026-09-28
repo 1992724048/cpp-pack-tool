@@ -21,10 +21,6 @@ class PackModel {
   final String? iconPath;
   final String? sourcePath;
 
-  /// 上次构建记录的仓库版本（git tag，回退短哈希）；未构建过为 null。
-  /// 构建流程会以 `# source: none` 跳过记录，构建回调在构建完成前原地更新本字段。
-  String? sourceVersion;
-
   List<FileModel> files = [];
   List<CmdModel> commands = [];
   List<DependencyModel> dependencies = [];
@@ -64,7 +60,7 @@ class PackModel {
   static List<PackModel> packs = [];
 
   PackModel(
-      {required this.name, required this.version, required this.author, this.description, this.license, this.iconPath, this.sourcePath, this.sourceVersion});
+      {required this.name, required this.version, required this.author, this.description, this.license, this.iconPath, this.sourcePath});
 
   /// 全字段拷贝：未传入的可空字段保留原值（显式传 `null` 才清空），
   /// 未传入的列表/映射保持原引用（既有 identity 断言依赖此语义）。
@@ -76,7 +72,6 @@ class PackModel {
     Object? license = _unset,
     Object? iconPath = _unset,
     Object? sourcePath = _unset,
-    Object? sourceVersion = _unset,
     Object? compilerProfile = _unset,
     List<FileModel>? files,
     List<CmdModel>? commands,
@@ -97,9 +92,6 @@ class PackModel {
       license: identical(license, _unset) ? this.license : license as String?,
       iconPath: identical(iconPath, _unset) ? this.iconPath : iconPath as String?,
       sourcePath: identical(sourcePath, _unset) ? this.sourcePath : sourcePath as String?,
-      sourceVersion: identical(sourceVersion, _unset)
-          ? this.sourceVersion
-          : sourceVersion as String?,
     );
     next.compilerProfile = identical(compilerProfile, _unset)
         ? this.compilerProfile
@@ -126,7 +118,6 @@ class PackModel {
       if (license != null) 'license': license,
       if (iconPath != null) 'iconPath': iconPath,
       if (sourcePath != null) 'sourcePath': sourcePath,
-      if (sourceVersion != null) 'sourceVersion': sourceVersion,
       'files': <Map<String, Object?>>[for (final FileModel file in files) file.toMap()],
       'dependencies': <Map<String, Object?>>[for (final DependencyModel dependency in dependencies) dependency.toMap()],
       'commands': <Map<String, Object?>>[for (final CmdModel command in commands) command.toMap()],
@@ -152,7 +143,6 @@ class PackModel {
       license: _optionalString(map, 'license'),
       iconPath: _optionalString(map, 'iconPath'),
       sourcePath: _optionalString(map, 'sourcePath'),
-      sourceVersion: _optionalSourceVersion(map),
     );
 
     pack.files.addAll(
@@ -269,12 +259,6 @@ String? _optionalString(Map<String, Object?> map, String key) {
     throw FormatException('字段 $key 类型错误，应为字符串');
   }
   return value.isEmpty ? null : value;
-}
-
-/// 记录字段容错读取：非字符串或空串视为未记录（不阻断配置加载）。
-String? _optionalSourceVersion(Map<String, Object?> map) {
-  final Object? value = map['sourceVersion'];
-  return value is String && value.isNotEmpty ? value : null;
 }
 
 String _describeScriptError(Map<String, Object?> item, Object error) {
