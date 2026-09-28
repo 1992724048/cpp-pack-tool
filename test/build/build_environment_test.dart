@@ -1354,7 +1354,6 @@ void main() {
         loadHeader: (PackModel value) async {
           loadedPack = value;
           return const BuildScriptHeader(
-
             tools: <BuildScriptTool>[
               BuildScriptTool(
                 name: 'perl',

@@ -65,7 +65,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 - 第一行必须是 `# source: <包内相对目录>`（严格锚点，不匹配即整头解析失败）；只提供预构建归档的配方写 `# source: none`。其后连续的 `#` 行可声明 `# tool`、`# option`、`# checkbox`、`# multiselect` 和 `# depends` 指令。
 - 默认流程是准备构建环境、从预置源码目录备源、执行 `python -u build.py`、检查头文件引用并自动重新映射。
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链与选项变量以及 `PYTHONIOENCODING=utf-8`。
-- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。
+- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动，辅助模块本身不消费该变量、仅原样透传给配方；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。
 - 工具只传递编译器与工具链信息，不替配方决定任何编译参数：指令集、优化等级、链接时优化、运行库家族（MD / MT）与语言标准全部由配方自行决定，可经 `cmake_configure` 的 `extra_args` 传任意 `-D` 参数（如 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`、`-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`）；不传时沿用 CMake 缺省。
 - `assets/build/cnp_build_support.py` 会在构建前释放到 `tools/`，供配方统一处理 CMake/Ninja 调用、产物分层、许可证和预构建归档分类。
 

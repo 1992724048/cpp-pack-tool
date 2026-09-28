@@ -124,10 +124,11 @@ List<String> _relativeFiles(String root) {
   return files;
 }
 
-/// cmake_configure 的命令装配、工具链路径透传、「不注入任何编译参数」的负向
-/// 断言与缺 CNP_CMAKE 报错：monkeypatch subprocess.Popen 捕获命令，不真实执行
-/// cmake。
+/// cmake_configure 的命令装配、工具链路径透传、三个代表性场景命令形状的正向
+/// 整串锁定、「不注入任何编译参数」的负向断言与缺 CNP_CMAKE 报错：monkeypatch
+/// subprocess.Popen 捕获命令，不真实执行 cmake。
 const String _cmakeDriver = r'''
+import inspect
 import io
 import os
 
@@ -138,7 +139,7 @@ print('version=%s' % cnp_build_support.VERSION)
 print('has_require_profile=%s' % hasattr(cnp_build_support, 'require_profile'))
 print('has_profile_for=%s' % hasattr(cnp_build_support, 'profile_for'))
 print('has_enable_ipo=%s' % (
-    'enable_ipo' in cnp_build_support.cmake_configure.__code__.co_varnames))
+    'enable_ipo' in inspect.signature(cnp_build_support.cmake_configure).parameters))
 
 os.environ.pop('CNP_CMAKE', None)
 try:
@@ -252,6 +253,14 @@ try:
     recipe_release = list(captured[-1])
 finally:
     cnp_build_support.subprocess.Popen = original_popen
+
+# 正向断言：三个代表性场景的完整命令形状（逐参数、原序）。任一多余/缺失旗标、
+# 参数错位或可执行路径变化都会使整串不匹配。
+for label, scenario in (
+        ('cmd_baseline', baseline),
+        ('cmd_debug', debug),
+        ('cmd_minimal', minimal)):
+    print('%s=%s' % (label, '|'.join(scenario)))
 
 # 负向断言：任何场景都不得注入编译参数类变量。
 FORBIDDEN = (
@@ -771,7 +780,40 @@ void main() {
       expect(stdout, contains('minimal_make_program=False'));
       expect(stdout, contains('minimal_c_compiler=False'));
       expect(stdout, contains('rc_compiler=C:/tools/llvm/bin/llvm-rc.exe'));
-      // 核心负向断言：任何场景都不注入编译参数类变量。
+      // 正向锁定命令形状：整串逐参数比对，任一多余/缺失旗标、参数错位或可执行
+      // 路径变化都会失配（基线场景的末尾另由 `extra=`（`command[-1]`）锚定）。
+      expect(
+        stdout,
+        contains(
+          'cmd_baseline=C:/tools/cmake/bin/cmake.exe|-S|C:/src|-B|C:/build|'
+          '-G|Ninja|-DCMAKE_BUILD_TYPE=Release|'
+          '-DCMAKE_MAKE_PROGRAM=C:/tools/ninja/ninja.exe|'
+          '-DCMAKE_C_COMPILER=C:/compiler/icx-cl.exe|'
+          '-DCMAKE_CXX_COMPILER=C:/compiler/icx-cl.exe|-DEXTRA=1',
+        ),
+        reason: 'Release 全工具链场景：可执行路径、-S/-B 取值、旗标集合与顺序',
+      );
+      expect(
+        stdout,
+        contains(
+          'cmd_debug=C:/tools/cmake/bin/cmake.exe|-S|C:/src|-B|C:/build|'
+          '-G|Ninja|-DCMAKE_BUILD_TYPE=Debug|'
+          '-DCMAKE_MAKE_PROGRAM=C:/tools/ninja/ninja.exe|'
+          '-DCMAKE_C_COMPILER=C:/compiler/icx-cl.exe|'
+          '-DCMAKE_CXX_COMPILER=C:/compiler/icx-cl.exe',
+        ),
+        reason: 'Debug 场景：只允许构建类型不同，末尾不得追加任何旗标',
+      );
+      expect(
+        stdout,
+        contains(
+          'cmd_minimal=C:/tools/cmake/bin/cmake.exe|-S|C:/src|-B|C:/build|'
+          '-G|Ninja|-DCMAKE_BUILD_TYPE=Release',
+        ),
+        reason: '无任何 CNP_* 编译器/工具链变量时，命令仅含可执行路径与 -S/-B/-G/构建类型',
+      );
+      // 核心负向断言：任何场景都不注入编译参数类变量（枚举外注入由上面的整串
+      // 断言兜住），此处保留逐变量诊断输出。
       for (final String scenario in <String>[
         'baseline',
         'debug',
