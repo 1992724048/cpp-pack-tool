@@ -113,7 +113,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
@@ -191,7 +191,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# https://github.com/foo/bar.git\n# profile: v1\n',
+        '# https://github.com/foo/bar.git\n',
       );
       final List<_ProcessCall> calls = <_ProcessCall>[];
       final List<PackBuildStage> stages = <PackBuildStage>[];
@@ -218,9 +218,12 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('build.py 缺少 Profile 声明时前置失败（无进程/无阶段/不清源目录/不建缓存）', () async {
+    test('源码目录声明非法时前置失败（无进程/无阶段/不清源目录/不建缓存）', () async {
       final Directory root = _tempDirectory();
-      final String sourcePath = _createSource(root, '# source: .cnp-src\n');
+      final String sourcePath = _createSource(
+        root,
+        '# source: ../escape\n',
+      );
       final String stalePath = joinPath(sourcePath, 'stale.txt');
       File(stalePath).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -238,22 +241,25 @@ void main() {
           isA<PackBuildException>().having(
             (PackBuildException error) => error.message,
             'message',
-            allOf(contains('缺少 Profile 声明'), contains('# profile: v1')),
+            allOf(
+              contains('build.py 源码目录声明非法'),
+              contains('# source: ../escape'),
+            ),
           ),
         ),
       );
 
-      expect(stages, isEmpty, reason: 'Profile 校验在下载阶段回调之前');
-      expect(calls, isEmpty, reason: 'Profile 校验在任何子进程执行之前');
+      expect(stages, isEmpty, reason: '声明校验在下载阶段回调之前');
+      expect(calls, isEmpty, reason: '声明校验在任何子进程执行之前');
       expect(
         File(stalePath).existsSync(),
         isTrue,
-        reason: 'Profile 校验在源目录清理之前',
+        reason: '声明校验在源目录清理之前',
       );
       expect(
         Directory(joinPath(cacheRoot, 'build')).existsSync(),
         isFalse,
-        reason: 'Profile 校验在缓存目录创建之前',
+        reason: '声明校验在缓存目录创建之前',
       );
     });
   });
@@ -263,7 +269,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n# profile: v1\nprint(1)\n',
+        '# source: .cnp-src\nprint(1)\n',
       );
       _createPresetSource(sourcePath, <String, String>{
         'main.cpp': 'int main() {}',
@@ -312,7 +318,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src/vendor/zlib\n# profile: v1\n',
+        '# source: .cnp-src/vendor/zlib\n',
       );
       final String presetPath = joinPath(sourcePath, '.cnp-src/vendor/zlib');
       Directory(presetPath).createSync(recursive: true);
@@ -339,7 +345,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n# profile: v1\n',
+        '# source: .cnp-src\n',
       );
       _createPresetSource(sourcePath, <String, String>{'main.cpp': 'v1'});
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -363,7 +369,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n# profile: v1\n',
+        '# source: .cnp-src\n',
       );
       final String stalePath = joinPath(sourcePath, 'stale.txt');
       File(stalePath).writeAsStringSync('stale');
@@ -401,7 +407,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n# profile: v1\n',
+        '# source: .cnp-src\n',
       );
       Directory(joinPath(sourcePath, '.cnp-src/nested'))
           .createSync(recursive: true);
@@ -436,7 +442,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: ../escape\n# profile: v1\n',
+        '# source: ../escape\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<PackBuildStage> stages = <PackBuildStage>[];
@@ -470,7 +476,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       Directory(joinPath(sourcePath, 'build-release'))
@@ -509,7 +515,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final File locked = File(joinPath(sourcePath, 'locked.dat'))
         ..writeAsStringSync('busy');
@@ -546,7 +552,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String scriptPath = joinPath(sourcePath, 'build.py');
       final String scriptBackup = File(scriptPath).readAsStringSync();
@@ -588,7 +594,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n'
+        '# source: none\n'
         'print(1)\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -634,7 +640,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       File(joinPath(sourcePath, 'stale.txt')).writeAsStringSync('stale');
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -696,7 +702,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -729,7 +735,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -768,7 +774,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
@@ -795,7 +801,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
@@ -836,7 +842,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -868,7 +874,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -893,7 +899,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -923,7 +929,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final String targetPath = joinPath(cacheRoot, 'build/demo');
@@ -961,7 +967,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String stdout = <String>[
         for (int index = 1; index <= 25; index++)
@@ -1007,7 +1013,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: .cnp-src\n# profile: v1\n',
+        '# source: .cnp-src\n',
       );
       _createPresetSource(sourcePath, <String, String>{'main.cpp': 'v1'});
       final String cacheRoot = joinPath(root.path, 'cache');
@@ -1051,7 +1057,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final List<String> lines = <String>[];
 
@@ -1073,7 +1079,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
@@ -1104,7 +1110,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final String cacheRoot = joinPath(root.path, 'cache');
       final List<String> lines = <String>[];
@@ -1134,7 +1140,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final List<String> lines = <String>[];
       // GBK 编码的「中文」+ 合法 UTF-8 行：0xD6/0xD0/0xCE/0xC4 不构成合法 UTF-8。
@@ -1183,7 +1189,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n',
+        '# source: none\n',
       );
       final List<String> lines = <String>[];
 
@@ -1231,7 +1237,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n'
+        '# source: none\n'
         "import sys\n"
         "print('中文输出：构建开始')\n"
         "print('中文错误：诊断信息', file=sys.stderr)\n",
@@ -1260,7 +1266,7 @@ void main() {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(
         root,
-        '# source: none\n# profile: v1\n'
+        '# source: none\n'
         "import sys\n"
         "print('开始构建')\n"
         "print('中文错误：编译失败', file=sys.stderr)\n"

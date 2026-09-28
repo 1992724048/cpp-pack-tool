@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/compiler_model.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -275,76 +274,7 @@ void main() {
       expect(result.errors.single.message, contains('脚本'));
     });
 
-    test('compilerProfile 写入 YAML 并可往返读回', () async {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      )..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(
-            instructionSet: CompilerInstructionSetChoice.baseline,
-            optimization: CompilerOptimizationChoice.standard,
-            ipo: CompilerIpoChoice.on,
-          ),
-          debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
-        );
-
-      await store.savePack(pack);
-      final YamlMap document =
-          loadYaml(File('${tempDir.path}/packs/demo.yaml').readAsStringSync())
-              as YamlMap;
-      final YamlMap profile = document['compilerProfile'] as YamlMap;
-
-      expect(profile['version'], 1);
-      expect((profile['release'] as YamlMap)['ipo'], true);
-      expect((profile['debug'] as YamlMap)['ipo'], false);
-
-      final PackLoadResult result = await store.loadPacks();
-
-      expect(result.errors, isEmpty);
-      final CompilerProfile loaded = result.packs.single.compilerProfile!;
-      expect(loaded.release.instructionSet, CompilerInstructionSetChoice.baseline);
-      expect(loaded.release.optimization, CompilerOptimizationChoice.standard);
-      expect(loaded.release.ipo, CompilerIpoChoice.on);
-      expect(loaded.debug.ipo, CompilerIpoChoice.off);
-    });
-
-    test('非法 compilerProfile 回退 follow 并经包加载警告通道上报', () async {
-      await store.ensureConfigExist();
-      File('${tempDir.path}/packs/profile_warned.yaml').writeAsStringSync(
-        'name: profile_warned\nversion: 1.0.0\nauthor: tester\n'
-        'compilerProfile:\n'
-        '  version: 2\n'
-        '  release:\n'
-        '    optimization: bogus\n',
-      );
-
-      final PackLoadResult result = await store.loadPacks();
-
-      expect(result.packs, hasLength(1));
-      expect(
-        result.packs.single.effectiveCompilerProfile.release.optimization,
-        CompilerOptimizationChoice.follow,
-      );
-      expect(result.errors, hasLength(2));
-      expect(
-        result.errors.every((PackLoadError error) =>
-            error.fileName == 'profile_warned.yaml'),
-        isTrue,
-      );
-      expect(
-        result.errors.any((PackLoadError error) =>
-            error.message.contains('compilerProfile.version')),
-        isTrue,
-      );
-      expect(
-        result.errors.any((PackLoadError error) =>
-            error.message.contains('release.optimization')),
-        isTrue,
-      );
-    });
-
-    test('老包 buildOptions.runtime 不再参与有效 Profile 且原键保留', () async {
+    test('老包 buildOptions.runtime 原样读回（无人读取的死键）', () async {
       await store.ensureConfigExist();
       File('${tempDir.path}/packs/legacy_runtime.yaml').writeAsStringSync(
         'name: legacy_runtime\nversion: 1.0.0\nauthor: tester\n'
@@ -357,13 +287,25 @@ void main() {
 
       expect(result.errors, isEmpty);
       final PackModel loaded = result.packs.single;
-      expect(loaded.compilerProfile, isNull);
-      expect(
-        loaded.effectiveCompilerProfile.release.instructionSet,
-        CompilerInstructionSetChoice.follow,
-      );
       expect(loaded.buildOptions['runtime'], 'MT');
       expect(loaded.buildOptions['tbb'], 'on');
+    });
+
+    test('老包 compilerProfile 键被忽略且不产生加载错误', () async {
+      await store.ensureConfigExist();
+      File('${tempDir.path}/packs/legacy_profile.yaml').writeAsStringSync(
+        'name: legacy_profile\nversion: 1.0.0\nauthor: tester\n'
+        'compilerProfile:\n'
+        '  version: 1\n'
+        '  release:\n'
+        '    instructionSet: avx2\n',
+      );
+
+      final PackLoadResult result = await store.loadPacks();
+
+      expect(result.errors, isEmpty);
+      final PackModel loaded = result.packs.single;
+      expect(loaded.toMap().containsKey('compilerProfile'), isFalse);
     });
   });
 

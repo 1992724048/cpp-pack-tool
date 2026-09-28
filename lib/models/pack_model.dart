@@ -1,5 +1,4 @@
 ﻿import 'package:cpp_nuget_pack/models/cmd_model.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -31,17 +30,9 @@ class PackModel {
   List<ScriptProjectModel> scripts = [];
   Map<String, String> buildOptions = <String, String>{};
 
-  /// 显式记录的编译器 Profile；null = 未记录（有效值由 [effectiveCompilerProfile]
-  /// 回退为 v1 全 `follow` 默认）。
-  CompilerProfile? compilerProfile;
-
   /// 启用的打包格式 id（如 `nuget` / `cmake`，规范序 = 注册表序）。
   /// 空列表 = 未记录（所有格式启用）——旧包缺字段读回即空，行为等同现状。
   List<String> enabledFormats = <String>[];
-
-  /// 生效的 Profile：显式记录优先；未记录则为 v1 全 `follow` 默认。
-  CompilerProfile get effectiveCompilerProfile =>
-      compilerProfile ?? const CompilerProfile();
 
   static List<PackModel> packs = [];
 
@@ -58,7 +49,6 @@ class PackModel {
     Object? license = _unset,
     Object? iconPath = _unset,
     Object? sourcePath = _unset,
-    Object? compilerProfile = _unset,
     List<FileModel>? files,
     List<CmdModel>? commands,
     List<DependencyModel>? dependencies,
@@ -79,9 +69,6 @@ class PackModel {
       iconPath: identical(iconPath, _unset) ? this.iconPath : iconPath as String?,
       sourcePath: identical(sourcePath, _unset) ? this.sourcePath : sourcePath as String?,
     );
-    next.compilerProfile = identical(compilerProfile, _unset)
-        ? this.compilerProfile
-        : compilerProfile as CompilerProfile?;
     next.files = files ?? this.files;
     next.commands = commands ?? this.commands;
     next.dependencies = dependencies ?? this.dependencies;
@@ -115,7 +102,6 @@ class PackModel {
       'history': <Map<String, Object?>>[for (final HistoryModel entry in history) entry.toMap()],
       'scripts': <Map<String, Object?>>[for (final ScriptProjectModel script in scripts) script.toMap()],
       if (buildOptions.isNotEmpty) 'buildOptions': <String, String>{...buildOptions},
-      if (compilerProfile != null) 'compilerProfile': compilerProfile!.toMap(),
       if (enabledFormats.isNotEmpty) 'enabledFormats': <String>[...enabledFormats],
     };
   }
@@ -162,10 +148,6 @@ class PackModel {
       }
     }
     pack.buildOptions = _stringStringMap(map, 'buildOptions');
-    final Object? profileValue = map['compilerProfile'];
-    pack.compilerProfile = profileValue == null
-        ? null
-        : CompilerProfile.fromMap(profileValue, warnings: warnings);
     pack.enabledFormats = _stringList(map, 'enabledFormats');
     return pack;
   }

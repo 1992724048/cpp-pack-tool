@@ -184,11 +184,62 @@ void main() {
         isNull,
         reason: '辅助模块不再写该变量，CMakeCache 中不应出现（CMake 未设置时缺省）',
       );
-      expect(
-        env.environment.containsKey('CNP_RUNTIME_LIBRARY'),
-        isFalse,
-        reason: '旧运行库变量不再下发',
+
+      // 命令级负向断言：CMakeCache 会合法地缓存 CMAKE_C_FLAGS 等 CMake 缺省值，
+      // 故改在真实环境 + 真实模块下拦截 subprocess.Popen，直接对命令本身断言。
+      final ProcessResult capture = await Process.run(
+        'python',
+        <String>[
+          '-c',
+          'import subprocess, sys\n'
+              'import cnp_build_support\n'
+              'commands = []\n'
+              'real = subprocess.Popen\n'
+              '\n'
+              '\n'
+              'def spy(command, **kwargs):\n'
+              '    commands.append(list(command))\n'
+              '    raise SystemExit(0)\n'
+              '\n'
+              '\n'
+              'cnp_build_support.subprocess.Popen = spy\n'
+              'try:\n'
+              '    cnp_build_support.cmake_configure(\n'
+              '        sys.argv[1], sys.argv[2], "Release")\n'
+              'except SystemExit:\n'
+              '    pass\n'
+              'print("COMMAND=" + "|".join(commands[0]))\n',
+          source.path,
+          buildDir,
+        ],
+        environment: <String, String>{...env.environment},
       );
+      expect(
+        capture.exitCode,
+        0,
+        reason: 'stdout=${capture.stdout}\nstderr=${capture.stderr}',
+      );
+      final String command =
+          '${capture.stdout}'.split('COMMAND=').last.trim();
+      print('[evidence] cmake.command=$command');
+      expect(command, isNotEmpty);
+      for (final String removed in <String>[
+        'CMAKE_MSVC_RUNTIME_LIBRARY',
+        'CMAKE_INTERPROCEDURAL_OPTIMIZATION',
+        'CMAKE_C_FLAGS=',
+        'CMAKE_CXX_FLAGS=',
+        'CMAKE_C_FLAGS_RELEASE',
+        'CMAKE_CXX_FLAGS_RELEASE',
+      ]) {
+        expect(
+          command,
+          isNot(contains('-D$removed')),
+          reason: '命令不应注入被删除的编译参数变量 $removed',
+        );
+      }
+      // 工具链信息仍然透传。
+      expect(command, contains('-DCMAKE_BUILD_TYPE=Release'));
+      expect(command, contains('-DCMAKE_MAKE_PROGRAM='));
     },
     skip: Platform.environment['CNP_REAL_ENV_SMOKE'] == '1'
         ? false

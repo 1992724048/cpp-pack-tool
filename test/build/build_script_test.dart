@@ -402,92 +402,26 @@ void main() {
     });
   });
 
-  group('# profile 指令', () {
-    test('解析头部记录 # profile: v1', () {
+  group('# profile 指令已退役', () {
+    test('头部内的 # profile: 行按未知注释忽略，不影响其余指令解析', () {
       final BuildScriptHeader? header = parseBuildScriptHeader(
         '# source: .cnp-src\n'
         '# profile: v1\n'
         '# tool: nasm https://example.com/nasm.zip\n',
       );
 
-      expect(header!.profileVersion, 'v1');
+      expect(header, isNotNull);
+      expect(header!.sourceDir, '.cnp-src');
       expect(header.tools, hasLength(1));
     });
 
-    test('v1 允许值大小写与空白，头部连续段之外不生效', () {
-      final BuildScriptHeader? tolerated = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# profile:  V1  \n',
-      );
-      expect(tolerated!.profileVersion, 'V1');
-      expect(
-        () => requireSupportedBuildProfile(tolerated, r'C:\libs\demo\build.py'),
-        returnsNormally,
-      );
-
-      final BuildScriptHeader? outside = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '\n'
-        '# profile: v1\n',
-      );
-      expect(outside!.profileVersion, isNull);
-
-      final BuildScriptHeader? afterCode = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        'print(1)\n'
-        '# profile: v1\n',
-      );
-      expect(afterCode!.profileVersion, isNull);
-    });
-
-    test('缺少/空/不支持 Profile 声明均给出包含路径的中文错误', () {
-      final BuildScriptHeader header = parseBuildScriptHeader(
+    test('不带 # profile: 声明的配方照常解析出头部', () {
+      final BuildScriptHeader? header = parseBuildScriptHeader(
         '# source: .cnp-src\n',
-      )!;
-      expect(
-        () => requireSupportedBuildProfile(header, r'C:\libs\demo\build.py'),
-        throwsA(
-          isA<FormatException>().having(
-            (FormatException error) => error.message,
-            'message',
-            allOf(
-              contains(r'C:\libs\demo\build.py'),
-              contains('# profile: v1'),
-            ),
-          ),
-        ),
       );
 
-      final BuildScriptHeader empty = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# profile:\n',
-      )!;
-      expect(
-        () => requireSupportedBuildProfile(empty, r'C:\libs\demo\build.py'),
-        throwsA(
-          isA<FormatException>().having(
-            (FormatException error) => error.message,
-            'message',
-            allOf(contains('缺少 Profile 声明'), contains('# profile: v1')),
-          ),
-        ),
-      );
-
-      final BuildScriptHeader unsupported = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# profile: v2\n',
-      )!;
-      expect(
-        () =>
-            requireSupportedBuildProfile(unsupported, r'C:\libs\demo\build.py'),
-        throwsA(
-          isA<FormatException>().having(
-            (FormatException error) => error.message,
-            'message',
-            allOf(contains('v2'), contains('仅支持 v1')),
-          ),
-        ),
-      );
+      expect(header, isNotNull);
+      expect(header!.sourceDir, '.cnp-src');
     });
   });
 

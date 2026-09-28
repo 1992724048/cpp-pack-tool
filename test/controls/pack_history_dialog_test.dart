@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:cpp_nuget_pack/controls/pack_history_dialog.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -142,10 +141,7 @@ void main() {
               name: '脚本 1',
               trigger: ScriptTrigger.pre,
             ),
-          ]
-          ..compilerProfile = const CompilerProfile(
-            release: CompilerConfigProfile(instructionSet: CompilerInstructionSetChoice.avx2),
-          );
+          ];
     PackModel? saved;
 
     await _pumpDialog(
@@ -165,7 +161,6 @@ void main() {
     expect(saved!.history, hasLength(1));
     expect(saved!.scripts, hasLength(1));
     expect(saved!.scripts.single.id, 'script_1');
-    expect(saved!.compilerProfile, same(pack.compilerProfile));
   });
 
   testWidgets('保存失败时保留条目且不显示已删除', (tester) async {

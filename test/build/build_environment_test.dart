@@ -5,7 +5,6 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -318,7 +317,6 @@ void main() {
         environment: base,
         cmakeNinja: cmakeNinja,
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(
@@ -360,7 +358,6 @@ void main() {
         environment: <String, String>{'Path': r'C:\Windows'},
         cmakeNinja: cmakeNinja,
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(
@@ -383,7 +380,6 @@ void main() {
         environment: <String, String>{'Path': r'C:\Windows'},
         cmakeNinja: cmakeNinja,
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(
@@ -398,7 +394,6 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(pathEntries: <String>[r'C:\tools\ninja']),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(result.environment['Path'], r'C:\tools\ninja;C:\LLVM\bin');
@@ -411,7 +406,6 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(result.environment.containsKey('Path'), isFalse);
@@ -428,7 +422,6 @@ void main() {
         environment: base,
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(
@@ -444,7 +437,6 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(
@@ -460,7 +452,6 @@ void main() {
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
         options: const <String, String>{'tbb': 'on', 'open_mp': 'off'},
-        profile: const CompilerProfile(),
       );
 
       expect(result.environment['CNP_OPTION_TBB'], 'on');
@@ -468,39 +459,67 @@ void main() {
       expect(result.environment.containsKey('CNP_OPTION_OTHER'), isFalse);
     });
 
-    test('Profile 投影固定为七个变量且 IPO 使用 follow/1/0', () {
-      final Map<String, String> environment = buildProfileEnvironment(
-        const CompilerProfile(
-          release: CompilerConfigProfile(
-            instructionSet: CompilerInstructionSetChoice.avx2,
-            optimization: CompilerOptimizationChoice.maximum,
-            ipo: CompilerIpoChoice.on,
-          ),
-          debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
-        ),
+    test('不下发任何编译参数 Profile 变量', () {
+      final BuildEnvironment result = assembleBuildEnvironment(
+        compiler: _compiler(),
+        environment: <String, String>{'FOO': '1'},
+        cmakeNinja: _cmakeNinja(),
+        toolsRoot: 'tools',
       );
 
-      expect(environment['CNP_BUILD_PROFILE_VERSION'], '1');
-      expect(environment['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'], 'avx2');
-      expect(environment['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'], 'maximum');
-      expect(environment['CNP_BUILD_PROFILE_RELEASE_IPO'], '1');
-      expect(environment['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'], 'follow');
-      expect(environment['CNP_BUILD_PROFILE_DEBUG_IPO'], '0');
       expect(
-        environment.keys
+        result.environment.keys
             .where((String key) => key.startsWith('CNP_BUILD_PROFILE_')),
-        hasLength(7),
+        isEmpty,
       );
       expect(
-        environment.keys.any(
-          (String key) => key.endsWith('_RUNTIME'),
-        ),
+        result.environment.keys
+            .any((String key) => key.endsWith('_RUNTIME')),
         isFalse,
-        reason: '运行库轴已移除，Profile 投影不再含 RUNTIME 变量',
+      );
+      expect(result.environment['FOO'], '1');
+    });
+
+    test('编译器与工具链变量完整下发（配方据此自定编译参数）', () {
+      final DetectedCompiler compiler = _compiler(
+        kind: CompilerKind.icx,
+        executablePath: r'C:\ICX\bin\icx-cl.exe',
+      );
+      final CmakeNinja cmakeNinja = CmakeNinja(
+        cmakeExecutable: r'C:\tools\cmake\bin\cmake.exe',
+        ninjaExecutable: r'C:\tools\ninja\ninja.exe',
+        pathEntries: <String>[r'C:\tools\ninja', r'C:\tools\cmake\bin'],
+      );
+
+      final BuildEnvironment result = assembleBuildEnvironment(
+        compiler: compiler,
+        environment: <String, String>{
+          'Path': r'C:\Windows',
+          'CNP_RC_COMPILER': r'C:\tools\rc.exe',
+        },
+        cmakeNinja: cmakeNinja,
+        toolsRoot: 'tools',
+        options: <String, String>{'tbb': 'on'},
+      );
+
+      expect(result.environment['CNP_CMAKE'], r'C:\tools\cmake\bin\cmake.exe');
+      expect(result.environment['CNP_NINJA'], r'C:\tools\ninja\ninja.exe');
+      expect(
+        result.environment['CNP_TOOLS_DIR'],
+        Directory('tools').absolute.path,
+      );
+      expect(result.environment['CNP_C_COMPILER'], r'C:\ICX\bin\icx-cl.exe');
+      expect(result.environment['CNP_CXX_COMPILER'], compiler.executablePath);
+      expect(result.environment['CNP_COMPILER_KIND'], 'icx');
+      expect(result.environment['CNP_RC_COMPILER'], r'C:\tools\rc.exe');
+      expect(result.environment['CNP_OPTION_TBB'], 'on');
+      expect(
+        result.environment['PYTHONPATH'],
+        Directory('tools').absolute.path,
       );
     });
 
-    test('父环境污染时旧 IPO 变量被清理，运行库旧键不再被清理', () {
+    test('父环境残留的旧运行库与旧 IPO 键按普通变量原样透传', () {
       final BuildEnvironment result = assembleBuildEnvironment(
         compiler: _compiler(kind: CompilerKind.msvc),
         environment: <String, String>{
@@ -509,38 +528,18 @@ void main() {
         },
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(
         result.environment['cnp_runtime_library'],
         'mt',
-        reason: '旧运行库键已无对应清理契约，按父环境原样透传',
+        reason: '无对应清理契约，按父环境原样透传',
       );
       expect(
-        result.environment.keys
-            .any((String key) => key.toLowerCase() == 'cnp_no_ipo'),
-        isFalse,
+        result.environment['Cnp_No_Ipo'],
+        '1',
+        reason: '旧 IPO 键已无消费方，同样按父环境原样透传',
       );
-    });
-
-    test('装配写入默认 Profile 的七个变量且不下发旧 IPO 变量', () {
-      final BuildEnvironment result = assembleBuildEnvironment(
-        compiler: _compiler(),
-        environment: <String, String>{'FOO': '1'},
-        cmakeNinja: _cmakeNinja(),
-        toolsRoot: 'tools',
-        profile: const CompilerProfile(),
-      );
-
-      expect(result.environment['CNP_BUILD_PROFILE_VERSION'], '1');
-      expect(
-        result.environment['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'],
-        'follow',
-      );
-      expect(result.environment['CNP_BUILD_PROFILE_DEBUG_IPO'], 'follow');
-      expect(result.environment.containsKey('CNP_NO_IPO'), isFalse);
-      expect(result.environment['FOO'], '1');
     });
 
     test('不推导 windres：同目录存在 windres 也不下发，父环境显式值保留', () {
@@ -562,7 +561,6 @@ void main() {
         environment: <String, String>{'FOO': '1'},
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(derived.environment['CNP_COMPILER_KIND'], 'clang-cl');
@@ -580,7 +578,6 @@ void main() {
         },
         cmakeNinja: _cmakeNinja(),
         toolsRoot: 'tools',
-        profile: const CompilerProfile(),
       );
 
       expect(declared.environment['CNP_RC_COMPILER'], r'D:\tools\windres.exe');
@@ -1357,7 +1354,7 @@ void main() {
         loadHeader: (PackModel value) async {
           loadedPack = value;
           return const BuildScriptHeader(
-            profileVersion: 'v1',
+
             tools: <BuildScriptTool>[
               BuildScriptTool(
                 name: 'perl',
@@ -1425,7 +1422,7 @@ void main() {
       );
     });
 
-    test('包生效 Profile 的两个配置分别投影到七个变量', () async {
+    test('包级入口不下发编译参数变量且不改写老包 buildOptions.runtime', () async {
       final Directory root = _tempDirectory();
       Future<Map<String, String>> prepare(PackModel pack) async {
         final BuildEnvironment result = await preparePackBuildEnvironment(
@@ -1434,9 +1431,7 @@ void main() {
           provisioner: _FakeProvisioner(_cmakeNinja()),
           toolsRoot: root.path,
           baseEnvironment: <String, String>{},
-          loadHeader: (PackModel value) async => const BuildScriptHeader(
-            profileVersion: 'v1',
-          ),
+          loadHeader: (PackModel value) async => const BuildScriptHeader(),
           detect: () async => <DetectedCompiler>[_compiler()],
           capture: _captureStub(<CompilerKind>[], (
             DetectedCompiler compiler,
@@ -1448,39 +1443,19 @@ void main() {
         return result.environment;
       }
 
-      final PackModel explicit = _pack()
-        ..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(
-            instructionSet: CompilerInstructionSetChoice.avx2,
-            optimization: CompilerOptimizationChoice.standard,
-            ipo: CompilerIpoChoice.on,
-          ),
-          debug: CompilerConfigProfile(
-            instructionSet: CompilerInstructionSetChoice.baseline,
-            optimization: CompilerOptimizationChoice.maximum,
-            ipo: CompilerIpoChoice.off,
-          ),
-        );
-      final Map<String, String> projected = await prepare(explicit);
-      expect(projected['CNP_BUILD_PROFILE_VERSION'], '1');
-      expect(projected['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'], 'avx2');
-      expect(projected['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'], 'standard');
-      expect(projected['CNP_BUILD_PROFILE_RELEASE_IPO'], '1');
-      expect(projected['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'], 'baseline');
-      expect(projected['CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION'], 'maximum');
-      expect(projected['CNP_BUILD_PROFILE_DEBUG_IPO'], '0');
-      expect(projected.containsKey('CNP_OPTION_RUNTIME'), isFalse);
-
       final PackModel legacy = _pack(
         buildOptions: <String, String>{'runtime': 'MT'},
       );
-      final Map<String, String> migrated = await prepare(legacy);
+      final Map<String, String> environment = await prepare(legacy);
+
       expect(
-        migrated['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'],
-        'follow',
-        reason: '老包的 buildOptions.runtime 不再参与有效 Profile',
+        environment.keys
+            .where((String key) => key.startsWith('CNP_BUILD_PROFILE_')),
+        isEmpty,
+        reason: '编译参数由配方自定，包级入口不投影任何 Profile 变量',
       );
-      expect(migrated['CNP_BUILD_PROFILE_RELEASE_IPO'], 'follow');
+      expect(environment.containsKey('CNP_OPTION_RUNTIME'), isFalse);
+      expect(environment['CNP_COMPILER_KIND'], 'msvc');
       expect(legacy.buildOptions['runtime'], 'MT', reason: '旧 YAML 键不再被改写');
     });
 
@@ -1513,40 +1488,6 @@ void main() {
       );
 
       expect(provisioner.ensureCmakeNinjaCalls, 0);
-    });
-
-    test('环境准备在 Profile 失败时不检测编译器也不下载工具', () async {
-      final Directory root = _tempDirectory();
-      final _FakeProvisioner provisioner = _FakeProvisioner(_cmakeNinja());
-
-      await expectLater(
-        preparePackBuildEnvironment(
-          _pack(),
-          priority: <String>['msvc'],
-          provisioner: provisioner,
-          toolsRoot: root.path,
-          baseEnvironment: <String, String>{},
-          loadHeader: (PackModel pack) async =>
-              const BuildScriptHeader(),
-          detect: () async => throw StateError('不应检测编译器'),
-          capture: _captureStub(<CompilerKind>[], (
-            DetectedCompiler compiler,
-            Map<String, String> baseEnvironment,
-          ) {
-            return baseEnvironment;
-          }),
-        ),
-        throwsA(
-          isA<BuildPreparationException>().having(
-            (BuildPreparationException error) => error.message,
-            'message',
-            allOf(contains('缺少 Profile 声明'), contains('build.py')),
-          ),
-        ),
-      );
-
-      expect(provisioner.ensureCmakeNinjaCalls, 0);
-      expect(provisioner.ensurePythonCalls, 0);
     });
 
     test('辅助模块加载失败按 null 容错并继续装配', () async {

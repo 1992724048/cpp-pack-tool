@@ -1,6 +1,5 @@
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -167,7 +166,6 @@ void main() {
     expect(updated.libraries, same(pack.libraries));
     expect(updated.history, same(pack.history));
     expect(updated.buildOptions, <String, String>{'tbb': 'on'});
-    expect(updated.compilerProfile, same(pack.compilerProfile));
     expect(find.text('已保存'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -1133,10 +1131,7 @@ PackModel _fullPackWithTextNode() {
             message: '创建',
           ),
         ]
-        ..buildOptions = <String, String>{'tbb': 'on'}
-        ..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(instructionSet: CompilerInstructionSetChoice.avx2),
-        );
+        ..buildOptions = <String, String>{'tbb': 'on'};
   pack.scripts = <ScriptProjectModel>[
     ScriptProjectModel(id: 'script_1', name: '脚本 1', trigger: ScriptTrigger.pre)
       ..nodes.add(ScriptNodeModel(id: 'n1', type: 'value.text', x: 40, y: 60)),

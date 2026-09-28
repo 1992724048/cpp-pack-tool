@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_files.dart';
@@ -617,12 +616,7 @@ void main() {
 
   testWidgets('选择选项后保存全字段拷贝并提示已保存', (tester) async {
     final PackModel pack = _buildPack('demo')
-      ..buildOptions = <String, String>{'other': 'keep'}
-      ..compilerProfile = const CompilerProfile(
-        release: CompilerConfigProfile(
-          instructionSet: CompilerInstructionSetChoice.avx2,
-        ),
-      );
+      ..buildOptions = <String, String>{'other': 'keep'};
     PackModel? saved;
 
     await _pumpPage(
@@ -649,7 +643,6 @@ void main() {
     expect(saved!.version, '1.0.0');
     expect(saved!.author, 'tester');
     expect(saved!.files, same(pack.files));
-    expect(saved!.compilerProfile, same(pack.compilerProfile));
     expect(find.text('已保存'), findsOneWidget);
   });
 

@@ -4,7 +4,6 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
@@ -138,37 +137,6 @@ class BuildEnvironment {
   final ProvisionedPython? python;
 }
 
-/// 旧 IPO 关闭开关的环境变量名（辅助模块 legacy 口径）；Profile 接管后与
-/// 运行时按大小写不敏感清除，防止父环境残留覆盖 Profile 投影结果。
-const String legacyNoIpoEnvName = 'CNP_NO_IPO';
-
-/// 把 [profile] 投影为七个子进程环境变量（结构版本 + Release/Debug 两分区
-/// × 指令集 / 优化 / IPO 三维度）。
-///
-/// 取值为枚举 `.name`（`baseline`/`avx2`、`standard`/`maximum`），IPO 按开关语义
-/// 映射：`follow` 原样透传、`on` → `1`、`off` → `0`。
-Map<String, String> buildProfileEnvironment(CompilerProfile profile) {
-  final Map<String, String> result = <String, String>{
-    'CNP_BUILD_PROFILE_VERSION': '$compilerProfileVersion',
-  };
-  void put(CompilerProfileConfig config, String prefix) {
-    final CompilerConfigProfile value = profile.configFor(config);
-    result['CNP_BUILD_PROFILE_${prefix}_INSTRUCTION_SET'] =
-        value.instructionSet.name;
-    result['CNP_BUILD_PROFILE_${prefix}_OPTIMIZATION'] =
-        value.optimization.name;
-    result['CNP_BUILD_PROFILE_${prefix}_IPO'] = switch (value.ipo) {
-      CompilerIpoChoice.follow => 'follow',
-      CompilerIpoChoice.on => '1',
-      CompilerIpoChoice.off => '0',
-    };
-  }
-
-  put(CompilerProfileConfig.release, 'RELEASE');
-  put(CompilerProfileConfig.debug, 'DEBUG');
-  return result;
-}
-
 /// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
 ///
 /// PATH 键大小写不敏感（保留原键名与值），前置顺序为 Ninja 目录 → CMake 目录 →
@@ -176,10 +144,11 @@ Map<String, String> buildProfileEnvironment(CompilerProfile profile) {
 /// [toolPathEntries]（`# tool` 声明的工具） →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
 /// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
-/// [profile] 投影为七个 [buildProfileEnvironment] 变量，并清除父环境中
-/// 大小写不敏感命中的 [legacyNoIpoEnvName] 残留（旧口径不再下发）；
 /// `PYTHONPATH` 前置 [toolsRoot] 绝对路径
 /// （保留原值）；[environment] 不被修改。
+///
+/// 编译参数（指令集、优化等级、链接时优化、运行库家族与语言标准）一律不由本层
+/// 决定，配方可经 `cmake_configure(extra_args=…)` 自定任何 `-D` 参数。
 ///
 /// `CNP_C_COMPILER` 取 [DetectedCompiler.executablePath]、
 /// `CNP_CXX_COMPILER` 取 [DetectedCompiler.cxxCompilerPath]。`CNP_RC_COMPILER`
@@ -193,7 +162,6 @@ BuildEnvironment assembleBuildEnvironment({
   ProvisionedPython? python,
   List<String> toolPathEntries = const <String>[],
   Map<String, String> options = const <String, String>{},
-  required CompilerProfile profile,
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);
@@ -207,11 +175,6 @@ BuildEnvironment assembleBuildEnvironment({
     'CNP_COMPILER_KIND',
     compilerKindId(compiler.kind),
   );
-  _removeEnvironmentValue(child, legacyNoIpoEnvName);
-  for (final MapEntry<String, String> profileVariable
-      in buildProfileEnvironment(profile).entries) {
-    _setEnvironmentValue(child, profileVariable.key, profileVariable.value);
-  }
   for (final MapEntry<String, String> option in options.entries) {
     _setEnvironmentValue(child, optionEnvName(option.key), option.value);
   }
@@ -241,8 +204,7 @@ BuildEnvironment assembleBuildEnvironment({
 /// [cachedCompilers] 中有效且匹配 [priority] 的编译器，缓存缺失/失效时按
 /// [priority] 检测（全部落空时下载 clang/LLVM 到 `tools/clang/` 兜底）→ 捕获
 /// 编译器环境 → 供给 CMake/Ninja、Python（本机优先，缺失下载 embeddable 版）与
-/// [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*`、选项变量与
-/// 七个 Profile 变量（[profile]，默认全 `follow`）。
+/// [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*` 与选项变量。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统）；受控 `TMP`/`TEMP` 写入其副本并随编译器检测、环境捕获
@@ -262,7 +224,6 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   Map<String, String>? baseEnvironment,
   List<BuildScriptTool> tools = const <BuildScriptTool>[],
   Map<String, String> options = const <String, String>{},
-  CompilerProfile profile = const CompilerProfile(),
   String? supportModule,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
@@ -339,7 +300,6 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     python: python,
     toolPathEntries: toolPathEntries,
     options: options,
-    profile: profile,
   );
 }
 
@@ -527,11 +487,11 @@ Future<void> _releaseSupportModule(String toolsRoot, String content) async {
   }
 }
 
-/// 依据包声明准备构建环境：读取 build.py 头部 → 校验 `# profile:` 声明为受支持
-/// 版本（见 [requireSupportedBuildProfile]，失败包装为
-/// [BuildPreparationException] 并发生在编译器检测与工具供给之前）→ 解析选项并
-/// 投影包生效 Profile（[PackModel.effectiveCompilerProfile]）→ 供给声明工具与
+/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 供给声明工具与
 /// CMake/Ninja/Python → 释放 [loadSupportModule] 内容（缺省 null 跳过）。
+///
+/// 编译参数不经本层下发：配方自行决定并可经 `cmake_configure(extra_args=…)`
+/// 传入任意 `-D` 参数。
 ///
 /// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
 /// [BuildPreparationException]。其余参数（含 [onDownloadProgress]）透传
@@ -559,21 +519,6 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
   } catch (error) {
     throw BuildPreparationException('读取 build.py 失败：$error');
   }
-  if (header != null) {
-    // Profile 前置校验（fail-closed）：在编译器检测、CMake/Ninja/Python 与
-    // `# tool` 工具供给之前拒绝不带受支持 Profile 声明的配方。
-    try {
-      requireSupportedBuildProfile(
-        header,
-        joinPath(
-          pack.sourcePath ?? '',
-          findBuildScript(pack.files)?.path ?? 'build.py',
-        ),
-      );
-    } on FormatException catch (error) {
-      throw BuildPreparationException(formatError(error));
-    }
-  }
   final String? supportModule = await _loadSupportModule(loadSupportModule);
   return prepareBuildEnvironment(
     priority: priority,
@@ -586,7 +531,6 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
       header?.options ?? const <BuildScriptOption>[],
       pack.buildOptions,
     ),
-    profile: pack.effectiveCompilerProfile,
     supportModule: supportModule,
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
@@ -787,13 +731,4 @@ void _setEnvironmentValue(
     environment.remove(existing);
   }
   environment[key] = value;
-}
-
-/// 按大小写不敏感键名移除条目（Windows 环境变量键不区分大小写，
-/// 父环境可能以任意大小写残留旧口径）。
-void _removeEnvironmentValue(Map<String, String> environment, String key) {
-  final String? existing = _findKeyIgnoreCase(environment, key);
-  if (existing != null) {
-    environment.remove(existing);
-  }
 }

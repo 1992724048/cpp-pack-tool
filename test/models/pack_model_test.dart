@@ -1,6 +1,5 @@
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
@@ -13,18 +12,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('PackModel.copyWith', () {
-    test('copyWith 覆盖单字段时保留 compilerProfile 与所有列表', () {
-      final PackModel source = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
-        ..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(
-            instructionSet: CompilerInstructionSetChoice.avx2,
-          ),
-        );
+    test('copyWith 覆盖单字段时保留所有列表', () {
+      final PackModel source = PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+      );
 
       final PackModel changed = source.copyWith(version: '1.0.1');
 
       expect(changed.version, '1.0.1');
-      expect(changed.compilerProfile, same(source.compilerProfile));
       expect(changed.files, same(source.files));
       expect(changed.dependencies, same(source.dependencies));
       expect(changed.commands, same(source.commands));
@@ -59,28 +56,6 @@ void main() {
 
       final PackModel replaced = source.copyWith(description: '新说明');
       expect(replaced.description, '新说明');
-    });
-
-    test('copyWith 显式传 null 清空 compilerProfile，未传时保留原值', () {
-      final PackModel source = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
-        ..compilerProfile = const CompilerProfile();
-
-      expect(source.copyWith().compilerProfile, same(source.compilerProfile));
-      expect(source.copyWith(compilerProfile: null).compilerProfile, isNull);
-      expect(
-        source
-            .copyWith(
-              compilerProfile: const CompilerProfile(
-                release: CompilerConfigProfile(
-                  instructionSet: CompilerInstructionSetChoice.avx2,
-                ),
-              ),
-            )
-            .compilerProfile!
-            .release
-            .instructionSet,
-        CompilerInstructionSetChoice.avx2,
-      );
     });
 
     test('copyWith 原样保留 buildOptions 中的旧 runtime 键（无人读取的死键）', () {
@@ -696,67 +671,8 @@ void main() {
       expect(pack.buildOptions, <String, String>{'tbb': 'on'});
     });
 
-    test('compilerProfile 默认为 null 且空时省略键', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      );
-
-      expect(pack.compilerProfile, isNull);
-      expect(pack.toMap().containsKey('compilerProfile'), isFalse);
-    });
-
-    test('toMap/fromMap 往返保留编译器 Profile 三字段', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      )..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(
-            instructionSet: CompilerInstructionSetChoice.avx2,
-            optimization: CompilerOptimizationChoice.maximum,
-            ipo: CompilerIpoChoice.on,
-          ),
-          debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
-        );
-
-      final Map<String, Object?> map = pack.toMap();
-      final PackModel loaded = PackModel.fromMap(map);
-
-      expect(loaded.compilerProfile, isNotNull);
-      expect(loaded.compilerProfile!.version, 1);
-      expect(
-        loaded.compilerProfile!.release.instructionSet,
-        CompilerInstructionSetChoice.avx2,
-      );
-      expect(
-        loaded.compilerProfile!.release.optimization,
-        CompilerOptimizationChoice.maximum,
-      );
-      expect(loaded.compilerProfile!.release.ipo, CompilerIpoChoice.on);
-      expect(loaded.compilerProfile!.debug.ipo, CompilerIpoChoice.off);
-    });
-
-    test('fromMap 非法 compilerProfile 产生警告且有效 Profile 全 follow', () {
+    test('老包 buildOptions.runtime 原样读回（无人读取的死键）', () {
       final List<String> warnings = <String>[];
-      final PackModel pack = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-        'compilerProfile': 'oops',
-      }, warnings: warnings);
-
-      expect(pack.compilerProfile, isNotNull);
-      expect(
-        pack.effectiveCompilerProfile.release.instructionSet,
-        CompilerInstructionSetChoice.follow,
-      );
-      expect(pack.effectiveCompilerProfile.debug.ipo, CompilerIpoChoice.follow);
-      expect(warnings.single, contains('compilerProfile'));
-    });
-
-    test('老包 buildOptions.runtime 不再影响有效 Profile（原键与其它选项不变）', () {
       final PackModel pack = PackModel.fromMap(<String, Object?>{
         'name': 'demo',
         'version': '1.0.0',
@@ -765,38 +681,10 @@ void main() {
           'runtime': 'MT',
           'tbb': 'on',
         },
-      });
-
-      expect(pack.compilerProfile, isNull);
-      expect(
-        pack.effectiveCompilerProfile.release.instructionSet,
-        CompilerInstructionSetChoice.follow,
-      );
-      expect(pack.buildOptions['runtime'], 'MT');
-      expect(pack.buildOptions['tbb'], 'on');
-    });
-
-    test('显式 compilerProfile 优先于老包的 buildOptions.runtime', () {
-      final List<String> warnings = <String>[];
-      final PackModel pack = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-        'buildOptions': <String, Object?>{'runtime': 'MT'},
-        'compilerProfile': <String, Object?>{
-          'version': 1,
-          'release': <String, Object?>{'instructionSet': 'baseline'},
-        },
       }, warnings: warnings);
 
-      expect(
-        pack.effectiveCompilerProfile.release.instructionSet,
-        CompilerInstructionSetChoice.baseline,
-      );
-      expect(
-        pack.effectiveCompilerProfile.debug.instructionSet,
-        CompilerInstructionSetChoice.follow,
-      );
+      expect(pack.buildOptions['runtime'], 'MT');
+      expect(pack.buildOptions['tbb'], 'on');
       expect(warnings, isEmpty);
     });
 

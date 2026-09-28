@@ -14,12 +14,6 @@ const String _multiSelectDirectivePrefix = '# multiselect:';
 const String _sourceDirectivePrefix = '# source:';
 const String _dependsDirectivePrefix = '# depends:';
 
-/// `# profile:` 指令前缀（头部连续注释段内的构建管线 Profile 声明）。
-const String profileDirectivePrefix = '# profile:';
-
-/// 当前受支持的构建管线 Profile 版本。
-const String supportedBuildProfile = 'v1';
-
 /// 包内预置源码目录保留名。
 ///
 /// 双重身份：既是 `# source:` 唯一合法的首段（见
@@ -110,7 +104,6 @@ class BuildScriptHeader {
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
     this.dependencies = const <BuildScriptDependency>[],
-    this.profileVersion,
   });
 
   /// 首行 `# source:` 声明的包源目录下相对目录（如 `.cnp-src`）；声明
@@ -125,15 +118,11 @@ class BuildScriptHeader {
   final List<BuildScriptTool> tools;
   final List<BuildScriptOption> options;
   final List<BuildScriptDependency> dependencies;
-
-  /// `# profile:` 声明的构建管线 Profile 版本（原始书写形式，允许两侧空白与
-  /// 大小写差异，由 [requireSupportedBuildProfile] 归一比较）；未声明为 null。
-  final String? profileVersion;
 }
 
 /// 解析 build.py 头部：首行源码来源声明 + 其后连续 `#` 行中的
 /// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
-/// `# profile:` / `# depends:` 指令。
+/// `# depends:` 指令。
 ///
 /// 首行必须命中源码来源声明锚点（[_sourceDirectivePrefix]，即严格锚点），
 /// 否则返回 null；第 2 行起的非法或未知指令行按注释忽略；同名声明以首次为准；
@@ -152,15 +141,10 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   final Set<String> toolNames = <String>{};
   final Set<String> optionNames = <String>{};
   final Set<String> dependencyNames = <String>{};
-  String? profileVersion;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
       break;
-    }
-    if (line.startsWith(profileDirectivePrefix)) {
-      profileVersion ??= profileVersionFromLine(line);
-      continue;
     }
     final BuildScriptTool? tool = _parseToolLine(line);
     if (tool != null) {
@@ -187,42 +171,7 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     tools: tools,
     options: options,
     dependencies: dependencies,
-    profileVersion: profileVersion,
   );
-}
-
-/// 提取 `# profile:` 指令行的版本值：前缀之后的内容去两侧空白。
-///
-/// 行不含 [profileDirectivePrefix] 时返回 null；值为空串时由
-/// [requireSupportedBuildProfile] 按缺失声明处理。
-String? profileVersionFromLine(String line) {
-  final String trimmed = line.trim();
-  if (!trimmed.startsWith(profileDirectivePrefix)) {
-    return null;
-  }
-  return trimmed.substring(profileDirectivePrefix.length).trim();
-}
-
-/// 校验 [header] 声明的 Profile 版本；缺失（未声明或值为空）或不是
-/// [supportedBuildProfile] 时抛出 `FormatException`。
-///
-/// 调用方在任何副作用之前调用（源码准备：阶段回调、缓存目录创建、预置源码拷贝与
-/// 包源目录清理之前；构建环境准备：编译器检测与工具供给之前），并把异常映射为
-/// 各自的用户可见异常类型；消息含脚本路径与期望的 `# profile: v1` 字面量。
-void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
-  final String version = (header.profileVersion ?? '').trim();
-  if (version.isEmpty) {
-    throw FormatException(
-      'build.py 缺少 Profile 声明：$scriptPath 需要在头部连续注释段包含 '
-      '"$profileDirectivePrefix $supportedBuildProfile"',
-    );
-  }
-  if (version.toLowerCase() != supportedBuildProfile) {
-    throw FormatException(
-      'build.py Profile 版本 "$version" 不受支持：$scriptPath 仅支持 '
-      '$supportedBuildProfile（需写 "$profileDirectivePrefix $supportedBuildProfile"）',
-    );
-  }
 }
 
 /// 校验 [header] 的源码来源声明；`# source: none`（[BuildScriptHeader.sourceDir]
@@ -236,8 +185,7 @@ void requireSupportedBuildProfile(BuildScriptHeader header, String scriptPath) {
 /// 后果写进报错文案；首段不被文件扫描跳过时还会被打进 NuGet 包，故两种后果分
 /// 文案表述——是否跳过的判据直接复用 [FileScan.shouldSkipDirectory]（隐藏目录与
 /// `build`/`out`），不在本地另写一份等价判断，否则扫描口径演进时必然漂移。
-/// 调用方在任何副作用之前调用（与 [requireSupportedBuildProfile] 同一 try 块）
-/// 并把异常映射为用户可见异常类型。
+/// 调用方在任何副作用之前调用并把异常映射为用户可见异常类型。
 void requireValidSourceDirective(BuildScriptHeader header, String scriptPath) {
   final String? sourceDir = header.sourceDir;
   if (sourceDir == null) {

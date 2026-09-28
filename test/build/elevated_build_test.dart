@@ -12,7 +12,6 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
-import 'package:cpp_nuget_pack/models/compiler_profile.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -287,24 +286,9 @@ void main() {
       expect(content.contains('PYTHONIOENCODING=utf-8'), isTrue);
     });
 
-    test('launcher 写入的七个 Profile 变量与 BuildEnvironment.environment 一致', () async {
+    test('launcher 只写入编译器与工具链变量且不含任何 Profile 变量', () async {
       final Directory root = await _tempDirectory();
-      const CompilerProfile profile = CompilerProfile(
-        release: CompilerConfigProfile(
-          instructionSet: CompilerInstructionSetChoice.avx2,
-          optimization: CompilerOptimizationChoice.maximum,
-          ipo: CompilerIpoChoice.on,
-        ),
-        debug: CompilerConfigProfile(ipo: CompilerIpoChoice.off),
-      );
-      final BuildEnvironment buildEnvironment = _buildEnvironment(
-        root.path,
-        profile: profile,
-      );
-      final Map<String, String> profileEnvironment = buildProfileEnvironment(
-        profile,
-      );
-      expect(profileEnvironment, hasLength(7));
+      final BuildEnvironment buildEnvironment = _buildEnvironment(root.path);
 
       await runElevatedPackBuild(
         _pack(),
@@ -326,23 +310,21 @@ void main() {
         ),
       );
       final String content = await launcher.readAsString();
-      for (final MapEntry<String, String> entry in profileEnvironment.entries) {
+      expect(content.contains('CNP_BUILD_PROFILE'), isFalse);
+      expect(content.contains('_RUNTIME'), isFalse);
+      for (final String key in <String>[
+        'CNP_CMAKE',
+        'CNP_NINJA',
+        'CNP_COMPILER_KIND',
+        'CNP_C_COMPILER',
+        'CNP_CXX_COMPILER',
+      ]) {
         expect(
-          buildEnvironment.environment[entry.key],
-          entry.value,
-          reason: '${entry.key} 应来自 BuildEnvironment.environment',
-        );
-        expect(
-          content.contains('set "${entry.key}=${entry.value}"'),
+          content.contains('set "$key=${buildEnvironment.environment[key]}"'),
           isTrue,
-          reason: 'launcher 未写入 ${entry.key}',
+          reason: 'launcher 未写入 $key',
         );
       }
-      expect(
-        content.contains('CNP_BUILD_PROFILE_RELEASE_RUNTIME'),
-        isFalse,
-        reason: 'launcher 不应再携带运行库 Profile 变量',
-      );
     });
 
     test('提权构建非零退出：抛带输出尾部的 PackBuildException', () async {
@@ -801,7 +783,6 @@ PackSourcePreparer _fakePrepareSource({
 BuildEnvironment _buildEnvironment(
   String tempRoot, {
   ProvisionedPython? python,
-  CompilerProfile profile = const CompilerProfile(),
 }) {
   return BuildEnvironment(
     compiler: DetectedCompiler(
@@ -811,7 +792,11 @@ BuildEnvironment _buildEnvironment(
       environmentScript: null,
     ),
     environment: <String, String>{
-      ...buildProfileEnvironment(profile),
+      'CNP_CMAKE': r'C:\tools\cmake\bin\cmake.exe',
+      'CNP_NINJA': r'C:\tools\ninja\ninja.exe',
+      'CNP_COMPILER_KIND': 'icx',
+      'CNP_C_COMPILER': r'C:\tools\icx-cl.exe',
+      'CNP_CXX_COMPILER': r'C:\tools\icx-cl.exe',
       'TMP': tempRoot,
       'TEMP': tempRoot,
       'Path': r'C:\tools\bin',

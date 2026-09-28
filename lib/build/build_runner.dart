@@ -77,8 +77,7 @@ typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
 
 /// 校验 `build.py` 头部、从包内预置源码目录备源并清空包源目录（构建流水线前半段）。
 ///
-/// 流程：根级 `build.py` 存在性检查 → 解析头部（首行为严格锚点源码来源声明，
-/// 并校验 `# profile:` 声明为受支持版本，见 [requireSupportedBuildProfile]、
+/// 流程：根级 `build.py` 存在性检查 → 解析头部（首行为严格锚点源码来源声明、
 /// 源码目录声明为包源目录下的相对路径，见 [requireValidSourceDirective]——任一
 /// 失败即在任何副作用前抛 [PackBuildException]）→ 校验预置源码目录存在且非空
 /// → 目标目录（`<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，
@@ -114,10 +113,9 @@ Future<PackSourcePreparation> preparePackSource(
     );
   }
 
-  // Profile 与源码来源声明的前置校验（fail-closed）：在阶段回调、缓存目录创建、
-  // 预置源码拷贝与包源目录清理等一切副作用之前拒绝不合规配方。
+  // 源码来源声明的前置校验（fail-closed）：在阶段回调、缓存目录创建、预置源码
+  // 拷贝与包源目录清理等一切副作用之前拒绝不合规配方。
   try {
-    requireSupportedBuildProfile(header, scriptOnDisk.path);
     requireValidSourceDirective(header, scriptOnDisk.path);
   } on FormatException catch (error) {
     throw PackBuildException(formatError(error));
