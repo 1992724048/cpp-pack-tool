@@ -220,19 +220,22 @@ void main() {
     expect(result!.iconPath, isNull);
   });
 
-  testWidgets('作者字段初始留空（无默认作者预填）', (tester) async {
+  testWidgets('作者未填写时确定按钮禁用，填写后启用', (tester) async {
     await _pumpDialog(
       tester,
       scanFuture: Future<List<FileModel>>.value(const <FileModel>[]),
     );
 
-    expect(
-      tester
-          .widget<TextBox>(find.byKey(const Key('packAuthorField')))
-          .controller
-          ?.text,
-      '',
-    );
+    await tester.enterText(find.byKey(const Key('packIdField')), 'demo');
+    await tester.enterText(find.byKey(const Key('packVersionField')), '1.0.0');
+    await tester.pump();
+
+    expect(_confirmButton(tester).onPressed, isNull);
+
+    await tester.enterText(find.byKey(const Key('packAuthorField')), 'tester');
+    await tester.pump();
+
+    expect(_confirmButton(tester).onPressed, isNotNull);
   });
 
   testWidgets('自定义许可证需输入文本，提交时原样写入', (tester) async {
