@@ -263,7 +263,9 @@ void main() {
         ]
         ..enabledFormats = <String>['nuget']
         ..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+          release: CompilerConfigProfile(
+            instructionSet: CompilerInstructionSetChoice.avx2,
+          ),
         );
       const BuildScriptHeader header = BuildScriptHeader(
         dependencies: <BuildScriptDependency>[

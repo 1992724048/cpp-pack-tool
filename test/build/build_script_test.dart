@@ -282,22 +282,6 @@ void main() {
       expect(header!.options, isEmpty);
     });
 
-    test('保留名 runtime 的选项声明忽略（大小写 / 空白不敏感，其余正常解析）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# option: runtime = md | mt\n'
-        '# checkbox: Runtime = ON | OFF\n'
-        '# multiselect: RUNTIME = x | y\n'
-        '# option:   rUnTiMe   = fast | slow\n'
-        '# option: tbb = off | on\n',
-      );
-
-      expect(header!.options, hasLength(1));
-      expect(header.options.single.name, 'tbb');
-      expect(header.options.single.values, <String>['off', 'on']);
-      expect(header.runtime, isNull);
-    });
-
     test('三型同名以首次声明为准（跨指令）', () {
       final BuildScriptHeader? header = parseBuildScriptHeader(
         '# source: .cnp-src\n'
@@ -307,59 +291,6 @@ void main() {
 
       expect(header!.options, hasLength(1));
       expect(header.options.single.control, BuildOptionControl.dropdown);
-    });
-
-    test('# runtime 解析（大小写不敏感，首次有效声明生效）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# runtime: MT\n'
-        '# runtime: md\n',
-      );
-
-      expect(header!.runtime, 'mt');
-
-      final BuildScriptHeader? invalidFirst = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# runtime: gnu\n'
-        '# runtime: md\n',
-      );
-      expect(invalidFirst!.runtime, 'md');
-
-      final BuildScriptHeader? noSpace = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# runtime:mt\n',
-      );
-      expect(noSpace!.runtime, 'mt');
-    });
-
-    test('# runtime 非法行忽略（空值 / 未知家族 / 多余 token）', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '# runtime:\n'
-        '# runtime: \n'
-        '# runtime: dynamic\n'
-        '# runtime: mt extra\n',
-      );
-
-      expect(header!.runtime, isNull);
-    });
-
-    test('# runtime 位于头部连续段之外时不生效', () {
-      final BuildScriptHeader? header = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        '\n'
-        '# runtime: mt\n',
-      );
-
-      expect(header!.runtime, isNull);
-
-      final BuildScriptHeader? afterCode = parseBuildScriptHeader(
-        '# source: .cnp-src\n'
-        'print(1)\n'
-        '# runtime: mt\n',
-      );
-
-      expect(afterCode!.runtime, isNull);
     });
 
     test('未知 # 行忽略，空行终止头部连续段', () {
@@ -870,21 +801,6 @@ void main() {
       expect(normalizedMultiSelectValue(<String>['a', 'b', 'c'], 'c;a'), 'a;c');
       expect(normalizedMultiSelectValue(<String>['a', 'b'], ''), '');
       expect(normalizedMultiSelectValue(<String>['a', 'b'], null), '');
-    });
-  });
-
-  group('runtime 保留键与归一化', () {
-    test('normalizeRuntimeLibrary 大小写与空白不敏感', () {
-      expect(normalizeRuntimeLibrary(' MD '), 'md');
-      expect(normalizeRuntimeLibrary('Mt'), 'mt');
-      expect(normalizeRuntimeLibrary('dynamic'), isNull);
-      expect(normalizeRuntimeLibrary(null), isNull);
-      expect(normalizeRuntimeLibrary(''), isNull);
-    });
-
-    test('保留键与下发环境变量名常量', () {
-      expect(runtimeOptionName, 'runtime');
-      expect(runtimeLibraryEnvName, 'CNP_RUNTIME_LIBRARY');
     });
   });
 

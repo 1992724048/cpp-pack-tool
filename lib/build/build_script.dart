@@ -13,7 +13,6 @@ const String _checkboxDirectivePrefix = '# checkbox:';
 const String _multiSelectDirectivePrefix = '# multiselect:';
 const String _sourceDirectivePrefix = '# source:';
 const String _dependsDirectivePrefix = '# depends:';
-const String _runtimeDirectivePrefix = '# runtime:';
 
 /// `# profile:` 指令前缀（头部连续注释段内的构建管线 Profile 声明）。
 const String profileDirectivePrefix = '# profile:';
@@ -29,20 +28,6 @@ const String supportedBuildProfile = 'v1';
 /// 两者的一致性由清理侧的契约测试钉住：改动任一处都必须同步另一处，否则源码
 /// 会在首次构建后的输出清理中被删除。
 const String presetSourceDirName = '.cnp-src';
-
-/// 运行库选项在 `PackModel.buildOptions` 中的保留键。
-///
-/// 键不存在 = 跟随配方默认（`# runtime:` 或 `md`）；值域 `MD` / `MT`（保存口径），
-/// 解析时大小写不敏感。该名称为保留名：build.py 以 `# option` / `# checkbox` /
-/// `# multiselect` 声明同名选项（大小写 / 空白不敏感）时整行忽略，防止
-/// `CNP_OPTION_RUNTIME` 与 [runtimeLibraryEnvName] 取值矛盾。
-const String runtimeOptionName = 'runtime';
-
-/// 旧子进程运行库环境变量名（Profile 接管后不再下发）。
-///
-/// 仅作只读清理标识：装配子进程环境时按大小写不敏感移除父环境残留
-/// （见 `legacyNoIpoEnvName` 同批处理），待计划 C 移除最后的 UI 引用后再删。
-const String runtimeLibraryEnvName = 'CNP_RUNTIME_LIBRARY';
 
 final RegExp _toolNamePattern = RegExp(r'^[A-Za-z0-9._-]+$');
 final RegExp _optionNamePattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
@@ -125,7 +110,6 @@ class BuildScriptHeader {
     this.tools = const <BuildScriptTool>[],
     this.options = const <BuildScriptOption>[],
     this.dependencies = const <BuildScriptDependency>[],
-    this.runtime,
     this.profileVersion,
   });
 
@@ -142,9 +126,6 @@ class BuildScriptHeader {
   final List<BuildScriptOption> options;
   final List<BuildScriptDependency> dependencies;
 
-  /// `# runtime:` 声明的默认运行库家族（`md` / `mt`，小写规范化）；未声明为 null。
-  final String? runtime;
-
   /// `# profile:` 声明的构建管线 Profile 版本（原始书写形式，允许两侧空白与
   /// 大小写差异，由 [requireSupportedBuildProfile] 归一比较）；未声明为 null。
   final String? profileVersion;
@@ -152,11 +133,10 @@ class BuildScriptHeader {
 
 /// 解析 build.py 头部：首行源码来源声明 + 其后连续 `#` 行中的
 /// `# tool:` / `# option:` / `# checkbox:` / `# multiselect:` /
-/// `# runtime:` / `# profile:` / `# depends:` 指令。
+/// `# profile:` / `# depends:` 指令。
 ///
 /// 首行必须命中源码来源声明锚点（[_sourceDirectivePrefix]，即严格锚点），
-/// 否则返回 null；第 2 行起的非法或未知指令行按注释忽略，选项名称为保留名
-/// （`runtime`，见 [runtimeOptionName]）的选项声明同样忽略；同名声明以首次为准；
+/// 否则返回 null；第 2 行起的非法或未知指令行按注释忽略；同名声明以首次为准；
 /// 遇到首个非 `#` 行（含空行）即终止头部连续段。
 BuildScriptHeader? parseBuildScriptHeader(String content) {
   final List<String> lines = content.split('\n');
@@ -172,18 +152,11 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
   final Set<String> toolNames = <String>{};
   final Set<String> optionNames = <String>{};
   final Set<String> dependencyNames = <String>{};
-  String? runtime;
   String? profileVersion;
   for (final String rawLine in lines.skip(1)) {
     final String line = rawLine.trim();
     if (!line.startsWith('#')) {
       break;
-    }
-    if (line.startsWith(_runtimeDirectivePrefix)) {
-      runtime ??= normalizeRuntimeLibrary(
-        line.substring(_runtimeDirectivePrefix.length),
-      );
-      continue;
     }
     if (line.startsWith(profileDirectivePrefix)) {
       profileVersion ??= profileVersionFromLine(line);
@@ -214,7 +187,6 @@ BuildScriptHeader? parseBuildScriptHeader(String content) {
     tools: tools,
     options: options,
     dependencies: dependencies,
-    runtime: runtime,
     profileVersion: profileVersion,
   );
 }
@@ -418,9 +390,8 @@ BuildScriptOption? _parseMultiSelectLine(String line) {
   return option;
 }
 
-/// 解析 `<名称> = <值> | <值> …` 形式：名称须匹配选项名正则且非保留名
-/// （`runtime`，见 [runtimeOptionName]），值去空白后不得为空、不得重复，
-/// 数量须落在 [minValues]/[maxValues] 范围内。
+/// 解析 `<名称> = <值> | <值> …` 形式：名称须匹配选项名正则；值去空白后不得为空、
+/// 不得重复，数量须落在 [minValues]/[maxValues] 范围内。
 BuildScriptOption? _parseValuedOption(
   String rest,
   BuildOptionControl control, {
@@ -433,9 +404,6 @@ BuildScriptOption? _parseValuedOption(
   }
   final String name = rest.substring(0, equalsIndex).trim();
   if (!_optionNamePattern.hasMatch(name)) {
-    return null;
-  }
-  if (_isReservedOptionName(name)) {
     return null;
   }
   final List<String> values = <String>[
@@ -454,11 +422,6 @@ BuildScriptOption? _parseValuedOption(
   }
   return BuildScriptOption(name: name, values: values, control: control);
 }
-
-/// 选项名是否为保留名（[runtimeOptionName]，大小写 / 空白不敏感）：
-/// 保留名声明按非法行忽略，不报错。
-bool _isReservedOptionName(String name) =>
-    name.trim().toLowerCase() == runtimeOptionName;
 
 /// 解析 `# depends: <包名> [<版本范围>]`：包名为单个非空白 token，
 /// 版本范围可选且必须通过 [isValidVersionRange]；非法行返回 null（整行忽略）。
@@ -481,16 +444,6 @@ BuildScriptDependency? _parseDependsLine(String line) {
     return BuildScriptDependency(name: tokens[0], version: tokens[1]);
   }
   return BuildScriptDependency(name: tokens[0]);
-}
-
-/// 运行库家族声明值规范化：接受 `md` / `mt`（大小写不敏感、允许两侧空白），
-/// 其余值（含 null/空串）返回 null。
-String? normalizeRuntimeLibrary(String? value) {
-  final String normalized = (value ?? '').trim().toLowerCase();
-  if (normalized == 'md' || normalized == 'mt') {
-    return normalized;
-  }
-  return null;
 }
 
 /// 依据声明集合解析最终选项值：合法保存值优先，非法或缺失取默认值，未声明键剔除。

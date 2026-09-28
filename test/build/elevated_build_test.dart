@@ -287,11 +287,10 @@ void main() {
       expect(content.contains('PYTHONIOENCODING=utf-8'), isTrue);
     });
 
-    test('launcher 写入的九个 Profile 变量与 BuildEnvironment.environment 一致', () async {
+    test('launcher 写入的七个 Profile 变量与 BuildEnvironment.environment 一致', () async {
       final Directory root = await _tempDirectory();
       const CompilerProfile profile = CompilerProfile(
         release: CompilerConfigProfile(
-          runtime: CompilerRuntimeChoice.mt,
           instructionSet: CompilerInstructionSetChoice.avx2,
           optimization: CompilerOptimizationChoice.maximum,
           ipo: CompilerIpoChoice.on,
@@ -305,7 +304,7 @@ void main() {
       final Map<String, String> profileEnvironment = buildProfileEnvironment(
         profile,
       );
-      expect(profileEnvironment, hasLength(9));
+      expect(profileEnvironment, hasLength(7));
 
       await runElevatedPackBuild(
         _pack(),
@@ -340,9 +339,9 @@ void main() {
         );
       }
       expect(
-        content.contains('CNP_RUNTIME_LIBRARY'),
+        content.contains('CNP_BUILD_PROFILE_RELEASE_RUNTIME'),
         isFalse,
-        reason: 'launcher 不应再携带旧运行库变量',
+        reason: 'launcher 不应再携带运行库 Profile 变量',
       );
     });
 

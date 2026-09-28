@@ -111,7 +111,9 @@ void main() {
             ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'}
             ..enabledFormats = <String>['nuget']
             ..compilerProfile = const CompilerProfile(
-              release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+              release: CompilerConfigProfile(
+                instructionSet: CompilerInstructionSetChoice.avx2,
+              ),
             );
       final List<FileModel> files = <FileModel>[
         FileModel(name: 'logo.svg', path: 'assets/logo.svg', size: 128),

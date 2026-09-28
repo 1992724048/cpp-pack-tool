@@ -32,30 +32,16 @@ class PackModel {
   Map<String, String> buildOptions = <String, String>{};
 
   /// 显式记录的编译器 Profile；null = 未记录（有效值由 [effectiveCompilerProfile]
-  /// 从旧 `buildOptions.runtime` 懒迁移派生）。读侧不改写 `buildOptions` 原键。
+  /// 回退为 v1 全 `follow` 默认）。
   CompilerProfile? compilerProfile;
 
   /// 启用的打包格式 id（如 `nuget` / `cmake`，规范序 = 注册表序）。
   /// 空列表 = 未记录（所有格式启用）——旧包缺字段读回即空，行为等同现状。
   List<String> enabledFormats = <String>[];
 
-  /// 生效的 Profile：显式记录优先；否则由旧 `buildOptions.runtime` 派生
-  /// Release/Debug 同一运行库选择，二者皆无则为 v1 全 `follow` 默认。
-  CompilerProfile get effectiveCompilerProfile {
-    final CompilerProfile? stored = compilerProfile;
-    if (stored != null) {
-      return stored;
-    }
-    final CompilerRuntimeChoice? migrated =
-        compilerRuntimeChoiceFromLegacy(buildOptions[legacyRuntimeOptionName]);
-    if (migrated == null) {
-      return const CompilerProfile();
-    }
-    return CompilerProfile(
-      release: CompilerConfigProfile(runtime: migrated),
-      debug: CompilerConfigProfile(runtime: migrated),
-    );
-  }
+  /// 生效的 Profile：显式记录优先；未记录则为 v1 全 `follow` 默认。
+  CompilerProfile get effectiveCompilerProfile =>
+      compilerProfile ?? const CompilerProfile();
 
   static List<PackModel> packs = [];
 
@@ -180,12 +166,6 @@ class PackModel {
     pack.compilerProfile = profileValue == null
         ? null
         : CompilerProfile.fromMap(profileValue, warnings: warnings);
-    if (profileValue == null) {
-      compilerRuntimeChoiceFromLegacy(
-        pack.buildOptions[legacyRuntimeOptionName],
-        warnings: warnings,
-      );
-    }
     pack.enabledFormats = _stringList(map, 'enabledFormats');
     return pack;
   }

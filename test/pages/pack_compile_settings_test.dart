@@ -244,7 +244,7 @@ void main() {
           ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')]
           ..buildOptions = <String, String>{'tbb': 'on'}
           ..compilerProfile = const CompilerProfile(
-            release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+            release: CompilerConfigProfile(instructionSet: CompilerInstructionSetChoice.avx2),
           );
     PackModel? saved;
 

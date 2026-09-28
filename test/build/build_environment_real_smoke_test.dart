@@ -124,7 +124,7 @@ void main() {
   );
 
   test(
-    '真实环境冒烟：运行库家族下发至 CMakeCache（md/mt）',
+    '真实环境冒烟：模块不再注入 CMAKE_MSVC_RUNTIME_LIBRARY（运行库由配方自决）',
     () async {
       final BuildEnvironment env = await prepareBuildEnvironment(
         priority: expectedKinds.map(compilerKindId).toList(),
@@ -151,60 +151,44 @@ void main() {
         joinPath(source.path, 'probe.c'),
       ).writeAsStringSync('int probe(void) { return 0; }\n');
 
-      Future<String> configure(String runtime) async {
-        final String buildDir = joinPath(root.path, 'build-$runtime');
-        final ProcessResult result = await Process.run(
-          'python',
-          <String>[
-            '-c',
-            'import sys\n'
-            'import cnp_build_support\n'
-            'cnp_build_support.cmake_configure(sys.argv[1], sys.argv[2], "Release")\n',
-            source.path,
-            buildDir,
-          ],
-          environment: <String, String>{
-            ...env.environment,
-            'CNP_RUNTIME_LIBRARY': runtime,
-          },
-        );
-        expect(
-          result.exitCode,
-          0,
-          reason: 'runtime=$runtime stdout=${result.stdout}\n'
-              'stderr=${result.stderr}',
-        );
-        final String cache = File(
-          joinPath(buildDir, 'CMakeCache.txt'),
-        ).readAsStringSync();
-        for (final String line in cache.split('\n')) {
-          if (line.startsWith('CMAKE_MSVC_RUNTIME_LIBRARY')) {
-            return line.split('=').skip(1).join('=').trim();
-          }
-        }
-        return '<missing>';
-      }
-
-      final String md = await configure('md');
-      final String mt = await configure('mt');
-      print('[evidence] runtime.md=$md');
-      print('[evidence] runtime.mt=$mt');
-      print(
-        '[evidence] profile.release.runtime='
-        '${env.environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME']}',
+      final String buildDir = joinPath(root.path, 'build');
+      final ProcessResult result = await Process.run(
+        'python',
+        <String>[
+          '-c',
+          'import sys\n'
+          'import cnp_build_support\n'
+          'cnp_build_support.cmake_configure(sys.argv[1], sys.argv[2], "Release")\n',
+          source.path,
+          buildDir,
+        ],
+        environment: <String, String>{...env.environment},
       );
       expect(
-        env.environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME'],
-        'follow',
-        reason: '未记录 Profile 时默认 follow',
+        result.exitCode,
+        0,
+        reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
+      );
+      final String cache = File(
+        joinPath(buildDir, 'CMakeCache.txt'),
+      ).readAsStringSync();
+      String? cached;
+      for (final String line in cache.split('\n')) {
+        if (line.startsWith('CMAKE_MSVC_RUNTIME_LIBRARY')) {
+          cached = line.split('=').skip(1).join('=').trim();
+        }
+      }
+      print('[evidence] cached.CMAKE_MSVC_RUNTIME_LIBRARY=$cached');
+      expect(
+        cached,
+        isNull,
+        reason: '辅助模块不再写该变量，CMakeCache 中不应出现（CMake 未设置时缺省）',
       );
       expect(
         env.environment.containsKey('CNP_RUNTIME_LIBRARY'),
         isFalse,
-        reason: '旧运行库变量不再下发，md/mt 由下方显式注入验证',
+        reason: '旧运行库变量不再下发',
       );
-      expect(md, r'MultiThreaded$<$<CONFIG:Debug>:Debug>DLL');
-      expect(mt, r'MultiThreaded$<$<CONFIG:Debug>:Debug>');
     },
     skip: Platform.environment['CNP_REAL_ENV_SMOKE'] == '1'
         ? false

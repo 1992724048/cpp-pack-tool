@@ -333,17 +333,6 @@ void main() {
         reason: 'CMake 链接列表未记录 .a 与 .lib 一同参与 Release/Debug 分组',
       );
     });
-
-    test('CNP_RUNTIME_LIBRARY 的 md/mt 说明仍然保留', () {
-      final String text = _readProjectDocuments()['AGENTS.md']!;
-      expect(
-        text,
-        contains('CNP_RUNTIME_LIBRARY'),
-        reason: 'AGENTS.md 缺少运行库家族说明',
-      );
-      expect(text, contains('`md`'), reason: 'AGENTS.md 缺少 md 说明');
-      expect(text, contains('`mt`'), reason: 'AGENTS.md 缺少 mt 说明');
-    });
   });
 
   group('全仓残留扫描', () {

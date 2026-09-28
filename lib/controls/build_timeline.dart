@@ -269,7 +269,6 @@ class BuildStatusColumn extends StatelessWidget {
     super.key,
     required this.packName,
     required this.sourcePath,
-    required this.runtimeLabel,
     required this.steps,
     this.compilerLabel,
     this.onRetryElevated,
@@ -277,7 +276,6 @@ class BuildStatusColumn extends StatelessWidget {
 
   final String packName;
   final String sourcePath;
-  final String runtimeLabel;
   final List<BuildTimelineStep> steps;
   final String? compilerLabel;
   final VoidCallback? onRetryElevated;
@@ -297,8 +295,6 @@ class BuildStatusColumn extends StatelessWidget {
           const SizedBox(height: 4),
           Text(compilerLabel!, key: const Key('buildCompilerLabel')),
         ],
-        const SizedBox(height: 4),
-        Text('运行库：$runtimeLabel', key: const Key('buildRuntimeLabel')),
         const SizedBox(height: 12),
         Expanded(
           child: SingleChildScrollView(child: BuildTimeline(steps: steps)),

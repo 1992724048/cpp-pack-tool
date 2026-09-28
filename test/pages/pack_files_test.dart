@@ -540,7 +540,7 @@ void main() {
     expect(find.byKey(const Key('buildPackButton')), findsNothing);
   });
 
-  testWidgets('运行库下拉与构建按钮同一判据：不可构建时不渲染', (tester) async {
+  testWidgets('构建按钮与工具条同一判据：不可构建时不渲染', (tester) async {
     await _pumpPage(
       tester,
       PackFiles(
@@ -552,7 +552,6 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('buildPackButton')), findsNothing);
-    expect(find.byKey(const Key('buildRuntimeSelector')), findsNothing);
 
     await _pumpPage(
       tester,
@@ -565,8 +564,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
-    expect(_runtimeCombo(tester).onChanged, isNotNull);
+    expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
   });
 
   testWidgets('声明选项时渲染控件且显示默认值', (tester) async {
@@ -620,8 +618,10 @@ void main() {
   testWidgets('选择选项后保存全字段拷贝并提示已保存', (tester) async {
     final PackModel pack = _buildPack('demo')
       ..buildOptions = <String, String>{'other': 'keep'}
-      ..compilerProfile = CompilerProfile(
-        release: const CompilerConfigProfile(runtime: CompilerRuntimeChoice.md),
+      ..compilerProfile = const CompilerProfile(
+        release: CompilerConfigProfile(
+          instructionSet: CompilerInstructionSetChoice.avx2,
+        ),
       );
     PackModel? saved;
 
@@ -695,7 +695,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('未声明选项时不渲染选项分区但保留运行库选择器', (tester) async {
+  testWidgets('未声明选项时不渲染选项分区但保留构建按钮', (tester) async {
     final PackModel pack = _buildPack('demo');
 
     await _pumpPage(
@@ -712,12 +712,9 @@ void main() {
     expect(find.byKey(const Key('buildPackButton')), findsOneWidget);
     expect(find.byKey(const Key('buildOptionsSection')), findsNothing);
     expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
-    expect(find.byKey(const Key('buildRuntimeSelector')), findsOneWidget);
-    expect(find.text('运行库'), findsNothing);
-    expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
   });
 
-  testWidgets('未提供保存回调时不渲染选项分区且运行库下拉禁用', (tester) async {
+  testWidgets('未提供保存回调时不渲染选项分区', (tester) async {
     final PackModel pack = _buildPack('demo');
 
     await _pumpPage(
@@ -735,7 +732,6 @@ void main() {
     expect(find.byKey(const Key('buildOptionsSection')), findsNothing);
     expect(find.byKey(const Key('buildOptionsToggle')), findsNothing);
     expect(find.byKey(const Key('buildOption_tbb')), findsNothing);
-    expect(_runtimeCombo(tester).onChanged, isNull);
   });
 
   testWidgets('头部加载失败时不渲染选项分区且不崩溃', (tester) async {
@@ -1170,174 +1166,6 @@ void main() {
     }, reason: '多选允许全不选并保存空串');
   });
 
-  testWidgets('运行库紧凑选择器渲染三项且位于构建按钮右侧', (tester) async {
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async => true,
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    final ComboBox<String> combo = _runtimeCombo(tester);
-    expect(combo.value, 'default');
-    expect(
-      <String>[
-        for (final ComboBoxItem<String> item in combo.items ?? const [])
-          item.value!,
-      ],
-      <String>['default', 'MD', 'MT'],
-    );
-    expect(find.text('默认'), findsOneWidget);
-
-    final double buttonX = tester
-        .getTopLeft(find.byKey(const Key('buildPackButton')))
-        .dx;
-    final double comboX = tester
-        .getTopLeft(find.byKey(const Key('buildRuntimeSelector')))
-        .dx;
-    expect(buttonX, lessThan(comboX));
-    expect(find.text('运行库'), findsNothing);
-    expect(find.byKey(const Key('buildRuntimeHelp')), findsNothing);
-  });
-
-  testWidgets('运行库保存值显示为显式项且非法值回退默认项', (tester) async {
-    Widget page(PackModel pack) => PackFiles(
-      pack: pack,
-      onBuildPack: (PackModel value) async {},
-      onSave: (PackModel value) async => true,
-      loadHeader: (PackModel value) async => _header(),
-    );
-
-    await _pumpPage(
-      tester,
-      page(
-        _buildPack('demo')..buildOptions = <String, String>{'runtime': 'MT'},
-      ),
-    );
-    await tester.pump();
-    expect(_runtimeCombo(tester).value, 'MT');
-
-    await _pumpPage(
-      tester,
-      page(
-        _buildPack('demo2')..buildOptions = <String, String>{'runtime': 'gnu'},
-      ),
-    );
-    await tester.pump();
-    expect(_runtimeCombo(tester).value, 'default');
-  });
-
-  testWidgets('选择运行库 MT 后按写入口径保存并提示已保存', (tester) async {
-    PackModel? saved;
-    final PackModel pack = _buildPack('demo')
-      ..buildOptions = <String, String>{'other': 'keep'};
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async {
-          saved = value;
-          return true;
-        },
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    await _selectComboItem(tester, const Key('buildRuntimeSelector'), 'MT');
-
-    expect(saved!.buildOptions, <String, String>{
-      'other': 'keep',
-      'runtime': 'MT',
-    });
-    expect(find.text('已保存'), findsOneWidget);
-  });
-
-  testWidgets('选择运行库默认项时移除保留键', (tester) async {
-    PackModel? saved;
-    final PackModel pack = _buildPack('demo')
-      ..buildOptions = <String, String>{'runtime': 'MT', 'other': 'keep'};
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async {
-          saved = value;
-          return true;
-        },
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    await _selectComboItem(tester, const Key('buildRuntimeSelector'), '默认');
-
-    expect(saved!.buildOptions, <String, String>{'other': 'keep'});
-  });
-
-  testWidgets('选择相同运行库不触发保存', (tester) async {
-    int saveCalls = 0;
-    final PackModel pack = _buildPack('demo')
-      ..buildOptions = <String, String>{'runtime': 'MD'};
-
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: pack,
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async {
-          saveCalls++;
-          return true;
-        },
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    await _selectComboItem(tester, const Key('buildRuntimeSelector'), 'MD');
-
-    expect(saveCalls, 0);
-    expect(find.text('已保存'), findsNothing);
-  });
-
-  testWidgets('运行库下拉悬停显示说明', (tester) async {
-    await _pumpPage(
-      tester,
-      PackFiles(
-        pack: _buildPack('demo'),
-        onBuildPack: (PackModel value) async {},
-        onSave: (PackModel value) async => true,
-        loadHeader: (PackModel value) async => _header(),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.textContaining('MDd'), findsNothing);
-
-    final TestGesture mouse = await tester.createGesture(
-      kind: PointerDeviceKind.mouse,
-    );
-    await mouse.addPointer(location: Offset.zero);
-    addTearDown(mouse.removePointer);
-    await mouse.moveTo(
-      tester.getCenter(find.byKey(const Key('buildRuntimeSelector'))),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1200));
-
-    expect(find.textContaining('MDd / MTd'), findsOneWidget);
-    expect(find.textContaining('优先 MD 并随包分发共享 dll'), findsOneWidget);
-    expect(find.textContaining('运行库（MSVC CRT）'), findsOneWidget);
-  });
-
   testWidgets('选项分区位于工具栏下方', (tester) async {
     final PackModel pack = _buildPack('demo');
 
@@ -1363,7 +1191,7 @@ void main() {
     expect(find.byKey(const Key('buildOptionsSection')), findsOneWidget);
   });
 
-  testWidgets('保存挂起时选项控件与运行库下拉禁用', (tester) async {
+  testWidgets('保存挂起时选项控件禁用', (tester) async {
     final Completer<bool> pending = Completer<bool>();
 
     await _pumpPage(
@@ -1382,7 +1210,6 @@ void main() {
     await _selectBuildOption(tester, 'tbb', 'on');
 
     expect(_optionCombo(tester, 'tbb').onChanged, isNull);
-    expect(_runtimeCombo(tester).onChanged, isNull);
     expect(
       tester
           .widget<Checkbox>(find.byKey(const Key('buildOption_use_nasm')))
@@ -1395,7 +1222,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('已保存'), findsOneWidget);
-    expect(_runtimeCombo(tester).onChanged, isNotNull);
     expect(_optionCombo(tester, 'tbb').onChanged, isNotNull);
   });
 }
@@ -1439,9 +1265,6 @@ BuildScriptHeader _header({
 
 ComboBox<String> _optionCombo(WidgetTester tester, String name) =>
     tester.widget<ComboBox<String>>(find.byKey(Key('buildOption_$name')));
-
-ComboBox<String> _runtimeCombo(WidgetTester tester) => tester
-    .widget<ComboBox<String>>(find.byKey(const Key('buildRuntimeSelector')));
 
 BoxDecoration _rowDecoration(WidgetTester tester, Finder row) =>
     tester.widget<Container>(row).decoration! as BoxDecoration;

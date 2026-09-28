@@ -272,7 +272,6 @@ class _PackFilesState extends State<PackFiles> {
               FilledButton(key: const Key('buildPackButton'),
                   onPressed: () => widget.onBuildPack!(widget.pack),
                   child: const Text('构建')),
-              _buildRuntimeGroup(),
             ],
           ),
         ),
@@ -280,28 +279,9 @@ class _PackFilesState extends State<PackFiles> {
     );
   }
 
-  Widget _buildRuntimeGroup() {
-    final String? runtimeValue = _savedRuntimeLibrary();
-    return RuntimeLibrarySelector(
-      value: runtimeValue,
-      enabled: widget.onSave != null && !_savingOption,
-      onChanged: (String? value) {
-        if (value != runtimeValue) {
-          _changeBuildOption(runtimeOptionName, value);
-        }
-      },
-    );
-  }
-
-  /// 运行库保存值（`MD` / `MT` 大写归一）；缺失或非法显示「默认（跟随配方）」。
-  String? _savedRuntimeLibrary() {
-    final String? normalized = normalizeRuntimeLibrary(widget.pack.buildOptions[runtimeOptionName]);
-    return normalized?.toUpperCase();
-  }
-
   /// 保存选项变更：全字段拷贝 → onSave → 悬浮提示；保存挂起期间全控件禁用。
   ///
-  /// [value] 为 null 表示移除保存键（如运行库选择「默认（跟随配方）」）。
+  /// [value] 为 null 表示移除保存键。
   Future<void> _changeBuildOption(String name, String? value) async {
     final Future<bool> Function(PackModel pack)? onSave = widget.onSave;
     if (onSave == null || _savingOption) {

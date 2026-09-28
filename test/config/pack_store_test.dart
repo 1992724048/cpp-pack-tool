@@ -282,7 +282,6 @@ void main() {
         author: 'tester',
       )..compilerProfile = const CompilerProfile(
           release: CompilerConfigProfile(
-            runtime: CompilerRuntimeChoice.mt,
             instructionSet: CompilerInstructionSetChoice.baseline,
             optimization: CompilerOptimizationChoice.standard,
             ipo: CompilerIpoChoice.on,
@@ -297,7 +296,6 @@ void main() {
       final YamlMap profile = document['compilerProfile'] as YamlMap;
 
       expect(profile['version'], 1);
-      expect((profile['release'] as YamlMap)['runtime'], 'mt');
       expect((profile['release'] as YamlMap)['ipo'], true);
       expect((profile['debug'] as YamlMap)['ipo'], false);
 
@@ -305,7 +303,6 @@ void main() {
 
       expect(result.errors, isEmpty);
       final CompilerProfile loaded = result.packs.single.compilerProfile!;
-      expect(loaded.release.runtime, CompilerRuntimeChoice.mt);
       expect(loaded.release.instructionSet, CompilerInstructionSetChoice.baseline);
       expect(loaded.release.optimization, CompilerOptimizationChoice.standard);
       expect(loaded.release.ipo, CompilerIpoChoice.on);
@@ -319,15 +316,15 @@ void main() {
         'compilerProfile:\n'
         '  version: 2\n'
         '  release:\n'
-        '    runtime: bogus\n',
+        '    optimization: bogus\n',
       );
 
       final PackLoadResult result = await store.loadPacks();
 
       expect(result.packs, hasLength(1));
       expect(
-        result.packs.single.effectiveCompilerProfile.release.runtime,
-        CompilerRuntimeChoice.follow,
+        result.packs.single.effectiveCompilerProfile.release.optimization,
+        CompilerOptimizationChoice.follow,
       );
       expect(result.errors, hasLength(2));
       expect(
@@ -342,12 +339,12 @@ void main() {
       );
       expect(
         result.errors.any((PackLoadError error) =>
-            error.message.contains('release.runtime')),
+            error.message.contains('release.optimization')),
         isTrue,
       );
     });
 
-    test('旧 buildOptions.runtime 经包加载参与有效 Profile 且原键保留', () async {
+    test('老包 buildOptions.runtime 不再参与有效 Profile 且原键保留', () async {
       await store.ensureConfigExist();
       File('${tempDir.path}/packs/legacy_runtime.yaml').writeAsStringSync(
         'name: legacy_runtime\nversion: 1.0.0\nauthor: tester\n'
@@ -362,14 +359,10 @@ void main() {
       final PackModel loaded = result.packs.single;
       expect(loaded.compilerProfile, isNull);
       expect(
-        loaded.effectiveCompilerProfile.release.runtime,
-        CompilerRuntimeChoice.mt,
+        loaded.effectiveCompilerProfile.release.instructionSet,
+        CompilerInstructionSetChoice.follow,
       );
-      expect(
-        loaded.effectiveCompilerProfile.debug.runtime,
-        CompilerRuntimeChoice.mt,
-      );
-      expect(loaded.buildOptions[legacyRuntimeOptionName], 'MT');
+      expect(loaded.buildOptions['runtime'], 'MT');
       expect(loaded.buildOptions['tbb'], 'on');
     });
   });

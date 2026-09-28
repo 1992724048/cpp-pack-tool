@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/build_script.dart' show runtimeOptionName;
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
@@ -60,7 +59,7 @@ void main() {
     expect(find.text('构建'), findsOneWidget);
     expect(find.text('包名：demo'), findsOneWidget);
     expect(find.text(r'源目录：C:\libs\demo'), findsOneWidget);
-    expect(find.text('运行库：跟随配方'), findsOneWidget);
+    expect(find.byKey(const Key('buildRuntimeLabel')), findsNothing);
     expect(_stepIsActive(tester, 'prepare'), isTrue);
     expect(find.text('准备环境'), findsOneWidget);
     expect(find.text('准备源码'), findsOneWidget);
@@ -408,49 +407,6 @@ void main() {
 
     expect(received, same(prepared.environment));
     expect(find.text('编译器：MSVC 14.44.35207'), findsOneWidget);
-  });
-
-  testWidgets('信息区展示运行库：用户选择 MT（静态）', (tester) async {
-    await _pumpDialog(
-      tester,
-      pack: _pack()..buildOptions = <String, String>{runtimeOptionName: 'MT'},
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-      }) async {},
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('buildRuntimeLabel')), findsOneWidget);
-    expect(find.text('运行库：MT（静态）'), findsOneWidget);
-  });
-
-  testWidgets('信息区展示运行库：环境解析值优先于用户选择', (tester) async {
-    await _pumpDialog(
-      tester,
-      pack: _pack()..buildOptions = <String, String>{runtimeOptionName: 'MD'},
-      prepare: (
-        PackModel pack, {
-        ToolDownloadProgressCallback? onDownloadProgress,
-      }) async => _environment(runtimeLibrary: 'mt'),
-      build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-      }) async {},
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('运行库：MT（静态）'), findsOneWidget);
   });
 
   testWidgets('预构建配方未经分类标记时分类步骤不显示完成', (tester) async {
@@ -1431,7 +1387,6 @@ FluentThemeData _theme(WidgetTester tester) {
 BuildEnvironment _environment({
   CompilerKind kind = CompilerKind.icx,
   String version = '2026.1.1',
-  String? runtimeLibrary,
 }) {
   return BuildEnvironment(
     compiler: DetectedCompiler(
@@ -1443,7 +1398,6 @@ BuildEnvironment _environment({
     environment: <String, String>{
       'CNP_COMPILER_KIND': 'icx',
       'Path': r'C:\tools\bin',
-      'CNP_RUNTIME_LIBRARY': ?runtimeLibrary,
     },
     cmakePath: r'C:\tools\cmake\bin\cmake.exe',
     ninjaPath: r'C:\tools\ninja\ninja.exe',

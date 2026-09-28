@@ -1,17 +1,8 @@
 /// 编译器 Profile 的结构版本；读回时版本不符即回退本版本并产生警告。
 const int compilerProfileVersion = 1;
 
-/// 旧运行库选项在 `PackModel.buildOptions` 中的保留键（值域 `MD` / `MT`）。
-///
-/// Profile 引入前的运行库选择入口，仅供读侧懒迁移识别：包未记录
-/// `compilerProfile` 时由 [compilerRuntimeChoiceFromLegacy] 派生有效 Profile。
-const String legacyRuntimeOptionName = 'runtime';
-
 /// Profile 的两个构建配置分区。
 enum CompilerProfileConfig { release, debug }
-
-/// 运行库家族；`follow` = 跟随配方 `# runtime:` 声明（缺省 `md`）。
-enum CompilerRuntimeChoice { follow, md, mt }
 
 /// 指令集；`follow` = 跟随工具链默认。
 enum CompilerInstructionSetChoice { follow, baseline, avx2 }
@@ -36,10 +27,9 @@ class CompilerProfileValidation {
   final List<String> warnings;
 }
 
-/// 单个构建配置分区的编译选项；四字段全 `follow` 即完全交给构建脚本决定。
+/// 单个构建配置分区的编译选项；三字段全 `follow` 即完全交给构建脚本决定。
 class CompilerConfigProfile {
   const CompilerConfigProfile({
-    this.runtime = CompilerRuntimeChoice.follow,
     this.instructionSet = CompilerInstructionSetChoice.follow,
     this.optimization = CompilerOptimizationChoice.follow,
     this.ipo = CompilerIpoChoice.follow,
@@ -52,7 +42,6 @@ class CompilerConfigProfile {
     required String path,
   }) {
     const Set<String> knownKeys = <String>{
-      'runtime',
       'instructionSet',
       'optimization',
       'ipo',
@@ -63,13 +52,6 @@ class CompilerConfigProfile {
       }
     }
     return CompilerConfigProfile(
-      runtime: _enumFrom(
-        map['runtime'],
-        CompilerRuntimeChoice.values,
-        CompilerRuntimeChoice.follow,
-        warnings,
-        '$path.runtime',
-      ),
       instructionSet: _enumFrom(
         map['instructionSet'],
         CompilerInstructionSetChoice.values,
@@ -88,13 +70,11 @@ class CompilerConfigProfile {
     );
   }
 
-  final CompilerRuntimeChoice runtime;
   final CompilerInstructionSetChoice instructionSet;
   final CompilerOptimizationChoice optimization;
   final CompilerIpoChoice ipo;
 
   Map<String, Object?> toMap() => <String, Object?>{
-    'runtime': runtime.name,
     'instructionSet': instructionSet.name,
     'optimization': optimization.name,
     'ipo': switch (ipo) {
@@ -105,12 +85,10 @@ class CompilerConfigProfile {
   };
 
   CompilerConfigProfile copyWith({
-    CompilerRuntimeChoice? runtime,
     CompilerInstructionSetChoice? instructionSet,
     CompilerOptimizationChoice? optimization,
     CompilerIpoChoice? ipo,
   }) => CompilerConfigProfile(
-    runtime: runtime ?? this.runtime,
     instructionSet: instructionSet ?? this.instructionSet,
     optimization: optimization ?? this.optimization,
     ipo: ipo ?? this.ipo,
@@ -237,23 +215,4 @@ CompilerIpoChoice _ipoFrom(
   }
   warnings?.add('compilerProfile.$path 非法值「$value」，已按 follow 处理');
   return CompilerIpoChoice.follow;
-}
-
-/// 旧 `buildOptions.runtime` 值 → 运行库选择；未记录或非法返回 null（非法值产生警告）。
-CompilerRuntimeChoice? compilerRuntimeChoiceFromLegacy(
-  String? value, {
-  List<String>? warnings,
-}) {
-  final String normalized = (value ?? '').trim().toLowerCase();
-  if (normalized == 'md' || normalized == 'mt') {
-    return normalized == 'md'
-        ? CompilerRuntimeChoice.md
-        : CompilerRuntimeChoice.mt;
-  }
-  if (value != null && value.trim().isNotEmpty) {
-    warnings?.add(
-      '旧 buildOptions.$legacyRuntimeOptionName 值「$value」非法，已按 follow 处理',
-    );
-  }
-  return null;
 }

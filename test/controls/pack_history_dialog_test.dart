@@ -144,7 +144,7 @@ void main() {
             ),
           ]
           ..compilerProfile = const CompilerProfile(
-            release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+            release: CompilerConfigProfile(instructionSet: CompilerInstructionSetChoice.avx2),
           );
     PackModel? saved;
 

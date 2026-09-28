@@ -468,11 +468,10 @@ void main() {
       expect(result.environment.containsKey('CNP_OPTION_OTHER'), isFalse);
     });
 
-    test('Profile 投影固定为九个变量且 IPO 使用 follow/1/0', () {
+    test('Profile 投影固定为七个变量且 IPO 使用 follow/1/0', () {
       final Map<String, String> environment = buildProfileEnvironment(
         const CompilerProfile(
           release: CompilerConfigProfile(
-            runtime: CompilerRuntimeChoice.mt,
             instructionSet: CompilerInstructionSetChoice.avx2,
             optimization: CompilerOptimizationChoice.maximum,
             ipo: CompilerIpoChoice.on,
@@ -482,20 +481,26 @@ void main() {
       );
 
       expect(environment['CNP_BUILD_PROFILE_VERSION'], '1');
-      expect(environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME'], 'mt');
       expect(environment['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'], 'avx2');
       expect(environment['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'], 'maximum');
       expect(environment['CNP_BUILD_PROFILE_RELEASE_IPO'], '1');
-      expect(environment['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'follow');
+      expect(environment['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'], 'follow');
       expect(environment['CNP_BUILD_PROFILE_DEBUG_IPO'], '0');
       expect(
         environment.keys
             .where((String key) => key.startsWith('CNP_BUILD_PROFILE_')),
-        hasLength(9),
+        hasLength(7),
+      );
+      expect(
+        environment.keys.any(
+          (String key) => key.endsWith('_RUNTIME'),
+        ),
+        isFalse,
+        reason: '运行库轴已移除，Profile 投影不再含 RUNTIME 变量',
       );
     });
 
-    test('父环境污染时旧运行库与 IPO 变量被清理', () {
+    test('父环境污染时旧 IPO 变量被清理，运行库旧键不再被清理', () {
       final BuildEnvironment result = assembleBuildEnvironment(
         compiler: _compiler(kind: CompilerKind.msvc),
         environment: <String, String>{
@@ -508,9 +513,9 @@ void main() {
       );
 
       expect(
-        result.environment.keys
-            .any((String key) => key.toLowerCase() == 'cnp_runtime_library'),
-        isFalse,
+        result.environment['cnp_runtime_library'],
+        'mt',
+        reason: '旧运行库键已无对应清理契约，按父环境原样透传',
       );
       expect(
         result.environment.keys
@@ -519,7 +524,7 @@ void main() {
       );
     });
 
-    test('装配写入默认 Profile 的九个变量且不再下发旧运行库变量', () {
+    test('装配写入默认 Profile 的七个变量且不下发旧 IPO 变量', () {
       final BuildEnvironment result = assembleBuildEnvironment(
         compiler: _compiler(),
         environment: <String, String>{'FOO': '1'},
@@ -530,12 +535,10 @@ void main() {
 
       expect(result.environment['CNP_BUILD_PROFILE_VERSION'], '1');
       expect(
-        result.environment['CNP_BUILD_PROFILE_RELEASE_RUNTIME'],
+        result.environment['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'],
         'follow',
       );
-      expect(result.environment['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'follow');
       expect(result.environment['CNP_BUILD_PROFILE_DEBUG_IPO'], 'follow');
-      expect(result.environment.containsKey('CNP_RUNTIME_LIBRARY'), isFalse);
       expect(result.environment.containsKey('CNP_NO_IPO'), isFalse);
       expect(result.environment['FOO'], '1');
     });
@@ -1422,7 +1425,7 @@ void main() {
       );
     });
 
-    test('包生效 Profile 的两个配置分别投影到九个变量', () async {
+    test('包生效 Profile 的两个配置分别投影到七个变量', () async {
       final Directory root = _tempDirectory();
       Future<Map<String, String>> prepare(PackModel pack) async {
         final BuildEnvironment result = await preparePackBuildEnvironment(
@@ -1448,13 +1451,11 @@ void main() {
       final PackModel explicit = _pack()
         ..compilerProfile = const CompilerProfile(
           release: CompilerConfigProfile(
-            runtime: CompilerRuntimeChoice.mt,
             instructionSet: CompilerInstructionSetChoice.avx2,
             optimization: CompilerOptimizationChoice.standard,
             ipo: CompilerIpoChoice.on,
           ),
           debug: CompilerConfigProfile(
-            runtime: CompilerRuntimeChoice.md,
             instructionSet: CompilerInstructionSetChoice.baseline,
             optimization: CompilerOptimizationChoice.maximum,
             ipo: CompilerIpoChoice.off,
@@ -1462,26 +1463,25 @@ void main() {
         );
       final Map<String, String> projected = await prepare(explicit);
       expect(projected['CNP_BUILD_PROFILE_VERSION'], '1');
-      expect(projected['CNP_BUILD_PROFILE_RELEASE_RUNTIME'], 'mt');
       expect(projected['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'], 'avx2');
       expect(projected['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'], 'standard');
       expect(projected['CNP_BUILD_PROFILE_RELEASE_IPO'], '1');
-      expect(projected['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'md');
       expect(projected['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'], 'baseline');
       expect(projected['CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION'], 'maximum');
       expect(projected['CNP_BUILD_PROFILE_DEBUG_IPO'], '0');
-      expect(projected.containsKey('CNP_RUNTIME_LIBRARY'), isFalse);
       expect(projected.containsKey('CNP_OPTION_RUNTIME'), isFalse);
 
       final PackModel legacy = _pack(
         buildOptions: <String, String>{'runtime': 'MT'},
       );
       final Map<String, String> migrated = await prepare(legacy);
-      expect(migrated['CNP_BUILD_PROFILE_RELEASE_RUNTIME'], 'mt');
-      expect(migrated['CNP_BUILD_PROFILE_DEBUG_RUNTIME'], 'mt');
+      expect(
+        migrated['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'],
+        'follow',
+        reason: '老包的 buildOptions.runtime 不再参与有效 Profile',
+      );
       expect(migrated['CNP_BUILD_PROFILE_RELEASE_IPO'], 'follow');
-      expect(migrated.containsKey('CNP_RUNTIME_LIBRARY'), isFalse);
-      expect(legacy.buildOptions['runtime'], 'MT', reason: '旧 YAML 键保留（C14）');
+      expect(legacy.buildOptions['runtime'], 'MT', reason: '旧 YAML 键不再被改写');
     });
 
     test('头部读取失败包装为 BuildPreparationException 且不检测/供给', () async {

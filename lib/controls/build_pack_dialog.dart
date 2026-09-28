@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/elevated_build.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/provisioning.dart';
@@ -358,7 +357,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
                   ? null
                   : '编译器：${compilerKindLabel(environment.compiler.kind)} '
                         '${environment.compiler.version}',
-              runtimeLabel: _runtimeLabel,
               steps: _timelineSteps,
               onRetryElevated: _canRetryElevated ? _retryElevated : null,
             ),
@@ -392,16 +390,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _stage == _BuildStage.fixingIncludes ||
       _stage == _BuildStage.classifying ||
       _stage == _BuildStage.remapping;
-
-  String get _runtimeLabel {
-    final String? resolved = normalizeRuntimeLibrary(_environment?.environment[runtimeLibraryEnvName]);
-    final String? userChoice = normalizeRuntimeLibrary(widget.pack.buildOptions[runtimeOptionName]);
-    return switch (resolved ?? userChoice) {
-      'mt' => 'MT（静态）',
-      'md' => 'MD（动态）',
-      _ => '跟随配方',
-    };
-  }
 
   List<BuildTimelineStep> get _timelineSteps {
     final bool failed = _stage == _BuildStage.failed;

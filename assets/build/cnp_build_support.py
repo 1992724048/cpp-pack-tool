@@ -21,14 +21,14 @@
 
 CMake 相关函数读取 cpp_nuget_pack 注入的子进程环境变量：CNP_CMAKE、CNP_NINJA、
 CNP_C_COMPILER、CNP_CXX_COMPILER、CNP_COMPILER_KIND、CNP_RC_COMPILER，以及编译器
-Profile 九变量（CNP_BUILD_PROFILE_VERSION 加各配置的 RUNTIME/INSTRUCTION_SET/
-OPTIMIZATION/IPO）；CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 首行经
-`require_profile(config)` 取配置 Profile 并以它为事实源注入运行库家族
-（`follow` → `md` / `mt`，Debug 自动 d 变体）、AVX2（仅显式 `avx2`）、Release
-优化（`standard` / `maximum`，Debug 不注入）与 IPO（`follow` 按 `enable_ipo`
-默认，显式 `1` / `0` 优先）；`CNP_RC_COMPILER` 存在时注入 `CMAKE_RC_COMPILER`
-（资源编译器）；不注入任何语言标准参数；`cmake_build`
-缺省以 CPU 逻辑核数并行构建。
+Profile 七变量（CNP_BUILD_PROFILE_VERSION 加各配置的 INSTRUCTION_SET/OPTIMIZATION/
+IPO）；CNP_CMAKE 缺失或为空时给出明确错误。`cmake_configure` 首行经
+`require_profile(config)` 取配置 Profile 并以它为事实源注入 AVX2（仅显式
+`avx2`）、Release 优化（`standard` / `maximum`，Debug 不注入）与 IPO（`follow` 按
+`enable_ipo` 默认，显式 `1` / `0` 优先）；`CNP_RC_COMPILER` 存在时注入
+`CMAKE_RC_COMPILER`（资源编译器）；不注入运行库与任何语言标准参数（运行库家族由
+配方自行决定，可经 `extra_args` 传 `-DCMAKE_MSVC_RUNTIME_LIBRARY=`）；
+`cmake_build` 缺省以 CPU 逻辑核数并行构建。
 """
 
 import filecmp
@@ -37,7 +37,7 @@ import re
 import shutil
 import subprocess
 
-VERSION = "10"
+VERSION = "11"
 
 __all__ = (
     "VERSION",
@@ -66,28 +66,20 @@ LICENSE_NAME_PATTERN = re.compile(
 )
 LICENSE_CORE_PRIORITY = ("license", "licence", "copying", "unlicense", "notice")
 
-# 编译器 Profile 九变量：版本键全局，四个字段键按配置前缀。键为小写配置名，
+# 编译器 Profile 七变量：版本键全局，三个字段键按配置前缀。键为小写配置名，
 # require_profile 以 config.lower() 归一后查表。
-_PROFILE_CONFIG_KEYS = ("runtime", "instructionSet", "optimization", "ipo")
+_PROFILE_CONFIG_KEYS = ("instructionSet", "optimization", "ipo")
 _PROFILE_ENV = {
     "release": {
-        "runtime": "CNP_BUILD_PROFILE_RELEASE_RUNTIME",
         "instructionSet": "CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET",
         "optimization": "CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION",
         "ipo": "CNP_BUILD_PROFILE_RELEASE_IPO",
     },
     "debug": {
-        "runtime": "CNP_BUILD_PROFILE_DEBUG_RUNTIME",
         "instructionSet": "CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET",
         "optimization": "CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION",
         "ipo": "CNP_BUILD_PROFILE_DEBUG_IPO",
     },
-}
-# 运行库家族 → CMAKE_MSVC_RUNTIME_LIBRARY 取值（Debug 自动 d 变体：
-# md → /MD 与 /MDd，mt → /MT 与 /MTd），三种编译器种类一致。
-_RUNTIME_LIBRARY_VARIANTS = {
-    "md": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL",
-    "mt": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
 }
 _OUTPUT_TAIL_LINES = 20
 _INTERMEDIATE_DIR_SUFFIXES = (".dir", "-c")
@@ -137,8 +129,6 @@ def cmake_configure(
 
     旗标矩阵（Profile 为事实源）：
 
-    - 运行库：`follow` → `md`（`/MD`，Debug 即 `/MDd`）、`mt` → `/MT`
-      （Debug 即 `/MTd`），无条件写入 `CMAKE_MSVC_RUNTIME_LIBRARY`；
     - AVX2（两配置）：仅 `instructionSet=avx2` 且编译器种类已知时注入
       （icx `/QxCORE-AVX2 /QaxCORE-AVX2`、clang-cl/msvc `/arch:AVX2`），
       `follow`/`baseline` 不注入；
@@ -148,15 +138,16 @@ def cmake_configure(
     - Release IPO：`follow` 按 `enable_ipo` 默认（种类未知 / clang-cl 缺
       lld-link 时退化并打印原因），显式 `1`（缺 lld-link、种类未知抛错）与
       `0` 不被 `enable_ipo` 改写；Debug 恒关闭，`1` 抛「Debug 不支持 IPO」；
-    - **不注入任何语言标准（std/c++ 标准）参数**；编译器种类未知时不注入
-      优化参数；子进程失败抛 RuntimeError（含输出尾部）。
+    - **不注入运行库与任何语言标准（std/c++ 标准）参数**；运行库家族由配方自行
+      决定（可经 `extra_args` 传 `-DCMAKE_MSVC_RUNTIME_LIBRARY=`，其中同名
+      `-DCMAKE_*` 不会被本函数覆盖）；编译器种类未知时不注入优化参数；子进程失败
+      抛 RuntimeError（含输出尾部）。
     """
     profile = require_profile(config)
     cmake = _required_environment_path("CNP_CMAKE")
     extra = [str(argument) for argument in extra_args]
     provided = _provided_definition_variables(extra)
     kind = _compiler_kind()
-    runtime, runtime_library = _runtime_arguments(profile)
     is_release = str(config).strip().lower() == "release"
     avx2_arguments, avx2_flags = _instruction_arguments(profile, kind, provided)
     optimization_arguments, optimization_flags = _optimization_arguments(
@@ -173,7 +164,6 @@ def cmake_configure(
         "Ninja",
         "-DCMAKE_BUILD_TYPE=" + str(config),
     ]
-    command.append("-DCMAKE_MSVC_RUNTIME_LIBRARY=" + runtime_library)
     ninja = _optional_environment_path("CNP_NINJA")
     if ninja:
         command.append("-DCMAKE_MAKE_PROGRAM=" + ninja)
@@ -196,14 +186,13 @@ def cmake_configure(
         command.append("-D%s=ON" % _IPO_CMAKE_VARIABLE)
     print(
         "[cnp_build_support] cmake_configure: config=%s compiler=%s avx2=%s "
-        "optimization=%s ipo=%s runtime=%s rc=%s"
+        "optimization=%s ipo=%s rc=%s"
         % (
             config,
             kind or "unknown",
             " ".join(avx2_flags) if avx2_flags else "-",
             " ".join(optimization_flags) if optimization_flags else "-",
             ipo_state,
-            runtime,
             rc_compiler or "-",
         ),
         flush=True,
@@ -529,7 +518,6 @@ def require_profile(config, *, require_fields=True):
         return {"version": 1}
     values = {}
     allowed = {
-        "runtime": ("follow", "md", "mt"),
         "instructionSet": ("follow", "baseline", "avx2"),
         "optimization": ("follow", "standard", "maximum"),
         "ipo": ("follow", "1", "0"),
@@ -587,18 +575,6 @@ def _compiler_kind():
         if executable in ("cl", "cl.exe"):
             return "msvc"
     return None
-
-
-def _runtime_arguments(profile):
-    """运行库家族与 `CMAKE_MSVC_RUNTIME_LIBRARY` 取值：`(家族, 取值)`。
-
-    `follow` 回落缺省 `md`（动态运行库，Debug 自动 d 变体）；两种家族的取值
-    经 `CMAKE_MSVC_RUNTIME_LIBRARY` 无条件写入。
-    """
-    family = profile["runtime"]
-    if family == "follow":
-        family = "md"
-    return family, _RUNTIME_LIBRARY_VARIANTS[family]
 
 
 def _instruction_arguments(profile, kind, provided):

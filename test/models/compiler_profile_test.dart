@@ -3,10 +3,9 @@ import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('默认 Profile 为 v1 且 Release/Debug 四字段全 follow', () {
+  test('默认 Profile 为 v1 且 Release/Debug 三字段全 follow', () {
     const CompilerProfile profile = CompilerProfile();
     expect(profile.version, 1);
-    expect(profile.release.runtime, CompilerRuntimeChoice.follow);
     expect(profile.debug.instructionSet, CompilerInstructionSetChoice.follow);
     expect(profile.release.optimization, CompilerOptimizationChoice.follow);
     expect(profile.debug.ipo, CompilerIpoChoice.follow);
@@ -32,11 +31,14 @@ void main() {
     final List<String> warnings = <String>[];
     final CompilerProfile profile = CompilerProfile.fromMap(<Object?, Object?>{
       'version': 2,
-      'release': <Object?, Object?>{'runtime': 'gnu', 'rawFlags': '-O3'},
+      'release': <Object?, Object?>{'instructionSet': 'gnu', 'rawFlags': '-O3'},
     }, warnings: warnings);
 
     expect(profile.version, 1);
-    expect(profile.release.runtime, CompilerRuntimeChoice.follow);
+    expect(
+      profile.release.instructionSet,
+      CompilerInstructionSetChoice.follow,
+    );
     expect(warnings, isNotEmpty);
     expect(warnings.any((String item) => item.contains('version')), isTrue);
     expect(warnings.any((String item) => item.contains('rawFlags')), isTrue);
@@ -50,31 +52,32 @@ void main() {
     final List<String> warnings = <String>[];
     final CompilerProfile profile = CompilerProfile.fromMap(<Object?, Object?>{
       'version': 2,
-      'release': <Object?, Object?>{'runtime': 'mt'},
+      'release': <Object?, Object?>{'instructionSet': 'avx2'},
     }, warnings: warnings);
 
     expect(profile.version, 1);
-    expect(profile.release.runtime, CompilerRuntimeChoice.follow);
-    expect(profile.debug.runtime, CompilerRuntimeChoice.follow);
+    expect(
+      profile.release.instructionSet,
+      CompilerInstructionSetChoice.follow,
+    );
+    expect(profile.debug.instructionSet, CompilerInstructionSetChoice.follow);
     expect(
       warnings,
       <String>['compilerProfile.version=2 不受支持，已按 v1 全 follow 处理'],
     );
   });
 
-  test('四字段大小写与空白容错为对应枚举且无警告', () {
+  test('三字段大小写与空白容错为对应枚举且无警告', () {
     final List<String> warnings = <String>[];
     final CompilerProfile profile = CompilerProfile.fromMap(<Object?, Object?>{
       'version': 1,
       'release': <Object?, Object?>{
-        'runtime': '  MT ',
         'instructionSet': 'AVX2',
         'optimization': ' MAXIMUM ',
         'ipo': 'On',
       },
     }, warnings: warnings);
 
-    expect(profile.release.runtime, CompilerRuntimeChoice.mt);
     expect(profile.release.instructionSet, CompilerInstructionSetChoice.avx2);
     expect(profile.release.optimization, CompilerOptimizationChoice.maximum);
     expect(profile.release.ipo, CompilerIpoChoice.on);
@@ -108,12 +111,11 @@ void main() {
     final List<String> warnings = <String>[];
     final CompilerProfile profile = CompilerProfile.fromMap(<Object?, Object?>{
       'version': 1,
-      'release': <Object?, Object?>{'runtime': 7, 'ipo': 7},
+      'release': <Object?, Object?>{'ipo': 7},
     }, warnings: warnings);
 
-    expect(profile.release.runtime, CompilerRuntimeChoice.follow);
     expect(profile.release.ipo, CompilerIpoChoice.follow);
-    expect(warnings, hasLength(2));
+    expect(warnings, hasLength(1));
   });
 
   test('ipo 接受布尔与字符串双形态', () {
@@ -148,7 +150,6 @@ void main() {
       profile.release,
       profile.debug,
     ]) {
-      expect(config.runtime, CompilerRuntimeChoice.follow);
       expect(config.instructionSet, CompilerInstructionSetChoice.follow);
       expect(config.optimization, CompilerOptimizationChoice.follow);
       expect(config.ipo, CompilerIpoChoice.follow);
@@ -164,23 +165,31 @@ void main() {
     );
   });
 
-  test('旧 buildOptions.runtime 参与有效 Profile 但不覆盖显式 Profile', () {
+  test('老包 buildOptions.runtime 不再影响有效 Profile，显式 Profile 仍优先', () {
     final PackModel legacy = PackModel.fromMap(<String, Object?>{
       'name': 'demo',
       'version': '1.0.0',
       'author': 'tester',
-      'buildOptions': <String, Object?>{legacyRuntimeOptionName: 'MT'},
+      'buildOptions': <String, Object?>{'runtime': 'MT'},
     });
-    expect(legacy.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.mt);
-    expect(legacy.effectiveCompilerProfile.debug.runtime, CompilerRuntimeChoice.mt);
+    expect(
+      legacy.effectiveCompilerProfile.release.instructionSet,
+      CompilerInstructionSetChoice.follow,
+    );
 
     final PackModel explicit = PackModel.fromMap(<String, Object?>{
       'name': 'demo',
       'version': '1.0.0',
       'author': 'tester',
-      'buildOptions': <String, Object?>{legacyRuntimeOptionName: 'MT'},
-      'compilerProfile': <String, Object?>{'version': 1, 'release': <String, Object?>{'runtime': 'md'}},
+      'buildOptions': <String, Object?>{'runtime': 'MT'},
+      'compilerProfile': <String, Object?>{
+        'version': 1,
+        'release': <String, Object?>{'instructionSet': 'avx2'},
+      },
     });
-    expect(explicit.effectiveCompilerProfile.release.runtime, CompilerRuntimeChoice.md);
+    expect(
+      explicit.effectiveCompilerProfile.release.instructionSet,
+      CompilerInstructionSetChoice.avx2,
+    );
   });
 }

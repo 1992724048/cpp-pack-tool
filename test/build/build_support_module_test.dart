@@ -124,7 +124,7 @@ List<String> _relativeFiles(String root) {
   return files;
 }
 
-/// cmake_configure 的编译器 Profile 校验（九变量）、命令装配、优化参数注入与
+/// cmake_configure 的编译器 Profile 校验（七变量）、命令装配、优化参数注入与
 /// 缺 CNP_CMAKE 报错：monkeypatch subprocess.run 捕获命令，不真实执行 cmake。
 const String _cmakeDriver = r'''
 import builtins
@@ -135,25 +135,21 @@ import cnp_build_support
 
 PROFILE_KEYS = (
     'CNP_BUILD_PROFILE_VERSION',
-    'CNP_BUILD_PROFILE_RELEASE_RUNTIME',
     'CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET',
     'CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION',
     'CNP_BUILD_PROFILE_RELEASE_IPO',
-    'CNP_BUILD_PROFILE_DEBUG_RUNTIME',
     'CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET',
     'CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION',
     'CNP_BUILD_PROFILE_DEBUG_IPO',
 )
 
-# Step 1：注入九变量并打印解析结果（协议契约：version=10 / release= / debug=）。
+# Step 1：注入七变量并打印解析结果（协议契约：version=11 / release= / debug=）。
 for profile_key in PROFILE_KEYS:
     os.environ.pop(profile_key, None)
 os.environ['CNP_BUILD_PROFILE_VERSION'] = '1'
-os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'mt'
 os.environ['CNP_BUILD_PROFILE_RELEASE_INSTRUCTION_SET'] = 'avx2'
 os.environ['CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION'] = 'maximum'
 os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = '1'
-os.environ['CNP_BUILD_PROFILE_DEBUG_RUNTIME'] = 'follow'
 os.environ['CNP_BUILD_PROFILE_DEBUG_INSTRUCTION_SET'] = 'avx2'
 os.environ['CNP_BUILD_PROFILE_DEBUG_OPTIMIZATION'] = 'maximum'
 os.environ['CNP_BUILD_PROFILE_DEBUG_IPO'] = 'follow'
@@ -196,7 +192,7 @@ profile_error(
     lambda: os.environ.pop('CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION', None))
 profile_error(
     'profile_invalid_field',
-    lambda: os.environ.__setitem__('CNP_BUILD_PROFILE_RELEASE_RUNTIME', 'gnu'))
+    lambda: os.environ.__setitem__('CNP_BUILD_PROFILE_RELEASE_OPTIMIZATION', 'gnu'))
 
 try:
     cnp_build_support.cmake_configure('src', 'build', 'X')
@@ -277,8 +273,7 @@ cnp_build_support.subprocess.Popen = fake_popen
 cnp_build_support.shutil.which = lambda name: (
     'C:/llvm/lld-link.exe' if name == 'lld-link' else None)
 try:
-    # 场景基线：运行库与 IPO 回落配方默认（follow），指令集/优化保持 Step 1 声明。
-    os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'follow'
+    # 场景基线：IPO 回落配方默认（follow），指令集/优化保持 Step 1 声明。
     os.environ['CNP_BUILD_PROFILE_RELEASE_IPO'] = 'follow'
     os.environ['CNP_CMAKE'] = 'C:/tools/cmake/bin/cmake.exe'
     os.environ['CNP_NINJA'] = 'C:/tools/ninja/ninja.exe'
@@ -305,8 +300,7 @@ try:
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Debug')
     msvc_debug = list(captured[-1])
 
-    # 已移除的 gcc/g++ 路径：CNP_COMPILER_KIND 缺失时不再推断任何优化旗标，
-    # 但 MSVC 运行库变量仍无条件写入（三种保留编译器种类的共同行为）。
+    # 已移除的 gcc/g++ 路径：CNP_COMPILER_KIND 缺失时不再推断任何优化旗标。
     os.environ.pop('CNP_COMPILER_KIND', None)
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/gcc/bin/gcc.exe'
     os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/gcc/bin/g++.exe'
@@ -326,20 +320,10 @@ try:
     os.environ['CNP_COMPILER_KIND'] = 'msvc'
     os.environ['CNP_C_COMPILER'] = 'C:/compiler/icx-cl.exe'
     os.environ['CNP_CXX_COMPILER'] = 'C:/compiler/icx-cl.exe'
-    os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'mt'
-    cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-    static_runtime = list(captured[-1])
-    try:
-        os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'gnu'
-        cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
-        invalid_runtime = 'no-error'
-    except RuntimeError as error:
-        invalid_runtime = 'RuntimeError:%s' % error
-    finally:
-        os.environ['CNP_BUILD_PROFILE_RELEASE_RUNTIME'] = 'follow'
-
-    # 旧键残留（CNP_RUNTIME_LIBRARY）被忽略：Profile follow → 回落缺省 md。
+    # 运行库轴已移除：CNP_RUNTIME_LIBRARY 残留不再被识别，Profile 侧也不再要求
+    # *_RUNTIME 变量（缺它们 require_profile 仍通过）。
     os.environ['CNP_RUNTIME_LIBRARY'] = 'MT'
+    os.environ.pop('CNP_BUILD_PROFILE_RELEASE_RUNTIME', None)
     cnp_build_support.cmake_configure('C:/src', 'C:/build', 'Release')
     legacy_runtime = list(captured[-1])
     os.environ.pop('CNP_RUNTIME_LIBRARY', None)
@@ -489,8 +473,6 @@ print('msvc_ipo=%s' % option(msvc_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_R
 print('debug_avx2=%s' % option(msvc_debug, 'CMAKE_C_FLAGS'))
 print('debug_opt=%s' % option(msvc_debug, 'CMAKE_C_FLAGS_RELEASE'))
 print('debug_ipo=%s' % option(msvc_debug, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('runtime_mt=%s' % option(static_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
-print('runtime_invalid=%s' % invalid_runtime)
 print('legacy_runtime=%s' % option(legacy_runtime, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
 print('unknown_avx2=%s' % option(unknown_release, 'CMAKE_C_FLAGS'))
 print('unknown_opt=%s' % option(unknown_release, 'CMAKE_C_FLAGS_RELEASE'))
@@ -512,11 +494,8 @@ print('preset_opt_cxx=%s' % option(preset_release, 'CMAKE_CXX_FLAGS_RELEASE'))
 print('preset_opt_c=%s' % option(preset_release, 'CMAKE_C_FLAGS_RELEASE'))
 print('preset_ipo=%s' % option(
     preset_release, 'CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE'))
-print('icx_runtime=%s' % option(icx_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
 print('gnu_path_avx2=%s' % option(gnu_path_release, 'CMAKE_C_FLAGS'))
 print('gnu_path_opt=%s' % option(gnu_path_release, 'CMAKE_C_FLAGS_RELEASE'))
-print('gnu_path_runtime=%s' % option(
-    gnu_path_release, 'CMAKE_MSVC_RUNTIME_LIBRARY'))
 print('gnu_path_cxx=%s' % [item for item in gnu_path_release
                            if item.startswith('-DCMAKE_CXX_COMPILER=')][0])
 print('rc_compiler=%s' % option(rc_passthrough, 'CMAKE_RC_COMPILER'))
@@ -530,7 +509,8 @@ print('debug_ipo_error=%s' % debug_ipo_error)
 command = captured[0]
 print('generator=%s' % command[command.index('-G') + 1])
 print('build_type=%s' % [item for item in command if item.startswith('-DCMAKE_BUILD_TYPE=')][0])
-print('runtime=%s' % [item for item in command if item.startswith('-DCMAKE_MSVC_RUNTIME_LIBRARY=')][0])
+print('runtime_absent=%s' % (not any(
+    item.startswith('-DCMAKE_MSVC_RUNTIME_LIBRARY=') for item in command)))
 print('make_program=%s' % [item for item in command if item.startswith('-DCMAKE_MAKE_PROGRAM=')][0])
 print('c_compiler=%s' % [item for item in command if item.startswith('-DCMAKE_C_COMPILER=')][0])
 print('extra=%s' % command[-1])
@@ -956,7 +936,7 @@ void main() {
         '[evidence] 模块载入方式='
         '${_loadedFromBundle ? 'rootBundle' : '源文件回退'}',
       );
-      expect(source, contains('VERSION = "10"'));
+      expect(source, contains('VERSION = "11"'));
 
       final Directory tempDir = _createTempDir('cnp_support_syntax_');
       final String modulePath = _installModule(tempDir, source);
@@ -987,19 +967,19 @@ void main() {
       final String stdout = result.stdout.toString();
       expect(stdout, contains('missing=RuntimeError'));
       expect(stdout, contains('empty=RuntimeError'));
-      // Step 1：编译器 Profile 九变量解析（version / release / debug 字典）。
-      expect(stdout, contains('version=10'));
+      // Step 1：编译器 Profile 七变量解析（version / release / debug 字典）。
+      expect(stdout, contains('version=11'));
       expect(
         stdout,
         contains(
-          "release={'version': 1, 'runtime': 'mt', 'instructionSet': 'avx2', "
+          "release={'version': 1, 'instructionSet': 'avx2', "
           "'optimization': 'maximum', 'ipo': '1'}",
         ),
       );
       expect(
         stdout,
         contains(
-          "debug={'version': 1, 'runtime': 'follow', 'instructionSet': 'avx2', "
+          "debug={'version': 1, 'instructionSet': 'avx2', "
           "'optimization': 'maximum', 'ipo': 'follow'}",
         ),
       );
@@ -1029,7 +1009,7 @@ void main() {
         stdout,
         contains(
           'profile_invalid_field=RuntimeError:编译器 Profile 字段 '
-          'runtime=gnu 非法（允许 follow/md/mt）',
+          'optimization=gnu 非法（允许 follow/standard/maximum）',
         ),
       );
       expect(
@@ -1043,10 +1023,7 @@ void main() {
       expect(stdout, contains('build_type=-DCMAKE_BUILD_TYPE=Release'));
       expect(
         stdout,
-        contains(
-          'runtime=-DCMAKE_MSVC_RUNTIME_LIBRARY='
-          'MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL',
-        ),
+        contains('runtime_absent=True'),
       );
       expect(
         stdout,
@@ -1090,22 +1067,9 @@ void main() {
       expect(stdout, contains('debug_avx2=/arch:AVX2'));
       expect(stdout, contains('debug_opt=none'));
       expect(stdout, contains('debug_ipo=none'));
-      // 运行库家族：Profile mt（/MT + Debug /MTd）、非法值报错、旧键残留被忽略回落缺省 md。
-      expect(
-        stdout,
-        contains('runtime_mt=MultiThreaded\$<\$<CONFIG:Debug>:Debug>'),
-      );
-      expect(
-        stdout,
-        contains(
-          'runtime_invalid=RuntimeError:编译器 Profile 字段 '
-          'runtime=gnu 非法（允许 follow/md/mt）',
-        ),
-      );
-      expect(
-        stdout,
-        contains('legacy_runtime=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL'),
-      );
+      // 运行库轴已移除：命令与缓存均无 CMAKE_MSVC_RUNTIME_LIBRARY，缺失
+      // *_RUNTIME Profile 变量也不影响 require_profile 通过。
+      expect(stdout, contains('legacy_runtime=none'));
       // 编译器种类未知时不注入任何优化参数。
       expect(stdout, contains('unknown_avx2=none'));
       expect(stdout, contains('unknown_opt=none'));
@@ -1153,25 +1117,11 @@ void main() {
           'debug_ipo_error=RuntimeError:Debug 不支持 IPO（Profile ipo=1）',
         ),
       );
-      // 辅助模块版本已升 10（切换编译器 Profile 九变量后的版本契约）。
-      expect(stdout, contains('version=10'));
-      // 三编译器矩阵收敛后，icx 无条件写入 MSVC 运行库变量。
-      expect(
-        stdout,
-        contains(
-          'icx_runtime=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL',
-        ),
-      );
-      // 已移除的 gcc/g++ 路径不再推断任何优化旗标，但仍透传 C++ 编译器
-      // 并写入 MSVC 运行库变量（与保留种类一致）。
+      // 辅助模块版本已升 11（移除运行库轴后的版本契约）。
+      expect(stdout, contains('version=11'));
+      // 已移除的 gcc/g++ 路径不再推断任何优化旗标，但仍透传 C++ 编译器。
       expect(stdout, contains('gnu_path_avx2=none'));
       expect(stdout, contains('gnu_path_opt=none'));
-      expect(
-        stdout,
-        contains(
-          'gnu_path_runtime=MultiThreaded\$<\$<CONFIG:Debug>:Debug>DLL',
-        ),
-      );
       expect(
         stdout,
         contains(
@@ -1189,7 +1139,7 @@ void main() {
         contains(
           '[cnp_build_support] cmake_configure: config=Release compiler=icx '
           'avx2=/QxCORE-AVX2 /QaxCORE-AVX2 '
-          'optimization=/O3 /Ob2 /Oi /Ot /GF /Gy ipo=on runtime=md',
+          'optimization=/O3 /Ob2 /Oi /Ot /GF /Gy ipo=on rc=-',
         ),
       );
       expect(stdout, contains('nonzero=RuntimeError'));

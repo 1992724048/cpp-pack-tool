@@ -139,23 +139,20 @@ class BuildEnvironment {
 }
 
 /// 旧 IPO 关闭开关的环境变量名（辅助模块 legacy 口径）；Profile 接管后与
-/// [runtimeLibraryEnvName] 一并在装配子进程环境时按大小写不敏感清除，
-/// 防止父环境残留覆盖 Profile 投影结果。
+/// 运行时按大小写不敏感清除，防止父环境残留覆盖 Profile 投影结果。
 const String legacyNoIpoEnvName = 'CNP_NO_IPO';
 
-/// 把 [profile] 投影为九个子进程环境变量（结构版本 + Release/Debug 两分区
-/// × 运行库 / 指令集 / 优化 / IPO 四维度）。
+/// 把 [profile] 投影为七个子进程环境变量（结构版本 + Release/Debug 两分区
+/// × 指令集 / 优化 / IPO 三维度）。
 ///
-/// 取值为枚举 `.name`（`follow`/`md`/`mt`、`baseline`/`avx2`、
-/// `standard`/`maximum`），IPO 按开关语义映射：`follow` 原样透传、
-/// `on` → `1`、`off` → `0`。
+/// 取值为枚举 `.name`（`baseline`/`avx2`、`standard`/`maximum`），IPO 按开关语义
+/// 映射：`follow` 原样透传、`on` → `1`、`off` → `0`。
 Map<String, String> buildProfileEnvironment(CompilerProfile profile) {
   final Map<String, String> result = <String, String>{
     'CNP_BUILD_PROFILE_VERSION': '$compilerProfileVersion',
   };
   void put(CompilerProfileConfig config, String prefix) {
     final CompilerConfigProfile value = profile.configFor(config);
-    result['CNP_BUILD_PROFILE_${prefix}_RUNTIME'] = value.runtime.name;
     result['CNP_BUILD_PROFILE_${prefix}_INSTRUCTION_SET'] =
         value.instructionSet.name;
     result['CNP_BUILD_PROFILE_${prefix}_OPTIMIZATION'] =
@@ -179,9 +176,9 @@ Map<String, String> buildProfileEnvironment(CompilerProfile profile) {
 /// [toolPathEntries]（`# tool` 声明的工具） →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
 /// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
-/// [profile] 投影为九个 [buildProfileEnvironment] 变量，并清除父环境中
-/// 大小写不敏感命中的 [runtimeLibraryEnvName] 与 [legacyNoIpoEnvName]
-/// 残留（旧口径不再下发）；`PYTHONPATH` 前置 [toolsRoot] 绝对路径
+/// [profile] 投影为七个 [buildProfileEnvironment] 变量，并清除父环境中
+/// 大小写不敏感命中的 [legacyNoIpoEnvName] 残留（旧口径不再下发）；
+/// `PYTHONPATH` 前置 [toolsRoot] 绝对路径
 /// （保留原值）；[environment] 不被修改。
 ///
 /// `CNP_C_COMPILER` 取 [DetectedCompiler.executablePath]、
@@ -210,7 +207,6 @@ BuildEnvironment assembleBuildEnvironment({
     'CNP_COMPILER_KIND',
     compilerKindId(compiler.kind),
   );
-  _removeEnvironmentValue(child, runtimeLibraryEnvName);
   _removeEnvironmentValue(child, legacyNoIpoEnvName);
   for (final MapEntry<String, String> profileVariable
       in buildProfileEnvironment(profile).entries) {
@@ -246,7 +242,7 @@ BuildEnvironment assembleBuildEnvironment({
 /// [priority] 检测（全部落空时下载 clang/LLVM 到 `tools/clang/` 兜底）→ 捕获
 /// 编译器环境 → 供给 CMake/Ninja、Python（本机优先，缺失下载 embeddable 版）与
 /// [tools] 声明的工具 → 释放 [supportModule] → 装配 `PATH`、`CNP_*`、选项变量与
-/// 九个 Profile 变量（[profile]，默认全 `follow`）。
+/// 七个 Profile 变量（[profile]，默认全 `follow`）。
 ///
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统）；受控 `TMP`/`TEMP` 写入其副本并随编译器检测、环境捕获

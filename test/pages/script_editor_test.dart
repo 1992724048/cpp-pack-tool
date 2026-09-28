@@ -1135,7 +1135,7 @@ PackModel _fullPackWithTextNode() {
         ]
         ..buildOptions = <String, String>{'tbb': 'on'}
         ..compilerProfile = const CompilerProfile(
-          release: CompilerConfigProfile(runtime: CompilerRuntimeChoice.mt),
+          release: CompilerConfigProfile(instructionSet: CompilerInstructionSetChoice.avx2),
         );
   pack.scripts = <ScriptProjectModel>[
     ScriptProjectModel(id: 'script_1', name: '脚本 1', trigger: ScriptTrigger.pre)
