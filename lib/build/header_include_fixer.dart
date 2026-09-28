@@ -29,7 +29,7 @@ enum HeaderIncludeIssueKind {
   /// 包内没有任何同名文件候选。
   noCandidate,
 
-  /// 包内存在多个同名候选，无法确定目标。
+  /// 包内落点不同的多个同名候选，无法确定目标。
   multipleCandidates,
 
   /// 有唯一候选，但两种改写形态都不成立：既不落 include 根之下（给不出「相对
@@ -81,7 +81,8 @@ class HeaderIncludeIssue {
   final String include;
   final HeaderIncludeIssueKind kind;
 
-  /// 同名候选（相对包源目录路径；无候选时为空，多候选时列出全部）。
+  /// 同名候选（相对包源目录路径，同一包内落点只列一个代表；无候选时为空，多候选
+  /// 时列出全部）。
   final List<String> candidates;
 
   String get description => switch (kind) {
@@ -134,15 +135,17 @@ typedef PackHeaderIncludeFixer = Future<HeaderIncludeFixReport> Function(
 ///
 /// - 引号引用按包布局解析（先查引用文件自身的包内目录，再查
 ///   `build/native/include` 根），命中即视为正常、不动；
-/// - 未解析的引号引用找**唯一同名候选**（basename 大小写不敏感全包搜索），两条
-///   规则依次尝试：候选落 include 根之下时改写为**它相对 include 根的包内路径**
-///   （include 根恒定下发，该形式在包内任何位置都必然解析得到）；否则回落到裸
-///   文件名——仅当候选与引用文件同目录、打包落点目录也一致时成立（此时包内
-///   查找只剩「引用文件所在目录」一条路径，裸文件名由此命中）；
+/// - 未解析的引号引用找**唯一同名候选**（basename 大小写不敏感全包搜索，按包内落点
+///   去重：原始文件与其 `include/` 镜像落同一处即同一候选），两条规则依次尝试：候选落
+///   include 根之下时改写为**它相对 include 根的包内路径**（include 根恒定下发，该形式在
+///   包内任何位置都必然解析得到）；否则回落到裸文件名——仅当候选落 `files/`、与引用文件
+///   同目录、打包落点目录也一致时成立（此时包内查找只剩「引用文件所在目录」一条路径，
+///   裸文件名由此命中）；
 /// - 其余未解析引用收集为待处理问题（无候选 / 多候选 / 唯一候选无适用改写形态），
 ///   外部依赖（首段目录不落在包内，如 `absl/...`）与条件编译外部引用不报告；
 /// - 尖括号引用按同一包布局判一次可解析性（只查搜索根，不查本文件所在目录），
-///   缺失仅报告、不自动修改。
+///   缺失仅报告、不自动修改，且要求首段命中包内 include 根下的子目录，`<vector>` 之类
+///   系统头跳过。
 ///
 /// [packageName] 与打包器同一命名空间口径（见 [includeNamespaceOf]）；
 /// [readFile]/[writeFile] 可注入以配合测试。保留文件编码/BOM/行尾，仅替换
@@ -583,9 +586,11 @@ class _FileScanner {
     );
   }
 
-  /// 包布局下的可解析性，即 MSBuild 实际会给出的查找结果。`.targets` 恒定只下发
-  /// `build/native/include` 一个搜索根，故只有两条查找路径：搜索根本身，以及
-  /// （仅引号引用——MSVC 只对 `"..."` 先查本文件所在目录）引用文件自身的包内目录。
+  /// 按包内布局建模的两条查找路径：`.targets` 恒定只下发 `build/native/include`
+  /// 一个搜索根，故能搜到的只有搜索根本身，以及（仅引号引用——MSVC 只对 `"..."`
+  /// 先查本文件所在目录）引用文件自身的包内目录。这是官方引号搜索顺序 4 步里的
+  /// 两条，另两步（已打开 include 文件的目录、逆序回溯含祖父目录等）不在模型内，
+  /// 故结论是这两条路径的判定，不等于 MSBuild 的全量查找行为。
   /// 自目录那一条按引用文件落在哪棵树取基底，分 include 根与 `files/` 两支：
   /// 两个索引由 [addFile] 同一处分派、互不重叠，同名路径不会串到另一棵树上去；
   /// `lib/` 下的文件两支都不落、也没有搜索根。
@@ -619,14 +624,18 @@ class _FileScanner {
           ? _packageDestination(candidate, index.namespace)
           : null;
 
-  /// 回落改写目标：候选与引用文件**同目录**、且两者打包落点目录一致时给裸文件名。
+  /// 回落改写目标：候选落包内 `files/` 之下、且与引用文件**同目录**、两者打包落点
+  /// 目录也一致时给裸文件名。
   ///
-  /// 头文件进 include 命名空间树、非头文件留在原相对路径，同目录是同落点的前提；
-  /// 头文件引用另有 include 根可搜，走不到这里，此刻到这里的候选必定不进 include
-  /// 根，树内唯一剩下的查找路径就是「引用文件所在目录」，裸文件名由此命中。
+  /// 文件类型闸是前提：`lib`/`dll`/`pdb` 落 `build/native/lib/`，`.targets` 不为
+  /// `lib/` 下发任何搜索根，裸文件名在包内必然解析不到——此刻到这里的候选若不落
+  /// `files/`，树内一条可搜路径都不剩，改写是注定失效的。头文件/模块进 include 命名
+  /// 空间树、由 include 根兜底，走不到这里；故走到这里的候选唯一剩下的查找路径就是
+  /// 「引用文件所在目录」，裸文件名由此命中。
   String? _siblingBareNameTarget(String candidate) {
-    if (_directoryOf(candidate).toLowerCase() !=
-        _directoryOf(filePath).toLowerCase()) {
+    if (!_landsUnderFilesRoot(candidate) ||
+        _directoryOf(candidate).toLowerCase() !=
+            _directoryOf(filePath).toLowerCase()) {
       return null;
     }
     final String candidateDir = _directoryOf(
@@ -690,13 +699,22 @@ class _IncludeIndex {
   /// `.dll`/`.pdb` 两棵都不进。
   final Set<String> filesRootPaths = <String>{};
 
-  final Map<String, List<String>> _pathsByLowerName = <String, List<String>>{};
+  /// 同名候选：basename（小写）→ 包内落点（小写）→ 源路径代表。
+  ///
+  /// 去重键取**包内落点**而非源路径：配方 `stage_headers` 会把头文件镜像到
+  /// `<包源目录>/include/`，构建完成后同一个头文件在包源目录里有两份（原始的与
+  /// 镜像的），二者落到同一包内位置即同一份产物，不构成歧义；按源路径去重会把
+  /// 主流程里最常见的这类失效引用判成多候选。同落点的多个源路径取字典序最小者
+  /// 作代表，使候选与改写在目录遍历顺序之外仍稳定。
+  final Map<String, Map<String, String>> _candidateByLanding =
+      <String, Map<String, String>>{};
   final Set<String> _includeRootLowerPaths = <String>{};
   final Map<String, Set<String>> _includeRootChildDirs =
       <String, Set<String>>{};
 
   List<String> candidatesFor(String lowerBaseName) =>
-      _pathsByLowerName[lowerBaseName] ?? const <String>[];
+      _candidateByLanding[lowerBaseName]?.values.toList() ??
+      const <String>[];
 
   bool isIncludeRootChild(String includeRootLowerPath, String childLowerName) =>
       _includeRootChildDirs[includeRootLowerPath]?.contains(childLowerName) ??
@@ -704,13 +722,18 @@ class _IncludeIndex {
 
   void addFile(String path) {
     files.add(path);
-    _pathsByLowerName
-        .putIfAbsent(baseName(path).toLowerCase(), () => <String>[])
-        .add(path);
+    final Map<String, String> byLanding = _candidateByLanding.putIfAbsent(
+      baseName(path).toLowerCase(),
+      () => <String, String>{},
+    );
+    final String destination = _packageDestination(path, namespace);
+    final String landing = destination.toLowerCase();
+    final String? representative = byLanding[landing];
+    if (representative == null || _comparePaths(path, representative) < 0) {
+      byLanding[landing] = path;
+    }
     if (_landsUnderIncludeRoot(path)) {
-      includeRootPaths.add(
-        _packageDestination(path, namespace).toLowerCase(),
-      );
+      includeRootPaths.add(landing);
     } else if (_landsUnderFilesRoot(path)) {
       filesRootPaths.add(path.toLowerCase());
     }

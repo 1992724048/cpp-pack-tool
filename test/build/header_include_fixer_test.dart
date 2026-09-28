@@ -117,6 +117,65 @@ void main() {
     );
   });
 
+  test('配方 include/ 镜像在场仍被改写：候选按包内落点去重，不判多候选', () async {
+    // 配方 stage_headers 会把头文件镜像到 `<包源目录>/include/`，构建完成后同一个
+    // 头文件在包源目录里有两份（原始的与镜像的）。二者落到同一包内位置，是同一份
+    // 产物而非两个候选；按源路径去重会让本阶段最常见的这类失效引用在主流程退化成
+    // multipleCandidates，主打能力兑现不了。
+    await writeText(
+      'cpp_client_wrapper/core_implementations.cc',
+      '#include "binary_messenger_impl.h"\n',
+    );
+    await writeText('cpp_client_wrapper/binary_messenger_impl.h', '#pragma once\n');
+    await writeText(
+      'include/cpp_client_wrapper/binary_messenger_impl.h',
+      '#pragma once\n',
+    );
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.issues, isEmpty);
+    expect(report.fixedCount, 1);
+    final HeaderIncludeFix fix = report.fixed.single;
+    expect(fix.from, 'binary_messenger_impl.h');
+    expect(fix.to, 'gtest/cpp_client_wrapper/binary_messenger_impl.h');
+    expect(
+      await readText('cpp_client_wrapper/core_implementations.cc'),
+      '#include "gtest/cpp_client_wrapper/binary_messenger_impl.h"\n',
+    );
+  });
+
+  test('落点不同的同名文件仍报 multipleCandidates：镜像对去重不掩盖真歧义', () async {
+    // 三份文件、两个包内落点：原始的与 `include/` 镜像落同一处算同一候选，
+    // `x/binary_messenger_impl.h` 落另一处算另一候选，歧义依然成立。
+    await writeText(
+      'cpp_client_wrapper/a.cc',
+      '#include "binary_messenger_impl.h"\n',
+    );
+    await writeText('cpp_client_wrapper/binary_messenger_impl.h', '#pragma once\n');
+    await writeText(
+      'include/cpp_client_wrapper/binary_messenger_impl.h',
+      '#pragma once\n',
+    );
+    await writeText('x/binary_messenger_impl.h', '#pragma once\n');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(
+      report.issues.single.kind,
+      HeaderIncludeIssueKind.multipleCandidates,
+    );
+    expect(report.issues.single.candidates, <String>[
+      'cpp_client_wrapper/binary_messenger_impl.h',
+      'x/binary_messenger_impl.h',
+    ]);
+    expect(
+      await readText('cpp_client_wrapper/a.cc'),
+      '#include "binary_messenger_impl.h"\n',
+    );
+  });
+
   test('包布局已能解析则不动：源码层解析不了、经 include 根能解析的引用', () async {
     // 第 1 步守卫：该字面量在包内正是 include 根相对的真实路径，源码层却没有
     // 对应文件（源码 include 根为 include/，其下没有 gtest/ 子树）。
@@ -179,6 +238,20 @@ void main() {
     expect(fix.from, 'a/helper.cc');
     expect(fix.to, 'helper.cc');
     expect(await readText('src/a/one.cc'), '#include "helper.cc"\n');
+  });
+
+  test('同目录 .lib 候选不做裸文件名回落：落 lib/ 无搜索根，报 crossTree', () async {
+    // `.lib` 落 `build/native/lib/`，`.targets` 不为 `lib/` 下发任何搜索根，裸文件名
+    // 在包内必然解析不到。少了文件类型闸就会产出一次 from != to 的无效改写且不报告。
+    await writeText('src/x/one.cc', '#include "q/helper.lib"\n');
+    await writeText('src/x/helper.lib', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(report.issues.single.kind, HeaderIncludeIssueKind.crossTree);
+    expect(report.issues.single.candidates, <String>['src/x/helper.lib']);
+    expect(await readText('src/x/one.cc'), '#include "q/helper.lib"\n');
   });
 
   test('files/ 同目录裸文件名引用不产生 from == to 的空修复', () async {
@@ -327,6 +400,23 @@ void main() {
     expect(issue.include, 'gtest/missing.h');
     expect(issue.line, 2);
     expect(issue.description, contains('尖括号'));
+  });
+
+  test('尖括号不查「引用文件所在目录」：本目录查找本可命中的同名文件不算命中', () async {
+    // 决策钉子：`missing.h` 就在 `one.h` 所在目录之下，引号那条「本文件目录」查找能
+    // 命中它；若尖括号也查本目录（MSVC 不会，`<...>` 直接走搜索路径）就会被判为可
+    // 解析而静默放过。`gtest` 是包内 include 根的子目录，故属要报告的自引用形式。
+    await writeText('include/gtest/gtest.h', '');
+    await writeText('src/x/one.h', '#include <gtest/missing.h>\n');
+    await writeText('src/x/gtest/missing.h', '#pragma once\n');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(report.issues.single.kind, HeaderIncludeIssueKind.missingAngle);
+    expect(report.issues.single.include, 'gtest/missing.h');
+    expect(report.issues.single.filePath, 'src/x/one.h');
+    expect(await readText('src/x/one.h'), '#include <gtest/missing.h>\n');
   });
 
   test('源码层能解析的引用（相对目录/include 根/包根）按包布局改写', () async {
