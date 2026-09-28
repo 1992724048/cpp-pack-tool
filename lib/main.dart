@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_cache.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
@@ -669,7 +670,11 @@ class _MainLayoutState extends State<MainLayout> {
         return;
       }
     }
-    final PackagePlan? plan = await _buildPackagingPlan(pack);
+    final PackModel fixed = await _fixIncludesBeforeExport(pack);
+    if (!mounted) {
+      return;
+    }
+    final PackagePlan? plan = await _buildPackagingPlan(fixed);
     if (!mounted) {
       return;
     }
@@ -677,7 +682,7 @@ class _MainLayoutState extends State<MainLayout> {
         ? const <PackagingIssue>[]
         : collectExecutableWarnings(plan);
     final List<PackagingIssue> issues = <PackagingIssue>[
-      if (plan != null) ...collectPackagingIssues(pack, plan),
+      if (plan != null) ...collectPackagingIssues(fixed, plan),
       ...executableWarnings,
     ];
     if (issues.isNotEmpty) {
@@ -693,12 +698,93 @@ class _MainLayoutState extends State<MainLayout> {
     await showDialog<void>(
       context: context,
       builder: (_) => PackExportDialog(
-        pack: pack,
+        pack: fixed,
         outputDirectory: outputDirectory,
         exportPackage: widget.exportPackage,
-        onExported: (PackageExportResult result) => _recordExport(pack, result),
+        onExported: (PackageExportResult result) => _recordExport(fixed, result),
       ),
     );
+  }
+
+  /// 导出前的 include 引用检查与自动修复，返回大小快照已刷新的包。
+  ///
+  /// 与构建后那次同用 [MainLayout.fixIncludes]，但位置不同：构建后的修复覆盖不到
+  /// 没有 build.py 因而不触发构建的目录，导出前这一次兜住它。检查失败不阻断导出，
+  /// 原包返回。
+  Future<PackModel> _fixIncludesBeforeExport(PackModel pack) async {
+    final String sourcePath = pack.sourcePath!;
+    final HeaderIncludeFixReport report;
+    try {
+      report = await widget.fixIncludes(sourcePath, packageName: pack.name);
+    } catch (error) {
+      if (!mounted) {
+        return pack;
+      }
+      showFloatingToast(
+        context,
+        '头文件引用检查失败：${formatError(error)}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
+      return pack;
+    }
+    if (!mounted) {
+      return pack;
+    }
+    final PackModel refreshed = report.fixedCount == 0
+        ? pack
+        : await _refreshFixedFileSizes(pack, sourcePath, report);
+    if (!mounted) {
+      return refreshed;
+    }
+    if (report.fixedCount > 0) {
+      showFloatingToast(
+        context,
+        '打包前自动修复 ${report.fixedCount} 处失效引用',
+      );
+    }
+    if (report.hasIssues) {
+      await showHeaderIncludeIssuesDialog(context, report: report);
+    }
+    return refreshed;
+  }
+
+  /// 修复改写了文件内容、字节数随之变化，而 `pack.files` 是构建后 [FileScan] 的
+  /// 快照：重新 stat 被改写文件并只替换这些条目，其余条目（含顺序）原样保留。
+  ///
+  /// 必要的依据是 [FileModel.size] 会进入打包计划（`PackageFileSource.size` →
+  /// `PackagePlan.totalSize`）与导出预览，不刷新即按旧字节数展示。stat 失败保留
+  /// 原值并放过，不阻断导出。
+  Future<PackModel> _refreshFixedFileSizes(
+    PackModel pack,
+    String sourcePath,
+    HeaderIncludeFixReport report,
+  ) async {
+    final Set<String> fixedPaths = <String>{
+      for (final HeaderIncludeFix fix in report.fixed)
+        fix.filePath.toLowerCase(),
+    };
+    final List<FileModel> files = <FileModel>[];
+    for (final FileModel file in pack.files) {
+      if (!fixedPaths.contains(file.path.toLowerCase())) {
+        files.add(file);
+        continue;
+      }
+      try {
+        final int size = await File(joinPath(sourcePath, file.path)).length();
+        files.add(
+          FileModel(name: file.name, path: file.path, size: size)
+            ..buildModel = file.buildModel,
+        );
+      } catch (_) {
+        files.add(file);
+      }
+    }
+    final PackModel refreshed = pack.copyWith(files: files);
+    if (mounted) {
+      _upsertPack(refreshed);
+    }
+    return refreshed;
   }
 
   Future<PackagePlan?> _buildPackagingPlan(PackModel pack) async {

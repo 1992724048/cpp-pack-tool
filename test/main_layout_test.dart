@@ -1126,7 +1126,7 @@ void main() {
     expect(find.text('src/gtest/gtest.cc:133'), findsOneWidget);
     expect(
       find.text(
-        '"src/gtest-internal-inl.h"：唯一候选打包后与引用文件不同目录：src/gtest/gtest-internal-inl.h',
+        '"src/gtest-internal-inl.h"：唯一候选打包后不在 include 根之下：src/gtest/gtest-internal-inl.h',
       ),
       findsOneWidget,
     );
@@ -1135,6 +1135,122 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsNothing);
+  });
+
+  testWidgets('打包前自动修复失效引用并刷新被改写文件的大小快照', (tester) async {
+    // 真实文件 I/O 必须整体放进 runAsync：testWidgets 的 fake_async 测试区里
+    // 真实 future 永不落定，createTemp / stat 任一处漏出去都会挂死整个用例。
+    // 清理改用同步删除，避免在 tearDown 里留下同样的真实 future。
+    late Directory sourceRoot;
+    late File patched;
+    await tester.runAsync(() async {
+      sourceRoot = await Directory.systemTemp.createTemp('cnp_export_fix_');
+      patched = File('${sourceRoot.path}/src/gtest/gtest.cc')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('// hello\n');
+    });
+    addTearDown(() {
+      if (sourceRoot.existsSync()) {
+        sourceRoot.deleteSync(recursive: true);
+      }
+    });
+    // size 故意写错：修复改写了文件字节数，导出用的快照必须被重新 stat 刷新
+    const int staleSize = 1;
+    expect(patched.lengthSync(), isNot(staleSize));
+
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack(
+          'demo',
+          '1.0.0',
+          sourcePath: sourceRoot.path,
+          files: <FileModel>[
+            FileModel(
+              name: 'gtest.cc',
+              path: 'src/gtest/gtest.cc',
+              size: staleSize,
+            ),
+            ..._buildPyFiles(),
+          ],
+        ),
+      ],
+    );
+    (String, String)? received;
+    PackModel? exportedPack;
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      settings: const SettingsModel(outputDirectory: r'D:\out'),
+      exportPackage: (PackModel pack, String outputDirectory) async {
+        exportedPack = pack;
+        return (
+          outputPath: r'D:\out\demo.1.0.0.nupkg',
+          fileCount: 8,
+          packageSize: 1024,
+        );
+      },
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+      fixIncludes: (String sourcePath, {required String packageName}) async {
+        received = (sourcePath, packageName);
+        return const HeaderIncludeFixReport(
+          fixed: <HeaderIncludeFix>[
+            HeaderIncludeFix(
+              filePath: 'src/gtest/gtest.cc',
+              line: 1,
+              from: 'src/gtest-internal-inl.h',
+              to: 'gtest/src/gtest/gtest-internal-inl.h',
+            ),
+          ],
+          issues: <HeaderIncludeIssue>[
+            HeaderIncludeIssue(
+              filePath: 'src/gtest/gtest.cc',
+              line: 2,
+              include: 'src/prim/windows/etw.h',
+              kind: HeaderIncludeIssueKind.noCandidate,
+            ),
+          ],
+        );
+      },
+    );
+
+    // 大小刷新同样含真实文件 I/O，导出点击也须在 runAsync 的真实事件循环中完成
+    await tester.runAsync(() async {
+      await tester.tap(find.byTooltip('打包文件夹'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(received, (sourceRoot.path, 'demo'));
+    expect(find.text('打包前自动修复 1 处失效引用'), findsOneWidget);
+    expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsOneWidget);
+    expect(find.text('src/gtest/gtest.cc:2'), findsOneWidget);
+
+    // 悬浮提示的自动关闭是 fake_async 区的待决定时器，runAsync 拒绝在其仍挂起时
+    // 再次进入；先把它跑完。
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump();
+
+    // 整条导出链（含等待问题对话框关闭）都起自 runAsync 的真实事件循环，
+    // 关闭动作同样得在真实事件循环里点：tester.pump 只推进 fake_async，
+    // 真实事件循环不转，链上后续的 await 永不落定。
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('headerIncludeIssuesCloseButton')));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+
+    expect(find.byKey(const Key('packExportDialog')), findsOneWidget);
+    expect(exportedPack, isNotNull);
+    final Map<String, int> sizes = <String, int>{
+      for (final FileModel file in exportedPack!.files) file.path: file.size,
+    };
+    expect(sizes['src/gtest/gtest.cc'], patched.lengthSync());
+    expect(sizes['build.py'], 10);
   });
 
   testWidgets('构建失败后按 Esc 不关闭对话框且关闭按钮仍记录失败条目', (tester) async {
@@ -2205,7 +2321,7 @@ Future<void> _pumpMainLayout(
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
         loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
-        probeSourceAbsent: probeSourceAbsent ?? _hasPresetSource,
+        probeSourceAbsent: probeSourceAbsent ?? _absentPresetSource,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
         hasBuildCache: hasBuildCache ?? _noBuildCache,
@@ -2279,9 +2395,9 @@ Future<void> _openBuildDialogWithProductionProbe(
 
 Future<bool> _noBuildCache(String packName) async => false;
 
-/// 预置源码探测的缺省替身：**有**预置源码（`sourceNone` 为 false，走
-/// 准备环境/准备源码时间线）。极性见 `PackSourceAbsentProbe`。
-Future<bool> _hasPresetSource(String sourcePath) async => false;
+/// 预置源码探测的缺省替身：**无**预置源码（`sourceNone` 为 true，走准备环境
+/// 时间线）。名字与极性同向，取反只写在生产实现里。极性见 `PackSourceAbsentProbe`。
+Future<bool> _absentPresetSource(String sourcePath) async => true;
 
 Future<void> _noDeleteBuildCache(String packName) async {}
 
