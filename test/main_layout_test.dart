@@ -6,7 +6,6 @@ import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
-import 'package:cpp_nuget_pack/build/provisioning.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
@@ -176,7 +175,6 @@ void main() {
             required List<String> compilerPriority,
             required List<DetectedCompiler> cachedCompilers,
             required CompilerDetectionCallback onCompilersDetected,
-            ToolDownloadProgressCallback? onDownloadProgress,
           }) async {
             receivedPriority = compilerPriority;
             receivedCache = cachedCompilers;
@@ -873,7 +871,6 @@ void main() {
         required List<String> compilerPriority,
         required List<DetectedCompiler> cachedCompilers,
         required CompilerDetectionCallback onCompilersDetected,
-        ToolDownloadProgressCallback? onDownloadProgress,
       }) async => prepared,
       buildPack:
           (
@@ -1026,7 +1023,6 @@ void main() {
             required List<String> compilerPriority,
             required List<DetectedCompiler> cachedCompilers,
             required CompilerDetectionCallback onCompilersDetected,
-            ToolDownloadProgressCallback? onDownloadProgress,
           }) => prepareGate.future,
       buildPack: (
         PackModel pack,
@@ -1136,7 +1132,6 @@ void main() {
         required List<String> compilerPriority,
         required List<DetectedCompiler> cachedCompilers,
         required CompilerDetectionCallback onCompilersDetected,
-        ToolDownloadProgressCallback? onDownloadProgress,
       }) async => _buildEnvironment(),
       buildPack: (
         PackModel pack,
@@ -1318,7 +1313,6 @@ void main() {
         required List<String> compilerPriority,
         required List<DetectedCompiler> cachedCompilers,
         required CompilerDetectionCallback onCompilersDetected,
-        ToolDownloadProgressCallback? onDownloadProgress,
       }) async => _buildEnvironment(),
       buildPack:
           (
@@ -2412,7 +2406,6 @@ Future<void> _openBuildDialogWithProductionProbe(
               required List<String> compilerPriority,
               required List<DetectedCompiler> cachedCompilers,
               required CompilerDetectionCallback onCompilersDetected,
-              ToolDownloadProgressCallback? onDownloadProgress,
             }) => prepareGate.future,
         detectCompilers: _noCompilers,
         loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
