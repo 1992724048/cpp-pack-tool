@@ -1,5 +1,5 @@
-import 'package:cpp_nuget_pack/packaging/package_plan.dart';
-import 'package:cpp_nuget_pack/packaging/packaging_issues.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
+import 'package:cpp_nuget_pack/nuget/packaging_issues.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

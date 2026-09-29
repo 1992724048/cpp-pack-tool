@@ -4,10 +4,10 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
-import 'package:cpp_nuget_pack/packaging/nupkg_export_job.dart';
-import 'package:cpp_nuget_pack/packaging/package_icon.dart';
-import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
+import 'package:cpp_nuget_pack/nuget/nupkg_export_job.dart';
+import 'package:cpp_nuget_pack/nuget/package_icon.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 
 typedef PackageExportResult = ({String outputPath, int fileCount, int packageSize});

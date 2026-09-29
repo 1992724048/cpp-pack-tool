@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/util/sha1.dart';
+import 'package:cpp_nuget_pack/nuget/sha1.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
+import 'package:cpp_nuget_pack/nuget/header_include_fixer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

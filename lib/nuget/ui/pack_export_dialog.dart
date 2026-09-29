@@ -1,5 +1,5 @@
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
+import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/shared/file_opener.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:cpp_nuget_pack/shared/floating_toast.dart';

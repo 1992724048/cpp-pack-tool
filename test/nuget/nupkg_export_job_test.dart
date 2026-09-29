@@ -4,7 +4,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:cpp_nuget_pack/packaging/nupkg_export_job.dart';
+import 'package:cpp_nuget_pack/nuget/nupkg_export_job.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,5 +1,5 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/packaging/license_file.dart';
+import 'package:cpp_nuget_pack/nuget/license_file.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

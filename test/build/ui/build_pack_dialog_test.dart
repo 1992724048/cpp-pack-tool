@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
+import 'package:cpp_nuget_pack/nuget/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
-import 'package:cpp_nuget_pack/controls/build_output_panel.dart';
-import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
+import 'package:cpp_nuget_pack/build/ui/build_output_panel.dart';
+import 'package:cpp_nuget_pack/build/ui/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';

@@ -1,5 +1,5 @@
-import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
-import 'package:cpp_nuget_pack/controls/header_include_issues_dialog.dart';
+import 'package:cpp_nuget_pack/nuget/header_include_fixer.dart';
+import 'package:cpp_nuget_pack/nuget/ui/header_include_issues_dialog.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

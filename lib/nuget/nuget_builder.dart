@@ -7,11 +7,11 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/packaging/license_file.dart';
-import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/nuget/license_file.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
-import 'package:cpp_nuget_pack/util/sha1.dart';
+import 'package:cpp_nuget_pack/nuget/sha1.dart';
 
 class NuGetPackageBuilder {
   const NuGetPackageBuilder();

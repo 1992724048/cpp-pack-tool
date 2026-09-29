@@ -1,7 +1,7 @@
 import 'package:cpp_nuget_pack/controls/pack_preview_dialog.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
-import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:cpp_nuget_pack/shared/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';

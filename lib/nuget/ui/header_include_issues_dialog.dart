@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
+import 'package:cpp_nuget_pack/nuget/header_include_fixer.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 const double _labelColumnWidth = 220;

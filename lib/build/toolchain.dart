@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/models/compiler_model.dart';
+import 'package:cpp_nuget_pack/build/compiler_model.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 
-export 'package:cpp_nuget_pack/models/compiler_model.dart';
+export 'package:cpp_nuget_pack/build/compiler_model.dart';
 
 final RegExp _icxVersionPattern = RegExp(r'Compiler\s+(\d+\.\d+\.\d+)');
 final RegExp _clangVersionPattern = RegExp(r'clang version (\d+\.\d+\.\d+)');

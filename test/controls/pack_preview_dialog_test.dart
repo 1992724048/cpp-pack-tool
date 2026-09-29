@@ -1,6 +1,6 @@
 import 'package:cpp_nuget_pack/controls/pack_preview_dialog.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

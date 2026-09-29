@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/packaging/package_plan.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 
 class PackagingIssue {
   const PackagingIssue({required this.label, required this.message});

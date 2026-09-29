@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/models/compiler_model.dart';
+import 'package:cpp_nuget_pack/build/compiler_model.dart';
 
 enum ThemeModeSetting { system, dark, light }
 

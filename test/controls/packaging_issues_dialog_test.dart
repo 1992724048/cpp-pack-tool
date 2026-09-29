@@ -1,5 +1,5 @@
-import 'package:cpp_nuget_pack/controls/packaging_issues_dialog.dart';
-import 'package:cpp_nuget_pack/packaging/packaging_issues.dart';
+import 'package:cpp_nuget_pack/nuget/ui/packaging_issues_dialog.dart';
+import 'package:cpp_nuget_pack/nuget/packaging_issues.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

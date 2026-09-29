@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/controls/build_timeline.dart';
+import 'package:cpp_nuget_pack/build/ui/build_timeline.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

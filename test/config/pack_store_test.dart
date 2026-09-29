@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/config/pack_store.dart';
-import 'package:cpp_nuget_pack/models/compiler_model.dart';
+import 'package:cpp_nuget_pack/build/compiler_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';

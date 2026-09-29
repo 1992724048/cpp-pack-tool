@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/models/compiler_model.dart';
+import 'package:cpp_nuget_pack/build/compiler_model.dart';
 import 'package:cpp_nuget_pack/settings/settings_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
