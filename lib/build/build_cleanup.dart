@@ -26,8 +26,8 @@ const Set<String> _reservedEntryNames = <String>{
   'pre.bat',
   'post.bat',
   '.git',
-  // 与 `.git` 同构：包内预置源码目录（契约常量 presetSourceDirName，工具自动探测、
-  // 配方无需声明），不在白名单会被首次构建后的清理删掉，第二次构建报「找不到目录」
+  // 与 `.git` 同构：包内预置源码目录（契约常量 presetSourceDirName，工具按固定名
+  // 自动探测），不在白名单会被首次构建后的清理删掉，第二次构建报「找不到目录」
   // 而根因反直觉。
   '.cnp-src',
 };

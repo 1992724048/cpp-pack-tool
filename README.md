@@ -64,7 +64,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 
 源目录根部存在 `build.py` 时，应用按以下约定执行构建：
 
-- 预置源码放在包源目录下的固定隐藏目录 `.cnp-src/`，工具自动探测，**无需在 `build.py` 中声明**。`build.py` 是普通 Python 脚本，工具不解析其内容，一切约定经下述环境变量给出。
+- 预置源码放在包源目录下的固定隐藏目录 `.cnp-src/`，工具按固定名自动探测。`build.py` 是普通 Python 脚本，工具不解析其内容，一切约定经下述环境变量给出。
 - 默认流程是准备构建环境、从预置源码目录备源、执行 `python -u build.py`、检查头文件引用并自动重新映射。
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链变量以及 `PYTHONIOENCODING=utf-8`。
 - 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动，辅助模块本身不消费该变量、仅原样透传给配方；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。
@@ -133,7 +133,7 @@ config/
 | `dependencies` | 包依赖（`name`/`version`）。 |
 | `commands` / `macros` / `libDirectories` / `libraries` | 编译集成配置，条目可带 `buildModel`。 |
 | `scripts` | 节点脚本项目、节点、连线和视口数据。 |
-| `buildOptions` | 构建选项。 |
+| `buildOptions` | 历史键：仅随配置原样读写，构建侧已无消费方。 |
 | `history` | 创建、版本变更、重新映射、导出和构建历史。 |
 
 `buildModel` 取值为 `all`、`release` 或 `debug`。损坏或缺少必填字段的包配置会被跳过，应用启动后以悬浮提示列出问题文件。
