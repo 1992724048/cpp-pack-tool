@@ -774,7 +774,6 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      expect(targets, contains('  <ItemGroup>\n'), reason: '运行时项只有一个无条件组');
       expect(
         targets,
         isNot(contains(r"'$(Configuration)'")),

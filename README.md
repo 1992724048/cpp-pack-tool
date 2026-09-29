@@ -41,13 +41,13 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | 包图标 | `images/icon.png` | 从包图标转换并等比缩放至最长边不超过 128；缺失时使用默认纸箱图标。 |
 | 节点脚本（可选） | `build/native/files/scripts/<id>.ps1` | 节点图生成的 UTF-8 BOM PowerShell 5.1 脚本。 |
 
-`<包ID>.targets` 会追加头文件搜索路径，并按 ALL/Release/Debug 写入宏定义、附加库目录和附加库；包内 `.lib` 可按路径自动推导配置。包内 `dll`/`pdb` 在构建后优先硬链接到 `$(OutDir)`（失败时回退复制），许可证文件也按同样方式部署到 `$(OutDir)licenses`。编译前/后命令以带条件的自定义 `Exec` 目标执行；包内 `.asm` 和 `.rc` 分别生成 MASM 与资源编译项。节点脚本按 pre/post 阶段生成 MSBuild `Exec` 目标并传入 `CNP_*` 环境变量。
+`<包ID>.targets` 会追加头文件搜索路径，并按 ALL/Release/Debug 写入宏定义、附加库目录和附加库；包内 `.lib` 连同其所在目录一并登记进无条件项组，其 Release/Debug 配置由用户在编译设置页为对应条目选择，**不再按路径推断**。包内 `dll`/`pdb` 在构建后优先硬链接到 `$(OutDir)`（失败时回退复制），许可证文件也按同样方式部署到 `$(OutDir)licenses`。编译前/后命令以带条件的自定义 `Exec` 目标执行；包内 `.asm` 和 `.rc` 分别生成 MASM 与资源编译项。节点脚本按 pre/post 阶段生成 MSBuild `Exec` 目标并传入 `CNP_*` 环境变量。
 
 ### 头文件引用检查
 
 `#include` 引号引用的失效修复在**构建成功后**与**打包（导出）前**各执行一次：构建后那次提供即时反馈，打包前那次兜住没有 `build.py` 因而不触发构建的目录。
 
-判据唯一：**打包后的布局**。因为 `<包ID>.targets` 恒定只下发 `build/native/include` 一个头文件搜索根，而构建的编译输入恒为 `SRC_PATH`（包源目录里的改写在下一次构建开始时就被输出清理删掉），所以源码树里能解析的写法不代表包内能解析。包内可解析的引用原样保留，不做改动。
+判据唯一：**打包后的布局**。因为 `<包ID>.targets` 恒定只下发 `build/native/include` 一个头文件搜索根，所以源码树里能解析的写法不代表包内能解析。包内可解析的引用原样保留，不做改动。
 
 未解析的引号引用先在包内按文件名找唯一同名候选——同名文件按**包内落点**去重：配方把头文件镜像到 `<包源目录>/include/` 时，原始文件与其镜像落到同一包内位置，是同一份产物而非两个候选；再依次尝试两条改写规则：
 
@@ -64,25 +64,65 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 
 源目录根部存在 `build.py` 时，应用按以下约定执行构建：
 
-- 预置源码放在包源目录下的固定隐藏目录 `.cnp-src/`，工具按固定名自动探测。`build.py` 是普通 Python 脚本，工具不解析其内容，一切约定经下述环境变量给出。
-- 默认流程是准备构建环境、从预置源码目录备源、执行 `python -u build.py`、检查头文件引用并自动重新映射。
-- 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链变量以及 `PYTHONIOENCODING=utf-8`。
-- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。
-- 工具只传递编译器与工具链信息，不替配方决定任何编译参数：指令集、优化等级、链接时优化、运行库家族（MD / MT）与语言标准全部由配方自行决定，可向 CMake 传任意 `-D` 参数（如 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`、`-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`）；不传时沿用 CMake 缺省。
+- `build.py` 是**普通 Python 脚本**，工具不解析其内容——没有头部指令、没有键值声明，所有约定一律经下述环境变量给出。
+- 默认流程是准备编译环境（检测编译器、捕获其环境、装配 `PATH` 与 `CNP_*`）、清空中间产物区、执行 `python -u build.py`、检查头文件引用并自动重新映射。
+- 脚本的 CWD 就是包源目录，产物直接写在这个目录下（工具扫全树打包）。
 
-### 预置源码目录的硬约束
+### 构建期环境变量
 
-预置源码固定放在包源目录的 `.cnp-src/`（隐藏目录），该目录名**不可更改**——工具按固定名探测，改名即等价于「无预置源码」（退化为空工作区）。以 `.` 开头同时满足两条约束，缺一不可：
+注入的变量**恰为五个**：
 
-| 约束 | 不满足的后果 |
+| 变量 | 含义 |
 | ---- | ---- |
-| 以 `.` 开头 | 非隐藏名会被文件扫描扫进 `pack.files` 打进 `.nupkg`（体积暴涨），且会在下次构建被输出清理删除 |
-| 已加入清理白名单 | 首次构建后目录即被删，第二次构建退化为空工作区，根因反直觉 |
+| `CNP_PACKAGE_ROOT` | 包源目录绝对路径（等于 CWD，显式给出以便配方 `chdir` 后仍可用）。产物写这里。 |
+| `CNP_SRC_DIR` | `<包源目录>/.cache/src`，源码区，**完全由配方掌控**。 |
+| `CNP_TMP_DIR` | `<包源目录>/.cache/tmp`，中间产物区；软件每次构建前清空并重建。 |
+| `CNP_TOOLS_DIR` | 跨包共享的工具根目录。 |
+| `CNP_COMPILER` | 检测到的首选编译器可执行文件全路径。 |
 
-备源分叉有两条互斥路径，另需注意——
+此外固定注入 `PYTHONIOENCODING=utf-8`，保证管道中的 stdout/stderr 恒为 UTF-8。
 
-- `.cnp-src/` 存在且含文件：每次构建把该目录整树拷入 `SRC_PATH`，构建前先清空 `SRC_PATH` 上次构建的残留。
-- `.cnp-src/` 不存在（或递归后零文件）：跳过备源，只把 `SRC_PATH` 建为空目录并**跨构建保留**，由脚本自行下载和解压产物。
+**不再注入**：`SRC_PATH`、`BUILD_OUT`、`CNP_CMAKE`、`CNP_NINJA`、`CNP_C_COMPILER`、`CNP_CXX_COMPILER`、`CNP_COMPILER_KIND`、`CNP_OPTION_*`、`PYTHONPATH`。按旧写法读这些变量会直接 `KeyError`。
+
+编译器环境无需配方自己准备：软件只对**选中的首选编译器**执行其环境批处理并捕获结果，配方因此继承一份已可用的 MSVC / ICX 环境。支持的编译器只有 ICX / clang-cl / MSVC 三种，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整）；配方只拿得到 `CNP_COMPILER` 路径，**拿不到编译器种类标识**。
+
+### 软件对文件系统做什么、不做什么
+
+- **软件不下载任何工具链**，也不会替你把某个工具准备好。要用的 CMake、Ninja、nasm 与第三方依赖，由配方自己放进共享工具目录或任何别处。
+- `CNP_TOOLS_DIR` **自身及其下所有子目录**（递归、不限深度）都会前置到子进程的 `PATH`。因此配方按命令名直接调用即可（`cmake`、`nasm`），无需知道工具目录的内部布局。
+- **源码由配方自己放到 `CNP_SRC_DIR`**。软件不拷贝任何源码、不探测预置源码目录——`.cnp-src/` 约定已取消。
+- 软件对目录唯一的干预是**每次构建前清空并重建 `CNP_TMP_DIR`**，保证配方从干净的中间产物区开始。`CNP_SRC_DIR` 与配方自行下载的产物**跨构建保留**——是否复用、复用多少由配方自己权衡。
+- 软件**不清理包源目录**，构建后的残留由配方自理。
+
+### 配方需要知道的全部
+
+1. 产物直接写在 `CNP_PACKAGE_ROOT` 下（工具扫全树打包）。
+2. 源码放 `CNP_SRC_DIR`，中间产物放 `CNP_TMP_DIR`。
+3. 编译器路径在 `CNP_COMPILER`；工具链、依赖、环境全自理。
+4. 产物不能落在扫描会跳过的位置：隐藏目录，以及名为 `build` / `out` 的目录。
+
+软件不替配方决定任何编译参数：指令集、优化等级、链接时优化、运行库家族（MD / MT）与语言标准全部由配方自行决定，可向 CMake 传任意 `-D` 参数（如 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`、`-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`）；不传时沿用 CMake 缺省。
+
+### 最小配方示例
+
+```python
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+PACKAGE_ROOT = Path(os.environ["CNP_PACKAGE_ROOT"])
+SRC = Path(os.environ["CNP_SRC_DIR"])
+TMP = Path(os.environ["CNP_TMP_DIR"])
+OUT = PACKAGE_ROOT / "lib"
+
+TMP.mkdir(parents=True, exist_ok=True)
+OUT.mkdir(parents=True, exist_ok=True)
+subprocess.run(["cmake", "-S", str(SRC), "-B", str(TMP), "-G", "Ninja"], check=True)
+subprocess.run(["cmake", "--build", str(TMP), "--config", "Release"], check=True)
+shutil.copy(TMP / "zlib.h", OUT / "zlib.h")
+shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
+```
 
 ## 构建与运行
 
@@ -91,7 +131,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 - Windows 10/11；项目仅提供 Windows 桌面平台。
 - Flutter stable（项目按 `>=3.44.0` 维护）和 Dart SDK `^3.13.2`。
 - Visual Studio C++ 工具链与 Windows SDK，用于构建 Windows 桌面应用；项目使用 C++17、`/W4 /WX`。
-- Python、CMake、Ninja 等构建工具缺失时，工具会按需准备；本机可用工具优先。
+- Python（执行配方需要；`python` 不可用时回退 `py -3`）。软件**不下载任何工具链**——配方要用的 CMake、Ninja、nasm 等需自备；放进共享工具目录 `tools/` 即可，该目录及其各级子目录会前置到构建子进程的 `PATH`。
 
 ```text
 flutter pub get
