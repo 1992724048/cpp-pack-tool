@@ -18,14 +18,21 @@ void main() {
         Completer<PackageExportResult>();
     PackModel? exportedPack;
     String? exportedDirectory;
+    void Function(double fraction)? progress;
 
     await _pumpDialog(
       tester,
       pack: _pack(),
       outputDirectory: r'D:\out',
-      exportPackage: (PackModel pack, String outputDirectory) {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) {
         exportedPack = pack;
         exportedDirectory = outputDirectory;
+        progress = onProgress;
         return completer.future;
       },
     );
@@ -35,19 +42,81 @@ void main() {
     expect(find.text('包名：demo'), findsOneWidget);
     expect(find.text(r'输出目录：D:\out'), findsOneWidget);
     expect(find.byType(ProgressRing), findsOneWidget);
-    expect(find.text('正在打包…'), findsOneWidget);
+    expect(find.text('正在打包…0%'), findsOneWidget);
     expect(find.byKey(const Key('packExportRevealButton')), findsNothing);
+    expect(find.byKey(const Key('packExportCancelButton')), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
     expect(exportedPack, isNotNull);
     expect(exportedPack!.name, 'demo');
     expect(exportedDirectory, r'D:\out');
+
+    progress!(0.42);
+    await tester.pump();
+    expect(find.text('正在打包…42%'), findsOneWidget);
 
     completer.complete(_result);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('打包完成'), findsOneWidget);
+    expect(find.byKey(const Key('packExportCancelButton')), findsNothing);
     expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('取消后显示已取消且不记为成功导出', (tester) async {
+    PackageExportResult? recorded;
+
+    await _pumpDialog(
+      tester,
+      pack: _pack(),
+      outputDirectory: r'D:\out',
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async => throw const ExportCancelledException(),
+      onExported: (PackageExportResult result) => recorded = result,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('已取消'), findsOneWidget);
+    expect(find.byKey(const Key('packExportRevealButton')), findsNothing);
+    expect(recorded, isNull);
+    expect(_closeButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('点击取消按钮置位取消令牌', (tester) async {
+    final Completer<PackageExportResult> completer =
+        Completer<PackageExportResult>();
+    ExportCancelToken? received;
+
+    await _pumpDialog(
+      tester,
+      pack: _pack(),
+      outputDirectory: r'D:\out',
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) {
+        received = cancelToken;
+        return completer.future;
+      },
+    );
+
+    expect(received, isNotNull);
+    expect(received!.isCancelled, isFalse);
+
+    await tester.tap(find.byKey(const Key('packExportCancelButton')));
+    await tester.pump();
+
+    expect(received!.isCancelled, isTrue);
+    completer.complete(_result);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
   });
 
   testWidgets('导出完成后显示结果并可打开所在目录', (tester) async {
@@ -57,7 +126,13 @@ void main() {
       tester,
       pack: _pack(),
       outputDirectory: r'D:\out',
-      exportPackage: (PackModel pack, String outputDirectory) async => _result,
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async =>
+          _result,
       revealFile: (String filePath) async {
         revealedPath = filePath;
         return true;
@@ -84,7 +159,13 @@ void main() {
       tester,
       pack: _pack(),
       outputDirectory: r'D:\out',
-      exportPackage: (PackModel pack, String outputDirectory) async => _result,
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async =>
+          _result,
       revealFile: (String filePath) async => false,
     );
     await tester.pump();
@@ -103,7 +184,12 @@ void main() {
       tester,
       pack: _pack(),
       outputDirectory: r'D:\out',
-      exportPackage: (PackModel pack, String outputDirectory) async =>
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async =>
           throw ArgumentError('目标目录不可写'),
     );
     await tester.pump();
@@ -120,7 +206,13 @@ void main() {
       tester,
       pack: _pack(),
       outputDirectory: r'D:\out',
-      exportPackage: (PackModel pack, String outputDirectory) async => _result,
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async =>
+          _result,
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -150,12 +242,9 @@ Future<void> _pumpDialog(
   WidgetTester tester, {
   required PackModel pack,
   required String outputDirectory,
-  required Future<PackageExportResult> Function(
-    PackModel pack,
-    String outputDirectory,
-  )
-  exportPackage,
+  required PackExportRunner exportPackage,
   Future<bool> Function(String filePath)? revealFile,
+  ValueChanged<PackageExportResult>? onExported,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -173,6 +262,7 @@ Future<void> _pumpDialog(
                 outputDirectory: outputDirectory,
                 exportPackage: exportPackage,
                 revealFile: revealFile ?? (String filePath) async => true,
+                onExported: onExported,
               ),
             ),
             child: const Text('打开对话框'),

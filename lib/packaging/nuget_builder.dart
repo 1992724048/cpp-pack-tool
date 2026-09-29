@@ -14,6 +14,16 @@ import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/sha1.dart';
 
+/// 打包计划与其构建期顺带产出的校验问题。
+class PackagePlanResult {
+  const PackagePlanResult({required this.plan, required this.issues});
+
+  final PackagePlan plan;
+
+  /// 脚本编译问题（已跳过生成的那些脚本）。
+  final List<PackagingIssue> issues;
+}
+
 class NuGetPackageBuilder {
   const NuGetPackageBuilder();
 
@@ -28,7 +38,11 @@ class NuGetPackageBuilder {
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
   static final RegExp _invalidTargetNameChar = RegExp(r'[^A-Za-z0-9_]');
 
-  Future<PackagePlan> buildPlan(PackModel pack) async {
+  Future<PackagePlan> buildPlan(PackModel pack) async =>
+      (await buildPlanWithIssues(pack)).plan;
+
+  /// 同 [buildPlan]，另带回脚本编译问题——校验方需要问题列表时用它，避免把 codegen 重跑一遍。
+  Future<PackagePlanResult> buildPlanWithIssues(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
       if (isBuildScriptPath(file.path)) {
@@ -55,25 +69,28 @@ class NuGetPackageBuilder {
       hasRuntimeBinaries: _hasRuntimeBinaries(fileEntries),
     );
 
-    return PackagePlan(
-      entries: <PackageEntry>[
-        ...fileEntries,
-        ...scriptResult.entries,
-        PackageEntry(
-          packagePath: '${pack.name}.nuspec',
-          source: PackageGeneratedSource(content: _nuspecContent(pack)),
-        ),
-        PackageEntry(
-          packagePath: '$_buildNative/${pack.name}.targets',
-          source: PackageGeneratedSource(
-            content: _targetsContent(
-              pack,
-              fileEntries,
-              scriptResult.targetsFragment,
+    return PackagePlanResult(
+      plan: PackagePlan(
+        entries: <PackageEntry>[
+          ...fileEntries,
+          ...scriptResult.entries,
+          PackageEntry(
+            packagePath: '${pack.name}.nuspec',
+            source: PackageGeneratedSource(content: _nuspecContent(pack)),
+          ),
+          PackageEntry(
+            packagePath: '$_buildNative/${pack.name}.targets',
+            source: PackageGeneratedSource(
+              content: _targetsContent(
+                pack,
+                fileEntries,
+                scriptResult.targetsFragment,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
+      issues: scriptResult.issues,
     );
   }
 

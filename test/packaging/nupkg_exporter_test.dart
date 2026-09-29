@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -35,6 +36,30 @@ void main() {
       root.deleteSync(recursive: true);
     }
   });
+
+  /// 强杀出口用的独立目录，自行尽力清理，不走上面那个严格的 tearDown。
+  ///
+  /// 被 `Isolate.kill` 杀掉的 isolate 不会被 VM 跑 finalizer，其写句柄不随退出信号释放
+  /// （实测 30/30 轮产物立即删不掉，3 秒后仍有 14/30 被占），共用目录的递归删除会被
+  /// 这份残留句率住，故该用例必须自建目录自收尾。
+  Directory forceKillRoot() {
+    final Directory own = Directory.systemTemp.createTempSync(
+      'nupkg_force_kill_test',
+    );
+    addTearDown(() async {
+      for (int attempt = 1; attempt <= 5; attempt++) {
+        try {
+          if (own.existsSync()) {
+            own.deleteSync(recursive: true);
+          }
+          return;
+        } on FileSystemException {
+          await Future<void>.delayed(Duration(milliseconds: 100 * attempt));
+        }
+      }
+    });
+    return own;
+  }
 
   test('导出包包含 nuspec、targets、载荷与 OPC 三件套', () async {
     final String source = joinPath(root.path, 'source');
@@ -323,6 +348,199 @@ void main() {
     expect(Directory(outputDirectory).existsSync(), isFalse);
   });
 
+  group('进度与取消', () {
+    test('进度按字节加权回传且以 1 收尾', () async {
+      final String source = joinPath(root.path, 'source');
+      _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
+      final PackModel pack = _pack(sourcePath: source)
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ];
+      final List<double> fractions = <double>[];
+
+      await exportNuGetPackage(
+        pack,
+        joinPath(root.path, 'out'),
+        iconResolver: _fakeIconResolver,
+        onProgress: fractions.add,
+      );
+
+      expect(fractions, isNotEmpty);
+      expect(fractions.last, 1);
+      // 严格单调不减：条目是顺序落盘的。
+      for (int index = 1; index < fractions.length; index++) {
+        expect(fractions[index], greaterThanOrEqualTo(fractions[index - 1]));
+      }
+    });
+
+    test('导出期间事件循环仍被调度（主 isolate 未阻塞）', () async {
+      final String source = joinPath(root.path, 'source');
+      // 3 MB：单条目足够大，若压缩跑在主 isolate 上，Timer 不会被调度。
+      final File bigFile = File(joinPath(source, 'lib/big.lib'))
+        ..createSync(recursive: true);
+      final RandomAccessFile handle = bigFile.openSync(mode: FileMode.write);
+      for (int index = 0; index < 3; index++) {
+        handle.writeFromSync(
+          List<int>.generate(1 << 20, (int step) => (step * (index + 2)) % 251),
+        );
+      }
+      handle.closeSync();
+      final PackModel pack = _pack(sourcePath: source)
+        ..files = <FileModel>[
+          FileModel(name: 'big.lib', path: 'lib/big.lib', size: 3 << 20),
+        ];
+
+      int ticks = 0;
+      final Timer ticker = Timer.periodic(
+        const Duration(milliseconds: 10),
+        (Timer _) => ticks++,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      final int before = ticks;
+      await exportNuGetPackage(
+        pack,
+        joinPath(root.path, 'out'),
+        iconResolver: _fakeIconResolver,
+      );
+      ticker.cancel();
+
+      // 不断言具体次数（随机器性能波动）。
+      expect(ticks - before, greaterThan(0));
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('取消后抛出 ExportCancelledException 且不残留 .tmp', () async {
+      final String source = joinPath(root.path, 'source');
+      // 结构上必须「大条目在前 + 大量小条目在后」：取消靠消息往返落地，条目数太少时
+      // 子 isolate 会在消息送达前跑完全部条目，测出来的成败是掷骰子。
+      final File bigFile = File(joinPath(source, 'lib/big.lib'))
+        ..createSync(recursive: true);
+      final RandomAccessFile handle = bigFile.openSync(mode: FileMode.write);
+      for (int index = 0; index < 8; index++) {
+        handle.writeFromSync(
+          List<int>.generate(1 << 20, (int step) => (step * (index + 3)) % 251),
+        );
+      }
+      handle.closeSync();
+      final List<FileModel> files = <FileModel>[
+        FileModel(name: 'big.lib', path: 'lib/big.lib', size: 8 << 20),
+      ];
+      for (int index = 0; index < 400; index++) {
+        _writeFile(joinPath(source, 'include/u$index.h'), 'int f$index();\n');
+        files.add(
+          FileModel(name: 'u$index.h', path: 'include/u$index.h', size: 10),
+        );
+      }
+      final PackModel pack = _pack(sourcePath: source)..files = files;
+      final String outputDirectory = joinPath(root.path, 'out');
+      final ExportCancelToken token = ExportCancelToken();
+      int seen = 0;
+
+      await expectLater(
+        exportNuGetPackage(
+          pack,
+          outputDirectory,
+          iconResolver: _fakeIconResolver,
+          cancelToken: token,
+          onProgress: (double fraction) {
+            seen++;
+            if (seen == 1) {
+              token.cancel();
+            }
+          },
+        ),
+        throwsA(isA<ExportCancelledException>()),
+      );
+
+      // 取消发生在首条目之后，故至少落过一个条目，产物必然不是完整包。
+      expect(seen, greaterThan(0));
+      expect(Directory(outputDirectory).listSync(), isEmpty);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('进度回调抛异常时导出以该异常失败而非永久挂起', () async {
+      final Directory own = forceKillRoot();
+      final String source = joinPath(own.path, 'source');
+      _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
+      final PackModel pack = _pack(sourcePath: source)
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ];
+      final String outputDirectory = joinPath(own.path, 'out');
+
+      // onProgress 是公开注入签名，第三方实现抛异常若逃出端口监听器，completer
+      // 永不完成。
+      await expectLater(
+        exportNuGetPackage(
+          pack,
+          outputDirectory,
+          iconResolver: _fakeIconResolver,
+          onProgress: (double _) => throw StateError('第三方进度回调炸了'),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.message,
+            'message',
+            '第三方进度回调炸了',
+          ),
+        ),
+      );
+      // 不能只断言「抛了 StateError」：清理阶段的删除失败曾把导出本身的异常顶替成
+      // PathAccessException，那会让用户看到「无法访问文件」而不是真正的原因。
+      expect(_nupkgFilesIn(outputDirectory), isEmpty);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('导出前即已置位的取消令牌同样中止作业', () async {
+      final String source = joinPath(root.path, 'source');
+      _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
+      final PackModel pack = _pack(sourcePath: source)
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ];
+      final String outputDirectory = joinPath(root.path, 'out');
+      final ExportCancelToken token = ExportCancelToken()..cancel();
+
+      await expectLater(
+        exportNuGetPackage(
+          pack,
+          outputDirectory,
+          iconResolver: _fakeIconResolver,
+          cancelToken: token,
+        ),
+        throwsA(isA<ExportCancelledException>()),
+      );
+
+      expect(Directory(outputDirectory).listSync(), isEmpty);
+    });
+  });
+
+  group('前置校验', () {
+    test('图标超过 nuget.org 上限时明确报错且不建产物', () async {
+      final String source = joinPath(root.path, 'source');
+      _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
+      final PackModel pack = _pack(sourcePath: source)
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ];
+      final String outputDirectory = joinPath(root.path, 'out');
+
+      await expectLater(
+        exportNuGetPackage(
+          pack,
+          outputDirectory,
+          iconResolver: (PackModel pack) async =>
+              Uint8List(maxNuGetIconBytes + 1),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.message,
+            'message',
+            contains('超过 nuget.org 上限'),
+          ),
+        ),
+      );
+      expect(Directory(outputDirectory).existsSync(), isFalse);
+    });
+  });
+
   test('图标解析失败时抛出异常且不创建输出目录', () async {
     final String source = joinPath(root.path, 'source');
     _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
@@ -420,6 +638,12 @@ ScriptProjectModel _validScript() {
   ];
   return project;
 }
+
+/// 输出目录里已落地的成品包路径（`.tmp` 临时件不算）。
+List<String> _nupkgFilesIn(String outputDirectory) => <String>[
+  for (final FileSystemEntity entity in Directory(outputDirectory).listSync())
+    if (entity.path.endsWith('.nupkg')) entity.path,
+];
 
 int _countBomOccurrences(List<int> bytes) {
   int count = 0;

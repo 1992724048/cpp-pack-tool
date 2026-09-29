@@ -144,7 +144,7 @@ class MainLayout extends StatefulWidget {
   final PackStore store;
   final SettingsModel settings;
   final Future<void> Function(SettingsModel settings) onSaveSettings;
-  final Future<PackageExportResult> Function(PackModel pack, String outputDirectory) exportPackage;
+  final PackExportRunner exportPackage;
   final PackBuildRunner buildPack;
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
 
@@ -537,15 +537,16 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return;
     }
-    final PackagePlan? plan = await _buildPackagingPlan(fixed);
+    final PackagePlanResult? planResult = await _buildPackagingPlan(fixed);
     if (!mounted) {
       return;
     }
+    final PackagePlan? plan = planResult?.plan;
     final List<PackagingIssue> executableWarnings = plan == null
         ? const <PackagingIssue>[]
         : collectExecutableWarnings(plan);
     final List<PackagingIssue> issues = <PackagingIssue>[
-      if (plan != null) ...collectPackagingIssues(fixed, plan),
+      if (planResult != null) ...collectPackagingIssues(planResult.plan, planResult.issues),
       ...executableWarnings,
     ];
     if (issues.isNotEmpty) {
@@ -647,9 +648,9 @@ class _MainLayoutState extends State<MainLayout> {
     return refreshed;
   }
 
-  Future<PackagePlan?> _buildPackagingPlan(PackModel pack) async {
+  Future<PackagePlanResult?> _buildPackagingPlan(PackModel pack) async {
     try {
-      return await _packagingBuilder.buildPlan(pack);
+      return await _packagingBuilder.buildPlanWithIssues(pack);
     } catch (_) {
       // 校验期构建计划失败不阻断导出：导出对话框会以实际错误提示用户
       return null;

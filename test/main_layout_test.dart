@@ -15,6 +15,7 @@ import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/controls/pack_export_dialog.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/pages/about.dart';
 import 'package:cpp_nuget_pack/pages/setting.dart';
@@ -1133,7 +1134,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportedPack = pack;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1353,7 +1359,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportedPack = pack;
         exportedDirectory = outputDirectory;
         return (
@@ -1402,7 +1413,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportedPack = pack;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1470,7 +1486,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportCalls++;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1506,7 +1527,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportCalls++;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1545,7 +1571,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportCalls++;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1605,7 +1636,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportCalls++;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1653,7 +1689,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportCalls++;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1721,7 +1762,12 @@ void main() {
       tester,
       store: store,
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async {
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async {
         exportCalls++;
         return (
           outputPath: r'D:\out\demo.1.0.0.nupkg',
@@ -1958,7 +2004,12 @@ void main() {
       store: store,
       now: () => DateTime(2026, 9, 11, 14, 30, 5),
       settings: const SettingsModel(outputDirectory: r'D:\out'),
-      exportPackage: (PackModel pack, String outputDirectory) async => (
+      exportPackage: (
+        PackModel pack,
+        String outputDirectory, {
+        void Function(double fraction)? onProgress,
+        ExportCancelToken? cancelToken,
+      }) async => (
         outputPath: r'D:\out\demo.1.0.0.nupkg',
         fileCount: 8,
         packageSize: 1024,
@@ -2132,8 +2183,7 @@ Future<void> _pumpMainLayout(
   PackStore? store,
   SettingsModel settings = const SettingsModel(),
   Future<void> Function(SettingsModel settings)? onSaveSettings,
-  Future<PackageExportResult> Function(PackModel pack, String outputDirectory)?
-  exportPackage,
+  PackExportRunner? exportPackage,
   PackBuildRunner? buildPack,
   PackBuildEnvironmentPreparer? prepareBuildEnv,
   Future<List<DetectedCompiler>> Function()? detectCompilers,

@@ -5,7 +5,15 @@ import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-enum _ExportStage { running, completed, failed }
+enum _ExportStage { running, completed, failed, cancelled }
+
+typedef PackExportRunner =
+    Future<PackageExportResult> Function(
+      PackModel pack,
+      String outputDirectory, {
+      void Function(double fraction)? onProgress,
+      ExportCancelToken? cancelToken,
+    });
 
 class PackExportDialog extends StatefulWidget {
   const PackExportDialog({
@@ -19,11 +27,7 @@ class PackExportDialog extends StatefulWidget {
 
   final PackModel pack;
   final String outputDirectory;
-  final Future<PackageExportResult> Function(
-    PackModel pack,
-    String outputDirectory,
-  )
-  exportPackage;
+  final PackExportRunner exportPackage;
   final Future<bool> Function(String filePath) revealFile;
   final ValueChanged<PackageExportResult>? onExported;
 
@@ -35,6 +39,8 @@ class _PackExportDialogState extends State<PackExportDialog> {
   _ExportStage _stage = _ExportStage.running;
   PackageExportResult? _result;
   Object? _error;
+  final ExportCancelToken _cancelToken = ExportCancelToken();
+  double _progress = 0;
 
   @override
   void initState() {
@@ -45,7 +51,20 @@ class _PackExportDialogState extends State<PackExportDialog> {
   Future<void> _export() async {
     final PackageExportResult result;
     try {
-      result = await widget.exportPackage(widget.pack, widget.outputDirectory);
+      result = await widget.exportPackage(
+        widget.pack,
+        widget.outputDirectory,
+        onProgress: _onProgress,
+        cancelToken: _cancelToken,
+      );
+    } on ExportCancelledException {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _stage = _ExportStage.cancelled;
+      });
+      return;
     } catch (error) {
       if (!mounted) {
         return;
@@ -64,6 +83,15 @@ class _PackExportDialogState extends State<PackExportDialog> {
       _result = result;
     });
     widget.onExported?.call(result);
+  }
+
+  void _onProgress(double fraction) {
+    if (!mounted || _stage != _ExportStage.running) {
+      return;
+    }
+    setState(() {
+      _progress = fraction;
+    });
   }
 
   Future<void> _reveal() async {
@@ -112,6 +140,12 @@ class _PackExportDialogState extends State<PackExportDialog> {
             onPressed: _reveal,
             child: const Text('打开所在目录'),
           ),
+        if (_stage == _ExportStage.running)
+          Button(
+            key: const Key('packExportCancelButton'),
+            onPressed: _cancelToken.cancel,
+            child: const Text('取消'),
+          ),
         Button(
           key: const Key('packExportCloseButton'),
           onPressed: _stage == _ExportStage.running
@@ -126,9 +160,15 @@ class _PackExportDialogState extends State<PackExportDialog> {
   Widget _buildStatus() {
     switch (_stage) {
       case _ExportStage.running:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在打包…')],
+        return Row(
+          children: [
+            const ProgressRing(),
+            const SizedBox(width: 12),
+            Text('正在打包…${(_progress * 100).round()}%'),
+          ],
         );
+      case _ExportStage.cancelled:
+        return const Text('已取消');
       case _ExportStage.failed:
         return Text('打包失败：${formatError(_error!)}');
       case _ExportStage.completed:

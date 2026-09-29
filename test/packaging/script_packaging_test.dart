@@ -434,8 +434,6 @@ void main() {
 
   group('导出前校验', () {
     test('合并脚本编译问题与包内路径重复问题', () {
-      final PackModel pack = _pack()
-        ..scripts = <ScriptProjectModel>[_script('script_1', '坏脚本')];
       final PackagePlan plan = PackagePlan(
         entries: <PackageEntry>[
           PackageEntry(
@@ -461,7 +459,12 @@ void main() {
         ],
       );
 
-      final List<PackagingIssue> issues = collectPackagingIssues(pack, plan);
+      final List<PackagingIssue> issues = collectPackagingIssues(plan, <PackagingIssue>[
+        const PackagingIssue(
+          label: '坏脚本',
+          message: '脚本编译失败（共 1 个错误）：脚本必须恰好有一个「开始」节点，当前没有入口节点',
+        ),
+      ]);
 
       expect(issues, hasLength(2));
       expect(issues[0].label, '坏脚本');
@@ -475,8 +478,6 @@ void main() {
     });
 
     test('无编译问题且无重复路径时返回空列表', () {
-      final PackModel pack = _pack()
-        ..scripts = <ScriptProjectModel>[_validGraph()];
       final PackagePlan plan = PackagePlan(
         entries: <PackageEntry>[
           PackageEntry(
@@ -490,7 +491,7 @@ void main() {
         ],
       );
 
-      expect(collectPackagingIssues(pack, plan), isEmpty);
+      expect(collectPackagingIssues(plan, const <PackagingIssue>[]), isEmpty);
     });
   });
 
