@@ -381,7 +381,7 @@ void main() {
     expect(saved, isNotNull);
     expect(
       saved!.commands.single.command,
-      r'"$(MSBuildThisFileDirectory)files\scripts\build.bat"$(OutDir)',
+      r'"$(MSBuildThisFileDirectory)files\script\scripts\build.bat"$(OutDir)',
     );
     expect(saved!.commands.single.type, CmdType.preBuild);
     expect(find.text('已添加'), findsOneWidget);

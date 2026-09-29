@@ -791,7 +791,7 @@ void main() {
     final CmdModel pre = saved.commands[0];
     expect(
       pre.command,
-      r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+      r'"$(MSBuildThisFileDirectory)files\script\pre.bat" "$(TargetPath)"',
     );
     expect(pre.type, CmdType.preBuild);
     expect(pre.system, isTrue);

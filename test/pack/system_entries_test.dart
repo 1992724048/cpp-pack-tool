@@ -9,9 +9,9 @@ import 'package:cpp_nuget_pack/pack/system_entries.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const String _preCommand =
-    r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"';
+    r'"$(MSBuildThisFileDirectory)files\script\pre.bat" "$(TargetPath)"';
 const String _postCommand =
-    r'"$(MSBuildThisFileDirectory)files\post.bat" "$(TargetPath)"';
+    r'"$(MSBuildThisFileDirectory)files\script\post.bat" "$(TargetPath)"';
 
 void main() {
   group('applySystemEntries 脚本命令', () {
@@ -96,7 +96,8 @@ void main() {
         commands: <CmdModel>[
           const CmdModel(
             command:
-                r'"$(MSBuildThisFileDirectory)files\PRE.BAT" "$(targetpath)"',
+                r'"$(MSBuildThisFileDirectory)files\script\PRE.BAT" '
+                r'"$(targetpath)"',
             type: CmdType.preBuild,
           ),
         ],

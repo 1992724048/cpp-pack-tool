@@ -111,7 +111,7 @@ class PackModel {
       for (final Map<String, Object?> item in _mapList(map, 'dependencies')) DependencyModel.fromMap(item),
     ]);
     pack.commands.addAll(<CmdModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'commands')) CmdModel.fromMap(item),
+      for (final Map<String, Object?> item in _mapList(map, 'commands')) _migrateCmd(CmdModel.fromMap(item)),
     ]);
     pack.macros.addAll(<MacroModel>[
       for (final Map<String, Object?> item in _mapList(map, 'macros')) MacroModel.fromMap(item),
@@ -175,3 +175,21 @@ String? _optionalString(Map<String, Object?> map, String key) {
   }
   return value.isEmpty ? null : value;
 }
+
+final RegExp _legacyScriptCommandPattern = RegExp(
+  '(${RegExp.escape(r'$(MSBuildThisFileDirectory)files\')})'
+  '([^"\'\\s]+\\.(?:bat|cmd|ps1|vbs))(?=["\'\\s]|\$)',
+  caseSensitive: false,
+);
+
+String _migrateScriptCommandPath(String command) => command.replaceAllMapped(
+  _legacyScriptCommandPattern,
+  (Match match) => '${match.group(1)}script\\${match.group(2)}',
+);
+
+CmdModel _migrateCmd(CmdModel cmd) => CmdModel(
+  command: _migrateScriptCommandPath(cmd.command),
+  type: cmd.type,
+  buildModel: cmd.buildModel,
+  system: cmd.system,
+);

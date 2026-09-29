@@ -210,7 +210,7 @@ void main() {
 
     expect(
       _textBox(tester).controller!.text,
-      r'"$(MSBuildThisFileDirectory)files\scripts\build.bat"',
+      r'"$(MSBuildThisFileDirectory)files\script\scripts\build.bat"',
     );
     expect(_confirmButton(tester).onPressed, isNotNull);
   });
@@ -227,7 +227,7 @@ void main() {
 
     expect(
       _textBox(tester).controller!.text,
-      r'python "$(MSBuildThisFileDirectory)files\tools\gen.py"',
+      r'python "$(MSBuildThisFileDirectory)files\script\tools\gen.py"',
     );
   });
 
@@ -244,7 +244,7 @@ void main() {
     expect(
       _textBox(tester).controller!.text,
       r'powershell -NoProfile -ExecutionPolicy Bypass -File '
-      r'"$(MSBuildThisFileDirectory)files\tools\setup.ps1"',
+      r'"$(MSBuildThisFileDirectory)files\script\tools\setup.ps1"',
     );
   });
 
@@ -260,7 +260,7 @@ void main() {
 
     expect(
       _textBox(tester).controller!.text,
-      r'"$(MSBuildThisFileDirectory)files\bin\app.exe"',
+      r'"$(MSBuildThisFileDirectory)files\script\bin\app.exe"',
     );
   });
 
@@ -281,7 +281,7 @@ void main() {
 
     expect(
       controller.text,
-      r'echo "$(MSBuildThisFileDirectory)files\scripts\build.bat"',
+      r'echo "$(MSBuildThisFileDirectory)files\script\scripts\build.bat"',
     );
     expect(controller.selection.baseOffset, controller.text.length);
   });
@@ -303,7 +303,7 @@ void main() {
 
     expect(
       controller.text,
-      r'"$(MSBuildThisFileDirectory)files\scripts\build.bat"',
+      r'"$(MSBuildThisFileDirectory)files\script\scripts\build.bat"',
     );
     expect(controller.selection.baseOffset, controller.text.length);
   });
@@ -323,7 +323,7 @@ void main() {
 
     expect(
       _textBox(tester).controller!.text,
-      r'echo "$(MSBuildThisFileDirectory)files\scripts\build.bat"',
+      r'echo "$(MSBuildThisFileDirectory)files\script\scripts\build.bat"',
     );
   });
 

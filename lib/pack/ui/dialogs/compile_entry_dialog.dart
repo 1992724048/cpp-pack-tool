@@ -6,7 +6,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 typedef CompileEntryResult = ({String text, BuildModel buildModel});
 
-const String _packFilesPrefix = r'$(MSBuildThisFileDirectory)files';
+const String _packFilesPrefix = r'$(MSBuildThisFileDirectory)files\script';
 
 const List<String> _msbuildMacros = <String>[
   r'$(Configuration)',

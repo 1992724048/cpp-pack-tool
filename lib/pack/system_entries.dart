@@ -54,7 +54,8 @@ bool _hasCommand(List<CmdModel> commands, String command) {
   return commands.any((CmdModel item) => item.command.toLowerCase() == normalized);
 }
 
-String _systemCommand(String scriptName) => '"\$(MSBuildThisFileDirectory)files\\$scriptName" "\$(TargetPath)"';
+String _systemCommand(String scriptName) =>
+    '"\$(MSBuildThisFileDirectory)files\\script\\$scriptName" "\$(TargetPath)"';
 
 PackModel _copyPack(PackModel pack, {required List<CmdModel> commands}) {
   return pack.copyWith(commands: commands);

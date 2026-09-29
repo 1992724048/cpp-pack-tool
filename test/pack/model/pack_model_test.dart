@@ -454,6 +454,76 @@ void main() {
     });
   });
 
+  group('commands 脚本路径读时兼容', () {
+    test('存量 files\\pre.bat 命令读回后插入 script\\', () {
+      final PackModel pack = PackModel.fromMap(
+        _packWithCommands(
+          r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+        ),
+      );
+
+      expect(
+        pack.commands.single.command,
+        r'"$(MSBuildThisFileDirectory)files\script\pre.bat" "$(TargetPath)"',
+      );
+    });
+
+    test('存量 files\\scripts\\build.cmd 命令读回后插入 script\\', () {
+      final PackModel pack = PackModel.fromMap(
+        _packWithCommands(
+          r'"$(MSBuildThisFileDirectory)files\scripts\build.cmd" '
+          r'"$(TargetPath)"',
+        ),
+      );
+
+      expect(
+        pack.commands.single.command,
+        r'"$(MSBuildThisFileDirectory)files\script\scripts\build.cmd" '
+        r'"$(TargetPath)"',
+      );
+    });
+
+    test('非脚本扩展名的 files\\ 命令原样保留', () {
+      final String python = r'"$(MSBuildThisFileDirectory)files\helper.py" '
+          r'"$(TargetPath)"';
+      final String source = r'"$(MSBuildThisFileDirectory)files\helper.cpp" '
+          r'"$(TargetPath)"';
+
+      for (final String command in <String>[python, source]) {
+        expect(
+          PackModel.fromMap(_packWithCommands(command)).commands.single.command,
+          command,
+        );
+      }
+    });
+
+    test('前缀不匹配的命令原样保留', () {
+      const String original = r'"$(MSBuildThisFileDirectory)lib\foo.lib" '
+          r'"$(TargetPath)"';
+      final PackModel pack = PackModel.fromMap(_packWithCommands(original));
+
+      expect(pack.commands.single.command, original);
+    });
+
+    test('伪扩展名 pre.batx 不被改写', () {
+      const String original = r'"$(MSBuildThisFileDirectory)files\pre.batx"';
+      final PackModel pack = PackModel.fromMap(_packWithCommands(original));
+
+      expect(pack.commands.single.command, original);
+    });
+
+    test('扩展名大写仍判定为脚本', () {
+      final PackModel pack = PackModel.fromMap(
+        _packWithCommands(r'"$(MSBuildThisFileDirectory)files\BUILD.CMD"'),
+      );
+
+      expect(
+        pack.commands.single.command,
+        r'"$(MSBuildThisFileDirectory)files\script\BUILD.CMD"',
+      );
+    });
+  });
+
   group('FileModel 序列化', () {
     test('toMap 只包含 path 与 size', () {
       final FileModel file = FileModel(
@@ -485,3 +555,17 @@ void main() {
     });
   });
 }
+
+Map<String, Object?> _packWithCommands(String command) => <String, Object?>{
+  'name': 'demo',
+  'version': '1.0.0',
+  'author': 'tester',
+  'description': '说明',
+  'commands': <Map<String, Object?>>[
+    <String, Object?>{
+      'command': command,
+      'type': 'preBuild',
+      'buildModel': 'all',
+    },
+  ],
+};
