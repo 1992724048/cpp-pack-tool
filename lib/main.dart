@@ -110,7 +110,7 @@ typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   required CompilerDetectionCallback onCompilersDetected,
 });
 
-/// 默认构建环境准备：读取包内 build.py 头部并解析选项。
+/// 默认构建环境准备：以包源目录为产物落点装配构建环境。
 Future<BuildEnvironment> _preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> compilerPriority,

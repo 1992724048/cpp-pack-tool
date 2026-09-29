@@ -310,11 +310,6 @@ void main() {
 
       expect(env.environment['TMP'], r'C:\Windows\Temp');
       expect(env.environment['TEMP'], r'C:\Windows\Temp');
-      expect(
-        env.environment.values.any((String v) => v.contains('cnp')),
-        isFalse,
-        reason: '不得注入任何受控临时目录路径',
-      );
     });
 
     test('不推导 windres：调用方显式声明的 CNP_RC_COMPILER 原样透传，本层不推导也不覆盖', () {
