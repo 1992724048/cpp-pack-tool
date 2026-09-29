@@ -13,7 +13,6 @@ const String _versionMessage = '版本号格式无效';
 const String _orderMessage = '下限高于上限';
 const String _zeroWidthMessage = '区间宽度为零，请使用 [版本] 表示';
 
-/// 校验 NuGet 风格的版本范围写法；合法返回 null，非法返回中文错误描述。
 String? versionRangeError(String input) {
   final String text = input.trim();
   if (text.isEmpty) {
@@ -25,11 +24,7 @@ String? versionRangeError(String input) {
   if (text.startsWith('[') || text.startsWith('(')) {
     return _intervalError(text);
   }
-  if (text.contains(',') ||
-      text.contains('[') ||
-      text.contains(']') ||
-      text.contains('(') ||
-      text.contains(')')) {
+  if (text.contains(',') || text.contains('[') || text.contains(']') || text.contains('(') || text.contains(')')) {
     return _formatMessage;
   }
   return _parseVersion(text) == null ? _versionMessage : null;
@@ -45,10 +40,7 @@ String? _intervalError(String text) {
   }
   final bool upperInclusive = last == ']';
   final String inner = text.substring(1, text.length - 1);
-  if (inner.contains('[') ||
-      inner.contains(']') ||
-      inner.contains('(') ||
-      inner.contains(')')) {
+  if (inner.contains('[') || inner.contains(']') || inner.contains('(') || inner.contains(')')) {
     return _formatMessage;
   }
   final List<String> parts = inner.split(',');
@@ -58,19 +50,10 @@ String? _intervalError(String text) {
   if (parts.length != 2) {
     return _formatMessage;
   }
-  return _boundsError(
-    parts[0].trim(),
-    parts[1].trim(),
-    lowerInclusive,
-    upperInclusive,
-  );
+  return _boundsError(parts[0].trim(), parts[1].trim(), lowerInclusive, upperInclusive);
 }
 
-String? _singleValueError(
-  String raw,
-  bool lowerInclusive,
-  bool upperInclusive,
-) {
+String? _singleValueError(String raw, bool lowerInclusive, bool upperInclusive) {
   if (!lowerInclusive || !upperInclusive) {
     return _singleValueMessage;
   }
@@ -81,21 +64,12 @@ String? _singleValueError(
   return _parseVersion(value) == null ? _versionMessage : null;
 }
 
-String? _boundsError(
-  String lowerText,
-  String upperText,
-  bool lowerInclusive,
-  bool upperInclusive,
-) {
+String? _boundsError(String lowerText, String upperText, bool lowerInclusive, bool upperInclusive) {
   if (lowerText.isEmpty && upperText.isEmpty) {
     return _formatMessage;
   }
-  final _ParsedVersion? lower = lowerText.isEmpty
-      ? null
-      : _parseVersion(lowerText);
-  final _ParsedVersion? upper = upperText.isEmpty
-      ? null
-      : _parseVersion(upperText);
+  final _ParsedVersion? lower = lowerText.isEmpty ? null : _parseVersion(lowerText);
+  final _ParsedVersion? upper = upperText.isEmpty ? null : _parseVersion(upperText);
   if (lowerText.isNotEmpty && lower == null) {
     return _versionMessage;
   }
@@ -177,18 +151,14 @@ bool _isValidIdentifier(String identifier) {
     return false;
   }
   final bool numericWithLeadingZero =
-      identifier.length > 1 &&
-      identifier.startsWith('0') &&
-      _digitsPattern.hasMatch(identifier);
+      identifier.length > 1 && identifier.startsWith('0') && _digitsPattern.hasMatch(identifier);
   return !numericWithLeadingZero;
 }
 
 int _compareVersions(_ParsedVersion first, _ParsedVersion second) {
   for (var index = 0; index < _versionPartCount; index++) {
     final int firstPart = index < first.parts.length ? first.parts[index] : 0;
-    final int secondPart = index < second.parts.length
-        ? second.parts[index]
-        : 0;
+    final int secondPart = index < second.parts.length ? second.parts[index] : 0;
     if (firstPart != secondPart) {
       return firstPart < secondPart ? -1 : 1;
     }
@@ -202,10 +172,7 @@ int _compareVersions(_ParsedVersion first, _ParsedVersion second) {
       ? first.preRelease.length
       : second.preRelease.length;
   for (var index = 0; index < count; index++) {
-    final int result = _compareIdentifiers(
-      first.preRelease[index],
-      second.preRelease[index],
-    );
+    final int result = _compareIdentifiers(first.preRelease[index], second.preRelease[index]);
     if (result != 0) {
       return result;
     }

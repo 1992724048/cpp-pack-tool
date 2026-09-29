@@ -116,7 +116,6 @@ class _PackInfoState extends State<PackInfo> {
       return;
     }
     if (widget.pack.name != originName) {
-      // 保存挂起期间已切换到其他包，didUpdateWidget 已重置状态，放弃回写
       return;
     }
     if (!saved) {
@@ -140,21 +139,10 @@ class _PackInfoState extends State<PackInfo> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: _field(
-                  '包 ID',
-                  _idController,
-                  key: const Key('packInfoIdField'),
-                ),
-              ),
+              Expanded(child: _field('包 ID', _idController, key: const Key('packInfoIdField'))),
               const SizedBox(width: 16),
               Expanded(
-                child: _field(
-                  '版本',
-                  _versionController,
-                  key: const Key('packInfoVersionField'),
-                  readOnly: !_editing,
-                ),
+                child: _field('版本', _versionController, key: const Key('packInfoVersionField'), readOnly: !_editing),
               ),
             ],
           ),
@@ -162,12 +150,7 @@ class _PackInfoState extends State<PackInfo> {
           Row(
             children: [
               Expanded(
-                child: _field(
-                  '作者',
-                  _authorController,
-                  key: const Key('packInfoAuthorField'),
-                  readOnly: !_editing,
-                ),
+                child: _field('作者', _authorController, key: const Key('packInfoAuthorField'), readOnly: !_editing),
               ),
               const SizedBox(width: 16),
               Expanded(child: _licenseField()),
@@ -223,21 +206,10 @@ class _PackInfoState extends State<PackInfo> {
     );
   }
 
-  Widget _field(
-    String label,
-    TextEditingController controller, {
-    Key? key,
-    bool readOnly = true,
-    String? placeholder,
-  }) {
+  Widget _field(String label, TextEditingController controller, {Key? key, bool readOnly = true, String? placeholder}) {
     return InfoLabel(
       label: label,
-      child: TextBox(
-        key: key,
-        controller: controller,
-        readOnly: readOnly,
-        placeholder: placeholder,
-      ),
+      child: TextBox(key: key, controller: controller, readOnly: readOnly, placeholder: placeholder),
     );
   }
 

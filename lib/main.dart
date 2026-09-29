@@ -98,9 +98,6 @@ class _PackToolState extends State<PackTool> {
 
 Future<void> _noopSaveSettings(SettingsModel settings) async {}
 
-/// 构建环境准备函数：由 MainLayout 注入设置中的编译器优先级与检测缓存，
-/// 缓存缺失/失效并完成重检时经 [onCompilersDetected] 回调新检测结果
-/// （MainLayout 把它写回配置）；测试注入以绕过真实检测。
 typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   PackModel pack, {
   required List<String> compilerPriority,
@@ -108,7 +105,6 @@ typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
   required CompilerDetectionCallback onCompilersDetected,
 });
 
-/// 默认构建环境准备：以包源目录为产物落点装配构建环境。
 Future<BuildEnvironment> _preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> compilerPriority,
@@ -147,12 +143,8 @@ class MainLayout extends StatefulWidget {
   final PackExportRunner exportPackage;
   final PackBuildRunner buildPack;
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
-
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
-
-  /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
-
   final DateTime Function() now;
 
   @override
@@ -315,11 +307,7 @@ class _MainLayoutState extends State<MainLayout> {
             if (dependency.name.toLowerCase() == pack.name.toLowerCase())
               (name: item.name, version: dependency.version),
     ];
-    final DeletePackResult result = await showDeletePackDialog(
-      context,
-      packName: pack.name,
-      dependents: dependents,
-    );
+    final DeletePackResult result = await showDeletePackDialog(context, packName: pack.name, dependents: dependents);
     if (!result.confirmed || !mounted) {
       return;
     }
@@ -418,7 +406,6 @@ class _MainLayoutState extends State<MainLayout> {
         );
     final BuildDialogResult? result = await showDialog<BuildDialogResult>(
       context: context,
-      // 关闭必须经对话框内「关闭」按钮回传失败条目/修复报告：Esc 撤走会丢构建历史
       dismissWithEsc: false,
       builder: (_) => BuildPackDialog(
         pack: pack,
@@ -457,7 +444,6 @@ class _MainLayoutState extends State<MainLayout> {
     }
   }
 
-  /// 记录构建失败条目（失败会话关闭时落盘一次）；保存失败仅提示、不阻断。
   Future<void> _recordBuildFailure(PackModel pack, HistoryModel entry) async {
     final PackModel? current = _findPack(pack.name);
     if (current == null) {
@@ -484,7 +470,6 @@ class _MainLayoutState extends State<MainLayout> {
     _upsertPack(current);
   }
 
-  /// 把构建准备阶段的新检测结果写回配置（经 [MainLayout.onSaveSettings]）。
   void _persistDetectedCompilers(List<toolchain.DetectedCompiler> compilers) {
     final SettingsModel next = widget.settings.copyWith(detectedCompilers: compilers);
     unawaited(_saveDetectedCompilers(next));
@@ -570,11 +555,6 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  /// 导出前的 include 引用检查与自动修复，返回大小快照已刷新的包。
-  ///
-  /// 与构建后那次同用 [MainLayout.fixIncludes]，但位置不同：构建后的修复覆盖不到
-  /// 没有 build.py 因而不触发构建的目录，导出前这一次兜住它。检查失败不阻断导出，
-  /// 原包返回。
   Future<PackModel> _fixIncludesBeforeExport(PackModel pack) async {
     final String sourcePath = pack.sourcePath!;
     final HeaderIncludeFixReport report;
@@ -595,17 +575,12 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return pack;
     }
-    final PackModel refreshed = report.fixedCount == 0
-        ? pack
-        : await _refreshFixedFileSizes(pack, sourcePath, report);
+    final PackModel refreshed = report.fixedCount == 0 ? pack : await _refreshFixedFileSizes(pack, sourcePath, report);
     if (!mounted) {
       return refreshed;
     }
     if (report.fixedCount > 0) {
-      showFloatingToast(
-        context,
-        '打包前自动修复 ${report.fixedCount} 处失效引用',
-      );
+      showFloatingToast(context, '打包前自动修复 ${report.fixedCount} 处失效引用');
     }
     if (report.hasIssues) {
       await showHeaderIncludeIssuesDialog(context, report: report);
@@ -613,19 +588,9 @@ class _MainLayoutState extends State<MainLayout> {
     return refreshed;
   }
 
-  /// 修复改写了文件内容、字节数随之变化，而 `pack.files` 是构建后 [FileScan] 的
-  /// 快照：重新 stat 被改写文件并只替换这些条目，其余条目（含顺序）原样保留。
-  ///
-  /// 必要的依据是 [FileModel.size] 会进入打包计划（`PackageFileSource.size`）、
-  /// 文件管理页与导出预览对话框的总大小，不刷新即按旧字节数展示。
-  Future<PackModel> _refreshFixedFileSizes(
-    PackModel pack,
-    String sourcePath,
-    HeaderIncludeFixReport report,
-  ) async {
+  Future<PackModel> _refreshFixedFileSizes(PackModel pack, String sourcePath, HeaderIncludeFixReport report) async {
     final Set<String> fixedPaths = <String>{
-      for (final HeaderIncludeFix fix in report.fixed)
-        fix.filePath.toLowerCase(),
+      for (final HeaderIncludeFix fix in report.fixed) fix.filePath.toLowerCase(),
     };
     final List<FileModel> files = <FileModel>[];
     for (final FileModel file in pack.files) {
@@ -637,7 +602,6 @@ class _MainLayoutState extends State<MainLayout> {
         final int size = await File(joinPath(sourcePath, file.path)).length();
         files.add(FileModel(name: file.name, path: file.path, size: size));
       } catch (_) {
-        // stat 失败保留原字节数并放过：只为刷新展示，不阻断导出
         files.add(file);
       }
     }
@@ -652,7 +616,6 @@ class _MainLayoutState extends State<MainLayout> {
     try {
       return await _packagingBuilder.buildPlanWithIssues(pack);
     } catch (_) {
-      // 校验期构建计划失败不阻断导出：导出对话框会以实际错误提示用户
       return null;
     }
   }
@@ -788,7 +751,7 @@ class _MainLayoutState extends State<MainLayout> {
                 ),
               ],
             ),
-            Divider(style: DividerThemeData(horizontalMargin: .fromLTRB(0, 3, 8, 0)),),
+            Divider(style: DividerThemeData(horizontalMargin: .fromLTRB(0, 3, 8, 0))),
           ],
         ),
         displayMode: PaneDisplayMode.expanded,

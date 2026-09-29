@@ -153,11 +153,6 @@ const Map<String, String> _directoryIcons = <String, String>{
   'themes': 'folder_themes',
 };
 
-/// 解析文件/目录对应的 catppuccin 图标资产路径。
-///
-/// 文件按「文件名精确匹配 > 名称前缀匹配 > 扩展名匹配 > `_file` 兜底」查找，
-/// 目录按名称匹配、未知目录回退 `_folder`，展开态追加 `_open`；
-/// 主题亮度为 [Brightness.dark] 时使用 mocha，否则使用 latte。
 String iconAssetFor({
   required Brightness brightness,
   required String name,
@@ -165,24 +160,18 @@ String iconAssetFor({
   bool isExpanded = false,
 }) {
   final String flavor = brightness == Brightness.dark ? 'mocha' : 'latte';
-  final String icon = isDirectory
-      ? _directoryIcon(name, isExpanded)
-      : _fileIcon(name);
+  final String icon = isDirectory ? _directoryIcon(name, isExpanded) : _fileIcon(name);
   return '$_assetRoot/$flavor/$icon.svg';
 }
 
 String _directoryIcon(String name, bool isExpanded) {
-  final String base =
-      _directoryIcons[name.toLowerCase()] ?? _fallbackFolderIcon;
+  final String base = _directoryIcons[name.toLowerCase()] ?? _fallbackFolderIcon;
   return isExpanded ? '${base}_open' : base;
 }
 
 String _fileIcon(String name) {
   final String lower = name.toLowerCase();
-  return _fileNameIcons[lower] ??
-      _prefixIcon(lower) ??
-      _extensionIcons[_extensionOf(lower)] ??
-      _fallbackFileIcon;
+  return _fileNameIcons[lower] ?? _prefixIcon(lower) ?? _extensionIcons[_extensionOf(lower)] ?? _fallbackFileIcon;
 }
 
 String? _prefixIcon(String lowerName) {

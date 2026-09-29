@@ -72,7 +72,6 @@ class _SettingState extends State<Setting> {
     }
     final List<toolchain.DetectedCompiler>? result = detected;
     if (result == null) {
-      // 检测失败保留原显示与缓存，不写回空结果。
       setState(() => _detecting = false);
       return;
     }

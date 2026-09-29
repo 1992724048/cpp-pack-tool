@@ -5,10 +5,8 @@ final RegExp _trailingPathSeparators = RegExp(r'[/\\]+$');
 
 String baseName(String path) => path.split(_pathSeparator).last;
 
-String joinPath(String base, String relative) =>
-    '${base.replaceFirst(_trailingPathSeparators, '')}/$relative';
+String joinPath(String base, String relative) => '${base.replaceFirst(_trailingPathSeparators, '')}/$relative';
 
-/// 路径的父目录（`/` 与 `\` 分隔符均可）；无分隔符或仅以分隔符开头时返回原路径。
 String parentDirectory(String path) {
   final int separator = path.lastIndexOf(_pathSeparator);
   return separator <= 0 ? path : path.substring(0, separator);
@@ -44,14 +42,11 @@ String formatBytes(int bytes) {
 }
 
 String formatTimestamp(DateTime time) {
-  String pad(int value, [int width = 2]) =>
-      value.toString().padLeft(width, '0');
+  String pad(int value, [int width = 2]) => value.toString().padLeft(width, '0');
   return '${pad(time.year, 4)}-${pad(time.month)}-${pad(time.day)} '
       '${pad(time.hour)}:${pad(time.minute)}:${pad(time.second)}';
 }
 
-/// 时长文本：`45 秒` / `3 分 12 秒` / `3 分` / `1 小时 2 分`；
-/// 不足 1 秒按下限 `1 秒` 显示（避免「0 秒」）。
 String formatDuration(Duration duration) {
   final int totalSeconds = duration.inSeconds < 1 ? 1 : duration.inSeconds;
   final int hours = totalSeconds ~/ 3600;

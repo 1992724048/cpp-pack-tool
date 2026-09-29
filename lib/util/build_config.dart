@@ -22,9 +22,7 @@ Color buildModelColor(BuildModel buildModel) => switch (buildModel) {
   BuildModel.debug => MarkerColors.orange,
 };
 
-String scriptTriggerLabel(ScriptTrigger trigger) =>
-    trigger == ScriptTrigger.pre ? '编译前' : '编译后';
+String scriptTriggerLabel(ScriptTrigger trigger) => trigger == ScriptTrigger.pre ? '编译前' : '编译后';
 
-Color scriptTriggerColor(ScriptTrigger trigger) => trigger == ScriptTrigger.pre
-    ? MarkerColors.cyan
-    : MarkerColors.purple;
+Color scriptTriggerColor(ScriptTrigger trigger) =>
+    trigger == ScriptTrigger.pre ? MarkerColors.cyan : MarkerColors.purple;

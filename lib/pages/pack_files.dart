@@ -9,12 +9,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class PackFiles extends StatefulWidget {
-  const PackFiles({
-    super.key,
-    required this.pack,
-    this.openFile = openWithDefaultApp,
-    this.onBuildPack,
-  });
+  const PackFiles({super.key, required this.pack, this.openFile = openWithDefaultApp, this.onBuildPack});
 
   final PackModel pack;
   final Future<bool> Function(String path) openFile;
@@ -27,8 +22,6 @@ class PackFiles extends StatefulWidget {
 
 class _PackFilesState extends State<PackFiles> {
   static const double _treeIconSize = 18;
-
-  // TreeView 行内容原有效高度 18，按用户确认加高 8 后为 26（行容器另加 4）。
   static const double _treeRowContentMinHeight = 26;
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
@@ -112,9 +105,12 @@ class _PackFilesState extends State<PackFiles> {
 
   Widget _buildIcon(String name, {bool isDirectory = false, bool isExpanded = false}) {
     return SvgPicture.asset(
-      iconAssetFor(brightness: FluentTheme
-          .of(context)
-          .brightness, name: name, isDirectory: isDirectory, isExpanded: isExpanded),
+      iconAssetFor(
+        brightness: FluentTheme.of(context).brightness,
+        name: name,
+        isDirectory: isDirectory,
+        isExpanded: isExpanded,
+      ),
       width: _treeIconSize,
       height: _treeIconSize,
     );
@@ -149,8 +145,12 @@ class _PackFilesState extends State<PackFiles> {
   Future<void> _openFile(FileModel file) async {
     final String? sourcePath = widget.pack.sourcePath;
     if (sourcePath == null) {
-      showFloatingToast(context, '该包缺少源目录信息，无法打开文件', type: FloatingToastType.error,
-          duration: const Duration(seconds: 5));
+      showFloatingToast(
+        context,
+        '该包缺少源目录信息，无法打开文件',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
       return;
     }
     final bool opened = await widget.openFile(joinPath(sourcePath, file.path));
@@ -159,7 +159,11 @@ class _PackFilesState extends State<PackFiles> {
     }
     if (!opened) {
       showFloatingToast(
-          context, '无法打开文件：${file.name}', type: FloatingToastType.error, duration: const Duration(seconds: 5));
+        context,
+        '无法打开文件：${file.name}',
+        type: FloatingToastType.error,
+        duration: const Duration(seconds: 5),
+      );
     }
   }
 
@@ -195,7 +199,6 @@ class _PackFilesState extends State<PackFiles> {
       padding: const EdgeInsets.fromLTRB(8, 3, 8, 0),
       child: Card(
         padding: EdgeInsetsGeometry.all(5),
-        // `double.infinity` 在有界父约束下收紧为满宽。
         child: SizedBox(
           width: double.infinity,
           child: Wrap(
@@ -203,9 +206,11 @@ class _PackFilesState extends State<PackFiles> {
             runSpacing: 0,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
-              FilledButton(key: const Key('buildPackButton'),
-                  onPressed: () => widget.onBuildPack!(widget.pack),
-                  child: const Text('构建')),
+              FilledButton(
+                key: const Key('buildPackButton'),
+                onPressed: () => widget.onBuildPack!(widget.pack),
+                child: const Text('构建'),
+              ),
             ],
           ),
         ),
@@ -216,10 +221,7 @@ class _PackFilesState extends State<PackFiles> {
   @override
   Widget build(BuildContext context) {
     final bool canBuild = widget.onBuildPack != null && findBuildScript(widget.pack.files) != null;
-    final Color sizeColor = FluentTheme
-        .of(context)
-        .resources
-        .textFillColorSecondary;
+    final Color sizeColor = FluentTheme.of(context).resources.textFillColorSecondary;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -228,11 +230,13 @@ class _PackFilesState extends State<PackFiles> {
         Expanded(
           child: widget.pack.files.isEmpty
               ? const Center(child: Text('该包暂无文件'))
-              : TreeView(items: _buildTreeItems(_buildTree(widget.pack.files), sizeColor),
-              onItemInvoked: _onItemInvoked,
-              onItemExpandToggle: _onExpandToggle,
-              shrinkWrap: false,
-              scrollPrimary: false),
+              : TreeView(
+                  items: _buildTreeItems(_buildTree(widget.pack.files), sizeColor),
+                  onItemInvoked: _onItemInvoked,
+                  onItemExpandToggle: _onExpandToggle,
+                  shrinkWrap: false,
+                  scrollPrimary: false,
+                ),
         ),
       ],
     );

@@ -13,10 +13,7 @@ const String _description =
     '同时生成 .nuspec 与 .targets 构建集成文件。';
 
 class PackPackaging extends StatefulWidget {
-  const PackPackaging({
-    super.key,
-    required this.pack,
-  });
+  const PackPackaging({super.key, required this.pack});
 
   final PackModel pack;
 
@@ -76,16 +73,11 @@ class _PackPackagingState extends State<PackPackaging> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              FilledButton(
-                key: const Key('packPreviewButton'),
-                onPressed: _preview,
-                child: const Text('预览打包内容'),
-              ),
+              FilledButton(key: const Key('packPreviewButton'), onPressed: _preview, child: const Text('预览打包内容')),
               const SizedBox(height: 16),
               Text(_description, style: TextStyle(color: theme.resources.textFillColorSecondary)),
               const SizedBox(height: 8),
-              Text('点击「预览打包内容」可查看包内完整文件列表与文件内容。',
-                  style: TextStyle(color: theme.resources.textFillColorSecondary)),
+              Text('点击「预览打包内容」可查看包内完整文件列表与文件内容。', style: TextStyle(color: theme.resources.textFillColorSecondary)),
             ],
           ),
         ),

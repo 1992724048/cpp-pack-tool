@@ -20,18 +20,10 @@ abstract final class FileScan {
     return files;
   }
 
-  static Future<void> _collectFiles(
-    Directory directory,
-    String relativePrefix,
-    List<FileModel> files,
-  ) async {
-    await for (final FileSystemEntity entity in directory.list(
-      followLinks: false,
-    )) {
+  static Future<void> _collectFiles(Directory directory, String relativePrefix, List<FileModel> files) async {
+    await for (final FileSystemEntity entity in directory.list(followLinks: false)) {
       final String name = _baseName(entity.path);
-      final String relativePath = relativePrefix.isEmpty
-          ? name
-          : '$relativePrefix/$name';
+      final String relativePath = relativePrefix.isEmpty ? name : '$relativePrefix/$name';
 
       if (entity is File) {
         final FileStat stat = await entity.stat();
@@ -44,20 +36,15 @@ abstract final class FileScan {
     }
   }
 
-  /// 扫描/打包一致的目录跳过口径：隐藏目录与 `build`/`out`（构建产物目录）。
   static bool shouldSkipDirectory(String name) {
     final String lowerName = name.toLowerCase();
-    return lowerName.startsWith('.') ||
-        lowerName == 'build' ||
-        lowerName == 'out';
+    return lowerName.startsWith('.') || lowerName == 'build' || lowerName == 'out';
   }
 
   static String _baseName(String path) => path.split(_pathSeparator).last;
 
   static int _compareByPath(FileModel first, FileModel second) {
-    final int insensitive = first.path.toLowerCase().compareTo(
-      second.path.toLowerCase(),
-    );
+    final int insensitive = first.path.toLowerCase().compareTo(second.path.toLowerCase());
     if (insensitive != 0) {
       return insensitive;
     }
