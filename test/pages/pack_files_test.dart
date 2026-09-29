@@ -61,6 +61,20 @@ void main() {
     _expectRowSize('bar.h', '1.0 KB');
   });
 
+  // 目录行是 `label != null` 分支仅剩的调用方（文件行的构建徽标已随路径推断一并移除），
+  // 其内部 `Flexible` 是长名称下唯一的溢出防线：去掉它，超长目录名会撑破行宽并显示黄黑斜纹。
+  testWidgets('目录计数标签存在时超长目录名先省略且不溢出', (tester) async {
+    final String longDirName = 'long_component_name_' * 10;
+    final PackModel pack = _pack('demo', <FileModel>[
+      FileModel(name: 'foo.h', path: '$longDirName/foo.h', size: 10),
+    ]);
+
+    await _pumpPage(tester, PackFiles(pack: pack));
+
+    _expectRowSize(longDirName, '(1 个文件)');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('文件行不显示文件计数', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'README.md', path: 'README.md', size: 100),
