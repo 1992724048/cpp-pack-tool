@@ -245,7 +245,7 @@ class NuGetPackageBuilder {
       } else if (_isRuntimeBinary(lower)) {
         runtimeBinaries.add(
           _msbuildPath(relative),
-          _buildModelOf(relative),
+          BuildModel.all,
           dedupe: true,
         );
       }
@@ -308,26 +308,19 @@ class NuGetPackageBuilder {
       0,
       relative.lastIndexOf('/'),
     );
-    final BuildModel buildModel = _buildModelOf(relative);
     libDirectories.add(
       _msbuildPath(relativeDirectory),
-      buildModel,
+      BuildModel.all,
       dedupe: true,
     );
-    libraries.add(baseName(packagePath), buildModel, dedupe: true);
-  }
-
-  static BuildModel _buildModelOf(String relativePath) {
-    return switch (inferBuildLabel(relativePath)) {
-      releaseBuildLabel => BuildModel.release,
-      debugBuildLabel => BuildModel.debug,
-      _ => BuildModel.all,
-    };
+    libraries.add(baseName(packagePath), BuildModel.all, dedupe: true);
   }
 
   static String _msbuildPath(String relativePath) =>
       r'$(MSBuildThisFileDirectory)' + relativePath.replaceAll('/', r'\');
 
+  /// 只发射用户手选出的配置分组；路径推断的产物一律进 `BuildModel.all` 桶，
+  /// 故进入本方法的三组列表恒为手选结果。
   static void _writeConfigurationGroup(
     StringBuffer buffer, {
     required String configuration,
@@ -492,33 +485,23 @@ class NuGetPackageBuilder {
     buffer.writeln('  </ItemGroup>');
   }
 
+  /// 运行时二进制只由路径推断填充（无手选入口），故恒只有 `all` 桶有值，
+  /// 不再按配置切组。
   static void _writeRuntimeBinaryItems(
     StringBuffer buffer,
     _BuildValueGroup runtimeBinaries,
   ) {
     _writeBinaryItemGroup(buffer, runtimeBinaries.all);
-    _writeBinaryItemGroup(
-      buffer,
-      runtimeBinaries.release,
-      condition: _configurationCondition(releaseBuildLabel),
-    );
-    _writeBinaryItemGroup(
-      buffer,
-      runtimeBinaries.debug,
-      condition: _configurationCondition(debugBuildLabel),
-    );
   }
 
   static void _writeBinaryItemGroup(
     StringBuffer buffer,
-    List<String> binaries, {
-    String? condition,
-  }) {
+    List<String> binaries,
+  ) {
     if (binaries.isEmpty) {
       return;
     }
-    final String attribute = condition == null ? '' : ' Condition="$condition"';
-    buffer.writeln('  <ItemGroup$attribute>');
+    buffer.writeln('  <ItemGroup>');
     for (final String binary in binaries) {
       buffer.writeln(
         '    <PkgRuntimeBinary Include="${_escapeXml(binary)}" />',

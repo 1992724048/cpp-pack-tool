@@ -405,6 +405,102 @@ void main() {
       );
     });
 
+    test(r'全部模型都是所有配置时 .targets 不含任何 $(Configuration)', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[const MacroModel(value: 'ALL=1')]
+        ..libDirectories = <LibDirModel>[
+          const LibDirModel(path: r'third_party\lib'),
+        ]
+        ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
+        ..commands = <CmdModel>[
+          const CmdModel(command: 'echo one', type: CmdType.preBuild),
+        ]
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
+          FileModel(name: 'bar.lib', path: 'lib/x64/Debug/bar.lib', size: 10),
+          FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
+          FileModel(name: 'foo.pdb', path: 'bin/x64/Debug/foo.pdb', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, isNot(contains(r'$(Configuration)')));
+      expect(targets, contains('<ItemDefinitionGroup>'), reason: '仍有全配置的分组');
+    });
+
+    test('手选 Release 的宏落在 Release 条件定义组内', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[
+          const MacroModel(value: 'ALL=1'),
+          const MacroModel(value: 'REL=1', buildModel: BuildModel.release),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      final int allGroupIndex = targets.indexOf('  <ItemDefinitionGroup>');
+      final int releaseGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+      );
+      expect(
+        releaseGroupIndex,
+        greaterThan(allGroupIndex),
+        reason: '手选的 Release 宏仍切出条件定义组，且排在无条件组之后',
+      );
+      expect(
+        targets.substring(releaseGroupIndex),
+        contains(
+          '<PreprocessorDefinitions>REL=1;'
+          '%(PreprocessorDefinitions)</PreprocessorDefinitions>',
+        ),
+      );
+      expect(
+        targets.substring(allGroupIndex, releaseGroupIndex),
+        isNot(contains('REL=1')),
+        reason: 'REL=1 不落进无条件定义组',
+      );
+    });
+
+    test('路径里的 release 段不切出条件组而手选命令仍带配置后缀', () async {
+      final PackModel pack = _pack()
+        ..commands = <CmdModel>[
+          const CmdModel(
+            command: 'echo pre-rel',
+            type: CmdType.preBuild,
+            buildModel: BuildModel.release,
+          ),
+        ]
+        ..files = <FileModel>[
+          FileModel(name: 'lib.lib', path: 'lib/release/lib.lib', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: '路径里的 release 段原样保留，仍派生 lib/ 下的库目录',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalDependencies>lib.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+        reason: '文件本身照旧按扩展名分类',
+      );
+      expect(
+        '<ItemDefinitionGroup Condition'.allMatches(targets).length,
+        0,
+        reason: '路径里的 release 段不再切出条件定义组',
+      );
+      expect(
+        targets,
+        contains('<Target Name="CnpPreBuild_demo_89e495e7_Release" '),
+        reason: '手选 Release 的命令仍生成带配置后缀的条件目标',
+      );
+    });
+
     test('宏按构建配置分组并生成条件组', () async {
       final PackModel pack = _pack()
         ..macros = <MacroModel>[
@@ -468,20 +564,15 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>third_party\lib;$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>third_party\lib;$(MSBuildThisFileDirectory)lib\x64\Release;$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
-        ),
+        reason: '用户条目在前、派生目录按文件顺序并入同一条',
       );
       expect(r'third_party\lib'.allMatches(targets).length, 1);
-      expect(r"=='Release'".allMatches(targets).length, 1);
+      expect(targets, isNot(contains(r"'$(Configuration)'")), reason: '不再按路径推断出条件组');
     });
 
-    test('库文件自动按构建配置加入库目录与附加库并去重', () async {
+    test('库文件自动加入库目录与附加库并去重', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
@@ -495,37 +586,14 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\x64\Release;$(MSBuildThisFileDirectory)lib\Debug;$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
+        reason: '路径里的 Release/Debug 段只作为目录名保留，不影响分组',
       );
       expect(
         targets,
         contains(
-          r'<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<AdditionalDependencies>bar.lib;%(AdditionalDependencies)</AdditionalDependencies>',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<AdditionalDependencies>baz.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+          r'<AdditionalDependencies>foo.lib;bar.lib;baz.lib;%(AdditionalDependencies)</AdditionalDependencies>',
         ),
       );
       expect(
@@ -696,7 +764,7 @@ void main() {
       expect(targets, isNot(contains('<PropertyGroup')));
     });
 
-    test('dll/pdb 生成条件运行时项与硬链接部署目标', () async {
+    test('dll/pdb 生成唯一无条件运行时项组与硬链接部署目标', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
@@ -706,13 +774,11 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
+      expect(targets, contains('  <ItemGroup>\n'), reason: '运行时项只有一个无条件组');
       expect(
         targets,
-        contains(r'''<ItemGroup Condition="'$(Configuration)'=='Release'">'''),
-      );
-      expect(
-        targets,
-        contains(r'''<ItemGroup Condition="'$(Configuration)'=='Debug'">'''),
+        isNot(contains(r"'$(Configuration)'")),
+        reason: '路径里的 Release/Debug 段不再切出条件组',
       );
       expect(
         targets,
