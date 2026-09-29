@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
+import 'package:cpp_nuget_pack/packaging/packaging_issues.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -22,10 +22,10 @@ Future<bool> showPackagingIssuesDialog(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('以下脚本或包内容存在问题：'),
+          const Text('以下包内容存在问题：'),
           const SizedBox(height: 12),
           Flexible(child: SingleChildScrollView(child: _buildIssuesTable(dialogContext, issues))),
-          if (showSupplyChainNotice) ...[const SizedBox(height: 12), const Text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。')],
+          if (showSupplyChainNotice) ...[const SizedBox(height: 12), const Text('包内将随附可执行二进制；请确认来源可信。')],
           const SizedBox(height: 8),
           const Text('可继续导出，或取消返回修改。'),
         ],

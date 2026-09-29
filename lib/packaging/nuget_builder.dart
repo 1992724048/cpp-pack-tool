@@ -9,17 +9,9 @@ import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/license_file.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
-import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/sha1.dart';
-
-class PackagePlanResult {
-  const PackagePlanResult({required this.plan, required this.issues});
-
-  final PackagePlan plan;
-  final List<PackagingIssue> issues;
-}
 
 class NuGetPackageBuilder {
   const NuGetPackageBuilder();
@@ -35,9 +27,7 @@ class NuGetPackageBuilder {
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
   static final RegExp _invalidTargetNameChar = RegExp(r'[^A-Za-z0-9_]');
 
-  Future<PackagePlan> buildPlan(PackModel pack) async => (await buildPlanWithIssues(pack)).plan;
-
-  Future<PackagePlanResult> buildPlanWithIssues(PackModel pack) async {
+  Future<PackagePlan> buildPlan(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
       if (isBuildScriptPath(file.path)) {
@@ -55,27 +45,18 @@ class NuGetPackageBuilder {
       );
     }
 
-    final ScriptPackagingResult scriptResult = const ScriptPackaging().build(
-      pack,
-      hasRuntimeBinaries: _hasRuntimeBinaries(fileEntries),
-    );
-
-    return PackagePlanResult(
-      plan: PackagePlan(
-        entries: <PackageEntry>[
-          ...fileEntries,
-          ...scriptResult.entries,
-          PackageEntry(
-            packagePath: '${pack.name}.nuspec',
-            source: PackageGeneratedSource(content: _nuspecContent(pack)),
-          ),
-          PackageEntry(
-            packagePath: '$_buildNative/${pack.name}.targets',
-            source: PackageGeneratedSource(content: _targetsContent(pack, fileEntries, scriptResult.targetsFragment)),
-          ),
-        ],
-      ),
-      issues: scriptResult.issues,
+    return PackagePlan(
+      entries: <PackageEntry>[
+        ...fileEntries,
+        PackageEntry(
+          packagePath: '${pack.name}.nuspec',
+          source: PackageGeneratedSource(content: _nuspecContent(pack)),
+        ),
+        PackageEntry(
+          packagePath: '$_buildNative/${pack.name}.targets',
+          source: PackageGeneratedSource(content: _targetsContent(pack, fileEntries)),
+        ),
+      ],
     );
   }
 
@@ -100,16 +81,6 @@ class NuGetPackageBuilder {
     FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
     _ => false,
   };
-
-  static bool _hasRuntimeBinaries(List<PackageEntry> fileEntries) {
-    for (final PackageEntry entry in fileEntries) {
-      final String? relative = buildNativeRelativePath(entry.packagePath);
-      if (relative != null && _isRuntimeBinary(relative.toLowerCase())) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   static bool _isRuntimeBinary(String relativeLowerPath) =>
       relativeLowerPath.startsWith('lib/') &&
@@ -183,7 +154,7 @@ class NuGetPackageBuilder {
     return version.substring(0, metadata);
   }
 
-  static String _targetsContent(PackModel pack, List<PackageEntry> fileEntries, String scriptTargetsFragment) {
+  static String _targetsContent(PackModel pack, List<PackageEntry> fileEntries) {
     final _BuildValueGroup macros = _BuildValueGroup();
     for (final MacroModel macro in pack.macros) {
       macros.add(macro.value, macro.buildModel);
@@ -252,9 +223,6 @@ class NuGetPackageBuilder {
     _writeRuntimeBinaryItems(buffer, runtimeBinaries);
     _writeDeployTarget(buffer, runtimeBinaries);
     _writeLicenseTarget(buffer, pack);
-    if (scriptTargetsFragment.isNotEmpty) {
-      buffer.write(scriptTargetsFragment);
-    }
     buffer.writeln('</Project>');
     return buffer.toString();
   }

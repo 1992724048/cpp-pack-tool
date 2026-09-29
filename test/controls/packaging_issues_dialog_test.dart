@@ -1,10 +1,10 @@
 import 'package:cpp_nuget_pack/controls/packaging_issues_dialog.dart';
-import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
+import 'package:cpp_nuget_pack/packaging/packaging_issues.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const List<PackagingIssue> _issues = <PackagingIssue>[
-  PackagingIssue(label: '坏脚本', message: '脚本编译失败（共 2 个错误）：缺少入口节点'),
+  PackagingIssue(label: 'lib/demo.lib', message: '包内路径重复：build/native/lib/demo.lib'),
   PackagingIssue(label: '包内路径', message: '包内路径重复：build/native/files/foo.h'),
 ];
 
@@ -14,26 +14,26 @@ void main() {
 
     expect(find.byKey(const Key('packagingIssuesDialog')), findsOneWidget);
     expect(find.text('导出校验'), findsOneWidget);
-    expect(find.text('以下脚本或包内容存在问题：'), findsOneWidget);
+    expect(find.text('以下包内容存在问题：'), findsOneWidget);
     expect(find.byKey(const Key('packagingIssuesTable')), findsOneWidget);
     expect(find.text('名称'), findsOneWidget);
     expect(find.text('问题'), findsOneWidget);
-    expect(find.text('坏脚本'), findsOneWidget);
-    expect(find.text('脚本编译失败（共 2 个错误）：缺少入口节点'), findsOneWidget);
+    expect(find.text('demo.lib'), findsOneWidget);
+    expect(find.text('包内路径重复：build/native/lib/demo.lib'), findsOneWidget);
     expect(find.text('包内路径'), findsOneWidget);
     expect(find.text('包内路径重复：build/native/files/foo.h'), findsOneWidget);
     expect(find.text('可继续导出，或取消返回修改。'), findsOneWidget);
-    expect(find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'), findsNothing);
+    expect(find.text('包内将随附可执行二进制；请确认来源可信。'), findsNothing);
     expect(find.byType(Divider), findsNWidgets(2));
   });
 
   testWidgets('表格的名称与问题列对齐', (tester) async {
     await _pumpDialog(tester);
 
-    final Rect firstName = tester.getRect(find.text('坏脚本'));
+    final Rect firstName = tester.getRect(find.text('demo.lib'));
     final Rect secondName = tester.getRect(find.text('包内路径'));
     final Rect firstMessage = tester.getRect(
-      find.text('脚本编译失败（共 2 个错误）：缺少入口节点'),
+      find.text('包内路径重复：build/native/lib/demo.lib'),
     );
     final Rect secondMessage = tester.getRect(
       find.text('包内路径重复：build/native/files/foo.h'),
@@ -98,11 +98,11 @@ void main() {
       find.byKey(const Key('packagingIssuesTable')),
     );
     final Rect notice = tester.getRect(
-      find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+      find.text('包内将随附可执行二进制；请确认来源可信。'),
     );
 
     expect(find.byKey(const Key('packagingIssuesDialog')), findsOneWidget);
-    expect(find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'), findsOneWidget);
+    expect(find.text('包内将随附可执行二进制；请确认来源可信。'), findsOneWidget);
     expect(notice.top, greaterThan(table.bottom));
     expect(find.text('可继续导出，或取消返回修改。'), findsOneWidget);
   });
@@ -173,16 +173,16 @@ void main() {
   testWidgets('无路径分隔符的名称原样显示', (tester) async {
     await _pumpDialog(tester);
 
-    expect(find.text('坏脚本'), findsOneWidget);
-    expect(find.byTooltip('坏脚本'), findsOneWidget);
+    expect(find.text('包内路径'), findsOneWidget);
+    expect(find.byTooltip('包内路径'), findsOneWidget);
   });
 
   testWidgets('问题文本限制两行截断且 Tooltip 保留全文', (tester) async {
-    const String message = '脚本编译失败（共 2 个错误）：缺少入口节点，请打开节点编辑器检查入口与连线';
+    const String message = '包内路径重复：build/native/lib/demo.lib，请删除源目录中的重复文件后重新扫描';
     await _pumpDialog(
       tester,
       issues: const <PackagingIssue>[
-        PackagingIssue(label: '坏脚本', message: message),
+        PackagingIssue(label: '包内路径', message: message),
       ],
     );
 

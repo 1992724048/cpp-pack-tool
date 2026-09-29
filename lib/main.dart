@@ -14,7 +14,7 @@ import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
-import 'package:cpp_nuget_pack/packaging/script_packaging.dart';
+import 'package:cpp_nuget_pack/packaging/packaging_issues.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -522,16 +522,15 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) {
       return;
     }
-    final PackagePlanResult? planResult = await _buildPackagingPlan(fixed);
+    final PackagePlan? plan = await _buildPackagingPlan(fixed);
     if (!mounted) {
       return;
     }
-    final PackagePlan? plan = planResult?.plan;
     final List<PackagingIssue> executableWarnings = plan == null
         ? const <PackagingIssue>[]
         : collectExecutableWarnings(plan);
     final List<PackagingIssue> issues = <PackagingIssue>[
-      if (planResult != null) ...collectPackagingIssues(planResult.plan, planResult.issues),
+      if (plan != null) ...collectDuplicatePathIssues(plan),
       ...executableWarnings,
     ];
     if (issues.isNotEmpty) {
@@ -612,9 +611,9 @@ class _MainLayoutState extends State<MainLayout> {
     return refreshed;
   }
 
-  Future<PackagePlanResult?> _buildPackagingPlan(PackModel pack) async {
+  Future<PackagePlan?> _buildPackagingPlan(PackModel pack) async {
     try {
-      return await _packagingBuilder.buildPlanWithIssues(pack);
+      return await _packagingBuilder.buildPlan(pack);
     } catch (_) {
       return null;
     }

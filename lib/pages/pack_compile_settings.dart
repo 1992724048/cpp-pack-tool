@@ -6,12 +6,7 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
-import 'package:cpp_nuget_pack/pages/script_editor.dart';
-import 'package:cpp_nuget_pack/script_editor/graph_validation.dart';
-import 'package:cpp_nuget_pack/script_editor/script_diagnostic.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/script_files.dart';
 import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
@@ -19,8 +14,6 @@ import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 const double _buildModelColumnWidth = 96;
-const double _triggerColumnWidth = 96;
-const double _statusColumnWidth = 80;
 const double _actionColumnWidth = 80;
 
 const String _systemLockTooltip = '由构建管线注册，禁止修改/删除';
@@ -437,8 +430,6 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                 entries: _commandEntries(CmdType.postBuild, 'postBuildCmd'),
               ),
               const SizedBox(height: 24),
-              _buildScriptSection(),
-              const SizedBox(height: 24),
               _buildSection(
                 title: '附加库目录',
                 columnLabel: '目录路径',
@@ -471,34 +462,11 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
     required VoidCallback onAdd,
     required List<_CompileEntry> entries,
   }) {
-    return _buildSectionFrame(
-      title: title,
-      action: Button(key: addKey, onPressed: _saving ? null : onAdd, child: const Text('添加')),
-      body: _buildEntryList(entries, columnLabel),
-    );
-  }
-
-  Widget _buildScriptSection() {
-    final List<ScriptProjectModel> scripts = widget.pack.scripts;
-    return _buildSectionFrame(
-      sectionKey: const Key('nodeScriptsSection'),
-      title: '节点脚本',
-      action: Button(
-        key: const Key('openScriptEditorButton'),
-        onPressed: _saving ? null : _openScriptEditor,
-        child: const Text('打开节点编辑器'),
-      ),
-      body: _buildScriptList(scripts),
-    );
-  }
-
-  Widget _buildSectionFrame({required String title, required Widget action, required Widget body, Key? sectionKey}) {
     return Column(
       children: [
         Padding(
           padding: .fromLTRB(0, 8, 0, 0),
           child: Column(
-            key: sectionKey,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -513,111 +481,16 @@ class _PackCompileSettingsState extends State<PackCompileSettings> {
                       ),
                     ),
                   ),
-                  action,
+                  Button(key: addKey, onPressed: _saving ? null : onAdd, child: const Text('添加')),
                 ],
               ),
             ],
           ),
         ),
         SizedBox(height: 5),
-        body,
+        _buildEntryList(entries, columnLabel),
       ],
     );
-  }
-
-  void _openScriptEditor() {
-    Navigator.of(context).push<void>(
-      FluentPageRoute(
-        builder: (_) => ScriptEditorPage(pack: widget.pack, onSave: widget.onSave),
-      ),
-    );
-  }
-
-  Widget _buildScriptList(List<ScriptProjectModel> scripts) {
-    return _buildTable(
-      header: _buildScriptHeaderRow(),
-      rows: scripts.isEmpty
-          ? const <Widget>[Padding(padding: EdgeInsets.fromLTRB(8, 2, 8, 2), child: Text('暂无节点脚本'))]
-          : <Widget>[for (final ScriptProjectModel script in scripts) _buildScriptRow(script)],
-    );
-  }
-
-  Widget _buildScriptHeaderRow() {
-    final TextStyle style = _headerTextStyle();
-    return Card(
-      margin: const .fromLTRB(0, 0, 0, 2),
-      padding: const .fromLTRB(8, 8, 8, 8),
-      child: Row(
-        children: [
-          Expanded(child: Text('名称', style: style)),
-          SizedBox(
-            width: _triggerColumnWidth,
-            child: Text('触发时机', style: style, textAlign: TextAlign.center),
-          ),
-          SizedBox(
-            width: _buildModelColumnWidth,
-            child: Text('构建标签', style: style, textAlign: TextAlign.center),
-          ),
-          SizedBox(
-            width: _statusColumnWidth,
-            child: Text('状态', style: style, textAlign: TextAlign.center),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScriptRow(ScriptProjectModel script) {
-    final (String statusText, Color statusColor) = _scriptStatus(script);
-    return Card(
-      margin: const .fromLTRB(0, 0, 0, 2),
-      padding: const .fromLTRB(8, 8, 8, 8),
-      child: Row(
-        children: [
-          Expanded(child: Text(script.name, overflow: TextOverflow.ellipsis)),
-          SizedBox(
-            width: _triggerColumnWidth,
-            child: Center(
-              child: Tag(
-                text: scriptTriggerLabel(script.trigger),
-                color: scriptTriggerColor(script.trigger),
-                fontSize: 10,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: _buildModelColumnWidth,
-            child: Center(
-              child: Tag(
-                text: buildModelLabel(script.buildModel),
-                color: buildModelColor(script.buildModel),
-                fontSize: 10,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: _statusColumnWidth,
-            child: Center(
-              child: Text(statusText, style: TextStyle(fontSize: 12, color: statusColor)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  (String, Color) _scriptStatus(ScriptProjectModel script) {
-    final Brightness brightness = FluentTheme.of(context).brightness;
-    final List<ScriptDiagnostic> diagnostics = GraphValidator.validate(script);
-    final int errors = diagnostics.where((ScriptDiagnostic diagnostic) => diagnostic.isError).length;
-    final int warnings = diagnostics.length - errors;
-    if (errors > 0) {
-      return ('$errors 个错误', AppColors.critical(brightness));
-    }
-    if (warnings > 0) {
-      return ('$warnings 个警告', AppColors.caution(brightness));
-    }
-    return ('正常', AppColors.success(brightness));
   }
 
   Widget _buildEntryList(List<_CompileEntry> entries, String columnLabel) {

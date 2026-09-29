@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:cpp_nuget_pack/controls/pack_history_dialog.dart';
+import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -118,7 +118,7 @@ void main() {
     expect(find.text('已删除'), findsOneWidget);
   });
 
-  testWidgets('删除历史条目后保存的包保留脚本', (tester) async {
+  testWidgets('删除历史条目后保存的包保留编译命令', (tester) async {
     final PackModel pack =
         _pack(
             history: <HistoryModel>[
@@ -134,12 +134,8 @@ void main() {
               ),
             ],
           )
-          ..scripts = <ScriptProjectModel>[
-            ScriptProjectModel(
-              id: 'script_1',
-              name: '脚本 1',
-              trigger: ScriptTrigger.pre,
-            ),
+          ..commands = <CmdModel>[
+            const CmdModel(command: 'echo hi', type: CmdType.preBuild),
           ];
     PackModel? saved;
 
@@ -158,8 +154,8 @@ void main() {
 
     expect(saved, isNotNull);
     expect(saved!.history, hasLength(1));
-    expect(saved!.scripts, hasLength(1));
-    expect(saved!.scripts.single.id, 'script_1');
+    expect(saved!.commands, hasLength(1));
+    expect(saved!.commands.single.command, 'echo hi');
   });
 
   testWidgets('保存失败时保留条目且不显示已删除', (tester) async {

@@ -8,7 +8,6 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_compile_settings.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
@@ -58,7 +57,7 @@ void main() {
       );
     }
 
-    expect(find.byType(Card), findsNWidgets(6));
+    expect(find.byType(Card), findsNWidgets(5));
     expect(find.text('添加'), findsNWidgets(5));
     expect(find.byType(Divider), findsOneWidget);
     for (final String empty in <String>[
@@ -122,7 +121,6 @@ void main() {
           (title: '宏定义', columnLabel: '宏定义', entryCount: 1),
           (title: '编译前命令', columnLabel: '命令', entryCount: 1),
           (title: '编译后命令', columnLabel: '命令', entryCount: 1),
-          (title: '节点脚本', columnLabel: '名称', entryCount: 0),
           (title: '附加库目录', columnLabel: '目录路径', entryCount: 1),
           (title: '附加库', columnLabel: '库名称', entryCount: 1),
         ];
@@ -132,14 +130,12 @@ void main() {
       expect(scope, findsOneWidget, reason: '缺少分区：${section.title}');
       expect(_sectionTitle(tester, section.title), findsOneWidget);
       expect(_sectionHeader(scope, section.columnLabel), findsOneWidget);
+      expect(_sectionHeader(scope, '构建配置'), findsOneWidget);
+      expect(_sectionHeader(scope, '操作'), findsOneWidget);
       expect(
         find.descendant(of: scope, matching: find.byType(Card)),
         findsNWidgets(section.entryCount + 1),
       );
-      if (section.title != '节点脚本') {
-        expect(_sectionHeader(scope, '构建配置'), findsOneWidget);
-        expect(_sectionHeader(scope, '操作'), findsOneWidget);
-      }
     }
 
     expect(find.text('暂无宏定义'), findsNothing);
@@ -279,41 +275,6 @@ void main() {
     expect(saved!.macros[1].buildModel, BuildModel.release);
     expect(saved!.libDirectories.single.path, 'libs');
     expect(saved!.libraries.single.name, 'old.lib');
-    expect(find.text('已添加'), findsOneWidget);
-  });
-
-  testWidgets('添加命令后保存的包保留 scripts', (tester) async {
-    final PackModel pack = _pack('demo')
-      ..scripts = <ScriptProjectModel>[
-        ScriptProjectModel(
-          id: 'script_1',
-          name: '脚本 1',
-          trigger: ScriptTrigger.pre,
-        ),
-      ];
-    PackModel? saved;
-
-    await _pumpPage(
-      tester,
-      _page(
-        pack,
-        onSave: (PackModel updated) async {
-          saved = updated;
-          return true;
-        },
-      ),
-    );
-
-    await _addEntry(
-      tester,
-      addKey: const Key('addPreBuildCmdButton'),
-      text: 'echo hi',
-    );
-
-    expect(saved, isNotNull);
-    expect(saved!.commands.single.command, 'echo hi');
-    expect(saved!.scripts, hasLength(1));
-    expect(saved!.scripts.single.id, 'script_1');
     expect(find.text('已添加'), findsOneWidget);
   });
 
@@ -645,148 +606,10 @@ void main() {
     expect(find.text('B=2'), findsOneWidget);
     expect(find.text('A=1'), findsNothing);
   });
-
-  testWidgets('节点脚本分区空态渲染标题与打开按钮', (tester) async {
-    await _pumpPage(tester, _page(_pack('demo')));
-
-    expect(find.byKey(const Key('nodeScriptsSection')), findsOneWidget);
-    expect(find.text('节点脚本'), findsOneWidget);
-    final Finder scope = _sectionScope(tester, '节点脚本');
-    expect(
-      find.descendant(of: scope, matching: find.text('暂无节点脚本')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: scope, matching: find.byType(Card)),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('openScriptEditorButton')), findsOneWidget);
-    expect(find.text('打开节点编辑器'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('节点脚本分区渲染四列表格与状态着色', (tester) async {
-    final PackModel pack = _pack('demo')
-      ..scripts = <ScriptProjectModel>[
-        ScriptProjectModel(
-            id: 'script_1',
-            name: '构建头文件',
-            trigger: ScriptTrigger.pre,
-          )
-          ..nodes = <ScriptNodeModel>[
-            ScriptNodeModel(id: 'n1', type: 'flow.entry'),
-          ],
-        ScriptProjectModel(
-          id: 'script_2',
-          name: '收集产物',
-          trigger: ScriptTrigger.post,
-          buildModel: BuildModel.release,
-        ),
-        _validScript(),
-      ];
-
-    await _pumpPage(tester, _page(pack));
-
-    for (final String header in <String>['名称', '触发时机', '构建标签', '状态']) {
-      expect(find.text(header), findsOneWidget);
-    }
-    expect(find.text('构建头文件'), findsOneWidget);
-    expect(find.text('收集产物'), findsOneWidget);
-    expect(find.text('输出日志'), findsOneWidget);
-
-    final List<Tag> tags = tester.widgetList<Tag>(find.byType(Tag)).toList();
-    expect(tags, hasLength(6));
-    expect(tags[0].text, '编译前');
-    expect(tags[0].color, MarkerColors.cyan);
-    expect(tags[1].text, 'ALL');
-    expect(tags[1].color, MarkerColors.blue);
-    expect(tags[2].text, '编译后');
-    expect(tags[2].color, MarkerColors.purple);
-    expect(tags[3].text, 'Release');
-    expect(tags[3].color, MarkerColors.green);
-    expect(tags[4].text, '编译前');
-    expect(tags[4].color, MarkerColors.cyan);
-    expect(tags[5].text, 'Debug');
-    expect(tags[5].color, MarkerColors.orange);
-
-    final Brightness brightness = _theme(tester).brightness;
-    expect(
-      _statusText(tester, '1 个警告').style?.color,
-      AppColors.caution(brightness),
-    );
-    expect(
-      _statusText(tester, '1 个错误').style?.color,
-      AppColors.critical(brightness),
-    );
-    expect(
-      _statusText(tester, '正常').style?.color,
-      AppColors.success(brightness),
-    );
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('点击打开节点编辑器进入编辑页并可返回编译设置', (tester) async {
-    final PackModel pack = _pack('demo')
-      ..scripts = <ScriptProjectModel>[
-        ScriptProjectModel(
-          id: 'script_1',
-          name: '脚本 1',
-          trigger: ScriptTrigger.pre,
-        ),
-      ];
-    await _pumpPage(tester, _page(pack));
-
-    final Finder openButton = find.byKey(const Key('openScriptEditorButton'));
-    await tester.ensureVisible(openButton);
-    await tester.pump();
-    await tester.tap(openButton);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('nodeEditorPage')), findsOneWidget);
-    expect(find.text('节点编辑器 — demo'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('返回包管理'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.byKey(const Key('nodeEditorPage')), findsNothing);
-    expect(find.text('节点脚本'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
 }
 
 PackModel _pack(String name) =>
     PackModel(name: name, version: '1.0.0', author: 'tester');
-
-/// 结构完整且无诊断的脚本：开始 → 输出信息，消息来自文本常量。
-ScriptProjectModel _validScript() {
-  final ScriptProjectModel script = ScriptProjectModel(
-    id: 'script_3',
-    name: '输出日志',
-    trigger: ScriptTrigger.pre,
-    buildModel: BuildModel.debug,
-  );
-  script.nodes = <ScriptNodeModel>[
-    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
-    ScriptNodeModel(id: 'n2', type: 'log.message'),
-    ScriptNodeModel(id: 'n3', type: 'value.text'),
-  ];
-  script.edges = <ScriptEdgeModel>[
-    ScriptEdgeModel(
-      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
-      to: ScriptEdgeEndpoint(node: 'n2', pin: 'exec'),
-    ),
-    ScriptEdgeModel(
-      from: ScriptEdgeEndpoint(node: 'n3', pin: 'result'),
-      to: ScriptEdgeEndpoint(node: 'n2', pin: 'message'),
-    ),
-  ];
-  return script;
-}
-
-Text _statusText(WidgetTester tester, String text) =>
-    tester.widget<Text>(find.text(text));
 
 PackCompileSettings _page(
   PackModel pack, {
@@ -835,10 +658,6 @@ Finder _sectionHeader(Finder scope, String text) {
           widget.style?.fontSize == 12;
     }),
   );
-}
-
-FluentThemeData _theme(WidgetTester tester) {
-  return FluentTheme.of(tester.element(find.byType(PackCompileSettings).first));
 }
 
 Future<void> _addEntry(

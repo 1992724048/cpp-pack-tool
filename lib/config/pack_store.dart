@@ -58,11 +58,7 @@ class PackStore {
         if (document is! Map) {
           throw const FormatException('文件内容为空或不是 YAML 映射');
         }
-        final List<String> warnings = <String>[];
-        packs.add(PackModel.fromMap(_stringKeyMap(document), warnings: warnings));
-        for (final String warning in warnings) {
-          errors.add(PackLoadError(fileName: baseName(file.path), message: warning));
-        }
+        packs.add(PackModel.fromMap(_stringKeyMap(document)));
       } catch (error) {
         errors.add(PackLoadError(fileName: baseName(file.path), message: formatError(error)));
       }

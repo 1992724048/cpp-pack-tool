@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -26,41 +25,13 @@ try {
 /// 故意不闭合 `Project` 标签的畸形 XML，供检查器自检。
 const String _brokenTargets = '''<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Target Name="CnpScripts_demo_deadbeef_Pre">
+  <Target Name="DeployPkgRuntimeBinaries">
 </Project>
 ''';
 
 final Object? _nonWindowsSkip = Platform.isWindows
     ? null
     : '仅 Windows 平台执行（依赖 powershell.exe 的 [xml] 解析）';
-
-ScriptProjectModel _script(
-  String id,
-  String name, {
-  required ScriptTrigger trigger,
-}) {
-  final ScriptProjectModel project = ScriptProjectModel(
-    id: id,
-    name: name,
-    trigger: trigger,
-  );
-  project.nodes = <ScriptNodeModel>[
-    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
-    ScriptNodeModel(id: 'n2', type: 'value.text')..params['value'] = '你好',
-    ScriptNodeModel(id: 'n3', type: 'log.message'),
-  ];
-  project.edges = <ScriptEdgeModel>[
-    ScriptEdgeModel(
-      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
-      to: ScriptEdgeEndpoint(node: 'n3', pin: 'exec'),
-    ),
-    ScriptEdgeModel(
-      from: ScriptEdgeEndpoint(node: 'n2', pin: 'result'),
-      to: ScriptEdgeEndpoint(node: 'n3', pin: 'message'),
-    ),
-  ];
-  return project;
-}
 
 PackModel _pack(String name, List<FileModel> files) {
   final PackModel pack = PackModel(
@@ -74,12 +45,6 @@ PackModel _pack(String name, List<FileModel> files) {
       command: r'''echo 'a & b' <c> > "d"''',
       type: CmdType.preBuild,
     ),
-  ];
-  pack.scripts = <ScriptProjectModel>[
-    _script('script_1', 'A---B', trigger: ScriptTrigger.pre),
-    _script('script_2', 'R&D 打包', trigger: ScriptTrigger.post),
-    _script('script_3', '生成版本头', trigger: ScriptTrigger.pre),
-    _script('script_4', "脚本 <一> & \"二\" '三' -- 四", trigger: ScriptTrigger.post),
   ];
   return pack;
 }
@@ -96,7 +61,7 @@ String _targetsContent(PackagePlan plan, String packName) {
 }
 
 void main() {
-  test('三份 .targets 均通过 [xml] 整文档解析（含对抗性脚本名与包名）', () async {
+  test('三份 .targets 均通过 [xml] 整文档解析（含对抗性包名）', () async {
     final Directory tempDir = Directory.systemTemp.createTempSync(
       'cnp_targets_xml_',
     );
@@ -144,17 +109,8 @@ void main() {
         plan.entries.where(
           (PackageEntry entry) => entry.packagePath.endsWith('.ps1'),
         ),
-        hasLength(4),
-        reason: '夹具「${fixture.key}」应编译出 4 个脚本条目',
-      );
-      expect(content, contains('<!-- 脚本：A- - -B -->'));
-      expect(content, contains('<!-- 脚本：R&amp;D 打包 -->'));
-      expect(content, contains('<!-- 脚本：生成版本头 -->'));
-      expect(
-        content,
-        contains(
-          '<!-- 脚本：脚本 &lt;一&gt; &amp; &quot;二&quot; &apos;三&apos; - - 四 -->',
-        ),
+        isEmpty,
+        reason: '夹具「${fixture.key}」不应产出任何脚本条目',
       );
       expect(
         content,
@@ -165,10 +121,8 @@ void main() {
       );
       if (fixture.hasRuntimeBinaries) {
         expect(content, contains('<Target Name="DeployPkgRuntimeBinaries"'));
-        expect(content, contains('AfterTargets="DeployPkgRuntimeBinaries"'));
       } else {
         expect(content, isNot(contains('DeployPkgRuntimeBinaries')));
-        expect(content, contains('AfterTargets="Build"'));
       }
       if (fixture.key == 'with_license') {
         expect(content, contains('<Target Name="DeployPkgLicense__licensed_'));

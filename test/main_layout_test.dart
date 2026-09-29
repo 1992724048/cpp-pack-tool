@@ -13,7 +13,6 @@ import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/models/settings_model.dart';
 import 'package:cpp_nuget_pack/controls/pack_export_dialog.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
@@ -1561,7 +1560,7 @@ void main() {
           'demo',
           '1.0.0',
           sourcePath: r'C:\libs\demo',
-          scripts: <ScriptProjectModel>[_brokenScript()],
+          files: _collidingHeaderFiles(),
         ),
       ],
     );
@@ -1596,13 +1595,13 @@ void main() {
     expect(dialog, findsOneWidget);
     expect(find.text('导出校验'), findsOneWidget);
     expect(
-      find.descendant(of: dialog, matching: find.text('坏脚本')),
+      find.descendant(of: dialog, matching: find.text('包内路径')),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: dialog,
-        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+        matching: find.text('包内将随附可执行二进制；请确认来源可信。'),
       ),
       findsNothing,
     );
@@ -1626,7 +1625,7 @@ void main() {
           'demo',
           '1.0.0',
           sourcePath: r'C:\libs\demo',
-          scripts: <ScriptProjectModel>[_brokenScript()],
+          files: _collidingHeaderFiles(),
         ),
       ],
     );
@@ -1725,7 +1724,7 @@ void main() {
     expect(
       find.descendant(
         of: dialog,
-        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+        matching: find.text('包内将随附可执行二进制；请确认来源可信。'),
       ),
       findsOneWidget,
     );
@@ -1742,15 +1741,15 @@ void main() {
     expect(exportCalls, 1);
   });
 
-  testWidgets('NuGet 格式脚本问题与 exe 警告合并展示且可继续', (tester) async {
+  testWidgets('NuGet 格式包内路径重复与 exe 警告合并展示且可继续', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
           'demo',
           '1.0.0',
           sourcePath: r'C:\libs\demo',
-          scripts: <ScriptProjectModel>[_brokenScript()],
           files: <FileModel>[
+            ..._collidingHeaderFiles(),
             FileModel(name: 'tool.exe', path: 'bin/tool.exe', size: 64),
           ],
         ),
@@ -1786,7 +1785,7 @@ void main() {
     final Finder dialog = find.byKey(const Key('packagingIssuesDialog'));
     expect(dialog, findsOneWidget);
     expect(
-      find.descendant(of: dialog, matching: find.text('坏脚本')),
+      find.descendant(of: dialog, matching: find.text('包内路径')),
       findsOneWidget,
     );
     expect(
@@ -1798,7 +1797,7 @@ void main() {
     expect(
       find.descendant(
         of: dialog,
-        matching: find.text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
+        matching: find.text('包内将随附可执行二进制；请确认来源可信。'),
       ),
       findsOneWidget,
     );
@@ -2308,7 +2307,6 @@ PackModel _pack(
   List<FileModel>? files,
   List<DependencyModel>? dependencies,
   List<HistoryModel>? history,
-  List<ScriptProjectModel>? scripts,
 }) {
   final PackModel pack = PackModel(
     name: name,
@@ -2325,15 +2323,15 @@ PackModel _pack(
   if (history != null) {
     pack.history.addAll(history);
   }
-  if (scripts != null) {
-    pack.scripts.addAll(scripts);
-  }
   return pack;
 }
 
-/// 无节点脚本：图校验必然报错，用于导出前校验三态测试。
-ScriptProjectModel _brokenScript() =>
-    ScriptProjectModel(id: 'script_1', name: '坏脚本', trigger: ScriptTrigger.pre);
+/// 源目录为 `C:\libs\demo` 时命名空间取 `demo`：`include/demo/foo.h` 命中前缀被
+/// 保留，`include/foo.h` 则被补上命名空间，两者落到同一包内路径以触发重复。
+List<FileModel> _collidingHeaderFiles() => <FileModel>[
+  FileModel(name: 'foo.h', path: 'include/foo.h', size: 8),
+  FileModel(name: 'foo.h', path: 'include/demo/foo.h', size: 8),
+];
 
 List<FileModel> _buildPyFiles() => <FileModel>[
   FileModel(name: 'build.py', path: 'build.py', size: 10),

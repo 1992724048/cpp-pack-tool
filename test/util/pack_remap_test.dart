@@ -7,7 +7,6 @@ import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
 import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -99,13 +98,6 @@ void main() {
                 type: HistoryType.created,
                 message: '创建',
               ),
-            ]
-            ..scripts = <ScriptProjectModel>[
-              ScriptProjectModel(
-                id: 'script_1',
-                name: '脚本 1',
-                trigger: ScriptTrigger.pre,
-              ),
             ];
       final List<FileModel> files = <FileModel>[
         FileModel(name: 'logo.svg', path: 'assets/logo.svg', size: 128),
@@ -129,7 +121,6 @@ void main() {
       expect(updated.libDirectories, same(pack.libDirectories));
       expect(updated.libraries, same(pack.libraries));
       expect(updated.history, same(pack.history));
-      expect(updated.scripts, same(pack.scripts));
     });
 
     test('新快照无图片文件时 iconPath 为空', () {

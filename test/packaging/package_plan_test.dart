@@ -1,6 +1,5 @@
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,22 +35,16 @@ void main() {
     });
   });
 
-  test('含脚本的 NuGet 计划无重复包内路径', () async {
+  test('NuGet 计划包内路径无重复', () async {
     final PackModel pack = PackModel(
       name: 'demo',
       version: '1.0.0',
       author: 'tester',
       sourcePath: r'C:\libs\demo',
-    )
-      ..files.add(FileModel(name: 'foo.h', path: 'include/foo.h', size: 12))
-      ..scripts.add(_validScript());
+    )..files.add(FileModel(name: 'foo.h', path: 'include/foo.h', size: 12));
 
     final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(pack);
 
-    expect(
-      plan.entries.map((PackageEntry entry) => entry.packagePath),
-      contains('build/native/files/scripts/script_1.ps1'),
-    );
     expect(
       plan.entries
           .map((PackageEntry entry) => entry.packagePath.toLowerCase())
@@ -62,23 +55,25 @@ void main() {
     expect(duplicatePackagePaths(plan), isEmpty);
   });
 
-  test('脚本生成路径与源目录文件重名时命中重复', () async {
+  test('两个源文件映射到同一包内路径时命中重复', () async {
+    // 命名空间为源目录名 demo：include/demo/foo.h 命中前缀被保留，
+    // include/foo.h 则被补上命名空间，两者落到同一路径。
     final PackModel pack = PackModel(
       name: 'demo',
       version: '1.0.0',
       author: 'tester',
       sourcePath: r'C:\libs\demo',
     )
-      ..files.add(
-        FileModel(name: 'script_1.ps1', path: 'scripts/script_1.ps1', size: 5),
-      )
-      ..scripts.add(_validScript());
+      ..files.addAll(<FileModel>[
+        FileModel(name: 'foo.h', path: 'include/foo.h', size: 5),
+        FileModel(name: 'foo.h', path: 'include/demo/foo.h', size: 5),
+      ]);
 
     final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(pack);
 
     expect(
       duplicatePackagePaths(plan),
-      <String>['build/native/files/scripts/script_1.ps1'],
+      <String>['build/native/include/demo/foo.h'],
     );
   });
 }
@@ -87,27 +82,3 @@ PackageEntry _entry(String packagePath) => PackageEntry(
   packagePath: packagePath,
   source: PackageGeneratedSource(content: packagePath),
 );
-
-ScriptProjectModel _validScript() {
-  final ScriptProjectModel project = ScriptProjectModel(
-    id: 'script_1',
-    name: '生成版本头',
-    trigger: ScriptTrigger.pre,
-  );
-  project.nodes = <ScriptNodeModel>[
-    ScriptNodeModel(id: 'n1', type: 'flow.entry'),
-    ScriptNodeModel(id: 'n2', type: 'value.text')..params['value'] = '你好',
-    ScriptNodeModel(id: 'n3', type: 'log.message'),
-  ];
-  project.edges = <ScriptEdgeModel>[
-    ScriptEdgeModel(
-      from: ScriptEdgeEndpoint(node: 'n1', pin: 'out'),
-      to: ScriptEdgeEndpoint(node: 'n3', pin: 'exec'),
-    ),
-    ScriptEdgeModel(
-      from: ScriptEdgeEndpoint(node: 'n2', pin: 'result'),
-      to: ScriptEdgeEndpoint(node: 'n3', pin: 'message'),
-    ),
-  ];
-  return project;
-}

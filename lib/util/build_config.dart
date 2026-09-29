@@ -1,7 +1,6 @@
 import 'dart:ui' show Color;
 
 import 'package:cpp_nuget_pack/models/build_model.dart';
-import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/util/colors.dart';
 
 const String allBuildLabel = 'ALL';
@@ -21,8 +20,3 @@ Color buildModelColor(BuildModel buildModel) => switch (buildModel) {
   BuildModel.release => MarkerColors.green,
   BuildModel.debug => MarkerColors.orange,
 };
-
-String scriptTriggerLabel(ScriptTrigger trigger) => trigger == ScriptTrigger.pre ? '编译前' : '编译后';
-
-Color scriptTriggerColor(ScriptTrigger trigger) =>
-    trigger == ScriptTrigger.pre ? MarkerColors.cyan : MarkerColors.purple;
