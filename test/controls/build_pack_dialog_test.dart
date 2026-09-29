@@ -801,9 +801,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('预构建包阶段：下载 → 分类 → 重新映射 → 完成', (tester) async {
+  testWidgets('预构建包阶段：下载 → 重新映射 → 完成', (tester) async {
     final Completer<void> downloadGate = Completer<void>();
-    final Completer<void> classifyGate = Completer<void>();
     final Completer<void> buildGate = Completer<void>();
     final Completer<List<FileModel>> scanCompleter =
         Completer<List<FileModel>>();
@@ -825,8 +824,6 @@ void main() {
             onOutput?.call(
               '[openvino] progress 42.0% (88000000/208000000 bytes)',
             );
-            await classifyGate.future;
-            onOutput?.call('[cnp_build_support] classify: C:\\src -> C:\\out');
             await buildGate.future;
           },
       scanFiles: (_) => scanCompleter.future,
@@ -842,10 +839,6 @@ void main() {
     expect(find.text('已下载 42%'), findsOneWidget);
     expect(find.text('执行构建'), findsNothing);
 
-    classifyGate.complete();
-    await tester.pump();
-    expect(_stepIsActive(tester, 'classify'), isTrue);
-
     buildGate.complete();
     await tester.pump();
     expect(_stepIsActive(tester, 'remap'), isTrue);
@@ -858,24 +851,62 @@ void main() {
     expect(_stepIsDone(tester, 'done'), isTrue);
   });
 
+  testWidgets('sourceNone 时构建输出行不再触发阶段切换', (tester) async {
+    final Completer<void> buildGate = Completer<void>();
+    final Completer<List<FileModel>> scanCompleter =
+        Completer<List<FileModel>>();
+    final Completer<void> applyCompleter = Completer<void>();
+
+    await _pumpDialog(
+      tester,
+      sourceNone: true,
+      build:
+          (
+            PackModel pack,
+            void Function(PackBuildStage) onStage, {
+            Map<String, String>? environment,
+            void Function(String line)? onOutput,
+          }) async {
+            onStage(PackBuildStage.staging);
+            onStage(PackBuildStage.building);
+            onOutput?.call(
+              '[cnp_build_support] classify: C:\\src -> C:\\out',
+            );
+            onOutput?.call('任意其他输出');
+            await buildGate.future;
+          },
+      scanFiles: (_) => scanCompleter.future,
+      onApply: (PackModel pack) => applyCompleter.future,
+    );
+    await tester.pump();
+
+    expect(
+      _stepIsActive(tester, 'classify'),
+      isFalse,
+      reason: '预置源码无产出分类标记的模块，构建输出行不得推进到分类阶段',
+    );
+    expect(
+      _stepIsActive(tester, 'download'),
+      isTrue,
+      reason: '无替代信号时全程停在下载阶段',
+    );
+
+    buildGate.complete();
+    await tester.pump();
+    expect(_stepIsActive(tester, 'remap'), isTrue);
+
+    scanCompleter.complete(const <FileModel>[]);
+    await tester.pump();
+    applyCompleter.complete();
+    await tester.pump();
+  });
+
   test('extractProgressPercent 通用提取 progress 百分比', () {
     expect(extractProgressPercent('[openvino] progress 42.0% (1/2 bytes)'), 42);
     expect(extractProgressPercent('progress: 7%'), 7);
     expect(extractProgressPercent('Receiving objects: 45% (9/20)'), isNull);
     expect(extractProgressPercent('progress 120%'), isNull);
     expect(extractProgressPercent('无进度行'), isNull);
-  });
-
-  test('isClassifyStartLine 匹配分类标记前缀', () {
-    expect(
-      isClassifyStartLine('[cnp_build_support] classify: C:\\src -> C:\\out'),
-      isTrue,
-    );
-    expect(isClassifyStartLine('  [cnp_build_support] classify: x'), isTrue);
-    expect(
-      isClassifyStartLine('[cnp_build_support] cmake_configure: x'),
-      isFalse,
-    );
   });
 
   testWidgets('构建成功后先检查头文件引用再重新映射并随关闭返回报告', (tester) async {

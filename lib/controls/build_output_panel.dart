@@ -5,24 +5,12 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show SelectionRegistrar;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
-/// `cnp_build_support.classify_tree` 的开始标记前缀（该函数首行即输出
-/// `[cnp_build_support] classify: <root> -> <out>`）；
-/// 预构建配方据此把阶段从「下载」切换到「分类」。
-const String classifyStartMarkerPrefix = '[cnp_build_support] classify:';
-
-final RegExp _classifyStartPattern = RegExp(
-  '^${RegExp.escape(classifyStartMarkerPrefix)}',
-);
-
 /// 构建脚本进度行的百分比提取：匹配 `... progress 42.0% ...` 形态（不依赖
 /// 具体库名）；不可解析返回 null。
 final RegExp _progressPercentPattern = RegExp(
   r'progress[^0-9%]*([0-9]{1,3}(?:\.[0-9]+)?)\s*%',
   caseSensitive: false,
 );
-
-bool isClassifyStartLine(String line) =>
-    _classifyStartPattern.hasMatch(line.trim());
 
 int? extractProgressPercent(String line) {
   final RegExpMatch? match = _progressPercentPattern.firstMatch(line);

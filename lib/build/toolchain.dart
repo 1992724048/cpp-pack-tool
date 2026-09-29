@@ -52,9 +52,9 @@ Future<DetectedCompiler?> detectIcx({
 
 /// 检测 `<llvmBinDir>/clang-cl.exe`（MSVC 兼容驱动）的版本。
 ///
-/// clang-cl 是 MSVC 旗标体系的 clang 驱动：驱动 CMake+Ninja 时与 MSVC 一致
-/// （见 `cnp_build_support.py`），故本入口不纳入 GNU 风格驱动（`clang.exe` /
-/// `clang++`）；R23 曾短暂改用 GNU 驱动，其记录见 `compiler_model.dart`。
+/// clang-cl 是 MSVC 旗标体系的 clang 驱动：驱动 CMake+Ninja 时与 MSVC 一致，
+/// 故本入口不纳入 GNU 风格驱动（`clang.exe` / `clang++`）；R23 曾短暂改用 GNU 驱动，
+/// 其记录见 `compiler_model.dart`。
 /// [environment] 为版本探测子进程的环境；null 时继承宿主环境。
 Future<DetectedCompiler?> detectClangCl({
   PackProcessRunner runner = Process.run,

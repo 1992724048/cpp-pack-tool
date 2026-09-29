@@ -74,7 +74,8 @@ void _expectNoTokens(
   }
 }
 
-/// 全仓扫描覆盖的文本扩展名：Dart 源码、辅助模块脚本与 Markdown 文档。
+/// 全仓扫描覆盖的文本扩展名：Dart 源码与 Markdown 文档；`.py` 保留以防今后新增的
+/// 脚本绕过负向扫描。
 const List<String> _scannedExtensions = <String>['.dart', '.md', '.py'];
 
 /// 全仓扫描的目录根（相对包根），确保生产代码、测试与资产脚本三类都在扫描面内。
@@ -99,10 +100,6 @@ const Map<String, ({List<String> tokens, String reason})> _allowedResidues =
       'test/build/build_environment_test.dart': (
         tokens: <String>['windres'],
         reason: '负向夹具：断言不推导资源编译器、同目录存在该工具也不下发',
-      ),
-      'test/build/build_support_module_test.dart': (
-        tokens: <String>['mingw'],
-        reason: '负向断言：辅助模块输出不得出现已删除编译器种类',
       ),
       'test/build/build_environment_real_smoke_test.dart': (
         tokens: <String>['mingw'],
@@ -137,11 +134,16 @@ const Map<String, ({List<String> tokens, String reason})> _allowedResidues =
       ),
     };
 
-/// 读取全仓扫描范围内的文本文件，返回 `相对路径（正斜杠） → 小写归一正文`。
+/// 读取全仓扫描范围内的文本文件，返回 `相对路径（正斜杠） → 小写归一正文`
+/// 与实际枚举到文件的扫描根集合。
 ///
-/// 目录根缺失即以具名断言失败，避免递归枚举为空时扫描静默恒真。
-Map<String, String> _scanRepositoryText() {
+/// 目录根缺失即以具名断言失败，避免递归枚举为空时扫描静默恒真。枚举口径取
+/// 「枚举到任意文件」而非「枚举到受扫描扩展名的文件」：`assets` 只有字体与图标
+/// 等二进制资源，本就不贡献受扫描文本，若按后者判定会把「路径写错导致枚举为空」
+/// 与「该根确实没有受扫描文本」混为一谈。
+({Map<String, String> texts, Set<String> rootsWithFiles}) _scanRepositoryText() {
   final Map<String, String> texts = <String, String>{};
+  final Set<String> rootsWithFiles = <String>{};
   for (final String root in _scanRoots) {
     final Directory directory = Directory(root);
     expect(
@@ -153,6 +155,7 @@ Map<String, String> _scanRepositoryText() {
       if (entity is! File) {
         continue;
       }
+      rootsWithFiles.add(root);
       final String path = entity.path.replaceAll('\\', '/');
       if (!_scannedExtensions.any(path.endsWith)) {
         continue;
@@ -165,7 +168,7 @@ Map<String, String> _scanRepositoryText() {
     expect(file.existsSync(), isTrue, reason: '项目文档 $path 不存在，全仓扫描会静默漏扫');
     texts[path] = file.readAsStringSync().toLowerCase();
   }
-  return texts;
+  return (texts: texts, rootsWithFiles: rootsWithFiles);
 }
 
 /// 汇总每个文件实际命中的已删除口径 token。
@@ -256,12 +259,14 @@ void main() {
 
   group('全仓残留扫描', () {
     test('扫描面覆盖三个目录根与全部项目文档', () {
-      final Map<String, String> texts = _scanRepositoryText();
+      final ({Map<String, String> texts, Set<String> rootsWithFiles}) scan =
+          _scanRepositoryText();
+      final Map<String, String> texts = scan.texts;
       for (final String root in _scanRoots) {
         expect(
-          texts.keys.any((String path) => path.startsWith('$root/')),
-          isTrue,
-          reason: '扫描根 $root 未贡献任何文本文件，扫描面存在缺口',
+          scan.rootsWithFiles,
+          contains(root),
+          reason: '扫描根 $root 未枚举到任何文件，扫描面存在缺口',
         );
       }
       for (final String path in _projectDocuments) {
@@ -276,7 +281,7 @@ void main() {
 
     test('全仓仅在显式登记处保留已删除口径', () {
       final Map<String, List<String>> residues = _collectResidues(
-        _scanRepositoryText(),
+        _scanRepositoryText().texts,
       );
       expect(residues, isNotEmpty, reason: '允许残留表无实际命中，扫描或 token 表可能已失效');
       for (final MapEntry<String, List<String>> entry in residues.entries) {
@@ -302,7 +307,7 @@ void main() {
 
     test('允许残留表无过期或空理由条目', () {
       expect(_allowedResidues, isNotEmpty, reason: '允许残留表为空，登记机制形同虚设');
-      final Map<String, String> texts = _scanRepositoryText();
+      final Map<String, String> texts = _scanRepositoryText().texts;
       for (final MapEntry<String, ({List<String> tokens, String reason})> entry
           in _allowedResidues.entries) {
         expect(

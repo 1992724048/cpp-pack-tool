@@ -27,7 +27,6 @@ flutter:
     - assets/icons/
     - assets/icons/catppuccin/latte/
     - assets/icons/catppuccin/mocha/
-    - assets/build/
   fonts:
     - family: HarmonyOS_Sans_SC
       fonts:

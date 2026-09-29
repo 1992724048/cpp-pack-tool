@@ -13,7 +13,7 @@ import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-enum _BuildStage { preparing, staging, building, fixingIncludes, classifying, remapping, completed, failed }
+enum _BuildStage { preparing, staging, building, fixingIncludes, remapping, completed, failed }
 
 typedef BuildPackPrepare = Future<BuildEnvironment> Function(PackModel pack);
 
@@ -88,7 +88,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _BuildStage.staging => BuildTimelineStepId.download,
       _BuildStage.building => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.build,
       _BuildStage.fixingIncludes => BuildTimelineStepId.includes,
-      _BuildStage.classifying => BuildTimelineStepId.classify,
       _BuildStage.remapping => BuildTimelineStepId.remap,
       _BuildStage.completed => BuildTimelineStepId.done,
       _BuildStage.failed => _failedStep,
@@ -220,16 +219,12 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       return;
     }
     final int? percent = widget.sourceNone ? extractProgressPercent(line) : null;
-    final bool classify = widget.sourceNone && isClassifyStartLine(line);
     setState(() {
       _outputLines.add(line);
       _trimOutputLines();
       _outputRevision++;
       if (percent != null) {
         _buildProgressPercent = percent;
-      }
-      if (classify) {
-        _advanceTo(_BuildStage.classifying);
       }
     });
   }
@@ -327,7 +322,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       _stage == _BuildStage.staging ||
       _stage == _BuildStage.building ||
       _stage == _BuildStage.fixingIncludes ||
-      _stage == _BuildStage.classifying ||
       _stage == _BuildStage.remapping;
 
   List<BuildTimelineStep> get _timelineSteps {

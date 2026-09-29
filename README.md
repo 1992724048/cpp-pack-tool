@@ -49,7 +49,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 
 判据唯一：**打包后的布局**。因为 `<包ID>.targets` 恒定只下发 `build/native/include` 一个头文件搜索根，而构建的编译输入恒为 `SRC_PATH`（包源目录里的改写在下一次构建开始时就被输出清理删掉），所以源码树里能解析的写法不代表包内能解析。包内可解析的引用原样保留，不做改动。
 
-未解析的引号引用先在包内按文件名找唯一同名候选——同名文件按**包内落点**去重：配方 `stage_headers` 会把头文件镜像到 `<包源目录>/include/`，原始文件与其镜像落到同一包内位置，是同一份产物而非两个候选；再依次尝试两条改写规则：
+未解析的引号引用先在包内按文件名找唯一同名候选——同名文件按**包内落点**去重：配方把头文件镜像到 `<包源目录>/include/` 时，原始文件与其镜像落到同一包内位置，是同一份产物而非两个候选；再依次尝试两条改写规则：
 
 1. 候选落在 `build/native/include` 之下（头文件/模块）时，改写为**该候选相对 include 根的包内路径**（如 `flutter/cpp_client_wrapper/binary_messenger_impl.h`）——这一个搜索根对包内任何位置都成立，头文件与 `build/native/files/` 下的源文件通吃。
 2. 否则回落到**裸文件名**（取候选的实际文件名），仅当候选落 `build/native/files/`、与引用文件同目录、且两者打包落点目录也一致时成立：此时包内唯一剩下的查找路径就是「引用文件所在目录」，裸文件名由此命中。`.lib`/`.dll`/`.pdb` 落 `build/native/lib/`，`.targets` 不为 `lib/` 下发任何搜索根，裸文件名必然解析不到，故不做这条改写。
@@ -67,9 +67,8 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 - 预置源码放在包源目录下的固定隐藏目录 `.cnp-src/`，工具按固定名自动探测。`build.py` 是普通 Python 脚本，工具不解析其内容，一切约定经下述环境变量给出。
 - 默认流程是准备构建环境、从预置源码目录备源、执行 `python -u build.py`、检查头文件引用并自动重新映射。
 - 脚本在包源目录中运行，接收 `SRC_PATH`（源码/预构建缓存工作区）、`BUILD_OUT`（包源目录）、`CNP_*` 工具链变量以及 `PYTHONIOENCODING=utf-8`。
-- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动，辅助模块本身不消费该变量、仅原样透传给配方；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。
-- 工具只传递编译器与工具链信息，不替配方决定任何编译参数：指令集、优化等级、链接时优化、运行库家族（MD / MT）与语言标准全部由配方自行决定，可经 `cmake_configure` 的 `extra_args` 传任意 `-D` 参数（如 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`、`-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`）；不传时沿用 CMake 缺省。
-- `assets/build/cnp_build_support.py` 会在构建前释放到 `tools/`，供配方统一处理 CMake/Ninja 调用、产物分层、许可证和预构建归档分类。
+- 工具链只支持 ICX / clang-cl / MSVC 三种编译器，默认按 `ICX > clang-cl > MSVC` 优先级选择（可在设置页调整），并以 `CNP_COMPILER_KIND`（`icx` / `clang-cl` / `msvc`）告知配方实际驱动；资源编译器不自动探测，仅消费显式 `CNP_RC_COMPILER`。
+- 工具只传递编译器与工具链信息，不替配方决定任何编译参数：指令集、优化等级、链接时优化、运行库家族（MD / MT）与语言标准全部由配方自行决定，可向 CMake 传任意 `-D` 参数（如 `-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`、`-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`）；不传时沿用 CMake 缺省。
 
 ### 预置源码目录的硬约束
 
@@ -155,7 +154,6 @@ config/
 | [flutter_svg](https://pub.dev/packages/flutter_svg) | SVG 图标渲染。 |
 | [yaml](https://pub.dev/packages/yaml) / [yaml_edit](https://pub.dev/packages/yaml_edit) | YAML 配置读取与生成。 |
 | [archive](https://pub.dev/packages/archive) | NuGet OPC/ZIP 压缩。 |
-| `assets/build/cnp_build_support.py` | 包内 `build.py` 配方使用的构建与产物分类辅助模块。 |
 
 ## 第三方声明
 
