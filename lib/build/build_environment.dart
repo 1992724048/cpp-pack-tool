@@ -113,7 +113,10 @@ class BuildEnvironment {
 /// `CNP_TOOLS_DIR`（共享工具目录）、`CNP_COMPILER`（首选编译器可执行文件）。
 ///
 /// `CNP_TMP_DIR` 虽名为 tmp，却是**包自带的中间产物目录、归配方自己用**，
-/// 不是本层的受控临时目录：本层不建它、不清理它、不对其设权限。
+/// 不是本层的受控临时目录：本函数只算出路径下发，不建目录、不设权限。但它
+/// **不跨构建保留**——`preparePackSource` 跑脚本前调 `cleanupBuildOutput` 清空
+/// 包源目录中白名单外的一切，`.cache` 不在白名单内，故整棵 `.cache`
+/// （`CNP_SRC_DIR` 与 `CNP_TMP_DIR` 都在其下）每次构建前都会被删。
 ///
 /// PATH 前置顺序为：共享工具目录自身与其下所有递归子目录 → 编译器所在目录 →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
