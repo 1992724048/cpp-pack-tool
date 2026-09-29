@@ -283,6 +283,27 @@ void main() {
       expect(_fileSource(plan, 'lib/foo.pdb').isBinary, isTrue);
       expect(_fileSource(plan, 'bin/app.exe').isBinary, isTrue);
     });
+
+    test('.png 等未映射扩展名被标记为二进制', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'logo.png', path: 'assets/logo.png', size: 4),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(_fileSource(plan, 'assets/logo.png').isBinary, isTrue);
+    });
+
+    test('.map 与 .exp 不算二进制', () {
+      final FileModel map = FileModel(name: 'foo.map', path: 'x/foo.map', size: 4);
+
+      expect(isBinaryFileType(map.type, map.extension), isFalse);
+
+      final FileModel exp = FileModel(name: 'foo.exp', path: 'x/foo.exp', size: 4);
+
+      expect(isBinaryFileType(exp.type, exp.extension), isFalse);
+    });
   });
 
   group('nuspec', () {

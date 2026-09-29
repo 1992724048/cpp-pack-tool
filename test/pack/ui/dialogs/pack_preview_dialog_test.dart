@@ -1,5 +1,7 @@
 import 'package:cpp_nuget_pack/pack/ui/dialogs/pack_preview_dialog.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
+import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
 import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,6 +167,29 @@ void main() {
     expect(find.text('二进制文件'), findsOneWidget);
   });
 
+  testWidgets('预览未映射的二进制扩展名显示为二进制而非格式错误', (tester) async {
+    final PackModel pack = PackModel(
+      name: 'demo',
+      version: '1.0.0',
+      author: 'tester',
+      sourcePath: r'D:\libs\demo',
+    )..files = <FileModel>[FileModel(name: 'logo.png', path: 'assets/logo.png', size: 4)];
+
+    await _pumpDialog(tester, plan: await const NuGetPackageBuilder().buildPlan(pack), pack: pack);
+    await _expandDirectories(tester, <String>[
+      'build',
+      'build/native',
+      'build/native/files',
+      'build/native/files/assets',
+    ]);
+    await tester.tap(find.text('logo.png'));
+    await tester.pump();
+
+    expect(find.text('二进制文件（4 B），无法预览'), findsOneWidget);
+    expect(find.text('二进制文件'), findsOneWidget);
+    expect(find.textContaining('格式错误'), findsNothing);
+  });
+
   testWidgets('点击关闭按钮关闭对话框', (tester) async {
     await _pumpDialog(
       tester,
@@ -212,18 +237,20 @@ Future<void> _expandDirectories(WidgetTester tester, List<String> paths) async {
 Future<void> _pumpDialog(
   WidgetTester tester, {
   required PackagePlan plan,
+  PackModel? pack,
   Future<String> Function(String path)? readFile,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  final PackModel pack = PackModel(
-    name: 'demo',
-    version: '1.0.0',
-    author: 'tester',
-    sourcePath: r'D:\libs\demo',
-  );
+  final PackModel shownPack = pack ??
+      PackModel(
+        name: 'demo',
+        version: '1.0.0',
+        author: 'tester',
+        sourcePath: r'D:\libs\demo',
+      );
 
   await tester.pumpWidget(
     FluentApp(
@@ -233,7 +260,7 @@ Future<void> _pumpDialog(
             onPressed: () async {
               await showPackPreviewDialog(
                 context,
-                pack: pack,
+                pack: shownPack,
                 plan: plan,
                 readFile: readFile ?? (String path) async => '',
               );

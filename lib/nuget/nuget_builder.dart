@@ -40,7 +40,11 @@ class NuGetPackageBuilder {
       fileEntries.add(
         PackageEntry(
           packagePath: packagePath,
-          source: PackageFileSource(path: file.path, isBinary: _isBinaryType(file.type), size: file.size),
+          source: PackageFileSource(
+            path: file.path,
+            isBinary: isBinaryFileType(file.type, file.extension),
+            size: file.size,
+          ),
         ),
       );
     }
@@ -76,11 +80,6 @@ class NuGetPackageBuilder {
 
   static String _includeRelativePath(PackModel pack, String path) =>
       includePackageRelativePath(path, includeNamespaceOf(pack.sourcePath, pack.name));
-
-  static bool _isBinaryType(FileType type) => switch (type) {
-    FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
-    _ => false,
-  };
 
   static bool _isRuntimeBinary(String relativeLowerPath) =>
       relativeLowerPath.startsWith('lib/') &&

@@ -67,6 +67,26 @@ const Map<String, FileType> _extensionTypes = {
   'exe': FileType.executable,
 };
 
+const Set<String> _binaryExtensions = <String>{
+  // 图片
+  'ico', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'cur',
+  // 压缩包
+  'zip', '7z', 'rar', 'tar', 'gz', 'bz2', 'xz',
+  // 字体
+  'ttf', 'otf', 'woff', 'woff2',
+  // 模型
+  'onnx', 'pt', 'pth', 'safetensors', 'npy',
+  // 二进制数据 / 符号
+  'bin', 'dat', 'ilk', 'dbg', 'idb', 'obj',
+};
+
+/// 明确排除的文本类扩展名在此不列：map（链接器 map 文件）、exp（导出表）、
+/// txt / md / json / xml / html / rc 均按文本处理。
+bool isBinaryFileType(FileType type, String extension) => switch (type) {
+      FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
+      _ => _binaryExtensions.contains(extension),
+    };
+
 class FileModel {
   final String name;
   final String path;
