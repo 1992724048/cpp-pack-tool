@@ -138,11 +138,11 @@ void main() {
         activeStep: BuildTimelineStepId.prepare,
         sessionState: BuildTimelineSessionState.running,
         activeDetails: const <BuildTimelineDetail>[
-          BuildTimelineDetail('正在下载 cmake：50%'),
+          BuildTimelineDetail('示例进度：50%'),
         ],
       );
 
-      expect(steps.first.details.single.text, '正在下载 cmake：50%');
+      expect(steps.first.details.single.text, '示例进度：50%');
     });
   });
 
@@ -274,6 +274,34 @@ void main() {
       expect(find.byIcon(FluentIcons.check_mark), findsOneWidget);
       expect(find.byIcon(FluentIcons.error), findsNothing);
       expect(find.byType(ProgressRing), findsOneWidget);
+    });
+
+    testWidgets('预构建配方恒渲染分类步骤：元素缺失须转红', (tester) async {
+      final List<BuildTimelineStep> steps = buildTimelineSteps(
+        sourceNone: true,
+        activeStep: BuildTimelineStepId.includes,
+        sessionState: BuildTimelineSessionState.running,
+        visitedSteps: const <BuildTimelineStepId>{
+          BuildTimelineStepId.download,
+          BuildTimelineStepId.includes,
+        },
+      );
+
+      await tester.pumpWidget(
+        FluentApp(
+          home: Center(
+            child: SizedBox(width: 260, child: BuildTimeline(steps: steps)),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const Key('buildTimelineStep_classify')), findsOneWidget);
+      expect(buildTimelineStepLabel(BuildTimelineStepId.classify), isNotEmpty);
+      expect(
+        find.text(buildTimelineStepLabel(BuildTimelineStepId.classify)),
+        findsOneWidget,
+      );
     });
   });
 }
