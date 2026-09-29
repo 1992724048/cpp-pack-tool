@@ -2,9 +2,9 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/catppuccin_icons.dart';
-import 'package:cpp_nuget_pack/util/file_opener.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/file_opener.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 

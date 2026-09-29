@@ -1,6 +1,6 @@
-import 'package:cpp_nuget_pack/widgets/settings/settings_card.dart';
-import 'package:cpp_nuget_pack/widgets/settings/settings_group.dart';
-import 'package:cpp_nuget_pack/widgets/settings/settings_page.dart';
+import 'package:cpp_nuget_pack/settings/ui/settings_card.dart';
+import 'package:cpp_nuget_pack/settings/ui/settings_group.dart';
+import 'package:cpp_nuget_pack/settings/ui/settings_page.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';

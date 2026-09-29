@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/util/file_opener.dart';
+import 'package:cpp_nuget_pack/shared/file_opener.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

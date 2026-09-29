@@ -1,4 +1,4 @@
-﻿import 'package:cpp_nuget_pack/util/format.dart';
+﻿import 'package:cpp_nuget_pack/shared/format.dart';
 
 enum FileType {
   header,

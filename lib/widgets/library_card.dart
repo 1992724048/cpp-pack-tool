@@ -1,7 +1,7 @@
-﻿import 'package:cpp_nuget_pack/widgets/tag.dart';
+﻿import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-import '../util/svgs.dart';
+import '../shared/svgs.dart';
 
 class LibraryItem extends PaneItem {
   LibraryItem({super.key, required Widget? icon, required String title, String? version, required Widget body})

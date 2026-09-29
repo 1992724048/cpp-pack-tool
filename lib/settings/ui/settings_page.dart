@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 /// PowerToys SettingsPageControl token：标题 24 Semibold、模块描述 14 Secondary、

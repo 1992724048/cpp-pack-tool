@@ -3,8 +3,8 @@ import 'package:cpp_nuget_pack/widgets/library_card.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import '../util/file_image.dart';
-import '../util/format.dart';
-import '../util/svgs.dart';
+import '../shared/format.dart';
+import '../shared/svgs.dart';
 import 'pack_manage.dart';
 
 class PackList {

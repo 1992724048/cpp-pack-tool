@@ -1,5 +1,5 @@
-import 'package:cpp_nuget_pack/util/colors.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 enum BuildTimelineStepId { prepare, download, build, includes, remap, done }

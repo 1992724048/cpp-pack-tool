@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/scanner/file_scan.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 const Set<String> headerIncludeSourceExtensions = <String>{
   'h',

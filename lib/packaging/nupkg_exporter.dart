@@ -8,7 +8,7 @@ import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_export_job.dart';
 import 'package:cpp_nuget_pack/packaging/package_icon.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 typedef PackageExportResult = ({String outputPath, int fileCount, int packageSize});
 

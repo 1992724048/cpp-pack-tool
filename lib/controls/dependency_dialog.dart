@@ -1,6 +1,6 @@
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/licenses.dart';
+import 'package:cpp_nuget_pack/shared/licenses.dart';
 import 'package:cpp_nuget_pack/util/version_range.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 

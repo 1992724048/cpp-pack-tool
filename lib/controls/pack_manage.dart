@@ -1,5 +1,5 @@
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/svgs.dart';
+import 'package:cpp_nuget_pack/shared/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import '../pages/pack_compile_settings.dart';

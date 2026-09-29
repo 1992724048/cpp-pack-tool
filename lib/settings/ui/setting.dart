@@ -1,12 +1,12 @@
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
-import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/util/licenses.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
-import 'package:cpp_nuget_pack/widgets/settings/settings_card.dart';
-import 'package:cpp_nuget_pack/widgets/settings/settings_group.dart';
-import 'package:cpp_nuget_pack/widgets/settings/settings_page.dart';
+import 'package:cpp_nuget_pack/settings/settings_model.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
+import 'package:cpp_nuget_pack/shared/licenses.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
+import 'package:cpp_nuget_pack/settings/ui/settings_card.dart';
+import 'package:cpp_nuget_pack/settings/ui/settings_group.dart';
+import 'package:cpp_nuget_pack/settings/ui/settings_page.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 

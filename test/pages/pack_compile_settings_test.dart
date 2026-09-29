@@ -9,8 +9,8 @@ import 'package:cpp_nuget_pack/models/library_model.dart';
 import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_compile_settings.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
+import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

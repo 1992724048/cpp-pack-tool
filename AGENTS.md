@@ -29,5 +29,5 @@ flutter run -d windows             # 本地运行
 - 版本号采用「年份.年内发布数量」方案（如 `26.1` = 2026 年第 1 次发布；年内递增 `26.2`、`26.3`…；次年从 `27.1` 重计；更早的 `1.0.x` 为历史版本）。
 唯一来源是 `pubspec.yaml` 的 `version:`（存三段格式 `26.1.0+1`，第三段固定 0；CI 去掉 `+build` 并去掉尾部 `.0` → tag `v26.1`，解析失败回退为时间戳）。
 同一版本经 CMake `FLUTTER_VERSION*` 宏注入 exe 文件版本（`windows/runner/Runner.rc`）。
-应用内「关于」页显示的版本来自 `lib/app_info.dart` 的 `appVersion`（去掉 `+build` 与末尾 `.0`，即 `26.1`）——升级版本号时须同步该常量（`test/app_info_test.dart` 强制校验一致性）。
+应用内「关于」页显示的版本来自 `lib/app/app_info.dart` 的 `appVersion`（去掉 `+build` 与末尾 `.0`，即 `26.1`）——升级版本号时须同步该常量（`test/app/app_info_test.dart` 强制校验一致性）。
 - 所以「改 `pubspec.yaml` 版本号 + push `master` = 发 Release」——没有发布意图时不要动版本号。

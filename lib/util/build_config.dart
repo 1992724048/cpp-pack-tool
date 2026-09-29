@@ -1,7 +1,7 @@
 import 'dart:ui' show Color;
 
 import 'package:cpp_nuget_pack/models/build_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
 
 const String allBuildLabel = 'ALL';
 const String releaseBuildLabel = 'Release';

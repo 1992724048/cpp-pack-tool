@@ -1,8 +1,8 @@
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
-import 'package:cpp_nuget_pack/util/file_opener.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/file_opener.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 enum _ExportStage { running, completed, failed, cancelled }

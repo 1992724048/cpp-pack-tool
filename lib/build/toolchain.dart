@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/models/compiler_model.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 export 'package:cpp_nuget_pack/models/compiler_model.dart';
 

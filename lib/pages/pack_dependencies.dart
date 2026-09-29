@@ -1,9 +1,9 @@
 import 'package:cpp_nuget_pack/controls/dependency_dialog.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 const double _versionColumnWidth = 160;

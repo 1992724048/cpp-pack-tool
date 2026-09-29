@@ -1,8 +1,8 @@
-import 'package:cpp_nuget_pack/app_info.dart';
-import 'package:cpp_nuget_pack/util/file_opener.dart';
-import 'package:cpp_nuget_pack/util/svgs.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:cpp_nuget_pack/app/app_info.dart';
+import 'package:cpp_nuget_pack/shared/file_opener.dart';
+import 'package:cpp_nuget_pack/shared/svgs.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class About extends StatefulWidget {

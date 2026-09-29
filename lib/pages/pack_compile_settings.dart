@@ -8,8 +8,8 @@ import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/script_files.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 

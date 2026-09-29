@@ -1,5 +1,5 @@
-import 'package:cpp_nuget_pack/util/colors.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show SelectionRegistrar;

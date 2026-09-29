@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
 import 'package:cpp_nuget_pack/util/catppuccin_icons.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
+import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 

@@ -10,7 +10,7 @@ import 'package:cpp_nuget_pack/controls/build_pack_dialog.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;

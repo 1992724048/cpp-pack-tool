@@ -2,7 +2,7 @@ import 'package:cpp_nuget_pack/controls/license_field.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/file_image.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class AddDirectoryDialog extends StatefulWidget {

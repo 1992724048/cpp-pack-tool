@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 const String _buildScriptName = 'build.py';
 const String packCacheDirName = '.cache';

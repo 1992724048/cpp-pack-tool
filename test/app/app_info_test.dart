@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/app_info.dart';
+import 'package:cpp_nuget_pack/app/app_info.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

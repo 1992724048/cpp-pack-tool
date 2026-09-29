@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/util/licenses.dart';
+import 'package:cpp_nuget_pack/shared/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 enum _LicenseMode { none, spdx, custom }

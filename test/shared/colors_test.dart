@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/util/colors.dart';
+import 'package:cpp_nuget_pack/shared/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

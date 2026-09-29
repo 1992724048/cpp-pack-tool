@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 sealed class PackageEntrySource {
   const PackageEntrySource();

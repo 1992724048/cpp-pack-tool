@@ -1,5 +1,5 @@
 import 'package:cpp_nuget_pack/packaging/packaging_issues.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 const double _labelColumnWidth = 140;

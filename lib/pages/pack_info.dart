@@ -1,6 +1,6 @@
 import 'package:cpp_nuget_pack/controls/license_field.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/widgets/floating_toast.dart';
+import 'package:cpp_nuget_pack/shared/floating_toast.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class PackInfo extends StatefulWidget {

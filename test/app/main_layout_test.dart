@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/app_info.dart';
+import 'package:cpp_nuget_pack/app/app_info.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
@@ -13,11 +13,11 @@ import 'package:cpp_nuget_pack/models/dependency_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/history_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/settings_model.dart';
+import 'package:cpp_nuget_pack/settings/settings_model.dart';
 import 'package:cpp_nuget_pack/controls/pack_export_dialog.dart';
 import 'package:cpp_nuget_pack/packaging/nupkg_exporter.dart';
-import 'package:cpp_nuget_pack/pages/about.dart';
-import 'package:cpp_nuget_pack/pages/setting.dart';
+import 'package:cpp_nuget_pack/app/about_page.dart';
+import 'package:cpp_nuget_pack/settings/ui/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 const Set<String> scriptFileExtensions = <String>{'bat', 'cmd', 'exe', 'ps1', 'py'};
 

@@ -6,7 +6,7 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/packaging/nuget_builder.dart';
 import 'package:cpp_nuget_pack/packaging/package_plan.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// ASCII 检查脚本：把文件文本交给 PowerShell 的 `[xml]` 解析器做整文档良构性

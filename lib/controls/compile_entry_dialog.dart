@@ -1,7 +1,7 @@
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
-import 'package:cpp_nuget_pack/util/licenses.dart';
+import 'package:cpp_nuget_pack/shared/licenses.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 typedef CompileEntryResult = ({String text, BuildModel buildModel});

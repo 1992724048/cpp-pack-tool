@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+import 'package:cpp_nuget_pack/settings/settings_model.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:yaml/yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 

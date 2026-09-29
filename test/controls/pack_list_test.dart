@@ -1,8 +1,8 @@
 import 'package:cpp_nuget_pack/controls/pack_list.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
-import 'package:cpp_nuget_pack/util/svgs.dart';
+import 'package:cpp_nuget_pack/shared/svgs.dart';
 import 'package:cpp_nuget_pack/widgets/library_card.dart';
-import 'package:cpp_nuget_pack/widgets/tag.dart';
+import 'package:cpp_nuget_pack/shared/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';

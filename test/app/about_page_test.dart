@@ -1,5 +1,5 @@
-import 'package:cpp_nuget_pack/app_info.dart';
-import 'package:cpp_nuget_pack/pages/about.dart';
+import 'package:cpp_nuget_pack/app/app_info.dart';
+import 'package:cpp_nuget_pack/app/about_page.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 

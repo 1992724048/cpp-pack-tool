@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:cpp_nuget_pack/build/toolchain.dart';
-import 'package:cpp_nuget_pack/models/settings_model.dart';
-import 'package:cpp_nuget_pack/pages/setting.dart';
+import 'package:cpp_nuget_pack/settings/settings_model.dart';
+import 'package:cpp_nuget_pack/settings/ui/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
