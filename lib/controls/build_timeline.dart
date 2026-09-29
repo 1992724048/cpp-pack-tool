@@ -51,12 +51,6 @@ String buildTimelineStepLabel(BuildTimelineStepId id) {
   };
 }
 
-/// 组装时间线步骤（纯函数，便于单测）：
-///
-/// - [activeStep] 为当前进行中步骤（失败会话传失败所在步骤），失败会话截断到该步
-///   为止，其后步骤不渲染；
-/// - [visitedSteps] 为已实际执行过的步骤：位于活动步骤之前但未执行过的显示为
-///   「跳过」，命中的显示为「完成」。
 List<BuildTimelineStep> buildTimelineSteps({
   required BuildTimelineStepId activeStep,
   required BuildTimelineSessionState sessionState,
@@ -92,13 +86,7 @@ List<BuildTimelineStep> buildTimelineSteps({
       status = BuildTimelineStepStatus.pending;
     }
     steps.add(
-      BuildTimelineStep(
-        id: id,
-        label: buildTimelineStepLabel(id),
-        status: status,
-        details: details,
-        error: error,
-      ),
+      BuildTimelineStep(id: id, label: buildTimelineStepLabel(id), status: status, details: details, error: error),
     );
   }
   return steps;

@@ -6,11 +6,7 @@ import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class AddDirectoryDialog extends StatefulWidget {
-  const AddDirectoryDialog({
-    super.key,
-    required this.directoryPath,
-    required this.scanFuture,
-  });
+  const AddDirectoryDialog({super.key, required this.directoryPath, required this.scanFuture});
 
   final String directoryPath;
   final Future<List<FileModel>> scanFuture;
@@ -80,14 +76,14 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
     Navigator.pop(
       context,
       PackModel(
-          name: _idController.text.trim(),
-          version: _versionController.text.trim(),
-          author: _authorController.text.trim(),
-          description: description.isEmpty ? null : description,
-          license: _license,
-          iconPath: icon?.path,
-          sourcePath: widget.directoryPath,
-        )..files = _files ?? const <FileModel>[],
+        name: _idController.text.trim(),
+        version: _versionController.text.trim(),
+        author: _authorController.text.trim(),
+        description: description.isEmpty ? null : description,
+        license: _license,
+        iconPath: icon?.path,
+        sourcePath: widget.directoryPath,
+      )..files = _files ?? const <FileModel>[],
     );
   }
 
@@ -104,22 +100,13 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
             Text('路径：${widget.directoryPath}'),
             const SizedBox(height: 12),
             _buildScanStatus(),
-            if (_files != null) ...[
-              const SizedBox(height: 12),
-              _buildFormFields(),
-            ],
+            if (_files != null) ...[const SizedBox(height: 12), _buildFormFields()],
           ],
         ),
       ),
       actions: [
-        Button(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _canSubmit ? _submit : null,
-          child: const Text('确定'),
-        ),
+        Button(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        FilledButton(onPressed: _canSubmit ? _submit : null, child: const Text('确定')),
       ],
     );
   }
@@ -131,14 +118,9 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
     }
     final List<FileModel>? files = _files;
     if (files == null) {
-      return const Row(
-        children: [ProgressRing(), SizedBox(width: 12), Text('正在扫描…')],
-      );
+      return const Row(children: [ProgressRing(), SizedBox(width: 12), Text('正在扫描…')]);
     }
-    final int totalSize = files.fold<int>(
-      0,
-      (int sum, FileModel file) => sum + file.size,
-    );
+    final int totalSize = files.fold<int>(0, (int sum, FileModel file) => sum + file.size);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,9 +148,7 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
       children: [
         SizedBox(width: 48, height: 48, child: Center(child: preview)),
         const SizedBox(width: 12),
-        Expanded(
-          child: Text('图标：${iconFile.path}', overflow: TextOverflow.ellipsis),
-        ),
+        Expanded(child: Text('图标：${iconFile.path}', overflow: TextOverflow.ellipsis)),
       ],
     );
   }
@@ -180,27 +160,17 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
       children: [
         _buildField(
           label: '包 ID',
-          child: TextBox(
-            key: const Key('packIdField'),
-            controller: _idController,
-          ),
+          child: TextBox(key: const Key('packIdField'), controller: _idController),
         ),
         const SizedBox(height: 12),
         _buildField(
           label: '版本',
-          child: TextBox(
-            key: const Key('packVersionField'),
-            controller: _versionController,
-            placeholder: '1.0.0',
-          ),
+          child: TextBox(key: const Key('packVersionField'), controller: _versionController, placeholder: '1.0.0'),
         ),
         const SizedBox(height: 12),
         _buildField(
           label: '作者',
-          child: TextBox(
-            key: const Key('packAuthorField'),
-            controller: _authorController,
-          ),
+          child: TextBox(key: const Key('packAuthorField'), controller: _authorController),
         ),
         const SizedBox(height: 12),
         _buildField(

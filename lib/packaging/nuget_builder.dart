@@ -14,13 +14,10 @@ import 'package:cpp_nuget_pack/util/build_config.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/sha1.dart';
 
-/// 打包计划与其构建期顺带产出的校验问题。
 class PackagePlanResult {
   const PackagePlanResult({required this.plan, required this.issues});
 
   final PackagePlan plan;
-
-  /// 脚本编译问题（已跳过生成的那些脚本）。
   final List<PackagingIssue> issues;
 }
 
@@ -38,10 +35,8 @@ class NuGetPackageBuilder {
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
   static final RegExp _invalidTargetNameChar = RegExp(r'[^A-Za-z0-9_]');
 
-  Future<PackagePlan> buildPlan(PackModel pack) async =>
-      (await buildPlanWithIssues(pack)).plan;
+  Future<PackagePlan> buildPlan(PackModel pack) async => (await buildPlanWithIssues(pack)).plan;
 
-  /// 同 [buildPlan]，另带回脚本编译问题——校验方需要问题列表时用它，避免把 codegen 重跑一遍。
   Future<PackagePlanResult> buildPlanWithIssues(PackModel pack) async {
     final List<PackageEntry> fileEntries = <PackageEntry>[];
     for (final FileModel file in pack.files) {
@@ -55,11 +50,7 @@ class NuGetPackageBuilder {
       fileEntries.add(
         PackageEntry(
           packagePath: packagePath,
-          source: PackageFileSource(
-            path: file.path,
-            isBinary: _isBinaryType(file.type),
-            size: file.size,
-          ),
+          source: PackageFileSource(path: file.path, isBinary: _isBinaryType(file.type), size: file.size),
         ),
       );
     }
@@ -80,13 +71,7 @@ class NuGetPackageBuilder {
           ),
           PackageEntry(
             packagePath: '$_buildNative/${pack.name}.targets',
-            source: PackageGeneratedSource(
-              content: _targetsContent(
-                pack,
-                fileEntries,
-                scriptResult.targetsFragment,
-              ),
-            ),
+            source: PackageGeneratedSource(content: _targetsContent(pack, fileEntries, scriptResult.targetsFragment)),
           ),
         ],
       ),
@@ -100,27 +85,22 @@ class NuGetPackageBuilder {
       return null;
     }
     return switch (file.type) {
-      FileType.header ||
-      FileType.module => '$_includePrefix/${_includeRelativePath(pack, path)}',
-      FileType.lib || FileType.dll || FileType.pdb =>
-        '$_libPrefix/${_withoutLeadingSegment(path, const <String>['lib', 'bin'])}',
+      FileType.header || FileType.module => '$_includePrefix/${_includeRelativePath(pack, path)}',
+      FileType.lib ||
+      FileType.dll ||
+      FileType.pdb => '$_libPrefix/${_withoutLeadingSegment(path, const <String>['lib', 'bin'])}',
       _ => '$_filesPrefix/$path',
     };
   }
 
-  /// 头文件在源目录命名空间下的包内相对路径（首段同名时不重复叠加）。
   static String _includeRelativePath(PackModel pack, String path) =>
-      includePackageRelativePath(
-        path,
-        includeNamespaceOf(pack.sourcePath, pack.name),
-      );
+      includePackageRelativePath(path, includeNamespaceOf(pack.sourcePath, pack.name));
 
   static bool _isBinaryType(FileType type) => switch (type) {
     FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
     _ => false,
   };
 
-  /// 与 `_targetsContent` 运行时二进制分组同一判定口径：`lib/` 下 dll/pdb。
   static bool _hasRuntimeBinaries(List<PackageEntry> fileEntries) {
     for (final PackageEntry entry in fileEntries) {
       final String? relative = buildNativeRelativePath(entry.packagePath);
@@ -133,13 +113,10 @@ class NuGetPackageBuilder {
 
   static bool _isRuntimeBinary(String relativeLowerPath) =>
       relativeLowerPath.startsWith('lib/') &&
-      (relativeLowerPath.endsWith('.dll') ||
-          relativeLowerPath.endsWith('.pdb'));
+      (relativeLowerPath.endsWith('.dll') || relativeLowerPath.endsWith('.pdb'));
 
-  static String _normalizePath(String path) => path
-      .split(_pathSeparator)
-      .where((String segment) => segment.isNotEmpty)
-      .join('/');
+  static String _normalizePath(String path) =>
+      path.split(_pathSeparator).where((String segment) => segment.isNotEmpty).join('/');
 
   static String _withoutLeadingSegment(String path, List<String> prefixes) {
     final int separator = path.indexOf('/');
@@ -155,32 +132,18 @@ class NuGetPackageBuilder {
   static String _nuspecContent(PackModel pack) {
     final StringBuffer buffer = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="utf-8"?>')
-      ..writeln(
-        '<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">',
-      )
-      ..writeln('  <metadata>')
-      ..writeln('    <id>${_escapeXml(pack.name)}</id>')
-      ..writeln(
-        '    <version>${_escapeXml(normalizedVersion(pack.version))}</version>',
-      )
-      ..writeln('    <authors>${_escapeXml(pack.author)}</authors>')
-      ..writeln(
-        '    <description>${_escapeXml(_description(pack))}</description>',
-      );
+      ..writeln('<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">')
+      ..writeln('  <metadata>')..writeln('    <id>${_escapeXml(pack.name)}</id>')..writeln(
+          '    <version>${_escapeXml(normalizedVersion(pack.version))}</version>')..writeln(
+          '    <authors>${_escapeXml(pack.author)}</authors>')..writeln(
+          '    <description>${_escapeXml(_description(pack))}</description>');
 
     final String? license = pack.license;
     if (license != null && license.isNotEmpty) {
-      buffer.writeln(
-        '    <license type="expression">${_escapeXml(license)}</license>',
-      );
+      buffer.writeln('    <license type="expression">${_escapeXml(license)}</license>');
     }
-
-    // 导出器恒定嵌入 images/icon.png，因此图标无需条件判断。
-    buffer
-      ..writeln(r'    <icon>images\icon.png</icon>')
-      ..writeln(
-        '    <requireLicenseAcceptance>false</requireLicenseAcceptance>',
-      )
+    buffer..writeln(r'    <icon>images\icon.png</icon>')..writeln(
+        '    <requireLicenseAcceptance>false</requireLicenseAcceptance>')
       ..writeln('    <tags>native C++</tags>');
 
     if (pack.dependencies.isNotEmpty) {
@@ -212,7 +175,6 @@ class NuGetPackageBuilder {
     return description;
   }
 
-  /// 去掉 `+build` 元数据后缀，得到 NuGet 接受的版本号。
   static String normalizedVersion(String version) {
     final int metadata = version.indexOf('+');
     if (metadata <= 0) {
@@ -221,11 +183,7 @@ class NuGetPackageBuilder {
     return version.substring(0, metadata);
   }
 
-  static String _targetsContent(
-    PackModel pack,
-    List<PackageEntry> fileEntries,
-    String scriptTargetsFragment,
-  ) {
+  static String _targetsContent(PackModel pack, List<PackageEntry> fileEntries, String scriptTargetsFragment) {
     final _BuildValueGroup macros = _BuildValueGroup();
     for (final MacroModel macro in pack.macros) {
       macros.add(macro.value, macro.buildModel);
@@ -233,11 +191,7 @@ class NuGetPackageBuilder {
 
     final _BuildValueGroup libDirectories = _BuildValueGroup();
     for (final LibDirModel libDirectory in pack.libDirectories) {
-      libDirectories.add(
-        libDirectory.path,
-        libDirectory.buildModel,
-        dedupe: true,
-      );
+      libDirectories.add(libDirectory.path, libDirectory.buildModel, dedupe: true);
     }
 
     final _BuildValueGroup libraries = _BuildValueGroup();
@@ -260,19 +214,13 @@ class NuGetPackageBuilder {
       } else if (lower.startsWith('files/') && lower.endsWith('.rc')) {
         resourceFiles.add(relative);
       } else if (_isRuntimeBinary(lower)) {
-        runtimeBinaries.add(
-          _msbuildPath(relative),
-          BuildModel.all,
-          dedupe: true,
-        );
+        runtimeBinaries.add(_msbuildPath(relative), BuildModel.all, dedupe: true);
       }
     }
 
     final StringBuffer buffer = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="utf-8"?>')
-      ..writeln(
-        '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
-      );
+      ..writeln('<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">');
     if (asmFiles.isNotEmpty) {
       _writeMasmImportGroup(buffer);
     }
@@ -311,33 +259,20 @@ class NuGetPackageBuilder {
     return buffer.toString();
   }
 
-  static void _addDerivedLibEntries(
-    _BuildValueGroup libDirectories,
-    _BuildValueGroup libraries,
-    String packagePath,
-  ) {
+  static void _addDerivedLibEntries(_BuildValueGroup libDirectories, _BuildValueGroup libraries, String packagePath) {
     final String lower = packagePath.toLowerCase();
     if (!lower.endsWith('.lib') || !lower.startsWith('$_libPrefix/')) {
       return;
     }
     final String relative = buildNativeRelativePath(packagePath)!;
-    final String relativeDirectory = relative.substring(
-      0,
-      relative.lastIndexOf('/'),
-    );
-    libDirectories.add(
-      _msbuildPath(relativeDirectory),
-      BuildModel.all,
-      dedupe: true,
-    );
+    final String relativeDirectory = relative.substring(0, relative.lastIndexOf('/'));
+    libDirectories.add(_msbuildPath(relativeDirectory), BuildModel.all, dedupe: true);
     libraries.add(baseName(packagePath), BuildModel.all, dedupe: true);
   }
 
   static String _msbuildPath(String relativePath) =>
       r'$(MSBuildThisFileDirectory)' + relativePath.replaceAll('/', r'\');
 
-  /// 只发射用户手选出的配置分组；路径推断的产物一律进 `BuildModel.all` 桶，
-  /// 故进入本方法的三组列表恒为手选结果。
   static void _writeConfigurationGroup(
     StringBuffer buffer, {
     required String configuration,
@@ -358,19 +293,8 @@ class NuGetPackageBuilder {
     );
   }
 
-  static String _configurationCondition(String configuration) =>
-      "'\$(Configuration)'=='$configuration'";
+  static String _configurationCondition(String configuration) => "'\$(Configuration)'=='$configuration'";
 
-  /// 编译前/后命令以自定义目标 + `Exec` 发射（消费者构建时自动执行）。
-  ///
-  /// 不能写 `PreBuildEvent`/`PostBuildEvent` 属性：VS v180 的 C++ 事件目标读取的
-  /// 是项元数据 `%(PreBuildEvent.Command)`/`%(PostBuildEvent.Command)`
-  /// （Microsoft.CppCommon.targets），晚导入的 NuGet `.targets` 属性不被消费，
-  /// 消费者构建时命令静默不执行（实测）；自定义目标与 DeployPkg/CnpScripts
-  /// 同模式（实测晚导入可执行）。实测次序：post 目标早于 DeployPkg/License
-  /// 目标执行（仅实测观察，不依赖 MSBuild 对声明序的保证），与旧 PostBuildEvent
-  /// 事件位置有差异，但命令引用 `$(TargetPath)` 与包内脚本、不依赖部署产物，
-  /// 功能独立，可接受。
   static void _writeCommandGroups(StringBuffer buffer, PackModel pack) {
     final _CommandGroup commands = _CommandGroup();
     for (final CmdModel command in pack.commands) {
@@ -378,12 +302,7 @@ class NuGetPackageBuilder {
     }
     final String cleanId = pack.name.replaceAll(_invalidTargetNameChar, '_');
     final String hash = hash8(pack.name);
-    _writeCommandGroupTargets(
-      buffer,
-      cleanId: cleanId,
-      hash: hash,
-      commands: commands.all,
-    );
+    _writeCommandGroupTargets(buffer, cleanId: cleanId, hash: hash, commands: commands.all);
     _writeCommandGroupTargets(
       buffer,
       cleanId: cleanId,
@@ -408,9 +327,7 @@ class NuGetPackageBuilder {
     String? configuration,
   }) {
     final String suffix = configuration == null ? '' : '_$configuration';
-    final String condition = configuration == null
-        ? ''
-        : ' Condition="${_configurationCondition(configuration)}"';
+    final String condition = configuration == null ? '' : ' Condition="${_configurationCondition(configuration)}"';
     _writeCommandTarget(
       buffer,
       name: 'CnpPreBuild_${cleanId}_$hash$suffix',
@@ -449,14 +366,9 @@ class NuGetPackageBuilder {
   }
 
   static void _writeMasmImportGroup(StringBuffer buffer) {
-    buffer
-      ..writeln('  <ImportGroup Condition="$_masmImportCondition">')
-      ..writeln(
-        r'    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />',
-      )
-      ..writeln(
-        r'    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />',
-      )
+    buffer..writeln('  <ImportGroup Condition="$_masmImportCondition">')..writeln(
+        r'    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />')..writeln(
+        r'    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />')
       ..writeln('  </ImportGroup>');
   }
 
@@ -467,33 +379,23 @@ class NuGetPackageBuilder {
     buffer.writeln('  <ItemGroup>');
     for (final String path in asmFiles) {
       final String objectName = path.replaceAll(_pathSeparator, '_');
-      buffer
-        ..writeln('    <MASM Include="${_escapeXml(_msbuildPath(path))}">')
-        ..writeln(
-          '      <ObjectFileName>\$(IntDir)asm_${_escapeXml(objectName)}.obj</ObjectFileName>',
-        )
+      buffer..writeln('    <MASM Include="${_escapeXml(_msbuildPath(path))}">')..writeln(
+          '      <ObjectFileName>\$(IntDir)asm_${_escapeXml(objectName)}.obj</ObjectFileName>')
         ..writeln('    </MASM>');
     }
     buffer.writeln('  </ItemGroup>');
   }
 
-  static void _writeResourceItems(
-    StringBuffer buffer,
-    List<String> resourceFiles,
-  ) {
+  static void _writeResourceItems(StringBuffer buffer, List<String> resourceFiles) {
     if (resourceFiles.isEmpty) {
       return;
     }
     buffer.writeln('  <ItemGroup>');
     for (final String path in resourceFiles) {
       final int separator = path.lastIndexOf('/');
-      final String directory = separator < 0
-          ? ''
-          : path.substring(0, separator);
+      final String directory = separator < 0 ? '' : path.substring(0, separator);
       buffer
-        ..writeln(
-          '    <ResourceCompile Include="${_escapeXml(_msbuildPath(path))}">',
-        )
+        ..writeln('    <ResourceCompile Include="${_escapeXml(_msbuildPath(path))}">')
         ..writeln(
           '      <AdditionalIncludeDirectories>${_escapeXml(_msbuildPath(directory))};%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
         )
@@ -502,35 +404,22 @@ class NuGetPackageBuilder {
     buffer.writeln('  </ItemGroup>');
   }
 
-  /// 运行时二进制只由路径推断填充（无手选入口），故恒只有 `all` 桶有值，
-  /// 不再按配置切组。
-  static void _writeRuntimeBinaryItems(
-    StringBuffer buffer,
-    _BuildValueGroup runtimeBinaries,
-  ) {
+  static void _writeRuntimeBinaryItems(StringBuffer buffer, _BuildValueGroup runtimeBinaries) {
     _writeBinaryItemGroup(buffer, runtimeBinaries.all);
   }
 
-  static void _writeBinaryItemGroup(
-    StringBuffer buffer,
-    List<String> binaries,
-  ) {
+  static void _writeBinaryItemGroup(StringBuffer buffer, List<String> binaries) {
     if (binaries.isEmpty) {
       return;
     }
     buffer.writeln('  <ItemGroup>');
     for (final String binary in binaries) {
-      buffer.writeln(
-        '    <PkgRuntimeBinary Include="${_escapeXml(binary)}" />',
-      );
+      buffer.writeln('    <PkgRuntimeBinary Include="${_escapeXml(binary)}" />');
     }
     buffer.writeln('  </ItemGroup>');
   }
 
-  static void _writeDeployTarget(
-    StringBuffer buffer,
-    _BuildValueGroup runtimeBinaries,
-  ) {
+  static void _writeDeployTarget(StringBuffer buffer, _BuildValueGroup runtimeBinaries) {
     if (runtimeBinaries.isEmpty) {
       return;
     }
@@ -543,17 +432,12 @@ class NuGetPackageBuilder {
         '    <Copy SourceFiles="@(PkgRuntimeBinary)" '
         'DestinationFolder="\$(OutDir)" SkipUnchangedFiles="true" '
         'UseHardlinksIfPossible="true" />',
-      )
-      ..writeln('    <ItemGroup>')
-      ..writeln(
-        "      <FileWrites Include=\"@(PkgRuntimeBinary->'\$(OutDir)%(Filename)%(Extension)')\" />",
-      )
+      )..writeln('    <ItemGroup>')..writeln(
+        "      <FileWrites Include=\"@(PkgRuntimeBinary->'\$(OutDir)%(Filename)%(Extension)')\" />")
       ..writeln('    </ItemGroup>')
       ..writeln('  </Target>');
   }
 
-  /// 许可证部署目标：识别源目录根部首选许可证，硬链接到消费者
-  /// `$(OutDir)licenses\`；无许可证时零输出。
   static void _writeLicenseTarget(StringBuffer buffer, PackModel pack) {
     final String? licensePath = findPrimaryLicensePath(pack.files);
     if (licensePath == null) {
@@ -565,8 +449,7 @@ class NuGetPackageBuilder {
     }
     final String source = _msbuildPath(relative);
     const String destinationPrefix = r'$(OutDir)licenses';
-    final String destination =
-        '$destinationPrefix\\${_escapeXml(pack.name)}_license.txt';
+    final String destination = '$destinationPrefix\\${_escapeXml(pack.name)}_license.txt';
     final String cleanId = pack.name.replaceAll(_invalidTargetNameChar, '_');
     buffer
       ..writeln(
@@ -574,18 +457,15 @@ class NuGetPackageBuilder {
         'AfterTargets="Build"',
       )
       ..writeln("          Condition=\"Exists('${_escapeXml(source)}')\">")
-      ..writeln('    <Copy SourceFiles="${_escapeXml(source)}"')
-      ..writeln('          DestinationFiles="$destination"')
-      ..writeln(
-        '          SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />',
-      )
+      ..writeln('    <Copy SourceFiles="${_escapeXml(source)}"')..writeln(
+        '          DestinationFiles="$destination"')..writeln(
+        '          SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />')
       ..writeln('    <ItemGroup>')
       ..writeln('      <FileWrites Include="$destination" />')
       ..writeln('    </ItemGroup>')
       ..writeln('  </Target>');
   }
 
-  /// 许可证的包内路径映射到 `build/native/` 相对路径；不可映射时返回 null。
   static String? _licenseRelativePath(PackModel pack, String licensePath) {
     for (final FileModel file in pack.files) {
       if (file.path != licensePath) {
@@ -612,9 +492,7 @@ class NuGetPackageBuilder {
       ..writeln('  <ItemDefinitionGroup$attribute>')
       ..writeln('    <ClCompile>');
     if (includeLine) {
-      _writeProperty(buffer, 'AdditionalIncludeDirectories', const <String>[
-        r'$(MSBuildThisFileDirectory)include',
-      ]);
+      _writeProperty(buffer, 'AdditionalIncludeDirectories', const <String>[r'$(MSBuildThisFileDirectory)include']);
     }
     _writeProperty(buffer, 'PreprocessorDefinitions', macros);
     _writeProperty(buffer, 'AdditionalLibraryDirectories', libDirectories);
@@ -624,18 +502,11 @@ class NuGetPackageBuilder {
       ..writeln('  </ItemDefinitionGroup>');
   }
 
-  static void _writeProperty(
-    StringBuffer buffer,
-    String name,
-    List<String> values,
-  ) {
+  static void _writeProperty(StringBuffer buffer, String name, List<String> values) {
     if (values.isEmpty) {
       return;
     }
-    final String joined = <String>[
-      for (final String value in values) _escapeXml(value),
-      '%($name)',
-    ].join(';');
+    final String joined = <String>[for (final String value in values) _escapeXml(value), '%($name)'].join(';');
     buffer.writeln('      <$name>$joined</$name>');
   }
 
@@ -662,10 +533,7 @@ class _BuildValueGroup {
       BuildModel.release => release,
       BuildModel.debug => debug,
     };
-    if (dedupe &&
-        values.any(
-          (String existing) => existing.toLowerCase() == value.toLowerCase(),
-        )) {
+    if (dedupe && values.any((String existing) => existing.toLowerCase() == value.toLowerCase())) {
       return;
     }
     values.add(value);

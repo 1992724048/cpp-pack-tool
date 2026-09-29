@@ -1,10 +1,7 @@
 import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-/// 被依赖方：依赖当前包的包名，以及其依赖所要求的版本范围。
 typedef PackDependent = ({String name, String version});
-
-/// 删除对话框结果：是否确认删除。
 typedef DeletePackResult = ({bool confirmed});
 
 const double _versionColumnWidth = 120;
@@ -16,19 +13,13 @@ Future<DeletePackResult> showDeletePackDialog(
 }) async {
   final DeletePackResult? result = await showDialog<DeletePackResult>(
     context: context,
-    builder: (BuildContext dialogContext) => _DeletePackDialog(
-      packName: packName,
-      dependents: dependents,
-    ),
+    builder: (BuildContext dialogContext) => _DeletePackDialog(packName: packName, dependents: dependents),
   );
   return result ?? (confirmed: false);
 }
 
 class _DeletePackDialog extends StatefulWidget {
-  const _DeletePackDialog({
-    required this.packName,
-    required this.dependents,
-  });
+  const _DeletePackDialog({required this.packName, required this.dependents});
 
   final String packName;
   final List<PackDependent> dependents;
@@ -65,17 +56,15 @@ class _DeletePackDialogState extends State<_DeletePackDialog> {
             FilledButton(
               key: const Key('deletePackConfirmButton'),
               style: ButtonStyle(
-                backgroundColor: WidgetStatePropertyAll(
-                  AppColors.critical(theme.brightness),
-                ),
+                backgroundColor: WidgetStatePropertyAll(AppColors.critical(theme.brightness)),
                 foregroundColor: const WidgetStatePropertyAll(Colors.white),
               ),
-              onPressed: () => Navigator.pop(context, (confirmed: true,)),
+              onPressed: () => Navigator.pop(context, (confirmed: true)),
               child: const Text('删除'),
             ),
             Button(
               key: const Key('deletePackCancelButton'),
-              onPressed: () => Navigator.pop(context, (confirmed: false,)),
+              onPressed: () => Navigator.pop(context, (confirmed: false)),
               child: const Text('取消'),
             ),
           ],
@@ -85,26 +74,17 @@ class _DeletePackDialogState extends State<_DeletePackDialog> {
   }
 }
 
-Widget _buildDependentsSection(
-  BuildContext context,
-  List<PackDependent> dependents,
-) {
+Widget _buildDependentsSection(BuildContext context, List<PackDependent> dependents) {
   final FluentThemeData theme = FluentTheme.of(context);
   final DividerThemeData dividerTheme = theme.dividerTheme;
-  final TextStyle style = TextStyle(
-    fontSize: 12,
-    color: theme.resources.textFillColorSecondary,
-  );
+  final TextStyle style = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
   final Color valueColor = theme.resources.textFillColorSecondary;
   return Column(
     key: const Key('deletePackDependents'),
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        '以下包依赖它：',
-        style: TextStyle(color: AppColors.critical(theme.brightness)),
-      ),
+      Text('以下包依赖它：', style: TextStyle(color: AppColors.critical(theme.brightness))),
       const SizedBox(height: 6),
       FluentTheme(
         data: theme.copyWith(
@@ -136,12 +116,7 @@ Widget _buildDependentsSection(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        dependents[index].name,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                    Expanded(child: Text(dependents[index].name, overflow: TextOverflow.ellipsis)),
                     SizedBox(
                       width: _versionColumnWidth,
                       child: Text(

@@ -18,11 +18,7 @@ Future<void> showPackHistoryDialog(
 }
 
 class PackHistoryDialog extends StatefulWidget {
-  const PackHistoryDialog({
-    super.key,
-    required this.pack,
-    required this.onSave,
-  });
+  const PackHistoryDialog({super.key, required this.pack, required this.onSave});
 
   final PackModel pack;
   final Future<bool> Function(PackModel pack) onSave;
@@ -82,9 +78,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
       content: SizedBox(
         width: 480,
         height: 380,
-        child: _history.isEmpty
-            ? const Center(child: Text('暂无历史记录'))
-            : _buildList(),
+        child: _history.isEmpty ? const Center(child: Text('暂无历史记录')) : _buildList(),
       ),
       actions: [
         Button(
@@ -99,11 +93,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
   Widget _buildList() {
     return ListView(
       children: <Widget>[
-        for (
-          int displayIndex = 0;
-          displayIndex < _history.length;
-          displayIndex++
-        )
+        for (int displayIndex = 0; displayIndex < _history.length; displayIndex++)
           _buildRow(
             _history[_history.length - 1 - displayIndex],
             displayIndex,
@@ -113,11 +103,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
     );
   }
 
-  Widget _buildRow(
-    HistoryModel entry,
-    int displayIndex, {
-    required bool isLast,
-  }) {
+  Widget _buildRow(HistoryModel entry, int displayIndex, {required bool isLast}) {
     final FluentThemeData theme = FluentTheme.of(context);
     final Color color = _typeColor(entry.type);
     return IntrinsicHeight(
@@ -143,10 +129,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
                   const SizedBox(height: 4),
                   Text(
                     formatTimestamp(entry.time),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.resources.textFillColorSecondary,
-                    ),
+                    style: TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary),
                   ),
                 ],
               ),
@@ -177,13 +160,7 @@ class _PackHistoryDialogState extends State<PackHistoryDialog> {
             height: 10,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          if (!isLast)
-            Expanded(
-              child: Container(
-                width: 2,
-                color: theme.resources.dividerStrokeColorDefault,
-              ),
-            ),
+          if (!isLast) Expanded(child: Container(width: 2, color: theme.resources.dividerStrokeColorDefault)),
         ],
       ),
     );

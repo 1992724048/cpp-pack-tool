@@ -24,17 +24,12 @@ Future<void> showDependencyGraphDialog(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (_) =>
-        DependencyGraphDialog(packs: packs, selectedPackName: selectedPackName),
+    builder: (_) => DependencyGraphDialog(packs: packs, selectedPackName: selectedPackName),
   );
 }
 
 class DependencyGraphDialog extends StatefulWidget {
-  const DependencyGraphDialog({
-    super.key,
-    required this.packs,
-    this.selectedPackName,
-  });
+  const DependencyGraphDialog({super.key, required this.packs, this.selectedPackName});
 
   final List<PackModel> packs;
   final String? selectedPackName;
@@ -49,10 +44,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
   @override
   void initState() {
     super.initState();
-    _layout = _DependencyGraphLayout.fromPacks(
-      widget.packs,
-      widget.selectedPackName,
-    );
+    _layout = _DependencyGraphLayout.fromPacks(widget.packs, widget.selectedPackName);
   }
 
   @override
@@ -64,9 +56,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
       content: SizedBox(
         width: 880,
         height: 560,
-        child: widget.packs.isEmpty
-            ? const Center(child: Text('暂无包'))
-            : _buildGraph(),
+        child: widget.packs.isEmpty ? const Center(child: Text('暂无包')) : _buildGraph(),
       ),
       actions: [
         Button(
@@ -91,9 +81,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
             decoration: BoxDecoration(
               color: theme.resources.cardBackgroundFillColorSecondary,
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: theme.resources.controlStrokeColorDefault,
-              ),
+              border: Border.all(color: theme.resources.controlStrokeColorDefault),
             ),
             child: InteractiveViewer(
               panEnabled: true,
@@ -116,11 +104,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
                       ),
                     ),
                     for (final _GraphNode node in _layout.nodes)
-                      Positioned(
-                        left: node.left,
-                        top: node.top,
-                        child: _buildNodeCard(theme, node),
-                      ),
+                      Positioned(left: node.left, top: node.top, child: _buildNodeCard(theme, node)),
                   ],
                 ),
               ),
@@ -132,18 +116,11 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
   }
 
   Widget _buildHeader(FluentThemeData theme) {
-    final TextStyle style = TextStyle(
-      fontSize: 12,
-      color: theme.resources.textFillColorSecondary,
-    );
+    final TextStyle style = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
     return Row(
       children: [
         Expanded(child: Text('拖拽平移、滚轮缩放；红色为缺失依赖', style: style)),
-        _buildLegendItem(
-          '普通',
-          theme.resources.controlStrokeColorDefault,
-          style,
-        ),
+        _buildLegendItem('普通', theme.resources.controlStrokeColorDefault, style),
         const SizedBox(width: 12),
         _buildLegendItem('当前包', theme.accentColor, style),
         const SizedBox(width: 12),
@@ -159,10 +136,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
         Container(
           width: 10,
           height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(width: 4),
         Text(label, style: style),
@@ -179,10 +153,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
       decoration: BoxDecoration(
         color: theme.resources.cardBackgroundFillColorDefault,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: _nodeBorderColor(node, theme),
-          width: emphasized ? 2 : 1,
-        ),
+        border: Border.all(color: _nodeBorderColor(node, theme), width: emphasized ? 2 : 1),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -192,10 +163,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
             node.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 13,
-              color: theme.resources.textFillColorPrimary,
-            ),
+            style: TextStyle(fontSize: 13, color: theme.resources.textFillColorPrimary),
           ),
           const SizedBox(height: 2),
           Row(
@@ -206,10 +174,7 @@ class _DependencyGraphDialogState extends State<DependencyGraphDialog> {
                     node.version!,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.resources.textFillColorSecondary,
-                    ),
+                    style: TextStyle(fontSize: 11, color: theme.resources.textFillColorSecondary),
                   ),
                 ),
               if (node.isMissing) ...[
@@ -235,17 +200,9 @@ Color _nodeBorderColor(_GraphNode node, FluentThemeData theme) {
 }
 
 class _DependencyGraphLayout {
-  _DependencyGraphLayout._({
-    required this.nodes,
-    required this.edges,
-    required this.width,
-    required this.height,
-  });
+  _DependencyGraphLayout._({required this.nodes, required this.edges, required this.width, required this.height});
 
-  factory _DependencyGraphLayout.fromPacks(
-    List<PackModel> packs,
-    String? selectedPackName,
-  ) {
+  factory _DependencyGraphLayout.fromPacks(List<PackModel> packs, String? selectedPackName) {
     final String? selectedKey = selectedPackName?.toLowerCase();
     final Map<String, _GraphNode> nodesByKey = <String, _GraphNode>{};
     for (final PackModel pack in packs) {
@@ -278,13 +235,7 @@ class _DependencyGraphLayout {
         }
         final _GraphNode target = nodesByKey.putIfAbsent(
           key,
-          () => _GraphNode(
-            key: key,
-            name: dependency.name,
-            version: null,
-            isMissing: true,
-            isSelected: false,
-          ),
+          () => _GraphNode(key: key, name: dependency.name, version: null, isMissing: true, isSelected: false),
         );
         if (!target.isMissing) {
           source.dependencies.add(key);
@@ -294,15 +245,9 @@ class _DependencyGraphLayout {
     }
 
     final Map<String, int> levels = _resolveLevels(nodesByKey);
-    final List<_GraphNode> nodes = nodesByKey.values.toList()
-      ..sort(_compareGraphNodes);
+    final List<_GraphNode> nodes = nodesByKey.values.toList()..sort(_compareGraphNodes);
     final _CanvasBounds bounds = _layoutNodes(nodes, levels);
-    return _DependencyGraphLayout._(
-      nodes: nodes,
-      edges: edges,
-      width: bounds.width,
-      height: bounds.height,
-    );
+    return _DependencyGraphLayout._(nodes: nodes, edges: edges, width: bounds.width, height: bounds.height);
   }
 
   final List<_GraphNode> nodes;
@@ -311,8 +256,6 @@ class _DependencyGraphLayout {
   final double height;
 }
 
-/// 层号 = 1 + 本地依赖的最大层号（无本地依赖为 0）。
-/// 显式栈迭代求值，`resolving` 集合守卫环上的边（配置异常时不至于死循环）。
 Map<String, int> _resolveLevels(Map<String, _GraphNode> nodesByKey) {
   final Map<String, int> levels = <String, int>{};
   final Set<String> resolving = <String>{};
@@ -355,9 +298,7 @@ Map<String, int> _resolveLevels(Map<String, _GraphNode> nodesByKey) {
 _CanvasBounds _layoutNodes(List<_GraphNode> nodes, Map<String, int> levels) {
   final Map<int, List<_GraphNode>> rowsByLevel = <int, List<_GraphNode>>{};
   for (final _GraphNode node in nodes) {
-    rowsByLevel
-        .putIfAbsent(levels[node.key] ?? 0, () => <_GraphNode>[])
-        .add(node);
+    rowsByLevel.putIfAbsent(levels[node.key] ?? 0, () => <_GraphNode>[]).add(node);
   }
 
   double maxRight = 0;
@@ -408,8 +349,6 @@ class _GraphNode {
   final String? version;
   final bool isMissing;
   final bool isSelected;
-
-  /// 本地（非缺失）依赖节点的 key，用于层号计算。
   final List<String> dependencies = <String>[];
 
   double left = 0;
@@ -419,10 +358,7 @@ class _GraphNode {
 class _GraphEdge {
   const _GraphEdge({required this.from, required this.to});
 
-  /// 被依赖者。
   final _GraphNode from;
-
-  /// 依赖者。
   final _GraphNode to;
 }
 
@@ -452,12 +388,7 @@ class _DependencyGraphPainter extends CustomPainter {
       final Offset start = _nodeBorderPoint(edge.from, edge.to);
       final Offset end = _nodeBorderPoint(edge.to, edge.from);
       canvas.drawLine(start, end, linePaint);
-      _drawArrowHead(
-        canvas,
-        tip: end,
-        direction: end - start,
-        paint: arrowPaint,
-      );
+      _drawArrowHead(canvas, tip: end, direction: end - start, paint: arrowPaint);
     }
   }
 
@@ -468,34 +399,19 @@ class _DependencyGraphPainter extends CustomPainter {
 }
 
 Offset _nodeBorderPoint(_GraphNode from, _GraphNode to) {
-  final Offset center = Offset(
-    from.left + _nodeWidth / 2,
-    from.top + _nodeHeight / 2,
-  );
-  final Offset target = Offset(
-    to.left + _nodeWidth / 2,
-    to.top + _nodeHeight / 2,
-  );
+  final Offset center = Offset(from.left + _nodeWidth / 2, from.top + _nodeHeight / 2);
+  final Offset target = Offset(to.left + _nodeWidth / 2, to.top + _nodeHeight / 2);
   final Offset delta = target - center;
   if (delta.dx == 0 && delta.dy == 0) {
     return center;
   }
-  final double scaleX = delta.dx == 0
-      ? double.infinity
-      : _nodeWidth / 2 / delta.dx.abs();
-  final double scaleY = delta.dy == 0
-      ? double.infinity
-      : _nodeHeight / 2 / delta.dy.abs();
+  final double scaleX = delta.dx == 0 ? double.infinity : _nodeWidth / 2 / delta.dx.abs();
+  final double scaleY = delta.dy == 0 ? double.infinity : _nodeHeight / 2 / delta.dy.abs();
   final double scale = scaleX < scaleY ? scaleX : scaleY;
   return center + delta * scale;
 }
 
-void _drawArrowHead(
-  Canvas canvas, {
-  required Offset tip,
-  required Offset direction,
-  required Paint paint,
-}) {
+void _drawArrowHead(Canvas canvas, {required Offset tip, required Offset direction, required Paint paint}) {
   final double length = direction.distance;
   if (length == 0) {
     return;
@@ -505,14 +421,8 @@ void _drawArrowHead(
   final Offset base = tip - unit * _arrowLength;
   final Path arrow = Path()
     ..moveTo(tip.dx, tip.dy)
-    ..lineTo(
-      base.dx + normal.dx * _arrowHalfWidth,
-      base.dy + normal.dy * _arrowHalfWidth,
-    )
-    ..lineTo(
-      base.dx - normal.dx * _arrowHalfWidth,
-      base.dy - normal.dy * _arrowHalfWidth,
-    )
+    ..lineTo(base.dx + normal.dx * _arrowHalfWidth, base.dy + normal.dy * _arrowHalfWidth)
+    ..lineTo(base.dx - normal.dx * _arrowHalfWidth, base.dy - normal.dy * _arrowHalfWidth)
     ..close();
   canvas.drawPath(arrow, paint);
 }

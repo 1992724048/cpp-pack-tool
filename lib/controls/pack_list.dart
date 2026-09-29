@@ -39,10 +39,6 @@ class PackList {
     if (iconPath == null || sourcePath == null) {
       return null;
     }
-    return buildFileImage(
-      joinPath(sourcePath, iconPath),
-      size: 20,
-      fallback: Svgs.cardboardBox,
-    );
+    return buildFileImage(joinPath(sourcePath, iconPath), size: 20, fallback: Svgs.cardboardBox);
   }
 }

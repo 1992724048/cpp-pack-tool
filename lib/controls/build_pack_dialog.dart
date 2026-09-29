@@ -116,14 +116,9 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    // 备源阶段已随单段流水线消失：环境就绪后整个会话就是构建，直接推进到构建阶段。
     setState(() => _advanceTo(_BuildStage.building));
     try {
-      await widget.build(
-        widget.pack,
-        environment: environment.environment,
-        onOutput: _onBuildOutput,
-      );
+      await widget.build(widget.pack, environment: environment.environment, onOutput: _onBuildOutput);
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
       return;
@@ -162,11 +157,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     final String elapsedText = formatDuration(_sessionWatch.elapsed);
     updated.history = appendHistoryEntry(
       updated.history,
-      HistoryModel(
-        time: widget.now(),
-        type: HistoryType.built,
-        message: '构建成功：耗时 $elapsedText',
-      ),
+      HistoryModel(time: widget.now(), type: HistoryType.built, message: '构建成功：耗时 $elapsedText'),
     );
     setState(() {
       _files = files;
@@ -190,9 +181,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     });
   }
 
-  /// 构建成功、重新映射扫描前的 include 引用检查（含自动修复）。
-  ///
-  /// 检查失败不阻断构建成功流程：错误记入输出面板并跳过报告，继续重新映射。
   Future<void> _fixIncludes(String sourcePath) async {
     setState(() => _advanceTo(_BuildStage.fixingIncludes));
     try {
@@ -213,8 +201,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     });
   }
 
-  /// 展示失败：保留已流式积累的输出行并补齐 [outputTail]（面板中已有的行不重复
-  /// 追加）；失败条目只在首次失败时构造一次。
   void _showFailure(Object error, {String? outputTail}) {
     if (!mounted) {
       return;

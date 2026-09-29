@@ -3,11 +3,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 const double _labelColumnWidth = 220;
 
-/// 构建后 `#include` 引用的高置信待处理问题列表；仅关闭，不阻断流程。
-Future<void> showHeaderIncludeIssuesDialog(
-  BuildContext context, {
-  required HeaderIncludeFixReport report,
-}) async {
+Future<void> showHeaderIncludeIssuesDialog(BuildContext context, {required HeaderIncludeFixReport report}) async {
   if (!report.hasIssues) {
     return;
   }
@@ -24,11 +20,7 @@ Future<void> showHeaderIncludeIssuesDialog(
         children: [
           const Text('以下源码引用未自动修复，打包后可能失效：'),
           const SizedBox(height: 12),
-          Flexible(
-            child: SingleChildScrollView(
-              child: _buildIssuesTable(dialogContext, issues),
-            ),
-          ),
+          Flexible(child: SingleChildScrollView(child: _buildIssuesTable(dialogContext, issues))),
           const SizedBox(height: 8),
           const Text('条件外部依赖（如第三方库头文件）不在检查范围；可手动调整源码后重新构建。'),
         ],
@@ -44,16 +36,10 @@ Future<void> showHeaderIncludeIssuesDialog(
   );
 }
 
-Widget _buildIssuesTable(
-  BuildContext context,
-  List<HeaderIncludeIssue> issues,
-) {
+Widget _buildIssuesTable(BuildContext context, List<HeaderIncludeIssue> issues) {
   final FluentThemeData theme = FluentTheme.of(context);
   final DividerThemeData dividerTheme = theme.dividerTheme;
-  final TextStyle style = TextStyle(
-    fontSize: 12,
-    color: theme.resources.textFillColorSecondary,
-  );
+  final TextStyle style = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
   return FluentTheme(
     data: theme.copyWith(
       dividerTheme: DividerThemeData(
@@ -88,10 +74,7 @@ Widget _buildIssuesTable(
               children: [
                 SizedBox(
                   width: _labelColumnWidth,
-                  child: Text(
-                    '${issues[index].filePath}:${issues[index].line}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text('${issues[index].filePath}:${issues[index].line}', overflow: TextOverflow.ellipsis),
                 ),
                 Expanded(
                   child: Text(

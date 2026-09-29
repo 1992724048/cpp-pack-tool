@@ -3,11 +3,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 const double _versionColumnWidth = 120;
 
-/// 打包前缺失依赖警告。返回 true 表示继续打包，false 表示取消。
-Future<bool> showMissingDependenciesDialog(
-  BuildContext context, {
-  required List<PackDependent> missing,
-}) async {
+Future<bool> showMissingDependenciesDialog(BuildContext context, {required List<PackDependent> missing}) async {
   final bool? proceed = await showDialog<bool>(
     context: context,
     builder: (BuildContext dialogContext) => ContentDialog(
@@ -50,10 +46,7 @@ Future<bool> showMissingDependenciesDialog(
 Widget _buildMissingTable(BuildContext context, List<PackDependent> missing) {
   final FluentThemeData theme = FluentTheme.of(context);
   final DividerThemeData dividerTheme = theme.dividerTheme;
-  final TextStyle style = TextStyle(
-    fontSize: 12,
-    color: theme.resources.textFillColorSecondary,
-  );
+  final TextStyle style = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
   final Color valueColor = theme.resources.textFillColorSecondary;
   return FluentTheme(
     data: theme.copyWith(
@@ -86,12 +79,7 @@ Widget _buildMissingTable(BuildContext context, List<PackDependent> missing) {
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               children: [
-                Expanded(
-                  child: Text(
-                    missing[index].name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                Expanded(child: Text(missing[index].name, overflow: TextOverflow.ellipsis)),
                 SizedBox(
                   width: _versionColumnWidth,
                   child: Text(

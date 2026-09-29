@@ -90,11 +90,7 @@ class FileModel {
     if (size != null && size is! num) {
       throw const FormatException('文件 size 字段类型错误，应为整数');
     }
-    return FileModel(
-      name: baseName(path),
-      path: path,
-      size: (size as num?)?.toInt() ?? 0,
-    );
+    return FileModel(name: baseName(path), path: path, size: (size as num?)?.toInt() ?? 0);
   }
 
   FileType _determineFileType(String extension) {

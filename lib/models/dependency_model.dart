@@ -7,8 +7,6 @@ class DependencyModel {
 
   final String name;
   final String version;
-
-  /// 构建管线自动注册的系统条目；UI 禁止编辑/删除。
   final bool system;
 
   Map<String, Object?> toMap() => <String, Object?>{

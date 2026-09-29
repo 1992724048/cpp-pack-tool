@@ -11,11 +11,7 @@ const Map<HistoryType, String> historyTypeLabels = <HistoryType, String>{
 };
 
 class HistoryModel {
-  const HistoryModel({
-    required this.time,
-    required this.type,
-    required this.message,
-  });
+  const HistoryModel({required this.time, required this.type, required this.message});
 
   final DateTime time;
   final HistoryType type;
@@ -52,10 +48,7 @@ class HistoryModel {
   }
 }
 
-List<HistoryModel> appendHistoryEntry(
-  List<HistoryModel> history,
-  HistoryModel entry,
-) {
+List<HistoryModel> appendHistoryEntry(List<HistoryModel> history, HistoryModel entry) {
   final List<HistoryModel> updated = <HistoryModel>[...history, entry];
   if (updated.length <= maxHistoryEntries) {
     return updated;

@@ -3,12 +3,6 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 enum _LicenseMode { none, spdx, custom }
 
-/// 许可证选择控件：下拉（无 / SPDX 预设 / 「自定义…」）+ 自定义文本框双态。
-///
-/// [onChanged] 汇报 `(许可证值, 是否可提交)`：自定义模式文本为空时
-/// `(null, false)`，其余情况 `(值, true)`；「无」为 `(null, true)`。
-/// 自定义文本在模式切换间保留（误切换不丢内容）；外部回显仅在
-/// `value != 上一次发射值` 时重推导，打字中途的父级回写不重置文本框。
 class LicenseField extends StatefulWidget {
   const LicenseField({
     super.key,
@@ -124,12 +118,8 @@ class _LicenseFieldState extends State<LicenseField> {
             onChanged: _onComboChanged,
             items: <ComboBoxItem<String?>>[
               const ComboBoxItem<String?>(value: null, child: Text('无')),
-              for (final String option in licenseOptions)
-                ComboBoxItem<String?>(value: option, child: Text(option)),
-              const ComboBoxItem<String?>(
-                value: customLicenseEntry,
-                child: Text(customLicenseEntry),
-              ),
+              for (final String option in licenseOptions) ComboBoxItem<String?>(value: option, child: Text(option)),
+              const ComboBoxItem<String?>(value: customLicenseEntry, child: Text(customLicenseEntry)),
             ],
           ),
         ),
@@ -147,9 +137,7 @@ class _LicenseFieldState extends State<LicenseField> {
             key: widget.errorKey,
             style: TextStyle(
               fontSize: 12,
-              color: _customValid
-                  ? theme.resources.textFillColorSecondary
-                  : theme.resources.systemFillColorCritical,
+              color: _customValid ? theme.resources.textFillColorSecondary : theme.resources.systemFillColorCritical,
             ),
           ),
         ],

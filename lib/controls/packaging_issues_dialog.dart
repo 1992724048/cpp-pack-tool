@@ -4,9 +4,6 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 const double _labelColumnWidth = 140;
 
-/// 导出前校验警告。返回 true 表示继续导出，false 表示取消。
-///
-/// [showSupplyChainNotice] 为真时在问题列表下方追加可执行二进制供应链提示。
 Future<bool> showPackagingIssuesDialog(
   BuildContext context, {
   required List<PackagingIssue> issues,
@@ -27,15 +24,8 @@ Future<bool> showPackagingIssuesDialog(
         children: [
           const Text('以下脚本或包内容存在问题：'),
           const SizedBox(height: 12),
-          Flexible(
-            child: SingleChildScrollView(
-              child: _buildIssuesTable(dialogContext, issues),
-            ),
-          ),
-          if (showSupplyChainNotice) ...[
-            const SizedBox(height: 12),
-            const Text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。'),
-          ],
+          Flexible(child: SingleChildScrollView(child: _buildIssuesTable(dialogContext, issues))),
+          if (showSupplyChainNotice) ...[const SizedBox(height: 12), const Text('包内将随附可执行二进制，脚本可在构建时调用；请确认来源可信。')],
           const SizedBox(height: 8),
           const Text('可继续导出，或取消返回修改。'),
         ],
@@ -65,10 +55,7 @@ Future<bool> showPackagingIssuesDialog(
 Widget _buildIssuesTable(BuildContext context, List<PackagingIssue> issues) {
   final FluentThemeData theme = FluentTheme.of(context);
   final DividerThemeData dividerTheme = theme.dividerTheme;
-  final TextStyle style = TextStyle(
-    fontSize: 12,
-    color: theme.resources.textFillColorSecondary,
-  );
+  final TextStyle style = TextStyle(fontSize: 12, color: theme.resources.textFillColorSecondary);
   final Color valueColor = theme.resources.textFillColorSecondary;
   return FluentTheme(
     data: theme.copyWith(
@@ -106,10 +93,7 @@ Widget _buildIssuesTable(BuildContext context, List<PackagingIssue> issues) {
                   width: _labelColumnWidth,
                   child: Tooltip(
                     message: issues[index].label,
-                    child: Text(
-                      _displayLabel(issues[index].label),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    child: Text(_displayLabel(issues[index].label), overflow: TextOverflow.ellipsis),
                   ),
                 ),
                 Expanded(
@@ -132,7 +116,6 @@ Widget _buildIssuesTable(BuildContext context, List<PackagingIssue> issues) {
   );
 }
 
-/// 名称列显示：含路径分隔符时仅显示末段（全路径在 Tooltip 中可见）。
 String _displayLabel(String label) {
   if (!label.contains('/') && !label.contains('\\')) {
     return label;

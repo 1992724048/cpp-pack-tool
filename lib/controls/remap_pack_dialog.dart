@@ -7,12 +7,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 enum _RemapStage { scanning, applying, completed, scanFailed, applyFailed }
 
 class RemapPackDialog extends StatefulWidget {
-  const RemapPackDialog({
-    super.key,
-    required this.pack,
-    required this.scanFuture,
-    required this.onApply,
-  });
+  const RemapPackDialog({super.key, required this.pack, required this.scanFuture, required this.onApply});
 
   final PackModel pack;
   final Future<List<FileModel>> scanFuture;
@@ -101,11 +96,7 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
         ),
       ),
       actions: [
-        Button(
-          key: const Key('remapCloseButton'),
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
-        ),
+        Button(key: const Key('remapCloseButton'), onPressed: () => Navigator.pop(context), child: const Text('关闭')),
       ],
     );
   }
@@ -113,13 +104,9 @@ class _RemapPackDialogState extends State<RemapPackDialog> {
   Widget _buildStatus() {
     switch (_stage) {
       case _RemapStage.scanning:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在扫描…')],
-        );
+        return const Row(children: [ProgressRing(), SizedBox(width: 12), Text('正在扫描…')]);
       case _RemapStage.applying:
-        return const Row(
-          children: [ProgressRing(), SizedBox(width: 12), Text('正在更新配置…')],
-        );
+        return const Row(children: [ProgressRing(), SizedBox(width: 12), Text('正在更新配置…')]);
       case _RemapStage.scanFailed:
         return Text('扫描失败：${formatError(_error!)}');
       case _RemapStage.applyFailed:

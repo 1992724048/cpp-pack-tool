@@ -21,30 +21,18 @@ class PackagingIssue {
 }
 
 class ScriptPackagingResult {
-  const ScriptPackagingResult({
-    required this.entries,
-    required this.targetsFragment,
-    required this.issues,
-  });
+  const ScriptPackagingResult({required this.entries, required this.targetsFragment, required this.issues});
 
-  /// `.ps1` 生成条目：`build/native/files/scripts/<id>.ps1`（`id` 即 `script_N`）。
   final List<PackageEntry> entries;
-
-  /// 追加进 `.targets` 的文本；无有效脚本时为空串。
   final String targetsFragment;
-
-  /// 编译失败脚本（已跳过生成）。
   final List<PackagingIssue> issues;
 }
 
 class ScriptPackaging {
   const ScriptPackaging({this.generator});
 
-  /// 为 null 时使用默认 `PowerShell5Generator`（测试可注入假生成器）。
   final ScriptCodeGenerator? generator;
-
   static final ScriptCodeGenerator _defaultGenerator = PowerShell5Generator();
-
   static const String _macroNodeType = 'context.macro';
   static const String _scriptsDirectory = 'build/native/files/scripts';
   static const String _executorPrefix =
@@ -52,10 +40,7 @@ class ScriptPackaging {
       r'-File ';
   static final RegExp _invalidTargetNameChar = RegExp(r'[^A-Za-z0-9_]');
 
-  ScriptPackagingResult build(
-    PackModel pack, {
-    required bool hasRuntimeBinaries,
-  }) {
+  ScriptPackagingResult build(PackModel pack, {required bool hasRuntimeBinaries}) {
     final ScriptCodeGenerator codeGenerator = generator ?? _defaultGenerator;
     final List<PackageEntry> entries = <PackageEntry>[];
     final List<PackagingIssue> issues = <PackagingIssue>[];
@@ -67,20 +52,12 @@ class ScriptPackaging {
       try {
         result = codeGenerator.compile(script, packName: pack.name);
       } catch (error) {
-        // 生成器实现异常不得中断构建计划（buildPlan 调用方不捕获异常）
-        issues.add(
-          PackagingIssue(
-            label: script.name,
-            message: '脚本编译失败：${formatError(error)}',
-          ),
-        );
+        issues.add(PackagingIssue(label: script.name, message: '脚本编译失败：${formatError(error)}'));
         continue;
       }
       final String? code = result.code;
       if (code == null || result.hasErrors) {
-        issues.add(
-          PackagingIssue(label: script.name, message: _failureMessage(result)),
-        );
+        issues.add(PackagingIssue(label: script.name, message: _failureMessage(result)));
         continue;
       }
       entries.add(
@@ -140,9 +117,7 @@ class ScriptPackaging {
     _writeScriptTarget(
       buffer,
       name: 'CnpScripts_${cleanId}_${hash}_Post',
-      anchor: hasRuntimeBinaries
-          ? 'AfterTargets="DeployPkgRuntimeBinaries"'
-          : 'AfterTargets="Build"',
+      anchor: hasRuntimeBinaries ? 'AfterTargets="DeployPkgRuntimeBinaries"' : 'AfterTargets="Build"',
       scripts: postScripts,
     );
     return buffer.toString();
@@ -167,9 +142,7 @@ class ScriptPackaging {
   }
 
   static String _execAttributes(ScriptProjectModel script) {
-    final StringBuffer buffer = StringBuffer(
-      'Command="${_escapeXml(_scriptCommand(script))}"',
-    );
+    final StringBuffer buffer = StringBuffer('Command="${_escapeXml(_scriptCommand(script))}"');
     final String? condition = _configurationCondition(script.buildModel);
     if (condition != null) {
       buffer.write(' Condition="$condition"');
@@ -185,10 +158,7 @@ class ScriptPackaging {
       r'$(MSBuildThisFileDirectory)files\scripts\'
       '${_scriptFileName(script)}"';
 
-  /// 包内脚本文件名直接取 `<id>.ps1`；`id` 已含 `script_` 前缀，避免生成
-  /// `script_script_1.ps1`。
-  static String _scriptFileName(ScriptProjectModel script) =>
-      '${script.id}.ps1';
+  static String _scriptFileName(ScriptProjectModel script) => '${script.id}.ps1';
 
   static String? _configurationCondition(BuildModel buildModel) {
     return switch (buildModel) {
@@ -201,19 +171,15 @@ class ScriptPackaging {
   static String _environmentVariables(ScriptProjectModel script) {
     final List<String> entries = <String>[
       _environmentEntry('CNP_PackageRoot', r'$(MSBuildThisFileDirectory)'),
-      for (final String key in _macroKeysOf(script))
-        _environmentEntry(macroEnvName(key), '\$($key)'),
+      for (final String key in _macroKeysOf(script)) _environmentEntry(macroEnvName(key), '\$($key)'),
     ];
     return _escapeXml(entries.join(';'));
   }
 
-  static String _environmentEntry(String name, String value) =>
-      '$name=${_escapeEnvironmentValue(value)}';
+  static String _environmentEntry(String name, String value) => '$name=${_escapeEnvironmentValue(value)}';
 
-  static String _escapeEnvironmentValue(String value) =>
-      value.replaceAll('%', '%25').replaceAll(';', '%3B');
+  static String _escapeEnvironmentValue(String value) => value.replaceAll('%', '%25').replaceAll(';', '%3B');
 
-  /// 有效脚本图中实际用到的宏键，按白名单顺序去重。
   static List<String> _macroKeysOf(ScriptProjectModel script) {
     final Set<String> usedKeys = <String>{};
     for (final ScriptNodeModel node in script.nodes) {
@@ -227,15 +193,13 @@ class ScriptPackaging {
     ];
   }
 
-  /// 镜像生成器 `_param` 的回退：参数未存储时取注册表默认值（`OutDir`）。
   static Object? _macroParamValue(ScriptNodeModel node) {
     final Object? value = node.params['macro'];
     if (value != null) {
       return value;
     }
     final ScriptNodeTypeDescriptor? descriptor = NodeRegistry.byType(node.type);
-    for (final ScriptParamDescriptor param
-        in descriptor?.params ?? const <ScriptParamDescriptor>[]) {
+    for (final ScriptParamDescriptor param in descriptor?.params ?? const <ScriptParamDescriptor>[]) {
       if (param.key == 'macro') {
         return param.defaultValue;
       }
@@ -243,7 +207,6 @@ class ScriptPackaging {
     return null;
   }
 
-  // replaceAll 为非重叠单趟替换，连续 '-' 会残留 '--'（非法 XML 注释），循环消除
   static String _commentText(String name) {
     String text = _escapeXml(name);
     while (text.contains('--')) {
@@ -260,34 +223,19 @@ class ScriptPackaging {
       .replaceAll("'", '&apos;');
 }
 
-/// 导出前校验：脚本编译问题（由 [NuGetPackageBuilder.buildPlanWithIssues] 顺带产出，
-/// 不在此重跑 codegen）与包内路径重复。
-///
-/// 编译问题不抛出（生成器异常已由 [ScriptPackaging.build] 转为问题）；
-/// 重复项 label 为「包内路径」，message 含具体路径。
-List<PackagingIssue> collectPackagingIssues(
-  PackagePlan plan,
-  List<PackagingIssue> scriptIssues,
-) {
-  final List<PackagingIssue> issues = <PackagingIssue>[
-    ...scriptIssues,
-  ];
+List<PackagingIssue> collectPackagingIssues(PackagePlan plan, List<PackagingIssue> scriptIssues) {
+  final List<PackagingIssue> issues = <PackagingIssue>[...scriptIssues];
   for (final String path in duplicatePackagePaths(plan)) {
     issues.add(PackagingIssue(label: '包内路径', message: '包内路径重复：$path'));
   }
   return List<PackagingIssue>.unmodifiable(issues);
 }
 
-/// 导出前校验：包内 `.exe` 条目（大小写不敏感）逐条转为分发提示。
-///
-/// label 为包内路径，message 统一提示可执行二进制随包分发。
 List<PackagingIssue> collectExecutableWarnings(PackagePlan plan) {
   final List<PackagingIssue> warnings = <PackagingIssue>[];
   for (final PackageEntry entry in plan.entries) {
     if (entry.packagePath.toLowerCase().endsWith('.exe')) {
-      warnings.add(
-        PackagingIssue(label: entry.packagePath, message: '可执行二进制随包分发'),
-      );
+      warnings.add(PackagingIssue(label: entry.packagePath, message: '可执行二进制随包分发'));
     }
   }
   return List<PackagingIssue>.unmodifiable(warnings);

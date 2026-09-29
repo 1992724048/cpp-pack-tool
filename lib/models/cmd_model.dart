@@ -3,18 +3,11 @@
 enum CmdType { preBuild, postBuild }
 
 class CmdModel {
-  const CmdModel({
-    required this.command,
-    required this.type,
-    this.buildModel = BuildModel.all,
-    this.system = false,
-  });
+  const CmdModel({required this.command, required this.type, this.buildModel = BuildModel.all, this.system = false});
 
   final String command;
   final CmdType type;
   final BuildModel buildModel;
-
-  /// 构建管线自动注册的系统条目；UI 禁止编辑/删除。
   final bool system;
 
   Map<String, Object?> toMap() => <String, Object?>{

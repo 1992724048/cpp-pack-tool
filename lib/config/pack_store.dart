@@ -44,17 +44,12 @@ class PackStore {
     }
 
     final List<File> files = <File>[];
-    await for (final FileSystemEntity entity in packsDirectory.list(
-      followLinks: false,
-    )) {
+    await for (final FileSystemEntity entity in packsDirectory.list(followLinks: false)) {
       if (entity is File && entity.path.toLowerCase().endsWith('.yaml')) {
         files.add(entity);
       }
     }
-    files.sort(
-      (File first, File second) =>
-          _compareNames(baseName(first.path), baseName(second.path)),
-    );
+    files.sort((File first, File second) => _compareNames(baseName(first.path), baseName(second.path)));
 
     for (final File file in files) {
       try {
@@ -64,59 +59,37 @@ class PackStore {
           throw const FormatException('文件内容为空或不是 YAML 映射');
         }
         final List<String> warnings = <String>[];
-        packs.add(
-          PackModel.fromMap(_stringKeyMap(document), warnings: warnings),
-        );
+        packs.add(PackModel.fromMap(_stringKeyMap(document), warnings: warnings));
         for (final String warning in warnings) {
-          errors.add(
-            PackLoadError(fileName: baseName(file.path), message: warning),
-          );
+          errors.add(PackLoadError(fileName: baseName(file.path), message: warning));
         }
       } catch (error) {
-        errors.add(
-          PackLoadError(
-            fileName: baseName(file.path),
-            message: formatError(error),
-          ),
-        );
+        errors.add(PackLoadError(fileName: baseName(file.path), message: formatError(error)));
       }
     }
 
-    packs.sort(
-      (PackModel first, PackModel second) =>
-          _compareNames(first.name, second.name),
-    );
+    packs.sort((PackModel first, PackModel second) => _compareNames(first.name, second.name));
     return (packs: packs, errors: errors);
   }
 
   Future<void> savePack(PackModel pack) async {
     await ensureConfigExist();
-    final File file = File(
-      '${packsDirectory.path}/${sanitizeFileName(pack.name)}.yaml',
-    );
+    final File file = File('${packsDirectory.path}/${sanitizeFileName(pack.name)}.yaml');
 
     final Map<String, Object?> payload = pack.toMap();
     final String? description = pack.description;
     if (description != null && description.contains('\n')) {
-      payload['description'] = wrapAsYamlNode(
-        description,
-        scalarStyle: ScalarStyle.LITERAL,
-      );
+      payload['description'] = wrapAsYamlNode(description, scalarStyle: ScalarStyle.LITERAL);
     }
 
     final YamlEditor editor = YamlEditor('');
     editor.update(<Object?>[], payload);
     final String yaml = editor.toString();
-    await file.writeAsString(
-      yaml.endsWith('\n') ? yaml : '$yaml\n',
-      flush: true,
-    );
+    await file.writeAsString(yaml.endsWith('\n') ? yaml : '$yaml\n', flush: true);
   }
 
   Future<void> deletePack(String name) async {
-    final File file = File(
-      '${packsDirectory.path}/${sanitizeFileName(name)}.yaml',
-    );
+    final File file = File('${packsDirectory.path}/${sanitizeFileName(name)}.yaml');
     if (await file.exists()) {
       await file.delete();
     }
@@ -141,24 +114,16 @@ class PackStore {
 
   Future<void> saveSettings(SettingsModel settings) async {
     await ensureConfigExist();
-    final Map<String, Object?> payload = <String, Object?>{
-      'version': 1,
-      ...settings.toMap(),
-    };
+    final Map<String, Object?> payload = <String, Object?>{'version': 1, ...settings.toMap()};
 
     final YamlEditor editor = YamlEditor('');
     editor.update(<Object?>[], payload);
     final String yaml = editor.toString();
-    await configFile.writeAsString(
-      yaml.endsWith('\n') ? yaml : '$yaml\n',
-      flush: true,
-    );
+    await configFile.writeAsString(yaml.endsWith('\n') ? yaml : '$yaml\n', flush: true);
   }
 
   static String sanitizeFileName(String name) {
-    final String sanitized = name
-        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
-        .trim();
+    final String sanitized = name.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_').trim();
     final String capped = String.fromCharCodes(sanitized.runes.take(100));
     return capped.isEmpty ? 'pack' : capped;
   }

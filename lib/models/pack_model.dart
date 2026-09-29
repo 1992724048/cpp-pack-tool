@@ -8,7 +8,6 @@ import 'package:cpp_nuget_pack/models/macro_model.dart';
 import 'package:cpp_nuget_pack/models/script_project_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
-/// `copyWith` 的「未传入」哨兵：与显式传入 `null`（清空）区分。
 const Object _unset = Object();
 
 class PackModel {
@@ -31,11 +30,16 @@ class PackModel {
 
   static List<PackModel> packs = [];
 
-  PackModel(
-      {required this.name, required this.version, required this.author, this.description, this.license, this.iconPath, this.sourcePath});
+  PackModel({
+    required this.name,
+    required this.version,
+    required this.author,
+    this.description,
+    this.license,
+    this.iconPath,
+    this.sourcePath,
+  });
 
-  /// 全字段拷贝：未传入的可空字段保留原值（显式传 `null` 才清空），
-  /// 未传入的列表保持原引用（既有 identity 断言依赖此语义）。
   PackModel copyWith({
     String? name,
     String? version,
@@ -87,7 +91,7 @@ class PackModel {
       'commands': <Map<String, Object?>>[for (final CmdModel command in commands) command.toMap()],
       'macros': <Map<String, Object?>>[for (final MacroModel macro in macros) macro.toMap()],
       'libDirectories': <Map<String, Object?>>[
-        for (final LibDirModel libDirectory in libDirectories) libDirectory.toMap()
+        for (final LibDirModel libDirectory in libDirectories) libDirectory.toMap(),
       ],
       'libraries': <Map<String, Object?>>[for (final LibraryModel library in libraries) library.toMap()],
       'history': <Map<String, Object?>>[for (final HistoryModel entry in history) entry.toMap()],
@@ -106,22 +110,27 @@ class PackModel {
       sourcePath: _optionalString(map, 'sourcePath'),
     );
 
-    pack.files.addAll(
-        <FileModel>[for (final Map<String, Object?> item in _mapList(map, 'files')) FileModel.fromMap(item)]);
+    pack.files.addAll(<FileModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'files')) FileModel.fromMap(item),
+    ]);
     pack.dependencies.addAll(<DependencyModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'dependencies')) DependencyModel.fromMap(item)
+      for (final Map<String, Object?> item in _mapList(map, 'dependencies')) DependencyModel.fromMap(item),
     ]);
-    pack.commands.addAll(
-        <CmdModel>[for (final Map<String, Object?> item in _mapList(map, 'commands')) CmdModel.fromMap(item)]);
-    pack.macros.addAll(
-        <MacroModel>[for (final Map<String, Object?> item in _mapList(map, 'macros')) MacroModel.fromMap(item)]);
+    pack.commands.addAll(<CmdModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'commands')) CmdModel.fromMap(item),
+    ]);
+    pack.macros.addAll(<MacroModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'macros')) MacroModel.fromMap(item),
+    ]);
     pack.libDirectories.addAll(<LibDirModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'libDirectories')) LibDirModel.fromMap(item)
+      for (final Map<String, Object?> item in _mapList(map, 'libDirectories')) LibDirModel.fromMap(item),
     ]);
-    pack.libraries.addAll(
-        <LibraryModel>[for (final Map<String, Object?> item in _mapList(map, 'libraries')) LibraryModel.fromMap(item)]);
-    pack.history.addAll(
-        <HistoryModel>[for (final Map<String, Object?> item in _mapList(map, 'history')) HistoryModel.fromMap(item)]);
+    pack.libraries.addAll(<LibraryModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'libraries')) LibraryModel.fromMap(item),
+    ]);
+    pack.history.addAll(<HistoryModel>[
+      for (final Map<String, Object?> item in _mapList(map, 'history')) HistoryModel.fromMap(item),
+    ]);
 
     final Set<String> scriptIds = <String>{};
     for (final Map<String, Object?> item in _mapList(map, 'scripts')) {

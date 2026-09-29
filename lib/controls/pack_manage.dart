@@ -56,8 +56,7 @@ class _PackManageState extends State<PackManage> {
   Widget _packInfoBody() {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
-      builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackInfo(pack: pack, onSave: widget.onSave),
+      builder: (BuildContext context, PackModel pack, Widget? child) => PackInfo(pack: pack, onSave: widget.onSave),
     );
   }
 
@@ -73,11 +72,7 @@ class _PackManageState extends State<PackManage> {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackDependencies(
-            pack: pack,
-            allPacks: widget.allPacks,
-            onSave: widget.onSave,
-          ),
+          PackDependencies(pack: pack, allPacks: widget.allPacks, onSave: widget.onSave),
     );
   }
 
@@ -85,11 +80,7 @@ class _PackManageState extends State<PackManage> {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackCompileSettings(
-            pack: pack,
-            onSave: widget.onSave,
-            pickDirectory: widget.pickDirectory,
-          ),
+          PackCompileSettings(pack: pack, onSave: widget.onSave, pickDirectory: widget.pickDirectory),
     );
   }
 
@@ -110,56 +101,36 @@ class _PackManageState extends State<PackManage> {
         icon: Svgs.showPermitCard,
         text: const Text('包信息'),
         body: _body(_packInfoBody()),
-        selectedBackgroundColor: WidgetStateColor.resolveWith(
-          (states) => FluentTheme.of(context).selectionColor,
-        ),
-        selectedForegroundColor: WidgetStateColor.resolveWith(
-          (states) => Colors.white,
-        ),
+        selectedBackgroundColor: WidgetStateColor.resolveWith((states) => FluentTheme.of(context).selectionColor),
+        selectedForegroundColor: WidgetStateColor.resolveWith((states) => Colors.white),
       ),
       Tab(
         icon: Svgs.fileExplorer,
         text: const Text('文件管理'),
         body: _body(_packFilesBody()),
-        selectedBackgroundColor: WidgetStateColor.resolveWith(
-          (states) => FluentTheme.of(context).selectionColor,
-        ),
-        selectedForegroundColor: WidgetStateColor.resolveWith(
-          (states) => Colors.white,
-        ),
+        selectedBackgroundColor: WidgetStateColor.resolveWith((states) => FluentTheme.of(context).selectionColor),
+        selectedForegroundColor: WidgetStateColor.resolveWith((states) => Colors.white),
       ),
       Tab(
         icon: Svgs.inventoryFlow,
         text: const Text('依赖管理'),
         body: _body(_packDependenciesBody()),
-        selectedBackgroundColor: WidgetStateColor.resolveWith(
-          (states) => FluentTheme.of(context).selectionColor,
-        ),
-        selectedForegroundColor: WidgetStateColor.resolveWith(
-          (states) => Colors.white,
-        ),
+        selectedBackgroundColor: WidgetStateColor.resolveWith((states) => FluentTheme.of(context).selectionColor),
+        selectedForegroundColor: WidgetStateColor.resolveWith((states) => Colors.white),
       ),
       Tab(
         icon: Svgs.projectSetup,
         text: const Text('编译设置'),
         body: _body(_packCompileBody()),
-        selectedBackgroundColor: WidgetStateColor.resolveWith(
-          (states) => FluentTheme.of(context).selectionColor,
-        ),
-        selectedForegroundColor: WidgetStateColor.resolveWith(
-          (states) => Colors.white,
-        ),
+        selectedBackgroundColor: WidgetStateColor.resolveWith((states) => FluentTheme.of(context).selectionColor),
+        selectedForegroundColor: WidgetStateColor.resolveWith((states) => Colors.white),
       ),
       Tab(
         icon: Svgs.boxSettings,
         text: const Text('打包设置'),
         body: _body(_packPackagingBody()),
-        selectedBackgroundColor: WidgetStateColor.resolveWith(
-          (states) => FluentTheme.of(context).selectionColor,
-        ),
-        selectedForegroundColor: WidgetStateColor.resolveWith(
-          (states) => Colors.white,
-        ),
+        selectedBackgroundColor: WidgetStateColor.resolveWith((states) => FluentTheme.of(context).selectionColor),
+        selectedForegroundColor: WidgetStateColor.resolveWith((states) => Colors.white),
       ),
     ];
   }
@@ -169,16 +140,11 @@ class _PackManageState extends State<PackManage> {
     final List<Tab> tabs = _tabs ??= _buildTabs(context);
     return Padding(
       padding: const EdgeInsets.only(top: 5),
-      child: TabView(
-        currentIndex: _index,
-        onChanged: (int index) => setState(() => _index = index),
-        tabs: tabs,
-      ),
+      child: TabView(currentIndex: _index, onChanged: (int index) => setState(() => _index = index), tabs: tabs),
     );
   }
 }
 
-// TabView 内部使用懒加载 PageView；稳定 Tab 之外仍需显式保留非活动页 State。
 class _KeepAliveTabBody extends StatefulWidget {
   const _KeepAliveTabBody({required this.child});
 
@@ -188,8 +154,7 @@ class _KeepAliveTabBody extends StatefulWidget {
   State<_KeepAliveTabBody> createState() => _KeepAliveTabBodyState();
 }
 
-class _KeepAliveTabBodyState extends State<_KeepAliveTabBody>
-    with AutomaticKeepAliveClientMixin {
+class _KeepAliveTabBodyState extends State<_KeepAliveTabBody> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
 

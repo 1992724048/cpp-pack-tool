@@ -7,13 +7,12 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 enum _ExportStage { running, completed, failed, cancelled }
 
-typedef PackExportRunner =
-    Future<PackageExportResult> Function(
-      PackModel pack,
-      String outputDirectory, {
-      void Function(double fraction)? onProgress,
-      ExportCancelToken? cancelToken,
-    });
+typedef PackExportRunner = Future<PackageExportResult> Function(
+  PackModel pack,
+  String outputDirectory, {
+  void Function(double fraction)? onProgress,
+  ExportCancelToken? cancelToken,
+});
 
 class PackExportDialog extends StatefulWidget {
   const PackExportDialog({
@@ -106,12 +105,7 @@ class _PackExportDialogState extends State<PackExportDialog> {
     if (revealed) {
       return;
     }
-    showFloatingToast(
-      context,
-      '无法打开所在目录',
-      type: FloatingToastType.error,
-      duration: const Duration(seconds: 5),
-    );
+    showFloatingToast(context, '无法打开所在目录', type: FloatingToastType.error, duration: const Duration(seconds: 5));
   }
 
   @override
@@ -135,22 +129,12 @@ class _PackExportDialogState extends State<PackExportDialog> {
       ),
       actions: [
         if (_stage == _ExportStage.completed)
-          FilledButton(
-            key: const Key('packExportRevealButton'),
-            onPressed: _reveal,
-            child: const Text('打开所在目录'),
-          ),
+          FilledButton(key: const Key('packExportRevealButton'), onPressed: _reveal, child: const Text('打开所在目录')),
         if (_stage == _ExportStage.running)
-          Button(
-            key: const Key('packExportCancelButton'),
-            onPressed: _cancelToken.cancel,
-            child: const Text('取消'),
-          ),
+          Button(key: const Key('packExportCancelButton'), onPressed: _cancelToken.cancel, child: const Text('取消')),
         Button(
           key: const Key('packExportCloseButton'),
-          onPressed: _stage == _ExportStage.running
-              ? null
-              : () => Navigator.pop(context),
+          onPressed: _stage == _ExportStage.running ? null : () => Navigator.pop(context),
           child: const Text('关闭'),
         ),
       ],
@@ -161,11 +145,7 @@ class _PackExportDialogState extends State<PackExportDialog> {
     switch (_stage) {
       case _ExportStage.running:
         return Row(
-          children: [
-            const ProgressRing(),
-            const SizedBox(width: 12),
-            Text('正在打包…${(_progress * 100).round()}%'),
-          ],
+          children: [const ProgressRing(), const SizedBox(width: 12), Text('正在打包…${(_progress * 100).round()}%')],
         );
       case _ExportStage.cancelled:
         return const Text('已取消');

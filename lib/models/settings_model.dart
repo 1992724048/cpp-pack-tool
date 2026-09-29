@@ -2,13 +2,8 @@ import 'package:cpp_nuget_pack/models/compiler_model.dart';
 
 enum ThemeModeSetting { system, dark, light }
 
-const List<String> _defaultCompilerPriority = <String>[
-  'icx',
-  'clang-cl',
-  'msvc',
-];
+const List<String> _defaultCompilerPriority = <String>['icx', 'clang-cl', 'msvc'];
 
-/// `copyWith` 的可空字段哨兵：区分「未传」（保持原值）与「传 null」（清空）。
 const Object _unset = Object();
 
 class SettingsModel {
@@ -19,19 +14,11 @@ class SettingsModel {
     this.detectedCompilers = const <DetectedCompiler>[],
   });
 
-  /// NuGet 打包输出目录。
   final String? outputDirectory;
-
   final ThemeModeSetting themeMode;
-
-  /// 编译器优先级（`icx` / `clang-cl` / `msvc`，自高到低）。
   final List<String> compilerPriority;
-
-  /// 上次编译器检测结果缓存；空表示无缓存（设置页与构建据此重检）。
   final List<DetectedCompiler> detectedCompilers;
 
-  /// 复制并覆盖字段；可空字段（输出目录）用哨兵区分「未传」与
-  /// 「传 null（清空）」。
   SettingsModel copyWith({
     Object? outputDirectory = _unset,
     ThemeModeSetting? themeMode,
@@ -39,9 +26,7 @@ class SettingsModel {
     List<DetectedCompiler>? detectedCompilers,
   }) {
     return SettingsModel(
-      outputDirectory: identical(outputDirectory, _unset)
-          ? this.outputDirectory
-          : outputDirectory as String?,
+      outputDirectory: identical(outputDirectory, _unset) ? this.outputDirectory : outputDirectory as String?,
       themeMode: themeMode ?? this.themeMode,
       compilerPriority: compilerPriority ?? this.compilerPriority,
       detectedCompilers: detectedCompilers ?? this.detectedCompilers,
@@ -55,8 +40,7 @@ class SettingsModel {
       'compilerPriority': <String>[...compilerPriority],
       if (detectedCompilers.isNotEmpty)
         'detectedCompilers': <Map<String, Object?>>[
-          for (final DetectedCompiler compiler in detectedCompilers)
-            _detectedCompilerToMap(compiler),
+          for (final DetectedCompiler compiler in detectedCompilers) _detectedCompilerToMap(compiler),
         ],
     };
   }
@@ -76,24 +60,14 @@ Map<String, Object?> _detectedCompilerToMap(DetectedCompiler compiler) {
     'kind': compilerKindId(compiler.kind),
     'version': compiler.version,
     'executablePath': compiler.executablePath,
-    if (compiler.cxxExecutablePath != null &&
-        compiler.cxxExecutablePath!.isNotEmpty)
+    if (compiler.cxxExecutablePath != null && compiler.cxxExecutablePath!.isNotEmpty)
       'cxxExecutablePath': compiler.cxxExecutablePath,
-    if (compiler.environmentScript != null &&
-        compiler.environmentScript!.isNotEmpty)
+    if (compiler.environmentScript != null && compiler.environmentScript!.isNotEmpty)
       'environmentScript': compiler.environmentScript,
-    if (compiler.extraPathEntries.isNotEmpty)
-      'extraPathEntries': <String>[...compiler.extraPathEntries],
+    if (compiler.extraPathEntries.isNotEmpty) 'extraPathEntries': <String>[...compiler.extraPathEntries],
   };
 }
 
-/// 缓存列表容错：非列表或损坏条目视为无缓存/跳过，不抛异常。
-///
-/// 旧版本缓存的整表作废：列表里出现本版本不认识的编译器种类（随版本删除的种类，或
-/// R23 曾用的 GNU clang 标识）时整表作废（返回空 = 无缓存），由设置页与构建触发
-/// 一次重检。识别不出的种类说明该缓存由枚举不同的旧版本写出，不能假定其余条目
-/// 与现行口径一致；且若仅丢弃该条目而保留其余缓存，优先级中对应种类将无条目可
-/// 匹配而回落到其它编译器——整表作废可保证首次选择仍按用户优先级重检。
 List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   if (value is! List) {
     return const <DetectedCompiler>[];
@@ -111,9 +85,6 @@ List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   return compilers;
 }
 
-/// 条目的 `kind` 是否为本版本不认识的编译器种类（大小写不敏感、容忍首尾空白，与
-/// [compilerKindFromId] 同口径）。`kind` 缺失或非字符串不算：那属于单条目损坏，
-/// 交由 [_detectedCompilerFrom] 逐条跳过。
 bool _hasUnrecognizedCompilerKind(Object? value) {
   if (value is! Map) {
     return false;
@@ -127,9 +98,7 @@ DetectedCompiler? _detectedCompilerFrom(Object? value) {
     return null;
   }
   final Object? kindValue = value['kind'];
-  final CompilerKind? kind = kindValue is String
-      ? compilerKindFromId(kindValue)
-      : null;
+  final CompilerKind? kind = kindValue is String ? compilerKindFromId(kindValue) : null;
   final String? version = _nonEmptyString(value['version']);
   final String? executablePath = _nonEmptyString(value['executablePath']);
   if (kind == null || version == null || executablePath == null) {
@@ -162,11 +131,6 @@ List<String> _stringList(Object? value) {
   ];
 }
 
-/// 优先级读回：先按有效标识过滤（无法映射到 [CompilerKind] 的标识一律丢弃），
-/// R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见顺序
-/// 去重）；随后把「已支持但列表缺失」的种类按声明序补到末尾——新编译器种类随版本
-/// 升级自动进入旧配置，且置末不改变既有选择；设置页只支持排序、不支持增删，补入
-/// 是旧配置触达新种类的唯一路径。
 List<String> _compilerPriorityFrom(Object? value) {
   if (value is! List) {
     return _defaultCompilerPriority;

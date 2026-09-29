@@ -10,12 +10,7 @@ class ScriptEdgeEndpoint {
 }
 
 class ScriptNodeModel {
-  ScriptNodeModel({
-    required this.id,
-    required this.type,
-    this.x = 0,
-    this.y = 0,
-  });
+  ScriptNodeModel({required this.id, required this.type, this.x = 0, this.y = 0});
 
   String id;
   String type;
@@ -32,12 +27,7 @@ class ScriptEdgeModel {
 }
 
 class ScriptProjectModel {
-  ScriptProjectModel({
-    required this.id,
-    required this.name,
-    required this.trigger,
-    this.buildModel = BuildModel.all,
-  });
+  ScriptProjectModel({required this.id, required this.name, required this.trigger, this.buildModel = BuildModel.all});
 
   final String id;
   final String name;
@@ -56,19 +46,12 @@ class ScriptProjectModel {
     'name': name,
     'trigger': trigger.name,
     'buildModel': buildModel.name,
-    'nodes': <Map<String, Object?>>[
-      for (final ScriptNodeModel node in nodes) _nodeToMap(node),
-    ],
-    'edges': <Map<String, Object?>>[
-      for (final ScriptEdgeModel edge in edges) _edgeToMap(edge),
-    ],
+    'nodes': <Map<String, Object?>>[for (final ScriptNodeModel node in nodes) _nodeToMap(node)],
+    'edges': <Map<String, Object?>>[for (final ScriptEdgeModel edge in edges) _edgeToMap(edge)],
     'viewport': <String, Object?>{'x': viewX, 'y': viewY, 'scale': viewScale},
   };
 
-  factory ScriptProjectModel.fromMap(
-    Map<String, Object?> map, {
-    List<String>? warnings,
-  }) {
+  factory ScriptProjectModel.fromMap(Map<String, Object?> map, {List<String>? warnings}) {
     final ScriptProjectModel project = ScriptProjectModel(
       id: _requiredString(map, 'id'),
       name: _requiredString(map, 'name'),
@@ -94,8 +77,7 @@ class ScriptProjectModel {
       if (edge == null) {
         continue;
       }
-      if (!nodeIds.contains(edge.from.node) ||
-          !nodeIds.contains(edge.to.node)) {
+      if (!nodeIds.contains(edge.from.node) || !nodeIds.contains(edge.to.node)) {
         continue;
       }
       project.edges.add(edge);

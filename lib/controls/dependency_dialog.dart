@@ -5,11 +5,7 @@ import 'package:cpp_nuget_pack/util/version_range.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 class DependencyDialog extends StatefulWidget {
-  const DependencyDialog({
-    super.key,
-    this.candidates = const <PackModel>[],
-    this.editing,
-  });
+  const DependencyDialog({super.key, this.candidates = const <PackModel>[], this.editing});
 
   final List<PackModel> candidates;
   final DependencyModel? editing;
@@ -28,9 +24,7 @@ class _DependencyDialogState extends State<DependencyDialog> {
   void initState() {
     super.initState();
     _package = widget.editing?.name;
-    _versionController = TextEditingController(
-      text: widget.editing?.version ?? '',
-    );
+    _versionController = TextEditingController(text: widget.editing?.version ?? '');
     _versionController.addListener(_refresh);
   }
 
@@ -72,10 +66,7 @@ class _DependencyDialogState extends State<DependencyDialog> {
     if (package == null) {
       return;
     }
-    Navigator.pop(
-      context,
-      DependencyModel(name: package, version: _versionController.text.trim()),
-    );
+    Navigator.pop(context, DependencyModel(name: package, version: _versionController.text.trim()));
   }
 
   @override
@@ -138,16 +129,9 @@ class _DependencyDialogState extends State<DependencyDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        TextBox(
-          key: const Key('dependencyVersionField'),
-          controller: _versionController,
-          placeholder: '1.0.0',
-        ),
+        TextBox(key: const Key('dependencyVersionField'), controller: _versionController, placeholder: '1.0.0'),
         const SizedBox(height: 4),
-        Text(
-          '支持 NuGet 区间写法，如 [1.0,2.0)、[1.0]、1.0',
-          style: TextStyle(color: theme.resources.textFillColorSecondary),
-        ),
+        Text('支持 NuGet 区间写法，如 [1.0,2.0)、[1.0]、1.0', style: TextStyle(color: theme.resources.textFillColorSecondary)),
         if (error != null && _versionController.text.trim().isNotEmpty) ...[
           const SizedBox(height: 4),
           Text(

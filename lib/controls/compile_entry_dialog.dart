@@ -80,8 +80,7 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
 
   bool get _canSubmit => _controller.text.trim().isNotEmpty;
 
-  bool get _hasInsertHelpers =>
-      widget.selectableScripts.isNotEmpty || widget.showMacroHelper;
+  bool get _hasInsertHelpers => widget.selectableScripts.isNotEmpty || widget.showMacroHelper;
 
   Future<void> _browse() async {
     final Future<String?> Function()? pickDirectory = widget.pickDirectory;
@@ -100,21 +99,14 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
   }
 
   void _submit() {
-    Navigator.pop(context, (
-      text: _controller.text.trim(),
-      buildModel: _buildModel,
-    ));
+    Navigator.pop(context, (text: _controller.text.trim(), buildModel: _buildModel));
   }
 
   void _insertText(String text) {
     final String current = _controller.text;
     final TextSelection selection = _controller.selection;
-    final int start = selection.isValid
-        ? selection.start.clamp(0, current.length)
-        : current.length;
-    final int end = selection.isValid
-        ? selection.end.clamp(0, current.length)
-        : current.length;
+    final int start = selection.isValid ? selection.start.clamp(0, current.length) : current.length;
+    final int end = selection.isValid ? selection.end.clamp(0, current.length) : current.length;
     _controller.value = TextEditingValue(
       text: current.replaceRange(start, end, text),
       selection: TextSelection.collapsed(offset: start + text.length),
@@ -142,10 +134,7 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildField(widget.label, _buildTextField()),
-          if (_hasInsertHelpers) ...[
-            const SizedBox(height: 12),
-            _buildInsertHelpers(),
-          ],
+          if (_hasInsertHelpers) ...[const SizedBox(height: 12), _buildInsertHelpers()],
           const SizedBox(height: 12),
           _buildField('构建配置', _buildBuildModelField()),
         ],
@@ -188,12 +177,9 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
   }
 
   Widget _buildInsertHelpers() {
-    // 两个插入型下拉的 value 恒为 null：选中只插入文本，随即恢复占位以便重复插入。
     final List<Widget> fields = <Widget>[
-      if (widget.selectableScripts.isNotEmpty)
-        Expanded(child: _buildField('从包中选择', _buildScriptField())),
-      if (widget.showMacroHelper)
-        Expanded(child: _buildField('插入宏', _buildMacroField())),
+      if (widget.selectableScripts.isNotEmpty) Expanded(child: _buildField('从包中选择', _buildScriptField())),
+      if (widget.showMacroHelper) Expanded(child: _buildField('插入宏', _buildMacroField())),
     ];
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -265,10 +251,7 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
         },
         items: <ComboBoxItem<BuildModel>>[
           for (final BuildModel buildModel in BuildModel.values)
-            ComboBoxItem<BuildModel>(
-              value: buildModel,
-              child: Text(buildModelLabel(buildModel)),
-            ),
+            ComboBoxItem<BuildModel>(value: buildModel, child: Text(buildModelLabel(buildModel))),
         ],
       ),
     );

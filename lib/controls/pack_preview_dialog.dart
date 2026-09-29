@@ -19,18 +19,12 @@ Future<void> showPackPreviewDialog(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (BuildContext context) =>
-        PackPreviewDialog(pack: pack, plan: plan, readFile: readFile),
+    builder: (BuildContext context) => PackPreviewDialog(pack: pack, plan: plan, readFile: readFile),
   );
 }
 
 class PackPreviewDialog extends StatefulWidget {
-  const PackPreviewDialog({
-    super.key,
-    required this.pack,
-    required this.plan,
-    this.readFile = _readFileAsString,
-  });
+  const PackPreviewDialog({super.key, required this.pack, required this.plan, this.readFile = _readFileAsString});
 
   final PackModel pack;
   final PackagePlan plan;
@@ -77,22 +71,14 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
   static _PreviewNode _buildTree(List<PackageEntry> entries) {
     final _PreviewNode root = _PreviewNode(name: '', path: '');
     for (final PackageEntry entry in entries) {
-      final List<String> segments = entry.packagePath
-          .split('/')
-          .where((String segment) => segment.isNotEmpty)
-          .toList();
+      final List<String> segments = entry.packagePath.split('/').where((String segment) => segment.isNotEmpty).toList();
       if (segments.isEmpty) {
         continue;
       }
       _PreviewNode parent = root;
       for (final String segment in segments.take(segments.length - 1)) {
-        final String childPath = parent.path.isEmpty
-            ? segment
-            : '${parent.path}/$segment';
-        parent = parent.children.putIfAbsent(
-          segment,
-          () => _PreviewNode(name: segment, path: childPath),
-        );
+        final String childPath = parent.path.isEmpty ? segment : '${parent.path}/$segment';
+        parent = parent.children.putIfAbsent(segment, () => _PreviewNode(name: segment, path: childPath));
       }
       parent.files.add(_PreviewFile(name: segments.last, entry: entry));
     }
@@ -129,9 +115,7 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
       return;
     }
     try {
-      final String content = await widget.readFile(
-        joinPath(sourcePath, source.path),
-      );
+      final String content = await widget.readFile(joinPath(sourcePath, source.path));
       if (!mounted || generation != _generation) {
         return;
       }
@@ -202,24 +186,16 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
   List<_PreviewRow> _buildRows(_PreviewNode node, int depth) {
     final List<_PreviewRow> rows = <_PreviewRow>[];
     final List<_PreviewNode> directories = node.children.values.toList()
-      ..sort(
-        (_PreviewNode first, _PreviewNode second) =>
-            comparePackagePaths(first.name, second.name),
-      );
+      ..sort((_PreviewNode first, _PreviewNode second) => comparePackagePaths(first.name, second.name));
     for (final _PreviewNode directory in directories) {
       final bool expanded = _expandedDirs.contains(directory.path);
-      rows.add(
-        _PreviewDirRow(node: directory, depth: depth, expanded: expanded),
-      );
+      rows.add(_PreviewDirRow(node: directory, depth: depth, expanded: expanded));
       if (expanded) {
         rows.addAll(_buildRows(directory, depth + 1));
       }
     }
     final List<_PreviewFile> files = node.files.toList()
-      ..sort(
-        (_PreviewFile first, _PreviewFile second) =>
-            comparePackagePaths(first.name, second.name),
-      );
+      ..sort((_PreviewFile first, _PreviewFile second) => comparePackagePaths(first.name, second.name));
     for (final _PreviewFile file in files) {
       rows.add(_PreviewFileRow(file: file, depth: depth));
     }
@@ -241,10 +217,7 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
       children: <Widget>[
         SizedBox(
           width: _indentWidth,
-          child: Icon(
-            row.expanded ? FluentIcons.chevron_down : FluentIcons.chevron_right,
-            size: 10,
-          ),
+          child: Icon(row.expanded ? FluentIcons.chevron_down : FluentIcons.chevron_right, size: 10),
         ),
         _buildIcon(row.node.name, isDirectory: true, isExpanded: row.expanded),
         const SizedBox(width: 6),
@@ -290,11 +263,7 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
     );
   }
 
-  Widget _buildIcon(
-    String name, {
-    bool isDirectory = false,
-    bool isExpanded = false,
-  }) {
+  Widget _buildIcon(String name, {bool isDirectory = false, bool isExpanded = false}) {
     return SvgPicture.asset(
       iconAssetFor(
         brightness: FluentTheme.of(context).brightness,
@@ -312,10 +281,7 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (selected != null) ...[
-          _buildEntryHeader(selected),
-          const SizedBox(height: 8),
-        ],
+        if (selected != null) ...[_buildEntryHeader(selected), const SizedBox(height: 8)],
         Expanded(child: _buildPreviewBody()),
       ],
     );
@@ -340,10 +306,7 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
         const SizedBox(width: 8),
         Text(
           '（${formatBytes(entry.source.size)}）',
-          style: TextStyle(
-            color: theme.resources.textFillColorSecondary,
-            fontSize: 12,
-          ),
+          style: TextStyle(color: theme.resources.textFillColorSecondary, fontSize: 12),
         ),
         const SizedBox(width: 8),
         Tag(text: category, color: color, fontSize: 10),
@@ -357,8 +320,7 @@ class _PackPreviewDialogState extends State<PackPreviewDialog> {
       return _buildCenteredMessage('选择左侧文件预览内容');
     }
     return switch (selected.source) {
-      PackageFileSource(isBinary: true, :final int size) =>
-        _buildCenteredMessage('二进制文件（${formatBytes(size)}），无法预览'),
+      PackageFileSource(isBinary: true, :final int size) => _buildCenteredMessage('二进制文件（${formatBytes(size)}），无法预览'),
       PackageFileSource() => _buildFileBody(),
       PackageGeneratedSource(:final String content) => _buildText(content),
     };
@@ -431,11 +393,7 @@ sealed class _PreviewRow {
 }
 
 class _PreviewDirRow extends _PreviewRow {
-  const _PreviewDirRow({
-    required this.node,
-    required super.depth,
-    required this.expanded,
-  });
+  const _PreviewDirRow({required this.node, required super.depth, required this.expanded});
 
   final _PreviewNode node;
   final bool expanded;
