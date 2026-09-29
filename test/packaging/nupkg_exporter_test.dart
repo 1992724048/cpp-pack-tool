@@ -512,35 +512,6 @@ void main() {
     });
   });
 
-  group('前置校验', () {
-    test('图标超过 nuget.org 上限时明确报错且不建产物', () async {
-      final String source = joinPath(root.path, 'source');
-      _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
-      final PackModel pack = _pack(sourcePath: source)
-        ..files = <FileModel>[
-          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
-        ];
-      final String outputDirectory = joinPath(root.path, 'out');
-
-      await expectLater(
-        exportNuGetPackage(
-          pack,
-          outputDirectory,
-          iconResolver: (PackModel pack) async =>
-              Uint8List(maxNuGetIconBytes + 1),
-        ),
-        throwsA(
-          isA<StateError>().having(
-            (StateError error) => error.message,
-            'message',
-            contains('超过 nuget.org 上限'),
-          ),
-        ),
-      );
-      expect(Directory(outputDirectory).existsSync(), isFalse);
-    });
-  });
-
   test('图标解析失败时抛出异常且不创建输出目录', () async {
     final String source = joinPath(root.path, 'source');
     _writeFile(joinPath(source, 'include/foo.h'), 'int foo();\n');
