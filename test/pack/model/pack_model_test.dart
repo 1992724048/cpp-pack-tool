@@ -522,6 +522,49 @@ void main() {
         r'"$(MSBuildThisFileDirectory)files\script\BUILD.CMD"',
       );
     });
+
+    test('前缀目录名大写 FILES\\ 也判定为脚本路径', () {
+      final PackModel pack = PackModel.fromMap(
+        _packWithCommands(r'"$(MSBuildThisFileDirectory)FILES\PRE.BAT"'),
+      );
+
+      expect(
+        pack.commands.single.command,
+        r'"$(MSBuildThisFileDirectory)FILES\script\PRE.BAT"',
+      );
+    });
+
+    test('已迁移的 files\\script\\pre.bat 原样保留', () {
+      const String original = r'"$(MSBuildThisFileDirectory)files\script\pre.bat" '
+          r'"$(TargetPath)"';
+      final PackModel pack = PackModel.fromMap(_packWithCommands(original));
+
+      expect(pack.commands.single.command, original);
+    });
+
+    test('已迁移路径的目录段大写 files\\SCRIPT\\pre.bat 也原样保留', () {
+      const String original = r'"$(MSBuildThisFileDirectory)files\SCRIPT\pre.bat" '
+          r'"$(TargetPath)"';
+      final PackModel pack = PackModel.fromMap(_packWithCommands(original));
+
+      expect(pack.commands.single.command, original);
+    });
+
+    test('重复读回同一份 YAML 结果稳定（不再累加 script\\ 层）', () {
+      const List<String> inputs = <String>[
+        r'"$(MSBuildThisFileDirectory)files\pre.bat" "$(TargetPath)"',
+        r'"$(MSBuildThisFileDirectory)files\scripts\build.cmd" "$(TargetPath)"',
+        r'"$(MSBuildThisFileDirectory)files\script\pre.bat" "$(TargetPath)"',
+        r'"$(MSBuildThisFileDirectory)files\script\scripts\build.cmd" "$(TargetPath)"',
+      ];
+
+      for (final String input in inputs) {
+        final PackModel once = PackModel.fromMap(_packWithCommands(input));
+        final PackModel twice = PackModel.fromMap(once.toMap());
+
+        expect(twice.commands.single.command, once.commands.single.command);
+      }
+    });
   });
 
   group('FileModel 序列化', () {

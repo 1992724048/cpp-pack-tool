@@ -120,6 +120,32 @@ void main() {
       expect(second.pack, same(first));
       expect(second.pack.commands, hasLength(2));
     });
+
+    test('存量命令经读时兼容改写后不追加重复系统条目', () {
+      final PackModel loaded = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'commands': <Map<String, Object?>>[
+          <String, Object?>{
+            'command': r'"$(MSBuildThisFileDirectory)files\pre.bat" '
+                r'"$(TargetPath)"',
+            'type': 'preBuild',
+            'buildModel': 'all',
+          },
+        ],
+      });
+      loaded.files = <FileModel>[_file('pre.bat')];
+
+      final PackModel first = applySystemEntries(loaded).pack;
+      final PackModel second = applySystemEntries(
+        PackModel.fromMap(first.toMap()),
+      ).pack;
+
+      expect(first.commands, hasLength(1));
+      expect(second.commands, hasLength(1));
+      expect(second.commands.single.command, _preCommand);
+    });
   });
 
   group('applySystemEntries 整体', () {

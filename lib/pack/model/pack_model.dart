@@ -111,7 +111,7 @@ class PackModel {
       for (final Map<String, Object?> item in _mapList(map, 'dependencies')) DependencyModel.fromMap(item),
     ]);
     pack.commands.addAll(<CmdModel>[
-      for (final Map<String, Object?> item in _mapList(map, 'commands')) _migrateCmd(CmdModel.fromMap(item)),
+      for (final Map<String, Object?> item in _mapList(map, 'commands')) _migrateCmdScriptPath(CmdModel.fromMap(item)),
     ]);
     pack.macros.addAll(<MacroModel>[
       for (final Map<String, Object?> item in _mapList(map, 'macros')) MacroModel.fromMap(item),
@@ -178,16 +178,17 @@ String? _optionalString(Map<String, Object?> map, String key) {
 
 final RegExp _legacyScriptCommandPattern = RegExp(
   '(${RegExp.escape(r'$(MSBuildThisFileDirectory)files\')})'
-  '([^"\'\\s]+\\.(?:bat|cmd|ps1|vbs))(?=["\'\\s]|\$)',
+  '(?!script\\\\)([^"\'\\s]+\\.(?:bat|cmd|ps1|vbs))(?=["\'\\s]|\$)',
   caseSensitive: false,
 );
 
+// group(1) 已含前缀尾反斜杠，替换串只补 script\，再补一个 \ 会产出双反斜杠
 String _migrateScriptCommandPath(String command) => command.replaceAllMapped(
   _legacyScriptCommandPattern,
   (Match match) => '${match.group(1)}script\\${match.group(2)}',
 );
 
-CmdModel _migrateCmd(CmdModel cmd) => CmdModel(
+CmdModel _migrateCmdScriptPath(CmdModel cmd) => CmdModel(
   command: _migrateScriptCommandPath(cmd.command),
   type: cmd.type,
   buildModel: cmd.buildModel,
