@@ -117,10 +117,15 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   }
 
   Future<void> _build(BuildEnvironment environment) async {
+    if (!mounted) {
+      return;
+    }
+    // 备源阶段已随单段流水线消失：环境就绪后整个会话就是构建，此刻起「执行构建」
+    // 步骤为进行中。
+    setState(() => _advanceTo(_BuildStage.building));
     try {
       await widget.build(
         widget.pack,
-        _onBuildStage,
         environment: environment.environment,
         onOutput: _onBuildOutput,
       );
@@ -200,18 +205,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     } catch (error) {
       _onBuildOutput('头文件引用检查失败：${formatError(error)}');
     }
-  }
-
-  void _onBuildStage(PackBuildStage stage) {
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _advanceTo(switch (stage) {
-        PackBuildStage.staging => _BuildStage.staging,
-        PackBuildStage.building => _BuildStage.building,
-      });
-    });
   }
 
   void _onBuildOutput(String line) {

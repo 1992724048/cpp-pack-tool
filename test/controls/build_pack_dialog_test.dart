@@ -21,7 +21,6 @@ void main() {
   testWidgets('构建成功后依次经历各阶段并显示完成统计', (tester) async {
     final Completer<BuildEnvironment> prepareGate =
         Completer<BuildEnvironment>();
-    final Completer<void> downloadGate = Completer<void>();
     final Completer<void> buildGate = Completer<void>();
     final Completer<List<FileModel>> scanCompleter =
         Completer<List<FileModel>>();
@@ -33,14 +32,10 @@ void main() {
       prepare: (PackModel pack) => prepareGate.future,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
-            onStage(PackBuildStage.staging);
-            await downloadGate.future;
-            onStage(PackBuildStage.building);
             await buildGate.future;
           },
       scanFiles: (_) => scanCompleter.future,
@@ -67,14 +62,17 @@ void main() {
 
     prepareGate.complete(_environment());
     await tester.pump();
-    expect(_stepIsActive(tester, 'download'), isTrue);
+    expect(
+      _stepIsActive(tester, 'build'),
+      isTrue,
+      reason: '备源阶段已消失：环境就绪后整个会话就是构建',
+    );
+    expect(
+      find.text('准备源码'),
+      findsOneWidget,
+      reason: '该步骤仍留在时间线里（跳过态），让用户知道曾有此阶段',
+    );
     expect(find.byKey(const Key('buildCompilerLabel')), findsOneWidget);
-    expect(find.text('编译器：ICX 2026.1.1'), findsOneWidget);
-    expect(_closeButton(tester).onPressed, isNull);
-
-    downloadGate.complete();
-    await tester.pump();
-    expect(_stepIsActive(tester, 'build'), isTrue);
     expect(find.text('编译器：ICX 2026.1.1'), findsOneWidget);
     expect(_closeButton(tester).onPressed, isNull);
 
@@ -121,8 +119,7 @@ void main() {
       tester,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -141,7 +138,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('构建失败：构建失败（退出码 1）'), findsOneWidget);
-    expect(_stepIsFailed(tester, 'prepare'), isTrue);
+    expect(
+      _stepIsFailed(tester, 'build'),
+      isTrue,
+      reason: '环境已就绪，失败发生在构建步骤而非准备步骤',
+    );
     expect(find.textContaining('boom', findRichText: true), findsOneWidget);
     expect(scanCount, 0);
     expect(find.byType(ProgressRing), findsNothing);
@@ -152,8 +153,7 @@ void main() {
     await _pumpDialog(
       tester,
       build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -174,8 +174,7 @@ void main() {
     await _pumpDialog(
       tester,
       build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -195,8 +194,7 @@ void main() {
       tester,
       pack: _pack(sourcePath: null),
       build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -218,8 +216,7 @@ void main() {
       onResult: (BuildDialogResult? value) => closedWith = value,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -252,8 +249,7 @@ void main() {
       onResult: (BuildDialogResult? value) => closedWith = value,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -278,8 +274,7 @@ void main() {
     await _pumpDialog(
       tester,
       build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -301,14 +296,12 @@ void main() {
 
     await _pumpDialog(
       tester,
-      prepare:
-          (PackModel pack) async => throw const BuildPreparationException(
-            '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
-          ),
+      prepare: (PackModel pack) async => throw const BuildPreparationException(
+        '未检测到可用编译器（优先级：icx > clang-cl > msvc）',
+      ),
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -342,8 +335,7 @@ void main() {
       prepare: (PackModel pack) async => prepared,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -363,16 +355,11 @@ void main() {
     await _pumpDialog(
       tester,
       sourceNone: true,
-      build:
-          (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
-            Map<String, String>? environment,
-            void Function(String line)? onOutput,
-          }) async {
-            onStage(PackBuildStage.staging);
-            onStage(PackBuildStage.building);
-          },
+      build: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+      }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
     );
@@ -391,12 +378,10 @@ void main() {
       tester,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
-            onStage(PackBuildStage.building);
             await buildGate.future;
           },
       scanFiles: (String sourcePath) async => const <FileModel>[],
@@ -420,8 +405,7 @@ void main() {
       tester,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -475,8 +459,7 @@ void main() {
       tester,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -513,8 +496,7 @@ void main() {
       tester,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -660,12 +642,10 @@ void main() {
       tester,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
-            onStage(PackBuildStage.building);
             await buildGate.future;
           },
       scanFiles: (String sourcePath) async => const <FileModel>[],
@@ -813,14 +793,11 @@ void main() {
       sourceNone: true,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
-            onStage(PackBuildStage.staging);
             await downloadGate.future;
-            onStage(PackBuildStage.building);
             onOutput?.call(
               '[openvino] progress 42.0% (88000000/208000000 bytes)',
             );
@@ -862,16 +839,11 @@ void main() {
       sourceNone: true,
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
-            onStage(PackBuildStage.staging);
-            onStage(PackBuildStage.building);
-            onOutput?.call(
-              '[cnp_build_support] classify: C:\\src -> C:\\out',
-            );
+            onOutput?.call('[cnp_build_support] classify: C:\\src -> C:\\out');
             onOutput?.call('任意其他输出');
             await buildGate.future;
           },
@@ -885,11 +857,7 @@ void main() {
       isFalse,
       reason: '预置源码无产出分类标记的模块，构建输出行不得推进到分类阶段',
     );
-    expect(
-      _stepIsActive(tester, 'download'),
-      isTrue,
-      reason: '无替代信号时全程停在下载阶段',
-    );
+    expect(_stepIsActive(tester, 'download'), isTrue, reason: '无替代信号时全程停在下载阶段');
 
     buildGate.complete();
     await tester.pump();
@@ -934,8 +902,7 @@ void main() {
       },
       build:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -980,8 +947,7 @@ void main() {
       fixIncludes: (String sourcePath, {required String packageName}) async =>
           throw const FileSystemException(': 目录不可访问'),
       build: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -1088,8 +1054,7 @@ IconButton _copyButton(WidgetTester tester) =>
 
 PackBuildRunner _emitLines(List<String> lines) {
   return (
-    PackModel pack,
-    void Function(PackBuildStage) onStage, {
+    PackModel pack, {
     Map<String, String>? environment,
     void Function(String line)? onOutput,
   }) async {
@@ -1140,7 +1105,8 @@ Future<void> _pumpDialog(
                       pack: pack ?? _pack(),
                       sourceNone: sourceNone,
                       build: build,
-                      prepare: prepare ?? (PackModel pack) async => _environment(),
+                      prepare:
+                          prepare ?? (PackModel pack) async => _environment(),
                       scanFiles: scanFiles,
                       onApply: onApply,
                       fixIncludes: fixIncludes ?? _emptyFixIncludes,

@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 
-/// 包构建缓存目录（`<cacheRoot>/build/<清洗包ID>`），与构建流水线同口径。
+/// 包构建缓存目录（`<cacheRoot>/build/<清洗包ID>`），删除包对话框据此探测与
+/// 清理构建缓存。
 ///
-/// [cacheRoot] 以绝对路径解析，保证同一工作目录下缓存稳定命中
-/// （与 `build_runner.dart` 的源码缓存路径完全一致）。
+/// [cacheRoot] 以绝对路径解析，保证同一工作目录下缓存稳定命中。
 Directory packBuildCacheDirectory(
   String packName, {
   String cacheRoot = 'cache',

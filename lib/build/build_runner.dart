@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/build/build_cache.dart';
-import 'package:cpp_nuget_pack/build/build_cleanup.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
@@ -17,11 +15,9 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
   Map<String, String>? environment,
 });
 
-/// UI 层构建入口：以位置参数 `onStage` 与可选命名参数 `environment`/`onOutput`
-/// 调用 [runPackBuild]。
+/// UI 层构建入口：可传 [environment] 捕获好的子进程环境与 [onOutput] 逐行回调。
 typedef PackBuildRunner = Future<void> Function(
-  PackModel pack,
-  void Function(PackBuildStage) onStage, {
+  PackModel pack, {
   Map<String, String>? environment,
   void Function(String line)? onOutput,
 });
@@ -33,9 +29,6 @@ typedef PackStreamingProcessRunner = Future<Process> Function(
   String? workingDirectory,
   Map<String, String>? environment,
 });
-
-/// 构建阶段：备源（拷贝预置源码 / 建空工作区）/ 执行构建。
-enum PackBuildStage { staging, building }
 
 /// 构建失败异常：[message] 面向用户展示，[outputTail] 为进程输出末尾片段。
 class PackBuildException implements Exception {
@@ -50,223 +43,64 @@ class PackBuildException implements Exception {
 
 const int _outputTailLineCount = 20;
 
-/// 构建源码准备结果（[preparePackSource] 输出）。
-class PackSourcePreparation {
-  const PackSourcePreparation({
-    required this.sourcePath,
-    required this.scriptPath,
-    required this.target,
-  });
-
-  /// 包源目录（构建脚本工作目录，`BUILD_OUT`）。
-  final String sourcePath;
-
-  /// 构建脚本相对包源目录的路径（如 `build.py`）。
-  final String scriptPath;
-
-  /// 源码缓存工作目录（`SRC_PATH`）。
-  final Directory target;
-}
-
-/// 源码准备函数：与 [preparePackSource] 同形的函数类型。
-typedef PackSourcePreparer = Future<PackSourcePreparation> Function(
-  PackModel pack,
-  void Function(PackBuildStage) onStage, {
-  String cacheRoot,
-});
-
-/// 备源并清空包源目录（构建流水线前半段）。
-///
-/// 流程：根级 `build.py` 存在性检查 → 探测包源目录下的固定预置源码目录
-/// [presetSourceDirName]（见 [hasPresetSource]）→ 目标目录备源（目录口径
-/// `<cacheRoot>/build/<清洗包ID>`，[cacheRoot] 以绝对路径解析，保证同一工作
-/// 目录下缓存稳定命中）→ 清空包源目录中白名单外的一切（见 [cleanupBuildOutput]）。
-///
-/// 备源按预置源码目录的存在性分叉，两条分支语义相反、**不得统一**：见
-/// [_stageEmptyWorkspace] 与 [_stagePresetSource]。
-Future<PackSourcePreparation> preparePackSource(
-  PackModel pack,
-  void Function(PackBuildStage) onStage, {
-  String cacheRoot = 'cache',
-}) async {
+/// 取包源目录；缺失时抛 [PackBuildException]。
+String _resolveSourcePath(PackModel pack) {
   final String? sourcePath = pack.sourcePath;
   if (sourcePath == null) {
     throw const PackBuildException('该包缺少源目录信息');
   }
+  return sourcePath;
+}
 
+/// 取根级 `build.py` 的包内相对路径，并确认它确实落在包源目录中；缺任一环
+/// 抛 [PackBuildException]——脚本不在磁盘上时后续只会报一句难以定位的
+/// python 错误。
+Future<String> _resolveScriptPath(PackModel pack, String sourcePath) async {
   final FileModel? scriptFile = findBuildScript(pack.files);
   if (scriptFile == null) {
     throw const PackBuildException('未找到 build.py');
   }
-  final File scriptOnDisk = File(joinPath(sourcePath, scriptFile.path));
-  if (!await scriptOnDisk.exists()) {
+  if (!await File(joinPath(sourcePath, scriptFile.path)).exists()) {
     throw const PackBuildException('源目录中找不到 build.py（可能已被移动）');
   }
-
-  final bool hasPreset = await hasPresetSource(sourcePath);
-
-  onStage(PackBuildStage.staging);
-  final Directory target = packBuildCacheDirectory(
-    pack.name,
-    cacheRoot: cacheRoot,
-  );
-  if (hasPreset) {
-    await _stagePresetSource(
-      Directory(joinPath(sourcePath, presetSourceDirName)),
-      target,
-    );
-  } else {
-    await _stageEmptyWorkspace(target);
-  }
-
-  // 源码（或预构建工作区）就绪后、执行脚本前清空包源目录，保证产物不带
-  // 上一次构建的残留；备源失败时不触碰源目录。
-  try {
-    await cleanupBuildOutput(sourcePath);
-  } on BuildCleanupException catch (error) {
-    throw PackBuildException(error.message);
-  }
-
-  return PackSourcePreparation(
-    sourcePath: sourcePath,
-    scriptPath: scriptFile.path,
-    target: target,
-  );
+  return scriptFile.path;
 }
 
-/// 备源（无预置源码，包源目录下无 [presetSourceDirName] 树）：只把 [target] 创建
-/// 为 `SRC_PATH` 工作区，**绝不清理缓存目录**——脚本自行下载/解压的产物（可达
-/// 数百 MB）须跨构建复用，误清会让每次构建退化为全量重下且不报任何错。
+/// 执行包内 `build.py`（单段流水线，无备源阶段）。
 ///
-/// 与 [_stagePresetSource] 语义相反，不得统一为同一条路径。
-Future<void> _stageEmptyWorkspace(Directory target) =>
-    target.create(recursive: true);
-
-/// 备源（包源目录下存在 [presetSourceDirName] 树）：先删 [target] 残留再把
-/// [source] 整树拷入（含空目录），每次构建从干净状态开始（等价原 `git clean
-/// -ffdx`）。
+/// 流程：校验包源目录与根级 `build.py` → 清空 `.cache/tmp`（`.cache` 其余部分
+/// 归配方自己管）→ 在**包源目录**中执行 `python build.py`。产物落点、源码区与
+/// 中间产物区一律由 `CNP_*` 变量告诉配方（见 `assembleBuildEnvironment`），
+/// 本层不下发任何位置变量，也不替用户搬任何文件。
 ///
-/// 与 [_stageEmptyWorkspace] 语义相反，不得统一为同一条路径。
-Future<void> _stagePresetSource(Directory source, Directory target) async {
-  await _deleteResidual(target.path);
-  await target.create(recursive: true);
-  try {
-    await _copyTree(source, target);
-  } on FileSystemException catch (error) {
-    throw PackBuildException(
-      '准备源码失败：无法把 ${source.absolute.path} 复制到 '
-      '${target.absolute.path}（$error）',
-    );
-  }
-}
-
-/// 递归拷贝目录树（源目录 → 目标目录，含空目录）。
-///
-/// 与 `FileScan` 的扫描口径一致：不跟随符号链接/目录联接，避免把目录外的树
-/// 拖进缓存。
-Future<void> _copyTree(Directory from, Directory to) async {
-  await for (final FileSystemEntity entry in from.list(followLinks: false)) {
-    final String destination = joinPath(to.path, baseName(entry.path));
-    if (entry is Directory) {
-      await Directory(destination).create(recursive: true);
-      await _copyTree(entry, Directory(destination));
-      continue;
-    }
-    if (entry is File) {
-      await entry.copy(destination);
-      continue;
-    }
-  }
-}
-
-/// 执行包内 `build.py`（源码准备见 [preparePackSource]）。
-///
-/// 覆盖整条构建流水线：[preparePackSource]（备源 + 包源目录清理）→
-/// 以 `SRC_PATH`（目标目录）与 `BUILD_OUT`（包源目录）环境变量运行
-/// `python build.py`；python 子进程固定注入 `PYTHONIOENCODING=utf-8`，保证
-/// 管道中的 stdout/stderr 恒为 UTF-8（中文 Windows 下默认按 GBK 编码，会与
-/// 流式解码口径不一致）。
+/// python 子进程固定注入 `PYTHONIOENCODING=utf-8`，保证管道中的 stdout/stderr
+/// 恒为 UTF-8（中文 Windows 下默认按 GBK 编码，会与流式解码口径不一致）。
 ///
 /// [onOutput] 逐行转发 python 输出；[streamRunner] 为 null 时保持一次性捕获，
 /// 非 null 时以其为流式执行器（生产经 [runPackBuildStreaming] 注入
-/// `Process.start`）。源码准备失败（备源/清理）抛 [PackBuildException]，
+/// `Process.start`）。前置校验、tmp 清理失败抛 [PackBuildException]，
 /// 构建脚本非零退出抛 [PackBuildException]（携带输出尾部）。
 Future<void> runPackBuild(
-  PackModel pack,
-  void Function(PackBuildStage) onStage, {
+  PackModel pack, {
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
-  String cacheRoot = 'cache',
   Map<String, String>? environment,
 }) async {
-  final PackSourcePreparation source = await preparePackSource(
-    pack,
-    onStage,
-    cacheRoot: cacheRoot,
-  );
-  onStage(PackBuildStage.building);
-  await _runBuildScript(
-    processRunner,
-    streamRunner,
-    onOutput,
-    source.sourcePath,
-    source.scriptPath,
-    source.target,
-    environment,
-  );
-}
-
-/// 生产构建入口：[runPackBuild] 的流式变体，默认以 `Process.start` 逐行转发
-/// python 子进程输出（UI 实时显示）；其余参数口径与 [runPackBuild]
-/// 完全一致。测试可经 [streamRunner] 注入替代执行器。
-Future<void> runPackBuildStreaming(
-  PackModel pack,
-  void Function(PackBuildStage) onStage, {
-  PackProcessRunner processRunner = Process.run,
-  PackStreamingProcessRunner streamRunner = Process.start,
-  void Function(String line)? onOutput,
-  String cacheRoot = 'cache',
-  Map<String, String>? environment,
-}) {
-  return runPackBuild(
-    pack,
-    onStage,
-    processRunner: processRunner,
-    streamRunner: streamRunner,
-    onOutput: onOutput,
-    cacheRoot: cacheRoot,
-    environment: environment,
-  );
-}
-
-Future<void> _deleteResidual(String path) async {
-  final FileSystemEntityType type = await FileSystemEntity.type(path);
-  if (type == FileSystemEntityType.notFound) {
-    return;
+  final String sourcePath = _resolveSourcePath(pack);
+  final String scriptPath = await _resolveScriptPath(pack, sourcePath);
+  try {
+    await clearPackTmpDirectory(sourcePath);
+  } on FileSystemException catch (error) {
+    throw PackBuildException('清空中间产物目录失败：$error');
   }
-  final FileSystemEntity entity = type == FileSystemEntityType.directory
-      ? Directory(path)
-      : File(path);
-  await entity.delete(recursive: true);
-}
 
-Future<void> _runBuildScript(
-  PackProcessRunner processRunner,
-  PackStreamingProcessRunner? streamRunner,
-  void Function(String line)? onOutput,
-  String sourcePath,
-  String scriptPath,
-  Directory target,
-  Map<String, String>? environment,
-) async {
   final ProcessResult result = await _runPython(
     processRunner,
     streamRunner,
     onOutput,
     sourcePath,
     scriptPath,
-    target,
     environment,
   );
   if (result.exitCode != 0) {
@@ -277,19 +111,35 @@ Future<void> _runBuildScript(
   }
 }
 
+/// 生产构建入口：[runPackBuild] 的流式变体，默认以 `Process.start` 逐行转发
+/// python 子进程输出（UI 实时显示）；其余参数口径与 [runPackBuild]
+/// 完全一致。测试可经 [streamRunner] 注入替代执行器。
+Future<void> runPackBuildStreaming(
+  PackModel pack, {
+  PackProcessRunner processRunner = Process.run,
+  PackStreamingProcessRunner streamRunner = Process.start,
+  void Function(String line)? onOutput,
+  Map<String, String>? environment,
+}) {
+  return runPackBuild(
+    pack,
+    processRunner: processRunner,
+    streamRunner: streamRunner,
+    onOutput: onOutput,
+    environment: environment,
+  );
+}
+
 Future<ProcessResult> _runPython(
   PackProcessRunner processRunner,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
   String sourcePath,
   String scriptPath,
-  Directory target,
   Map<String, String>? environment,
 ) async {
   final Map<String, String> variables = <String, String>{
     ...?environment,
-    'SRC_PATH': target.absolute.path,
-    'BUILD_OUT': Directory(sourcePath).absolute.path,
     'PYTHONIOENCODING': 'utf-8',
   };
   final _PythonLauncher launcher = _PythonLauncher(scriptPath);

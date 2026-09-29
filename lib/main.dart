@@ -133,11 +133,11 @@ typedef PackBuildCacheDeleter = Future<void> Function(String packName);
 
 /// 包内预置源码缺席探测（构建对话框 `sourceNone` 判据）；测试注入。
 ///
-/// 返回 `true` 表示**包内无预置源码**（`SRC_PATH` 为脚本自行下载的工作区），
+/// 返回 `true` 表示**包内无预置源码**（产物落在配方自管的源码区），
 /// 与消费方 `sourceNone` 同极性。
 typedef PackSourceAbsentProbe = Future<bool> Function(String sourcePath);
 
-/// 生产默认的预置源码缺席探测：全仓唯一把 [hasPresetSource] 取反成 `sourceNone`
+/// 生产默认的预置源码缺席探测：全仓唯一把「有无预置源码」取反成 `sourceNone`
 /// 极性的地方，提取为具名函数是因为 const 默认值不接受 `async` 闭包。
 Future<bool> absentByPresetSourceProbe(String sourcePath) async =>
     !await hasPresetSource(sourcePath);
@@ -497,18 +497,7 @@ class _MainLayoutState extends State<MainLayout> {
       builder: (_) => BuildPackDialog(
         pack: pack,
         sourceNone: sourceNone,
-        build:
-            (
-              PackModel pack,
-              void Function(PackBuildStage) onStage, {
-              Map<String, String>? environment,
-              void Function(String line)? onOutput,
-            }) => widget.buildPack(
-              pack,
-              onStage,
-              environment: environment,
-              onOutput: onOutput,
-            ),
+        build: widget.buildPack,
         prepare: (PackModel pack) => prepare(
           pack,
           compilerPriority: widget.settings.compilerPriority,
@@ -571,7 +560,7 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   /// 取构建对话框的 `sourceNone` 标记：**包内无预置源码时为 true**（此时
-  /// `SRC_PATH` 是脚本自行下载的工作区，时间线走下载/分类）。
+  /// 源码与产物都落在配方自管的区里，时间线走下载/分类）。
   ///
   /// 极性由 [MainLayout.probeSourceAbsent] 自身定义，本方法只做缺省与异常兜底，
   /// 取值原样透传，不再取反。探测失败按「有预置源码」（false）兜底。

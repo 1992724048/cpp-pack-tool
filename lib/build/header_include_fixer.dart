@@ -130,8 +130,7 @@ typedef PackHeaderIncludeFixer = Future<HeaderIncludeFixReport> Function(
 
 /// 扫描 [sourcePath] 下全部文本源码的 `#include` 引用并做保守自动修复。
 ///
-/// 判据唯一：**打包后的布局**（`staged` 源目录只作为改写对象，不参与判定——
-/// 编译输入恒为 `SRC_PATH`，包源目录里的改写在下一次构建开始时就被输出清理删掉）。
+/// 判据唯一：**打包后的布局**——能否在包内解析，只取决于打包产物的布局。
 ///
 /// - 引号引用按包布局解析（先查引用文件自身的包内目录，再查
 ///   `build/native/include` 根），命中即视为正常、不动；

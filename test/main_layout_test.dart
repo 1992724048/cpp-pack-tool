@@ -182,8 +182,7 @@ void main() {
             return prepared;
           },
       buildPack: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -840,7 +839,6 @@ void main() {
       ],
     );
     PackModel? builtPack;
-    final List<PackBuildStage> stages = <PackBuildStage>[];
     final BuildEnvironment prepared = _buildEnvironment();
     Map<String, String>? receivedEnvironment;
 
@@ -859,20 +857,12 @@ void main() {
       }) async => prepared,
       buildPack:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
             builtPack = pack;
             receivedEnvironment = environment;
-            for (final PackBuildStage stage in <PackBuildStage>[
-              PackBuildStage.staging,
-              PackBuildStage.building,
-            ]) {
-              stages.add(stage);
-              onStage(stage);
-            }
           },
     );
 
@@ -890,10 +880,6 @@ void main() {
     expect(find.text('完成'), findsOneWidget);
     expect(find.text('新增：1 个文件'), findsOneWidget);
     expect(find.text('移除：2 个文件'), findsOneWidget);
-    expect(stages, <PackBuildStage>[
-      PackBuildStage.staging,
-      PackBuildStage.building,
-    ]);
     expect(store.saveCount, 1);
     expect(store.packs.single.files, hasLength(1));
     expect(store.packs.single.files.single.path, 'new/new.h');
@@ -948,16 +934,14 @@ void main() {
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
       probeSourceAbsent: (String sourcePath) async => true,
-      prepareBuildEnv:
-          (
-            PackModel pack, {
-            required List<String> compilerPriority,
-            required List<DetectedCompiler> cachedCompilers,
-            required CompilerDetectionCallback onCompilersDetected,
-          }) => prepareGate.future,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+      }) => prepareGate.future,
       buildPack: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -1000,16 +984,14 @@ void main() {
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
       probeSourceAbsent: (String sourcePath) async => false,
-      prepareBuildEnv:
-          (
-            PackModel pack, {
-            required List<String> compilerPriority,
-            required List<DetectedCompiler> cachedCompilers,
-            required CompilerDetectionCallback onCompilersDetected,
-          }) => prepareGate.future,
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+      }) => prepareGate.future,
       buildPack: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -1116,8 +1098,7 @@ void main() {
         required CompilerDetectionCallback onCompilersDetected,
       }) async => _buildEnvironment(),
       buildPack: (
-        PackModel pack,
-        void Function(PackBuildStage) onStage, {
+        PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
       }) async {},
@@ -1297,8 +1278,7 @@ void main() {
       }) async => _buildEnvironment(),
       buildPack:
           (
-            PackModel pack,
-            void Function(PackBuildStage) onStage, {
+            PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
@@ -2371,20 +2351,17 @@ Future<void> _openBuildDialogWithProductionProbe(
         pickDirectory: () async => null,
         scanFiles: (_) async => <FileModel>[],
         store: store,
-        buildPack:
-            (
-              PackModel pack,
-              void Function(PackBuildStage) onStage, {
-              Map<String, String>? environment,
-              void Function(String line)? onOutput,
-            }) async {},
-        prepareBuildEnv:
-            (
-              PackModel pack, {
-              required List<String> compilerPriority,
-              required List<DetectedCompiler> cachedCompilers,
-              required CompilerDetectionCallback onCompilersDetected,
-            }) => prepareGate.future,
+        buildPack: (
+          PackModel pack, {
+          Map<String, String>? environment,
+          void Function(String line)? onOutput,
+        }) async {},
+        prepareBuildEnv: (
+          PackModel pack, {
+          required List<String> compilerPriority,
+          required List<DetectedCompiler> cachedCompilers,
+          required CompilerDetectionCallback onCompilersDetected,
+        }) => prepareGate.future,
         detectCompilers: _noCompilers,
       ),
     ),
