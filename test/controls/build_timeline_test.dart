@@ -150,7 +150,6 @@ void main() {
     test('预构建配方下载步骤展示已下载百分比', () {
       final List<BuildTimelineDetail> details = buildActiveStepDetails(
         step: BuildTimelineStepId.download,
-        preparing: false,
         sourceNone: true,
         buildProgressPercent: 42,
       );

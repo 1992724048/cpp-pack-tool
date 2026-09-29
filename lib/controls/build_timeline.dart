@@ -119,7 +119,6 @@ List<BuildTimelineStep> buildTimelineSteps({
 
 List<BuildTimelineDetail> buildActiveStepDetails({
   required BuildTimelineStepId step,
-  required bool preparing,
   required bool sourceNone,
   int? buildProgressPercent,
 }) {

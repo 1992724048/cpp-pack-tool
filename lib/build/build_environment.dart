@@ -112,6 +112,9 @@ class BuildEnvironment {
 /// `CNP_SRC_DIR`（`<包源目录>\.cache\src`）、`CNP_TMP_DIR`（`<包源目录>\.cache\tmp`）、
 /// `CNP_TOOLS_DIR`（共享工具目录）、`CNP_COMPILER`（首选编译器可执行文件）。
 ///
+/// `CNP_TMP_DIR` 虽名为 tmp，却是**包自带的中间产物目录、归配方自己用**，
+/// 不是本层的受控临时目录：本层不建它、不清理它、不对其设权限。
+///
 /// PATH 前置顺序为：共享工具目录自身与其下所有递归子目录 → 编译器所在目录 →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
 /// PATH 键大小写不敏感（保留原键名与值）；[environment] 不被修改。

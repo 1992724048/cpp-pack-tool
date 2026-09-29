@@ -343,7 +343,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
       visitedSteps: <BuildTimelineStepId>{..._visitedSteps, _activeStep},
       activeDetails: buildActiveStepDetails(
         step: _activeStep,
-        preparing: _stage == _BuildStage.preparing,
         sourceNone: widget.sourceNone,
         buildProgressPercent: _buildProgressPercent,
       ),
