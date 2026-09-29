@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/app_info.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/config/pack_store.dart';
@@ -1040,10 +1039,10 @@ void main() {
   testWidgets('生产默认实现：有 .cnp-src 的包走准备环境时间线', (tester) async {
     final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
     addTearDown(() => sourceDir.deleteSync(recursive: true));
-    Directory('${sourceDir.path}${Platform.pathSeparator}$presetSourceDirName')
+    Directory('${sourceDir.path}${Platform.pathSeparator}.cnp-src')
         .createSync(recursive: true);
     File(
-      '${sourceDir.path}${Platform.pathSeparator}$presetSourceDirName'
+      '${sourceDir.path}${Platform.pathSeparator}.cnp-src'
       '${Platform.pathSeparator}lib.h',
     ).writeAsStringSync('#pragma once\n');
 

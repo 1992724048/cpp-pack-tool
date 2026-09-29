@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,6 +62,42 @@ void main() {
         'build.PY',
         reason: '子目录里的不算；大小写不敏感匹配后按路径字典序取首个',
       );
+    });
+  });
+
+  group('配方目录契约', () {
+    test('.cache/src 与 .cache/tmp 由包源目录派生', () {
+      expect(packSourceDirectory(r'C:\libs\demo'), r'C:\libs\demo\.cache\src');
+      expect(packTmpDirectory(r'C:\libs\demo'), r'C:\libs\demo\.cache\tmp');
+    });
+
+    test('清空 tmp 只删 .cache/tmp 的内容，不动 .cache/src 与产物', () async {
+      final Directory root = Directory.systemTemp.createTempSync('cnp-tmp-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      Directory('${root.path}/.cache/tmp/nested').createSync(recursive: true);
+      Directory('${root.path}/.cache/src').createSync(recursive: true);
+      Directory('${root.path}/release').createSync(recursive: true);
+      File('${root.path}/.cache/tmp/stale.obj').writeAsStringSync('x');
+      File('${root.path}/.cache/tmp/nested/deep.obj').writeAsStringSync('x');
+      File('${root.path}/.cache/src/keep.h').writeAsStringSync('#pragma once');
+      File('${root.path}/release/lib.lib').writeAsStringSync('x');
+
+      await clearPackTmpDirectory(root.path);
+
+      expect(File('${root.path}/.cache/tmp/stale.obj').existsSync(), isFalse);
+      expect(
+        File('${root.path}/.cache/tmp/nested/deep.obj').existsSync(),
+        isFalse,
+      );
+      expect(File('${root.path}/.cache/src/keep.h').existsSync(), isTrue);
+      expect(File('${root.path}/release/lib.lib').existsSync(), isTrue);
+    });
+
+    test('tmp 不存在时清理不报错（幂等）', () async {
+      final Directory root = Directory.systemTemp.createTempSync('cnp-tmp2-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      await expectLater(clearPackTmpDirectory(root.path), completes);
+      expect(Directory('${root.path}/.cache/tmp').existsSync(), isTrue);
     });
   });
 }

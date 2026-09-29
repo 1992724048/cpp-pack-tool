@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_cleanup.dart';
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -37,8 +36,8 @@ void main() {
       }
     });
 
-    test('契约常量与清理白名单一致（固定预置源码目录名须被保留）', () {
-      expect(isPreservedEntryName(presetSourceDirName), isTrue);
+    test('遗留的预置源码目录名仍被清理白名单保留', () {
+      expect(isPreservedEntryName('.cnp-src'), isTrue);
     });
 
     test('不保留普通文件与近似名（下划线不算分隔符、.git* 需精确匹配）', () {

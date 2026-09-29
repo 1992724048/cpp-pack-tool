@@ -5,13 +5,14 @@ import 'package:cpp_nuget_pack/util/format.dart';
 
 const String _buildScriptName = 'build.py';
 
-/// 包内预置源码目录的固定名（工具自动探测，配方无需声明）。
-///
-/// 双重身份：备源分叉的唯一判据（见 [hasPresetSource]），也须出现在构建输出清理
-/// 的白名单（`isPreservedEntryName`）中。白名单是 `build_cleanup.dart` 内的独立
-/// 字面量，两者的一致性由清理侧的契约测试钉住：改动任一处都必须同步另一处，
-/// 否则源码会在首次构建后的输出清理中被删除。
-const String presetSourceDirName = '.cnp-src';
+/// 包源目录下配方工作区的固定目录名（隐藏目录）。
+const String packCacheDirName = '.cache';
+
+/// [packCacheDirName] 下的源码区目录名，即 `CNP_SRC_DIR` 末段。
+const String packSourceDirName = 'src';
+
+/// [packCacheDirName] 下的中间产物区目录名，即 `CNP_TMP_DIR` 末段。
+const String packTmpDirName = 'tmp';
 
 /// 是否为根级 `build.py`：不含任何路径分隔符且文件名大小写不敏感。
 bool isBuildScriptPath(String relativePath) {
@@ -32,31 +33,28 @@ FileModel? findBuildScript(List<FileModel> files) {
   return candidates.isEmpty ? null : candidates.first;
 }
 
-/// 包源目录 [sourcePath] 下的 [presetSourceDirName] 是否存在且含文件。
+/// 包源目录 [packageRoot] 下的源码区（`CNP_SRC_DIR`），全反斜杠。
+String packSourceDirectory(String packageRoot) => _joinWindowsPath(
+  joinPath(packageRoot, packCacheDirName),
+  packSourceDirName,
+);
+
+/// 包源目录 [packageRoot] 下的中间产物区（`CNP_TMP_DIR`），全反斜杠。
+String packTmpDirectory(String packageRoot) =>
+    _joinWindowsPath(joinPath(packageRoot, packCacheDirName), packTmpDirName);
+
+/// 清空并重建 [packTmpDirName]。配方自行放置中间产物，软件只保证每次构建从
+/// 干净的 tmp 开始。
 ///
-/// 备源分叉的唯一判据：备源实现（`build_runner.dart`）与构建对话框的
-/// `sourceNone` 标记共用本函数，任一侧改动都会同时生效，不存在判据漂移。
-Future<bool> hasPresetSource(String sourcePath) async {
-  final Directory directory = Directory(
-    joinPath(sourcePath, presetSourceDirName),
-  );
-  if (!await directory.exists()) {
-    return false;
+/// 不存在的 tmp 视为已清空（首次构建的常态）；不可读/不可写时向上抛错，不静默
+/// 吞掉——静默会让配方在脏目录上构建，产出不可复现的结果。
+Future<void> clearPackTmpDirectory(String packageRoot) async {
+  final Directory tmp = Directory(packTmpDirectory(packageRoot));
+  if (await tmp.exists()) {
+    await tmp.delete(recursive: true);
   }
-  return _treeHasFile(directory);
+  await tmp.create(recursive: true);
 }
 
-/// 目录树内是否至少含一个文件（目录递归下探；不跟随链接）。
-Future<bool> _treeHasFile(Directory directory) async {
-  await for (final FileSystemEntity entry in directory.list(
-    followLinks: false,
-  )) {
-    if (entry is File) {
-      return true;
-    }
-    if (entry is Directory && await _treeHasFile(entry)) {
-      return true;
-    }
-  }
-  return false;
-}
+String _joinWindowsPath(String parent, String child) =>
+    joinPath(parent, child).replaceAll('/', r'\');

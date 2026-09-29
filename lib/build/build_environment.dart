@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -16,12 +17,6 @@ class BuildPreparationException implements Exception {
 }
 
 final RegExp _lineSeparator = RegExp(r'\r?\n');
-
-/// 包源目录下源码区（`CNP_SRC_DIR`）的相对路径。
-const String _packSourceSubdir = r'.cache\src';
-
-/// 包源目录下中间产物区（`CNP_TMP_DIR`）的相对路径。
-const String _packTmpSubdir = r'.cache\tmp';
 
 /// 捕获编译器环境（vcvars/setvars）并与 [baseEnvironment] 合并。
 ///
@@ -137,8 +132,8 @@ BuildEnvironment assembleBuildEnvironment({
   final String packageDir = Directory(packageRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);
   _setEnvironmentValue(child, 'CNP_PACKAGE_ROOT', packageDir);
-  _setEnvironmentValue(child, 'CNP_SRC_DIR', _joinWindowsPath(packageDir, _packSourceSubdir));
-  _setEnvironmentValue(child, 'CNP_TMP_DIR', _joinWindowsPath(packageDir, _packTmpSubdir));
+  _setEnvironmentValue(child, 'CNP_SRC_DIR', packSourceDirectory(packageDir));
+  _setEnvironmentValue(child, 'CNP_TMP_DIR', packTmpDirectory(packageDir));
   _setEnvironmentValue(child, 'CNP_TOOLS_DIR', toolsDir);
   _setEnvironmentValue(child, 'CNP_COMPILER', compiler.executablePath);
   _prependPathEntries(
@@ -367,11 +362,6 @@ String? _parentDirectoryOf(String executablePath) {
   final String parent = File(executablePath).parent.path;
   return parent.isEmpty || parent == '.' ? null : parent;
 }
-
-/// 拼接子目录路径；[joinPath] 去掉尾部分隔符后再统一为反斜杠，使注入子进程的
-/// 路径不出现 `/` 与 `\` 混用。
-String _joinWindowsPath(String parent, String child) =>
-    joinPath(parent, child).replaceAll('/', r'\');
 
 void _prependPathEntries(
   Map<String, String> environment,
