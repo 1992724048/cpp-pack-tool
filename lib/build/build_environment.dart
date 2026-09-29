@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -18,11 +17,11 @@ class BuildPreparationException implements Exception {
 
 final RegExp _lineSeparator = RegExp(r'\r?\n');
 
-/// 注入子进程的 CMake 可执行文件名；由子进程按 `PATH` 解析。
-const String _cmakeCommandName = 'cmake';
+/// 包源目录下源码区（`CNP_SRC_DIR`）的相对路径。
+const String _packSourceSubdir = r'.cache\src';
 
-/// 注入子进程的 Ninja 可执行文件名；由子进程按 `PATH` 解析。
-const String _ninjaCommandName = 'ninja';
+/// 包源目录下中间产物区（`CNP_TMP_DIR`）的相对路径。
+const String _packTmpSubdir = r'.cache\tmp';
 
 /// 捕获编译器环境（vcvars/setvars）并与 [baseEnvironment] 合并。
 ///
@@ -107,46 +106,42 @@ class BuildEnvironment {
   final String toolsDir;
 }
 
-/// 装配子进程环境：复制 [environment]，写入 `CNP_*` 与选项变量并前置工具目录。
+/// 装配子进程环境：复制 [environment]，注入五个 `CNP_*` 变量并前置工具目录。
 ///
-/// PATH 键大小写不敏感（保留原键名与值），前置顺序为 [toolPathEntries] →
+/// 注入的变量恰为五个：`CNP_PACKAGE_ROOT`（包源目录，产物写这里）、
+/// `CNP_SRC_DIR`（`<包源目录>\.cache\src`）、`CNP_TMP_DIR`（`<包源目录>\.cache\tmp`）、
+/// `CNP_TOOLS_DIR`（共享工具目录）、`CNP_COMPILER`（首选编译器可执行文件）。
+///
+/// PATH 前置顺序为：共享工具目录自身与其下所有递归子目录 → 编译器所在目录 →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
-/// [options] 按名写入 `CNP_OPTION_<NAME大写>`（未传入的选项不下发）；
-/// [environment] 不被修改。
+/// PATH 键大小写不敏感（保留原键名与值）；[environment] 不被修改。
 ///
-/// 编译参数（指令集、优化等级、链接时优化、运行库家族与语言标准）一律不由本层
-/// 决定，配方可经 `cmake_configure(extra_args=…)` 自定任何 `-D` 参数。
+/// 编译参数（指令集、优化等级、链接时优化、运行库家族与语言标准）一律不由本层决定，
+/// 由配方在构建脚本中自行指定。
 ///
-/// `CNP_CMAKE` / `CNP_NINJA` 固定为命令名 `cmake` / `ninja`，由子进程按 `PATH`
-/// 解析。`CNP_C_COMPILER` 取 [DetectedCompiler.executablePath]、
-/// `CNP_CXX_COMPILER` 取 [DetectedCompiler.cxxCompilerPath]。`CNP_RC_COMPILER`
-/// 不做推导：它只在输入 [environment] 已显式声明时随子进程透传，缺失即不下发，
-/// CMake 可经 PATH 自行解析。
+/// `CNP_RC_COMPILER` 不做推导：它只在输入 [environment] 已显式声明时随子进程透传，
+/// 缺失即不下发。
 BuildEnvironment assembleBuildEnvironment({
   required DetectedCompiler compiler,
   required Map<String, String> environment,
   required String toolsRoot,
-  List<String> toolPathEntries = const <String>[],
-  Map<String, String> options = const <String, String>{},
+  required String packageRoot,
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
+  final String packageDir = Directory(packageRoot).absolute.path;
   final Map<String, String> child = Map<String, String>.of(environment);
-  _setEnvironmentValue(child, 'CNP_CMAKE', _cmakeCommandName);
-  _setEnvironmentValue(child, 'CNP_NINJA', _ninjaCommandName);
+  _setEnvironmentValue(child, 'CNP_PACKAGE_ROOT', packageDir);
+  _setEnvironmentValue(child, 'CNP_SRC_DIR', _joinWindowsPath(packageDir, _packSourceSubdir));
+  _setEnvironmentValue(child, 'CNP_TMP_DIR', _joinWindowsPath(packageDir, _packTmpSubdir));
   _setEnvironmentValue(child, 'CNP_TOOLS_DIR', toolsDir);
-  _setEnvironmentValue(child, 'CNP_C_COMPILER', compiler.executablePath);
-  _setEnvironmentValue(child, 'CNP_CXX_COMPILER', compiler.cxxCompilerPath);
-  _setEnvironmentValue(
-    child,
-    'CNP_COMPILER_KIND',
-    compilerKindId(compiler.kind),
-  );
-  for (final MapEntry<String, String> option in options.entries) {
-    _setEnvironmentValue(child, optionEnvName(option.key), option.value);
-  }
+  _setEnvironmentValue(child, 'CNP_COMPILER', compiler.executablePath);
   _prependPathEntries(
     child,
-    <String>[...toolPathEntries, ...compiler.extraPathEntries],
+    <String>[
+      ..._toolsDirectoryEntries(toolsDir),
+      if (_parentDirectoryOf(compiler.executablePath) case final String compilerDir) compilerDir,
+      ...compiler.extraPathEntries,
+    ],
   );
   return BuildEnvironment(
     compiler: compiler,
@@ -156,10 +151,11 @@ BuildEnvironment assembleBuildEnvironment({
 }
 
 /// 准备构建环境：复用 [cachedCompilers] 中有效且匹配 [priority] 的编译器，缓存
-/// 缺失/失效时按 [priority] 检测 → 捕获编译器环境 → 装配 `PATH`、`CNP_*` 与选项
-/// 变量。全部落空或任一环节失败时抛 [BuildPreparationException]（不再下载、不再
-/// 释放任何工具链）。
+/// 缺失/失效时按 [priority] 检测 → 捕获编译器环境 → 装配 `PATH` 与 `CNP_*`。
+/// 全部落空或任一环节失败时抛 [BuildPreparationException]（不下载、不释放任何
+/// 工具链）。
 ///
+/// [packageRoot] 为包源目录，配方据此得知产物落点与源码/中间产物区；
 /// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
 /// 不改动本进程与系统，也不改写其中的 `TMP`/`TEMP`）；[cachedCompilers] 为上次
 /// 检测的持久化结果（见 `SettingsModel.detectedCompilers`，设置页与构建共用），
@@ -167,11 +163,11 @@ BuildEnvironment assembleBuildEnvironment({
 /// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[detect]/[capture] 为
 /// 测试注入点，不传缓存与回调时行为与不启用缓存完全一致。
 Future<BuildEnvironment> prepareBuildEnvironment({
+  required String packageRoot,
   List<String> priority = const <String>['icx', 'clang-cl', 'msvc'],
   PackProcessRunner runner = Process.run,
   String toolsRoot = 'tools',
   Map<String, String>? baseEnvironment,
-  Map<String, String> options = const <String, String>{},
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
   CompilerDetector? detect,
@@ -205,7 +201,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     compiler: compiler,
     environment: captured,
     toolsRoot: toolsRoot,
-    options: options,
+    packageRoot: packageRoot,
   );
 }
 
@@ -220,43 +216,32 @@ List<DetectedCompiler> _usableCachedCompilers(
   ];
 }
 
-/// 依据包声明准备构建环境：读取 build.py 头部 → 解析选项 → 透传
-/// [prepareBuildEnvironment]。
+/// 依据包声明准备构建环境：把 [PackModel.sourcePath]（包源目录）作为
+/// [prepareBuildEnvironment] 的 `packageRoot` 透传，其余参数原样透传。
+/// 包无源目录时抛 [BuildPreparationException]。
 ///
-/// 编译参数不经本层下发：配方自行决定并可经 `cmake_configure(extra_args=…)`
-/// 传入任意 `-D` 参数。
-///
-/// [loadHeader] 缺省使用 [loadBuildScriptHeader]；其 IO 异常包装为
-/// [BuildPreparationException]。其余参数透传 [prepareBuildEnvironment]。
+/// 编译参数不经本层下发：配方自行决定。
 Future<BuildEnvironment> preparePackBuildEnvironment(
   PackModel pack, {
   required List<String> priority,
   PackProcessRunner runner = Process.run,
   String toolsRoot = 'tools',
   Map<String, String>? baseEnvironment,
-  Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader,
   List<DetectedCompiler> cachedCompilers = const <DetectedCompiler>[],
   CompilerDetectionCallback? onCompilersDetected,
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
-  final Future<BuildScriptHeader?> Function(PackModel pack) headerLoader =
-      loadHeader ?? loadBuildScriptHeader;
-  final BuildScriptHeader? header;
-  try {
-    header = await headerLoader(pack);
-  } catch (error) {
-    throw BuildPreparationException('读取 build.py 失败：$error');
+  final String? sourcePath = pack.sourcePath;
+  if (sourcePath == null || sourcePath.isEmpty) {
+    throw const BuildPreparationException('该包缺少源目录信息');
   }
   return prepareBuildEnvironment(
+    packageRoot: sourcePath,
     priority: priority,
     runner: runner,
     toolsRoot: toolsRoot,
     baseEnvironment: baseEnvironment,
-    options: resolveBuildOptions(
-      header?.options ?? const <BuildScriptOption>[],
-      pack.buildOptions,
-    ),
     cachedCompilers: cachedCompilers,
     onCompilersDetected: onCompilersDetected,
     detect: detect,
@@ -341,6 +326,46 @@ String _noCompilerMessage(List<String> priority) {
   }
   return '未检测到可用编译器（优先级：${priority.join(' > ')}）';
 }
+
+/// 共享工具目录自身与其下所有子目录（递归、不限深度），排序后返回。
+///
+/// 目录不可枚举时静默跳过（不抛错）——工具目录的内容由配方自行摆弄，读不动
+/// 不应阻断构建。
+List<String> _toolsDirectoryEntries(String toolsDir) {
+  final List<String> entries = <String>[];
+  final Set<String> seen = <String>{};
+  final List<Directory> queue = <Directory>[Directory(toolsDir)];
+  while (queue.isNotEmpty) {
+    final Directory current = queue.removeLast();
+    final String path = current.absolute.path;
+    if (seen.add(path.toLowerCase())) {
+      entries.add(path);
+    }
+    try {
+      for (final FileSystemEntity child in current.listSync(followLinks: false)) {
+        if (child is Directory) {
+          queue.add(child);
+        }
+      }
+    } on FileSystemException {
+      continue;
+    }
+  }
+  entries.sort();
+  return entries;
+}
+
+/// 可执行文件所在目录；无父目录或只给出裸文件名（父目录为当前目录 `.`）时返回
+/// null——把当前目录放进 `PATH` 会让子进程命中同名的意外可执行文件。
+String? _parentDirectoryOf(String executablePath) {
+  final String parent = File(executablePath).parent.path;
+  return parent.isEmpty || parent == '.' ? null : parent;
+}
+
+/// 拼接子目录路径；[joinPath] 去掉尾部分隔符后再统一为反斜杠，使注入子进程的
+/// 路径不出现 `/` 与 `\` 混用。
+String _joinWindowsPath(String parent, String child) =>
+    joinPath(parent, child).replaceAll('/', r'\');
 
 void _prependPathEntries(
   Map<String, String> environment,

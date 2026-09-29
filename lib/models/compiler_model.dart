@@ -1,7 +1,7 @@
-/// 编译器类型；设置页优先级与 `CNP_COMPILER_KIND` 使用 [compilerKindId] 的标识。
+/// 编译器类型；设置页优先级与配置持久化使用 [compilerKindId] 的标识。
 enum CompilerKind { icx, clangCl, msvc }
 
-/// 编译器在设置页与 `CNP_COMPILER_KIND` 中使用的稳定标识。
+/// 编译器在设置页与配置持久化中使用的稳定标识。
 String compilerKindId(CompilerKind kind) => switch (kind) {
   CompilerKind.icx => 'icx',
   CompilerKind.clangCl => 'clang-cl',
@@ -20,8 +20,8 @@ CompilerKind? compilerKindFromId(String id) {
 }
 
 /// R23 曾短暂使用的 clang 驱动标识：该版本把 clang 系驱动换成 GNU `clang.exe`
-/// （CXX 取 `clang++.exe`）并作为 `CNP_COMPILER_KIND`；现恢复 MSVC 兼容驱动
-/// clang-cl（`clang-cl.exe`），标识 `clang-cl`。
+/// （CXX 取 `clang++.exe`）；现恢复 MSVC 兼容驱动 clang-cl（`clang-cl.exe`），
+/// 标识 `clang-cl`。
 ///
 /// 仅供配置迁移识别：R23 缓存条目指向 GNU 驱动，与现行 clang-cl 驱动口径不一致
 /// （部分 GNU 风格编译旗标会被驱动忽略并告警），读回时必须丢弃并重检，
