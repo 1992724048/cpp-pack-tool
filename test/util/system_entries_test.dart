@@ -1,4 +1,3 @@
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/build_model.dart';
 import 'package:cpp_nuget_pack/models/cmd_model.dart';
 import 'package:cpp_nuget_pack/models/dependency_model.dart';
@@ -24,7 +23,6 @@ void main() {
       final SystemEntriesUpdate update = applySystemEntries(pack);
 
       expect(update.changed, isTrue);
-      expect(update.notes, isEmpty);
       expect(update.pack, isNot(same(pack)));
       expect(update.pack.commands, hasLength(2));
 
@@ -123,126 +121,8 @@ void main() {
     });
   });
 
-  group('applySystemEntries 依赖', () {
-    test('显式版本范围优先', () {
-      final PackModel pack = _pack();
-      const BuildScriptHeader header = BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'libbar', version: '[1.0,2.0)'),
-        ],
-      );
-
-      final SystemEntriesUpdate update = applySystemEntries(
-        pack,
-        header: header,
-      );
-
-      expect(update.changed, isTrue);
-      expect(update.notes, isEmpty);
-      expect(update.pack.dependencies.single.name, 'libbar');
-      expect(update.pack.dependencies.single.version, '[1.0,2.0)');
-      expect(update.pack.dependencies.single.system, isTrue);
-    });
-
-    test('缺省版本用本地包版本生成下限', () {
-      const BuildScriptHeader header = BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'libfoo'),
-        ],
-      );
-
-      final SystemEntriesUpdate update = applySystemEntries(
-        _pack(),
-        header: header,
-        resolvePackVersion: (String name) =>
-            name.toLowerCase() == 'libfoo' ? '2.5.0' : null,
-      );
-
-      expect(update.pack.dependencies.single.version, '[2.5.0,)');
-      expect(update.notes, isEmpty);
-    });
-
-    test('本地包缺失回退 [0.0.0,) 并注明；本地版本非法同样回退', () {
-      const BuildScriptHeader header = BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'ghost'),
-          BuildScriptDependency(name: 'weird'),
-        ],
-      );
-
-      final SystemEntriesUpdate update = applySystemEntries(
-        _pack(),
-        header: header,
-        resolvePackVersion: (String name) =>
-            name == 'weird' ? 'not a version' : null,
-      );
-
-      expect(update.pack.dependencies, hasLength(2));
-      expect(update.pack.dependencies[0].version, '[0.0.0,)');
-      expect(update.pack.dependencies[1].version, '[0.0.0,)');
-      expect(update.notes, hasLength(2));
-      expect(update.notes[0], contains('ghost'));
-      expect(update.notes[0], contains('[0.0.0,)'));
-      expect(update.notes[1], contains('weird'));
-    });
-
-    test('已存在同名依赖时不重复添加且不改动', () {
-      final PackModel pack = _pack(
-        dependencies: <DependencyModel>[
-          const DependencyModel(name: 'LIBFOO', version: '1.0'),
-        ],
-      );
-      const BuildScriptHeader header = BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'libfoo', version: '[2.0,)'),
-        ],
-      );
-
-      final SystemEntriesUpdate update = applySystemEntries(
-        pack,
-        header: header,
-      );
-
-      expect(update.changed, isFalse);
-      expect(update.pack, same(pack));
-      expect(update.pack.dependencies.single.name, 'LIBFOO');
-      expect(update.pack.dependencies.single.version, '1.0');
-      expect(update.pack.dependencies.single.system, isFalse);
-    });
-
-    test('自依赖跳过', () {
-      const BuildScriptHeader header = BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'DEMO'),
-        ],
-      );
-
-      final SystemEntriesUpdate update = applySystemEntries(
-        _pack(name: 'demo'),
-        header: header,
-      );
-
-      expect(update.changed, isFalse);
-      expect(update.pack.dependencies, isEmpty);
-    });
-
-    test('header 为 null 或声明为空时零变化', () {
-      final PackModel pack = _pack();
-
-      expect(applySystemEntries(pack).changed, isFalse);
-      expect(
-        applySystemEntries(
-          pack,
-          header: const BuildScriptHeader(
-          ),
-        ).changed,
-        isFalse,
-      );
-    });
-  });
-
   group('applySystemEntries 整体', () {
-    test('脚本与依赖同时注册，并保留其余字段与构建选项', () {
+    test('注册脚本命令并保留其余字段', () {
       final PackModel pack = _pack(
         files: <FileModel>[_file('pre.bat'), _file('post.bat')],
         dependencies: <DependencyModel>[
@@ -260,17 +140,8 @@ void main() {
             message: '创建包',
           ),
         ];
-      const BuildScriptHeader header = BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'libfoo'),
-        ],
-      );
 
-      final SystemEntriesUpdate update = applySystemEntries(
-        pack,
-        header: header,
-        resolvePackVersion: (String name) => '1.2.3',
-      );
+      final SystemEntriesUpdate update = applySystemEntries(pack);
 
       expect(update.changed, isTrue);
       final PackModel updated = update.pack;
@@ -281,10 +152,8 @@ void main() {
       expect(updated.sourcePath, r'D:\libs\demo');
       expect(updated.files, hasLength(2));
       expect(updated.commands, hasLength(2));
-      expect(updated.dependencies, hasLength(2));
-      expect(updated.dependencies[0].version, '3.0');
-      expect(updated.dependencies[1].name, 'libfoo');
-      expect(updated.dependencies[1].version, '[1.2.3,)');
+      expect(updated.dependencies.single.name, 'keep');
+      expect(updated.dependencies.single.version, '3.0');
       expect(updated.macros.single.value, 'A=1');
       expect(updated.history.single.message, '创建包');
       expect(updated.buildOptions, <String, String>{'tbb': 'on'});

@@ -1,5 +1,4 @@
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/controls/build_options.dart';
 import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
@@ -18,20 +17,12 @@ class PackFiles extends StatefulWidget {
     required this.pack,
     this.openFile = openWithDefaultApp,
     this.onBuildPack,
-    this.onSave,
-    this.loadHeader = loadBuildScriptHeader,
   });
 
   final PackModel pack;
   final Future<bool> Function(String path) openFile;
 
   final Future<void> Function(PackModel pack)? onBuildPack;
-
-  /// 保存选项变更；为 null 时不渲染选项控件（v1 行为）。
-  final Future<bool> Function(PackModel pack)? onSave;
-
-  /// 读取包内 build.py 头部；测试可注入。
-  final Future<BuildScriptHeader?> Function(PackModel pack) loadHeader;
 
   @override
   State<PackFiles> createState() => _PackFilesState();
@@ -53,48 +44,12 @@ class _PackFilesState extends State<PackFiles> {
 
   final Set<String> _expandedDirs = <String>{};
 
-  BuildScriptHeader? _header;
-  bool _savingOption = false;
-  bool _optionsExpanded = true;
-  int _headerLoadId = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshHeader();
-  }
-
   @override
   void didUpdateWidget(covariant PackFiles oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pack.name != widget.pack.name) {
       _expandedDirs.clear();
     }
-    if (_shouldReloadHeader(oldWidget.pack, widget.pack)) {
-      _refreshHeader();
-    }
-  }
-
-  static bool _shouldReloadHeader(PackModel before, PackModel after) {
-    if (before.name != after.name || before.sourcePath != after.sourcePath) {
-      return true;
-    }
-    return findBuildScript(before.files)?.path != findBuildScript(after.files)?.path;
-  }
-
-  Future<void> _refreshHeader() async {
-    final int loadId = ++_headerLoadId;
-    BuildScriptHeader? header;
-    try {
-      header = await widget.loadHeader(widget.pack);
-    } catch (_) {
-      // 头部读取失败按未声明处理：不渲染选项控件，也不影响构建入口
-      header = null;
-    }
-    if (!mounted || loadId != _headerLoadId) {
-      return;
-    }
-    setState(() => _header = header);
   }
 
   static List<String> _pathSegments(String path) =>
@@ -279,37 +234,9 @@ class _PackFilesState extends State<PackFiles> {
     );
   }
 
-  /// 保存选项变更：全字段拷贝 → onSave → 悬浮提示；保存挂起期间全控件禁用。
-  ///
-  /// [value] 为 null 表示移除保存键。
-  Future<void> _changeBuildOption(String name, String? value) async {
-    final Future<bool> Function(PackModel pack)? onSave = widget.onSave;
-    if (onSave == null || _savingOption) {
-      return;
-    }
-    setState(() => _savingOption = true);
-    bool saved = false;
-    try {
-      saved = await onSave(_withBuildOption(widget.pack, name, value));
-    } catch (_) {
-      saved = false;
-    }
-    if (!mounted) {
-      return;
-    }
-    setState(() => _savingOption = false);
-    if (saved) {
-      showFloatingToast(context, '已保存');
-    } else {
-      showFloatingToast(context, '保存失败', type: FloatingToastType.error, duration: const Duration(seconds: 5));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final bool canBuild = widget.onBuildPack != null && findBuildScript(widget.pack.files) != null;
-    final List<BuildScriptOption> options = canBuild && widget.onSave != null ? (_header?.options ??
-        const <BuildScriptOption>[]) : const <BuildScriptOption>[];
     final Color sizeColor = FluentTheme
         .of(context)
         .resources
@@ -319,15 +246,6 @@ class _PackFilesState extends State<PackFiles> {
       children: [
         Divider(),
         if (canBuild) _buildToolbar(),
-        if (options.isNotEmpty)
-          BuildOptionsPanel(
-            options: options,
-            values: widget.pack.buildOptions,
-            expanded: _optionsExpanded,
-            onToggleExpanded: () => setState(() => _optionsExpanded = !_optionsExpanded),
-            saving: _savingOption,
-            onChange: _changeBuildOption,
-          ),
         Expanded(
           child: widget.pack.files.isEmpty
               ? const Center(child: Text('该包暂无文件'))
@@ -351,15 +269,4 @@ class _DirNode {
   final List<FileModel> files = <FileModel>[];
   int size = 0;
   int fileCount = 0;
-}
-
-/// 全字段拷贝并写入选项值；[value] 为 null 时移除该保存键。
-PackModel _withBuildOption(PackModel pack, String name, String? value) {
-  final Map<String, String> options = <String, String>{...pack.buildOptions};
-  if (value == null) {
-    options.remove(name);
-  } else {
-    options[name] = value;
-  }
-  return pack.copyWith(buildOptions: options);
 }

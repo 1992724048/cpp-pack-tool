@@ -168,7 +168,6 @@ void main() {
         FileModel(name: 'build.py', path: 'build.py', size: 10),
       ],
       onSaveSettings: (SettingsModel settings) async => saved = settings,
-      loadBuildHeader: (PackModel pack) async => null,
       prepareBuildEnv:
           (
             PackModel pack, {
@@ -752,7 +751,7 @@ void main() {
     expect(find.text('移除：1 个文件'), findsOneWidget);
   });
 
-  testWidgets('重新映射后自动注册 pre/post.bat 与 build.py 依赖系统条目', (tester) async {
+  testWidgets('重新映射后自动注册 pre/post.bat 系统条目', (tester) async {
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -761,7 +760,6 @@ void main() {
           sourcePath: r'C:\libs\demo',
           files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
         ),
-        _pack('libfoo', '2.5.0'),
       ],
     );
     final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
@@ -771,12 +769,6 @@ void main() {
       store: store,
       pickDirectory: () async => null,
       scanFiles: (String path) => completer.future,
-      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(
-        dependencies: <BuildScriptDependency>[
-          BuildScriptDependency(name: 'libfoo'),
-          BuildScriptDependency(name: 'ghost', version: '[1.0,)'),
-        ],
-      ),
     );
 
     await tester.tap(find.byTooltip('重新映射'));
@@ -807,12 +799,7 @@ void main() {
     expect(pre.system, isTrue);
     expect(saved.commands[1].type, CmdType.postBuild);
     expect(saved.commands[1].system, isTrue);
-    expect(saved.dependencies, hasLength(2));
-    expect(saved.dependencies[0].name, 'libfoo');
-    expect(saved.dependencies[0].version, '[2.5.0,)');
-    expect(saved.dependencies[0].system, isTrue);
-    expect(saved.dependencies[1].name, 'ghost');
-    expect(saved.dependencies[1].version, '[1.0,)');
+    expect(saved.dependencies, isEmpty);
     expect(find.text('重新映射完成'), findsOneWidget);
   });
 
@@ -865,7 +852,6 @@ void main() {
       scanFiles: (_) async => <FileModel>[
         FileModel(name: 'new.h', path: 'new/new.h', size: 2048),
       ],
-      loadBuildHeader: (PackModel pack) async => null,
       prepareBuildEnv: (
         PackModel pack, {
         required List<String> compilerPriority,
@@ -962,7 +948,6 @@ void main() {
       store: store,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
       probeSourceAbsent: (String sourcePath) async => true,
       prepareBuildEnv:
           (
@@ -1015,7 +1000,6 @@ void main() {
       store: store,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
       probeSourceAbsent: (String sourcePath) async => false,
       prepareBuildEnv:
           (
@@ -1126,7 +1110,6 @@ void main() {
       scanFiles: (_) async => <FileModel>[
         FileModel(name: 'new.h', path: 'new/new.h', size: 1),
       ],
-      loadBuildHeader: (PackModel pack) async => null,
       prepareBuildEnv: (
         PackModel pack, {
         required List<String> compilerPriority,
@@ -1307,7 +1290,6 @@ void main() {
       store: store,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
-      loadBuildHeader: (PackModel pack) async => null,
       prepareBuildEnv: (
         PackModel pack, {
         required List<String> compilerPriority,
@@ -2334,7 +2316,6 @@ Future<void> _pumpMainLayout(
   PackBuildEnvironmentPreparer? prepareBuildEnv,
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
-  Future<BuildScriptHeader?> Function(PackModel pack)? loadBuildHeader,
   PackSourceAbsentProbe? probeSourceAbsent,
   PackHeaderIncludeFixer? fixIncludes,
   PackBuildCacheProbe? hasBuildCache,
@@ -2356,7 +2337,6 @@ Future<void> _pumpMainLayout(
         buildPack: buildPack ?? runPackBuild,
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
-        loadBuildHeader: loadBuildHeader ?? loadBuildScriptHeader,
         probeSourceAbsent: probeSourceAbsent ?? _absentPresetSource,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
@@ -2408,7 +2388,6 @@ Future<void> _openBuildDialogWithProductionProbe(
               required CompilerDetectionCallback onCompilersDetected,
             }) => prepareGate.future,
         detectCompilers: _noCompilers,
-        loadBuildHeader: (PackModel pack) async => const BuildScriptHeader(),
       ),
     ),
   );

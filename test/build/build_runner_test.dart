@@ -149,7 +149,7 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('build.py 头部注释首行不参与分叉：无预置源码即走空工作区', () async {
+    test('配方内容任意且无预置源码时走空工作区', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(root, 'print(1)\n');
       final String cacheRoot = joinPath(root.path, 'cache');

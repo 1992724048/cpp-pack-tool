@@ -1,4 +1,3 @@
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/svgs.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -17,7 +16,6 @@ class PackManage extends StatefulWidget {
     required this.onSave,
     required this.pickDirectory,
     this.onBuildPack,
-    this.loadHeader,
   });
 
   final PackModel pack;
@@ -25,9 +23,6 @@ class PackManage extends StatefulWidget {
   final Future<bool> Function(PackModel pack) onSave;
   final Future<String?> Function() pickDirectory;
   final Future<void> Function(PackModel pack)? onBuildPack;
-
-  /// 读取包内 build.py 头部；为 null 时由文件管理页使用默认真实读取。
-  final Future<BuildScriptHeader?> Function(PackModel pack)? loadHeader;
 
   @override
   State<PackManage> createState() => _PackManageState();
@@ -70,12 +65,7 @@ class _PackManageState extends State<PackManage> {
     return ValueListenableBuilder<PackModel>(
       valueListenable: _pack,
       builder: (BuildContext context, PackModel pack, Widget? child) =>
-          PackFiles(
-            pack: pack,
-            onBuildPack: widget.onBuildPack,
-            onSave: widget.onSave,
-            loadHeader: widget.loadHeader ?? loadBuildScriptHeader,
-          ),
+          PackFiles(pack: pack, onBuildPack: widget.onBuildPack),
     );
   }
 

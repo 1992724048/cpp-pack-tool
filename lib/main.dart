@@ -154,7 +154,6 @@ class MainLayout extends StatefulWidget {
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
     this.detectCompilers = detectCompilersReadOnly,
-    this.loadBuildHeader = loadBuildScriptHeader,
     this.probeSourceAbsent = absentByPresetSourceProbe,
     this.fixIncludes = fixHeaderIncludes,
     this.now = DateTime.now,
@@ -172,9 +171,6 @@ class MainLayout extends StatefulWidget {
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
 
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
-
-  /// 读取包内 build.py 头部；重映射/构建后据此注册系统条目，仅测试注入替代实现。
-  final Future<BuildScriptHeader?> Function(PackModel pack) loadBuildHeader;
 
   /// 探测包内**无**预置源码（缺省 [absentByPresetSourceProbe]）；构建对话框的
   /// `sourceNone` 标记据此展示下载/准备源码时间线，仅测试注入替代实现。
@@ -465,25 +461,12 @@ class _MainLayoutState extends State<MainLayout> {
         );
       }
     }
-    final PackModel updated = await _syncSystemEntries(pack);
+    final PackModel updated = applySystemEntries(pack).pack;
     await widget.store.savePack(updated);
     if (!mounted) {
       return;
     }
     _upsertPack(updated);
-  }
-
-  /// 注册构建管线系统条目（根级 pre/post.bat 命令与 `# depends:` 依赖）。
-  ///
-  /// build.py 缺失或不可读时仍同步脚本命令，不阻断重映射。
-  Future<PackModel> _syncSystemEntries(PackModel pack) async {
-    BuildScriptHeader? header;
-    try {
-      header = await widget.loadBuildHeader(pack);
-    } catch (_) {
-      header = null;
-    }
-    return applySystemEntries(pack, header: header, resolvePackVersion: (String name) => _findPack(name)?.version).pack;
   }
 
   Future<void> _buildPack(PackModel pack) async {
@@ -920,7 +903,6 @@ class _MainLayoutState extends State<MainLayout> {
           onSave: _savePack,
           pickDirectory: widget.pickDirectory,
           onBuildPack: _buildPack,
-          loadHeader: widget.loadBuildHeader,
         ),
         footerItems: [
           PaneItemSeparator(),
