@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 
 /// 构建环境准备失败异常：[message] 面向用户展示。

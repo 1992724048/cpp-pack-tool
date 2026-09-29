@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:cpp_nuget_pack/nuget/ui/pack_export_dialog.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';

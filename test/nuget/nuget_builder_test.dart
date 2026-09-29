@@ -1,13 +1,13 @@
 import 'dart:convert';
 
-import 'package:cpp_nuget_pack/models/build_model.dart';
-import 'package:cpp_nuget_pack/models/cmd_model.dart';
-import 'package:cpp_nuget_pack/models/dependency_model.dart';
-import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/models/lib_dir_model.dart';
-import 'package:cpp_nuget_pack/models/library_model.dart';
-import 'package:cpp_nuget_pack/models/macro_model.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/build_model.dart';
+import 'package:cpp_nuget_pack/pack/model/cmd_model.dart';
+import 'package:cpp_nuget_pack/pack/model/dependency_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/pack/model/library_model.dart';
+import 'package:cpp_nuget_pack/pack/model/macro_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
 import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:flutter_test/flutter_test.dart';

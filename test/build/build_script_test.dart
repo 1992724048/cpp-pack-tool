@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

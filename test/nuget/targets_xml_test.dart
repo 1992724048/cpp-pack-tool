@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/models/cmd_model.dart';
-import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/cmd_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
 import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';

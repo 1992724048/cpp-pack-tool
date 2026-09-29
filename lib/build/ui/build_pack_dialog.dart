@@ -6,11 +6,11 @@ import 'package:cpp_nuget_pack/nuget/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/build/ui/build_output_panel.dart';
 import 'package:cpp_nuget_pack/build/ui/build_timeline.dart';
-import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/models/history_model.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/history_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
-import 'package:cpp_nuget_pack/util/pack_remap.dart';
+import 'package:cpp_nuget_pack/pack/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 enum _BuildStage { preparing, building, fixingIncludes, remapping, completed, failed }

@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/nuget/package_icon.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:flutter_test/flutter_test.dart';

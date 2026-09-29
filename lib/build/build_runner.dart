@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_script.dart';
-import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 
 typedef PackProcessRunner = Future<ProcessResult> Function(

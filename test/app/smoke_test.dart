@@ -1,7 +1,7 @@
 import 'package:cpp_nuget_pack/app/app_info.dart';
-import 'package:cpp_nuget_pack/config/pack_store.dart';
+import 'package:cpp_nuget_pack/pack/pack_store.dart';
 import 'package:cpp_nuget_pack/main.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/settings/settings_model.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';

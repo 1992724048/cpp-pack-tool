@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 
 const String _buildScriptName = 'build.py';

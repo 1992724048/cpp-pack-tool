@@ -7,10 +7,10 @@ import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/compiler_model.dart';
-import 'package:cpp_nuget_pack/models/file_model.dart';
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
-import 'package:cpp_nuget_pack/scanner/file_scan.dart';
+import 'package:cpp_nuget_pack/pack/file_scan.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 

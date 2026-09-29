@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:cpp_nuget_pack/models/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
 import 'package:cpp_nuget_pack/nuget/nupkg_export_job.dart';
 import 'package:cpp_nuget_pack/nuget/package_icon.dart';

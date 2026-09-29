@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/models/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 
 final RegExp _licenseNamePattern = RegExp(r'^(license|licence|copying|unlicense|notice)([-.][a-z0-9]+)*$');
 
