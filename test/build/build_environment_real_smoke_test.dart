@@ -46,6 +46,7 @@ void main() {
             executablePath: r'C:\VC\cl.exe',
             environmentScript: script.path,
           ),
+          scratchDirectory: root.path,
         );
       } on BuildPreparationException catch (error) {
         failureMessage = error.message;

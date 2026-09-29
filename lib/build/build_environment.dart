@@ -25,10 +25,16 @@ final RegExp _lineSeparator = RegExp(r'\r?\n');
 /// 引号被 Dart 的 Windows 参数转义破坏），再按 Windows 语义（键大小写
 /// 不敏感）覆盖同名键。脚本失败时 `&&` 短路使非零退出码保留到 cmd 进程
 /// （见 [_runEnvironmentScript]），这里抛出 [BuildPreparationException]。
+///
+/// [scratchDirectory] 是包装文件所在目录的父目录，须已存在且可写。刻意不接受
+/// 缺省的 `Directory.systemTemp`：宿主临时位置不可用时那一步会先于 `cmd` 抛出
+/// 未包装的文件系统异常，构建根本走不到（宿主 `TMP` 被改写正是为避开这一点）。
+/// 捕获用的子目录用完即删，[scratchDirectory] 自身不动。
 Future<Map<String, String>> captureToolchainEnvironment(
   DetectedCompiler compiler, {
   PackProcessRunner runner = Process.run,
   Map<String, String>? baseEnvironment,
+  required String scratchDirectory,
 }) async {
   final Map<String, String> base = baseEnvironment ?? Platform.environment;
   final String? script = compiler.environmentScript;
@@ -40,6 +46,7 @@ Future<Map<String, String>> captureToolchainEnvironment(
     runner,
     script,
     base,
+    scratchDirectory,
   );
   if (result.exitCode != 0) {
     throw BuildPreparationException(
@@ -62,14 +69,18 @@ typedef ToolchainEnvironmentCapture = Future<Map<String, String>> Function(
   DetectedCompiler compiler, {
   PackProcessRunner runner,
   Map<String, String>? baseEnvironment,
+  required String scratchDirectory,
 });
 
 /// 只读检测本机编译器：不建目录、不改写 `TMP`/`TEMP`、不注入额外环境变量。
 ///
-/// 子进程直接使用 [baseEnvironment]（缺省 `Platform.environment`），故宿主
-/// `TMP`/`TEMP` 不可用或指向他人所有目录时 ICX 仍可能报 `error #10026`（见
-/// [detectIcx]）——本入口不再为此改写环境。探测只起子进程跑 `--version` 与
-/// `vswhere`，不写任何文件。[detect] 为测试注入点。
+/// 本入口没有包源目录，无处可指向包的中间产物区，故子进程直接使用
+/// [baseEnvironment]（缺省 `Platform.environment`）：宿主 `TMP`/`TEMP` 指向不可用
+/// 的位置、且当前工作目录同样不可写时 ICX 仍会探测失败（见 [detectIcx]）。
+/// 构建路径不受此限——那里由 [prepareBuildEnvironment] 把 `TMP`/`TEMP` 改写为
+/// 包自带的 `.cache/tmp`。
+/// 探测只起子进程跑 `--version` 与 `vswhere`，不写任何文件。
+/// [detect] 为测试注入点。
 Future<List<DetectedCompiler>> detectCompilersReadOnly({
   PackProcessRunner runner = Process.run,
   Map<String, String>? baseEnvironment,
@@ -101,17 +112,26 @@ class BuildEnvironment {
   final String toolsDir;
 }
 
-/// 装配子进程环境：复制 [environment]，注入五个 `CNP_*` 变量并前置工具目录。
+/// 装配子进程环境：复制 [environment]，改写 `TMP`/`TEMP`、注入五个 `CNP_*` 变量
+/// 并前置工具目录。
 ///
 /// 注入的变量恰为五个：`CNP_PACKAGE_ROOT`（包源目录，产物写这里）、
 /// `CNP_SRC_DIR`（`<包源目录>\.cache\src`）、`CNP_TMP_DIR`（`<包源目录>\.cache\tmp`）、
 /// `CNP_TOOLS_DIR`（共享工具目录）、`CNP_COMPILER`（首选编译器可执行文件）。
 ///
-/// `CNP_TMP_DIR` 虽名为 tmp，却是**包自带的中间产物目录、归配方自己用**，
-/// 不是本层的受控临时目录：本函数只算出路径下发，不建目录、不设权限。软件侧
-/// 对它唯一的干预是每次构建前清空并重建（见 `clearPackTmpDirectory`），保证配方
-/// 从干净的中间产物区开始；`.cache` 其余部分（`CNP_SRC_DIR` 与配方自行下载的
-/// 产物）**跨构建保留**——是否复用、复用多少由配方自己权衡。
+/// `TMP`/`TEMP` 无条件改写为 `CNP_TMP_DIR` 的值：不看 [environment] 已声明的
+/// 值，不看编译器种类——本层无从排除选中的是 ICX，而宿主临时位置不可用、当前
+/// 工作目录同样不可写时它会探测失败（见 [detectIcx]）。收口处必须再写一遍而非
+/// 只靠 [baseEnvironment] 那一层，是因为捕获脚本（`setvars.bat` 等）的 `set` 输出
+/// 会覆盖 base 里的同名键；不写则脚本把 `TMP`/`TEMP` 换成别的路径就原样漏给了
+/// 子进程。
+///
+/// `CNP_TMP_DIR` 虽名为 tmp，却是**包自带的中间产物目录、归配方自己用**：
+/// 本层只算出路径下发，不设权限，目录由 [prepareBuildEnvironment] 在检测前建好。
+/// 软件侧对它的干预有两处——建好它、每次构建前清空并重建（见
+/// `clearPackTmpDirectory`），保证配方从干净的中间产物区开始；`.cache` 其余部分
+/// （`CNP_SRC_DIR` 与配方自行下载的产物）**跨构建保留**——是否复用、复用多少
+/// 由配方自己权衡。
 ///
 /// PATH 前置顺序为：共享工具目录自身与其下所有递归子目录 → 编译器所在目录 →
 /// [DetectedCompiler.extraPathEntries]（如 LLVM bin），条目大小写不敏感去重；
@@ -130,10 +150,13 @@ BuildEnvironment assembleBuildEnvironment({
 }) {
   final String toolsDir = Directory(toolsRoot).absolute.path;
   final String packageDir = Directory(packageRoot).absolute.path;
+  final String buildTmp = packTmpDirectory(packageDir);
   final Map<String, String> child = Map<String, String>.of(environment);
   _setEnvironmentValue(child, 'CNP_PACKAGE_ROOT', packageDir);
   _setEnvironmentValue(child, 'CNP_SRC_DIR', packSourceDirectory(packageDir));
-  _setEnvironmentValue(child, 'CNP_TMP_DIR', packTmpDirectory(packageDir));
+  _setEnvironmentValue(child, 'CNP_TMP_DIR', buildTmp);
+  _setEnvironmentValue(child, 'TMP', buildTmp);
+  _setEnvironmentValue(child, 'TEMP', buildTmp);
   _setEnvironmentValue(child, 'CNP_TOOLS_DIR', toolsDir);
   _setEnvironmentValue(child, 'CNP_COMPILER', compiler.executablePath);
   _prependPathEntries(
@@ -156,9 +179,14 @@ BuildEnvironment assembleBuildEnvironment({
 /// 全部落空或任一环节失败时抛 [BuildPreparationException]（不下载、不释放任何
 /// 工具链）。
 ///
-/// [packageRoot] 为包源目录，配方据此得知产物落点与源码/中间产物区；
-/// [baseEnvironment] 默认 `Platform.environment` 且全程只读（环境仅注入子进程，
-/// 不改动本进程与系统，也不改写其中的 `TMP`/`TEMP`）；[cachedCompilers] 为上次
+/// [packageRoot] 为包源目录，配方据此得知产物落点与源码/中间产物区；其下的
+/// `.cache/tmp` 在检测前先建好，并把 [baseEnvironment]（缺省
+/// `Platform.environment`）中的 `TMP`/`TEMP` 无条件改写为该路径，同一个目录也
+/// 交给环境捕获的包装文件用。改写必须早于检测而非只在
+/// [assembleBuildEnvironment] 收口：宿主临时位置不可用、当前工作目录同样不可写
+/// 时 ICX 在 `icx --version` 探测阶段就已失败（见 [detectIcx]），晚一步则探测已
+/// 失败。[baseEnvironment]
+/// 本身不被修改，环境仅注入子进程，不改动本进程与系统；[cachedCompilers] 为上次
 /// 检测的持久化结果（见 `SettingsModel.detectedCompilers`，设置页与构建共用），
 /// 条目经 [isCompilerUsable] 校验后才参与选择；[onCompilersDetected] 在缓存
 /// 缺失/失效并完成重检时收到新检测列表（调用方写回配置）；[detect]/[capture] 为
@@ -174,7 +202,12 @@ Future<BuildEnvironment> prepareBuildEnvironment({
   CompilerDetector? detect,
   ToolchainEnvironmentCapture? capture,
 }) async {
-  final Map<String, String> base = baseEnvironment ?? Platform.environment;
+  final String buildTmp = packTmpDirectory(Directory(packageRoot).absolute.path);
+  await _createBuildTmpDirectory(buildTmp);
+  final Map<String, String> base = _withBuildTmpDirectory(
+    baseEnvironment ?? Platform.environment,
+    buildTmp,
+  );
   DetectedCompiler? compiler = selectCompiler(
     _usableCachedCompilers(cachedCompilers),
     priority,
@@ -196,6 +229,7 @@ Future<BuildEnvironment> prepareBuildEnvironment({
     compiler,
     runner: runner,
     baseEnvironment: base,
+    scratchDirectory: buildTmp,
   );
 
   return assembleBuildEnvironment(
@@ -215,6 +249,29 @@ List<DetectedCompiler> _usableCachedCompilers(
     for (final DetectedCompiler compiler in cachedCompilers)
       if (isCompilerUsable(compiler)) compiler,
   ];
+}
+
+/// [environment] 的副本，其中 `TMP`/`TEMP` 指向 [buildTmp]（键大小写不敏感，
+/// 旧写法不残留）；入参不被修改。
+Map<String, String> _withBuildTmpDirectory(
+  Map<String, String> environment,
+  String buildTmp,
+) {
+  final Map<String, String> rewritten = Map<String, String>.of(environment);
+  _setEnvironmentValue(rewritten, 'TMP', buildTmp);
+  _setEnvironmentValue(rewritten, 'TEMP', buildTmp);
+  return rewritten;
+}
+
+/// 建好 [buildTmp]：改写后的 `TMP` 若指向尚不存在的目录、且当前工作目录同样不可
+/// 写，ICX 会因找不到可用的临时位置而探测失败（见 [detectIcx]）；而检测早于构建
+/// 前的清空重建（见 `runPackBuild`），此刻该目录可能尚未诞生。
+Future<void> _createBuildTmpDirectory(String buildTmp) async {
+  try {
+    await Directory(buildTmp).create(recursive: true);
+  } on FileSystemException catch (error) {
+    throw BuildPreparationException('无法创建中间产物目录 $buildTmp：$error');
+  }
 }
 
 /// 依据包声明准备构建环境：把 [PackModel.sourcePath]（包源目录）作为
@@ -257,12 +314,18 @@ Future<BuildEnvironment> preparePackBuildEnvironment(
 /// `&&` 短路跳过 `set`，退出码保留到 cmd 进程结束，调用方据此判定失败；
 /// 脚本成功时执行 `set` 输出完整环境变量表作为捕获结果。`set` 若另起一行
 /// 无条件执行，会把脚本的失败退出码重置为 0，失败被静默吞掉。
+///
+/// 包装文件建在 [scratchDirectory] 下的 `cnp-env-*` 子目录里并用完即删：宿主
+/// `TMP` 被改写为包内路径正是为了「宿主临时位置不可用」这一场景，若包装文件仍
+/// 借道 `Directory.systemTemp`，就会在起 `cmd` 之前先以未包装的文件系统异常
+/// 失败，把本函数自己建立的 [BuildPreparationException] 契约绕过去。
 Future<ProcessResult> _runEnvironmentScript(
   PackProcessRunner runner,
   String script,
   Map<String, String> base,
+  String scratchDirectory,
 ) async {
-  final Directory tempRoot = await Directory.systemTemp.createTemp('cnp-env-');
+  final Directory tempRoot = await _createScratchDirectory(scratchDirectory);
   try {
     final File wrapper = File(joinPath(tempRoot.path, 'capture.cmd'));
     await wrapper.writeAsString(
@@ -271,8 +334,22 @@ Future<ProcessResult> _runEnvironmentScript(
     return await runner('cmd', <String>['/c', wrapper.path], environment: base);
   } on ProcessException {
     throw BuildPreparationException('无法启动 cmd 捕获编译器环境：$script');
+  } on FileSystemException catch (error) {
+    throw BuildPreparationException('无法写入环境捕获包装脚本：$error');
   } finally {
     await _deleteQuietly(tempRoot);
+  }
+}
+
+/// 在 [scratchDirectory] 下建本次捕获专用的子目录；失败按本文件既有的
+/// [BuildPreparationException] 契约包装，不让原始文件系统异常漏给用户。
+Future<Directory> _createScratchDirectory(String scratchDirectory) async {
+  try {
+    return await Directory(scratchDirectory).createTemp('cnp-env-');
+  } on FileSystemException catch (error) {
+    throw BuildPreparationException(
+      '无法在 $scratchDirectory 下创建环境捕获目录：$error',
+    );
   }
 }
 

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
+import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
@@ -17,6 +18,7 @@ typedef _ProcessCall = ({
 void main() {
   group('captureToolchainEnvironment', () {
     test('无环境脚本时返回 base 拷贝且不执行进程', () async {
+      final Directory root = _tempDirectory();
       final Map<String, String> base = <String, String>{'FOO': 'bar'};
       final List<_ProcessCall> calls = <_ProcessCall>[];
 
@@ -24,17 +26,25 @@ void main() {
         _compiler(environmentScript: null),
         runner: _runner(calls, (_) async => throw StateError('不应执行进程')),
         baseEnvironment: base,
+        scratchDirectory: root.path,
       );
 
       expect(environment, <String, String>{'FOO': 'bar'});
       environment['FOO'] = 'changed';
       expect(base['FOO'], 'bar');
       expect(calls, isEmpty);
+      expect(
+        Directory(root.path).listSync(),
+        isEmpty,
+        reason: '无环境脚本时连包装目录都不该建',
+      );
     });
 
     test('经临时批处理包装捕获 set 输出：忽略杂项行、大小写不敏感覆盖 base', () async {
       final Directory root = _tempDirectory();
       final String script = joinPath(root.path, 'Build/vcvars64.bat');
+      _createFile(script);
+      final Directory scratch = _tempDirectory();
       final Map<String, String> base = <String, String>{
         'KEEP': '1',
         'vctoolsinstalldir': 'old',
@@ -57,6 +67,7 @@ void main() {
           return ProcessResult(0, 0, setOutput, '');
         }),
         baseEnvironment: base,
+        scratchDirectory: scratch.path,
       );
 
       expect(calls, hasLength(1));
@@ -87,9 +98,11 @@ void main() {
       expect(base.containsKey(r'VCToolsInstallDir'), isFalse);
     });
 
-    test('捕获完成后删除包装脚本与临时目录', () async {
+    test('包装脚本建在指定 scratchDirectory 下的 cnp-env-* 子目录，用完连子目录一并删除', () async {
       final Directory root = _tempDirectory();
       final String script = joinPath(root.path, 'Build/vcvars64.bat');
+      _createFile(script);
+      final Directory scratch = _tempDirectory();
       String? wrapperPath;
 
       final Map<String, String> environment = await captureToolchainEnvironment(
@@ -100,12 +113,51 @@ void main() {
           return ProcessResult(0, 0, '', '');
         }),
         baseEnvironment: <String, String>{},
+        scratchDirectory: scratch.path,
       );
 
       expect(environment, isEmpty);
       expect(wrapperPath, isNotNull);
+      final Directory wrapperDir = Directory(wrapperPath!).parent;
+      expect(
+        wrapperDir.parent.path.toLowerCase(),
+        scratch.absolute.path.toLowerCase(),
+        reason: '包装目录必须落在调用方指定的 scratchDirectory 下，不借道宿主临时目录',
+      );
+      expect(baseName(wrapperDir.path), startsWith('cnp-env-'));
       expect(File(wrapperPath!).existsSync(), isFalse);
-      expect(Directory(wrapperPath!).parent.existsSync(), isFalse);
+      expect(wrapperDir.existsSync(), isFalse, reason: '捕获用的子目录用完即删');
+      expect(scratch.existsSync(), isTrue, reason: 'scratchDirectory 本身不得删除');
+    });
+
+    test('scratchDirectory 不可用时抛 BuildPreparationException 且不起进程', () async {
+      final Directory root = _tempDirectory();
+      final String script = joinPath(root.path, 'Build/setvars.bat');
+      final String blocked = joinPath(root.path, 'blocked');
+      _createFile(blocked, content: 'not a directory');
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      await expectLater(
+        captureToolchainEnvironment(
+          _compiler(environmentScript: script),
+          runner: _runner(calls, (_) async => throw StateError('不应执行进程')),
+          baseEnvironment: <String, String>{},
+          scratchDirectory: blocked,
+        ),
+        throwsA(
+          isA<BuildPreparationException>().having(
+            (BuildPreparationException error) => error.message,
+            'message',
+            allOf(contains('无法在'), contains(blocked)),
+          ),
+        ),
+      );
+
+      expect(
+        calls,
+        isEmpty,
+        reason: '包装目录建不出来就不该起 cmd，更不该把原始文件系统异常漏给用户',
+      );
     });
 
     test('进程非零退出时抛 BuildPreparationException', () async {
@@ -120,6 +172,7 @@ void main() {
             (_) async => ProcessResult(0, 1, '', 'error'),
           ),
           baseEnvironment: <String, String>{},
+          scratchDirectory: root.path,
         ),
         throwsA(
           isA<BuildPreparationException>().having(
@@ -131,7 +184,7 @@ void main() {
       );
     });
 
-    test('cmd 无法启动时抛 BuildPreparationException 且清理临时目录', () async {
+    test('cmd 无法启动时抛 BuildPreparationException 且清理包装目录', () async {
       final Directory root = _tempDirectory();
       final String script = joinPath(root.path, 'Build/setvars.bat');
       String? wrapperPath;
@@ -144,6 +197,7 @@ void main() {
             throw ProcessException('cmd', <String>['/c'], 'not found');
           }),
           baseEnvironment: <String, String>{},
+          scratchDirectory: root.path,
         ),
         throwsA(
           isA<BuildPreparationException>().having(
@@ -160,7 +214,7 @@ void main() {
   });
 
   group('detectCompilersReadOnly', () {
-    test('只读检测不在受控临时目录下进行：子进程环境即传入的 baseEnvironment', () async {
+    test('只读检测不改写环境也不建目录：子进程环境即传入的 baseEnvironment', () async {
       final Directory root = _tempDirectory();
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx-cl.exe'));
@@ -191,7 +245,7 @@ void main() {
             .map((FileSystemEntity entity) => baseName(entity.path))
             .toList(),
         <String>['oneAPI'],
-        reason: '只读检测不得创建任何临时目录',
+        reason: '只读检测不得创建任何目录',
       );
     });
 
@@ -275,7 +329,7 @@ void main() {
       );
     });
 
-    test('只注入 CNP_PACKAGE_ROOT/CNP_SRC_DIR/CNP_TMP_DIR/CNP_TOOLS_DIR/CNP_COMPILER 五个变量', () {
+    test('只注入五个 CNP_* 变量（TMP/TEMP 的无条件改写由另两条用例守住）', () {
       final BuildEnvironment env = assembleBuildEnvironment(
         compiler: _compiler(),
         environment: <String, String>{},
@@ -297,19 +351,67 @@ void main() {
       expect(e.containsKey('PYTHONPATH'), isFalse, reason: '不再注入 PYTHONPATH');
     });
 
-    test('调用方声明的 TMP/TEMP 原样透传，不被改写成受控临时目录', () {
+    test('TMP/TEMP 无条件改写为 <包源>/.cache/tmp，与 CNP_TMP_DIR 同值且不改写入参', () {
+      final Map<String, String> base = <String, String>{
+        'tmp': r'C:\Windows\Temp',
+        'temp': r'C:\Windows\Temp',
+      };
+
       final BuildEnvironment env = assembleBuildEnvironment(
         compiler: _compiler(),
-        environment: <String, String>{
-          'TMP': r'C:\Windows\Temp',
-          'TEMP': r'C:\Windows\Temp',
-        },
+        environment: base,
         toolsRoot: r'C:\tools',
         packageRoot: r'C:\libs\demo',
       );
 
-      expect(env.environment['TMP'], r'C:\Windows\Temp');
-      expect(env.environment['TEMP'], r'C:\Windows\Temp');
+      expect(env.environment['TMP'], r'C:\libs\demo\.cache\tmp');
+      expect(env.environment['TEMP'], r'C:\libs\demo\.cache\tmp');
+      expect(env.environment['CNP_TMP_DIR'], env.environment['TMP']);
+      expect(
+        env.environment.keys.where(
+          (String key) => <String>{'tmp', 'temp'}.contains(key.toLowerCase()),
+        ),
+        <String>{'TMP', 'TEMP'},
+        reason: '键大小写不敏感：小写 tmp 不得与 TMP 并存',
+      );
+      expect(
+        base,
+        <String, String>{'tmp': r'C:\Windows\Temp', 'temp': r'C:\Windows\Temp'},
+        reason: '入参不得被改写',
+      );
+    });
+
+    test('宿主 TMP 存在且可写时仍无条件改写：可用不等于放行', () {
+      final Directory hostTmp = _tempDirectory();
+      final File probe = File(joinPath(hostTmp.path, 'probe.tmp'));
+      probe.writeAsStringSync('x');
+      expect(
+        probe.existsSync(),
+        isTrue,
+        reason: '前置条件：这个宿主 TMP 确实存在且可写',
+      );
+      final String packageRoot = joinPath(_tempDirectory().path, 'demo');
+
+      final BuildEnvironment env = assembleBuildEnvironment(
+        compiler: _compiler(),
+        environment: <String, String>{'TMP': hostTmp.path, 'TEMP': hostTmp.path},
+        toolsRoot: r'C:\tools',
+        packageRoot: packageRoot,
+      );
+
+      expect(
+        env.environment['TMP'],
+        packTmpDirectory(packageRoot),
+        reason: '改写按产品裁决无条件执行，不看宿主 TMP 是否可用',
+      );
+      expect(env.environment['TEMP'], packTmpDirectory(packageRoot));
+      expect(
+        env.environment.values.any(
+          (String value) => value == hostTmp.path,
+        ),
+        isFalse,
+        reason: '宿主 TMP 不得残留到子进程环境',
+      );
     });
 
     test('不推导 windres：调用方显式声明的 CNP_RC_COMPILER 原样透传，本层不推导也不覆盖', () {
@@ -462,7 +564,7 @@ void main() {
       final List<List<DetectedCompiler>> reported = <List<DetectedCompiler>>[];
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['msvc'],
         toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: <String, String>{},
@@ -496,7 +598,7 @@ void main() {
       final List<List<DetectedCompiler>> reported = <List<DetectedCompiler>>[];
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['msvc'],
         toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: <String, String>{},
@@ -531,7 +633,7 @@ void main() {
       );
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['msvc'],
         toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: <String, String>{},
@@ -559,7 +661,7 @@ void main() {
       int detectCalls = 0;
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['icx'],
         toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: <String, String>{},
@@ -586,7 +688,7 @@ void main() {
       final List<List<DetectedCompiler>> reported = <List<DetectedCompiler>>[];
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['msvc'],
         toolsRoot: joinPath(root.path, 'tools'),
         baseEnvironment: <String, String>{},
@@ -618,7 +720,7 @@ void main() {
       final List<CompilerKind> captured = <CompilerKind>[];
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['clang-cl', 'msvc'],
         runner: _runner(
           <_ProcessCall>[],
@@ -640,12 +742,14 @@ void main() {
       expect(result.environment['FOO'], '1');
       expect(result.environment['CAPTURED'], 'yes');
       expect(result.environment['CNP_COMPILER'], r'C:\LLVM\bin\clang-cl.exe');
-      expect(result.environment['CNP_PACKAGE_ROOT'], r'C:\libs\demo');
+      expect(result.environment['CNP_PACKAGE_ROOT'], _packageRoot(root));
       expect(base, <String, String>{'FOO': '1'});
     });
 
-    test('调用方声明的 TMP/TEMP 与父环境原样透传，不注入受控临时目录', () async {
+    test('探测与捕获子进程的 TMP/TEMP 都无条件改写为 <包源>/.cache/tmp', () async {
       final Directory root = _tempDirectory();
+      final String packageRoot = joinPath(root.path, 'demo');
+      final String buildTmp = packTmpDirectory(packageRoot);
       final String toolsRoot = '${root.path}\\tools';
       final String oneApiRoot = joinPath(root.path, 'oneAPI');
       _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx.exe'));
@@ -659,7 +763,7 @@ void main() {
       Map<String, String>? captureBase;
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: packageRoot,
         toolsRoot: toolsRoot,
         baseEnvironment: base,
         runner: _runner(calls, (_ProcessCall call) async {
@@ -681,29 +785,124 @@ void main() {
       );
       expect(icxProbes, hasLength(1));
       expect(
-        icxProbes.single.environment,
-        base,
-        reason: '检测子进程直接使用原始环境，不改写 TMP/TEMP',
+        icxProbes.single.environment?['TMP'],
+        buildTmp,
+        reason: '宿主临时位置与当前工作目录都不可用时 ICX 在检测阶段就失败，探测子进程必须已拿到改写后的 TMP',
       );
-      expect(captureBase, same(base), reason: '捕获入参即原始 base 环境');
-      expect(result.environment['TMP'], r'C:\hostile-tmp');
-      expect(result.environment['TEMP'], r'C:\hostile-temp');
+      expect(icxProbes.single.environment?['TEMP'], buildTmp);
+      expect(
+        captureBase,
+        isNot(same(base)),
+        reason: '捕获入参是改写后的副本，不是调用方的原始 base',
+      );
+      expect(captureBase?['TMP'], buildTmp);
+      expect(captureBase?['TEMP'], buildTmp);
+      expect(result.environment['TMP'], buildTmp);
+      expect(result.environment['TEMP'], buildTmp);
+      expect(result.environment['CNP_TMP_DIR'], buildTmp);
       expect(result.environment['KEEP'], '1');
       expect(result.environment['CAPTURED'], 'yes');
       expect(
-        result.environment.values.any((String value) => value.contains(r'\.tmp')),
+        result.environment.values.any(
+          (String value) => value.contains(r'C:\hostile'),
+        ),
         isFalse,
-        reason: '不得注入受控临时目录',
+        reason: '宿主 TMP/TEMP 不得残留到子进程环境',
+      );
+      expect(
+        Directory(buildTmp).existsSync(),
+        isTrue,
+        reason: '检测早于构建前的清空重建，改写目标必须先存在',
       );
       expect(Directory(toolsRoot).existsSync(), isFalse, reason: '不创建工具目录');
+      expect(
+        base,
+        <String, String>{
+          'ONEAPI_ROOT': oneApiRoot,
+          'TMP': r'C:\hostile-tmp',
+          'TEMP': r'C:\hostile-temp',
+          'KEEP': '1',
+        },
+        reason: '调用方传入的 base 不得被改写',
+      );
     });
 
-    test('baseEnvironment 为 null 时以宿主环境为底且不改写宿主 TMP/TEMP', () async {
+    test('改写不按编译器种类分支：ICX 探测失败后接手的是 clang-cl，探测子进程 TMP 同样是包内路径', () async {
       final Directory root = _tempDirectory();
+      final String packageRoot = joinPath(root.path, 'demo');
+      final String buildTmp = packTmpDirectory(packageRoot);
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx.exe'));
+      final String programFiles = joinPath(root.path, 'pf');
+      _createFile(joinPath(programFiles, 'LLVM/bin/clang-cl.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        packageRoot: packageRoot,
+        toolsRoot: '${root.path}\\tools',
+        baseEnvironment: <String, String>{
+          'ONEAPI_ROOT': oneApiRoot,
+          'ProgramFiles': programFiles,
+          'TMP': r'C:\hostile-tmp',
+          'TEMP': r'C:\hostile-temp',
+        },
+        runner: _runner(calls, (_ProcessCall call) async {
+          if (call.executable.endsWith('icx.exe')) {
+            return ProcessResult(0, 1, '', 'icx: error: unable to make temporary file');
+          }
+          return ProcessResult(0, 0, 'clang version 23.1.1\n', '');
+        }),
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) => baseEnvironment),
+      );
+
+      expect(result.compiler.kind, CompilerKind.clangCl);
+      final _ProcessCall clangProbe = calls.singleWhere(
+        (_ProcessCall call) => call.executable.endsWith('clang-cl.exe'),
+      );
+      expect(clangProbe.environment?['TMP'], buildTmp, reason: '改写与编译器种类无关');
+      expect(clangProbe.environment?['TEMP'], buildTmp);
+      expect(result.environment['TMP'], buildTmp);
+      expect(result.environment['TEMP'], buildTmp);
+    });
+
+    test('中间产物目录不可创建时抛 BuildPreparationException 且不检测编译器', () async {
+      final Directory root = _tempDirectory();
+      final String packageRoot = joinPath(root.path, 'blocked');
+      _createFile(packageRoot, content: 'not a directory');
+      final String buildTmp = packTmpDirectory(packageRoot);
+
+      await expectLater(
+        prepareBuildEnvironment(
+          packageRoot: packageRoot,
+          toolsRoot: '${root.path}\\tools',
+          baseEnvironment: <String, String>{},
+          detect: () async => throw StateError('不应检测编译器'),
+          capture: _captureStub(<CompilerKind>[], (
+            DetectedCompiler compiler,
+            Map<String, String> baseEnvironment,
+          ) => baseEnvironment),
+        ),
+        throwsA(
+          isA<BuildPreparationException>().having(
+            (BuildPreparationException error) => error.message,
+            'message',
+            allOf(contains('无法创建中间产物目录'), contains(buildTmp)),
+          ),
+        ),
+      );
+    });
+
+    test('baseEnvironment 为 null 时以宿主环境为底，TMP/TEMP 仍改写为 <包源>/.cache/tmp', () async {
+      final Directory root = _tempDirectory();
+      final String packageRoot = joinPath(root.path, 'demo');
+      final String buildTmp = packTmpDirectory(packageRoot);
       Map<String, String>? captureBase;
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: packageRoot,
         toolsRoot: '${root.path}\\tools',
         detect: () async => <DetectedCompiler>[_compiler()],
         capture: _captureStub(<CompilerKind>[], (
@@ -715,19 +914,128 @@ void main() {
         }),
       );
 
+      final Set<String> hostKeys = Platform.environment.keys
+          .toSet()
+          .difference(<String>{'TMP', 'TEMP'});
       expect(captureBase, isNotNull);
-      expect(captureBase?['TMP'], Platform.environment['TMP']);
-      expect(captureBase?['TEMP'], Platform.environment['TEMP']);
-      expect(result.environment['TMP'], Platform.environment['TMP']);
-      expect(result.environment['TEMP'], Platform.environment['TEMP']);
+      expect(
+        captureBase!.keys.toSet().difference(<String>{'TMP', 'TEMP'}),
+        hostKeys,
+        reason: '底表仍是宿主环境，只多出被改写的 TMP/TEMP',
+      );
+      expect(captureBase?['TMP'], buildTmp);
+      expect(captureBase?['TEMP'], buildTmp);
+      expect(
+        result.environment.keys.toSet().difference(<String>{
+          'TMP',
+          'TEMP',
+          'CNP_PACKAGE_ROOT',
+          'CNP_SRC_DIR',
+          'CNP_TMP_DIR',
+          'CNP_TOOLS_DIR',
+          'CNP_COMPILER',
+        }),
+        hostKeys,
+        reason: '装配阶段只多出 TMP/TEMP 与五个 CNP_，宿主环境其余部分原样继承',
+      );
+      expect(result.environment['TMP'], buildTmp);
+      expect(result.environment['TEMP'], buildTmp);
+    });
+
+    test('宿主 TMP 存在且可写时探测与捕获子进程仍改写：改写无条件，不看可用性', () async {
+      final Directory root = _tempDirectory();
+      final String packageRoot = _packageRoot(root);
+      final String buildTmp = packTmpDirectory(packageRoot);
+      final String hostTmp = _tempDirectory().path;
+      _createFile(joinPath(hostTmp, 'probe.tmp'));
+      final String oneApiRoot = joinPath(root.path, 'oneAPI');
+      _createFile(joinPath(oneApiRoot, 'compiler/2026.1/bin/icx.exe'));
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      Map<String, String>? captureBase;
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        packageRoot: packageRoot,
+        toolsRoot: '${root.path}\\tools',
+        baseEnvironment: <String, String>{
+          'ONEAPI_ROOT': oneApiRoot,
+          'TMP': hostTmp,
+          'TEMP': hostTmp,
+        },
+        runner: _runner(calls, (_) async => ProcessResult(0, 0, 'Compiler 2026.1.0\n', '')),
+        capture: _captureStub(<CompilerKind>[], (
+          DetectedCompiler compiler,
+          Map<String, String> baseEnvironment,
+        ) {
+          captureBase = baseEnvironment;
+          return Map<String, String>.of(baseEnvironment);
+        }),
+      );
+
+      expect(
+        File(joinPath(hostTmp, 'probe.tmp')).existsSync(),
+        isTrue,
+        reason: '前置条件：这个宿主 TMP 确实存在且可写，条件式实现不会改写它',
+      );
+      final _ProcessCall probe = calls.singleWhere(
+        (_ProcessCall call) => call.executable.endsWith('icx.exe'),
+      );
+      expect(
+        probe.environment?['TMP'],
+        buildTmp,
+        reason: '宿主 TMP 可用也照样改写，否则「无条件」这条裁决会退化成「能用就不改」',
+      );
+      expect(probe.environment?['TEMP'], buildTmp);
+      expect(captureBase?['TMP'], buildTmp);
+      expect(captureBase?['TEMP'], buildTmp);
+      expect(result.environment['TMP'], buildTmp);
+      expect(result.environment['TEMP'], buildTmp);
+    });
+
+    test('环境捕获包装目录建在包内 .cache/tmp，不借道宿主临时目录', () async {
+      final Directory root = _tempDirectory();
+      final String packageRoot = _packageRoot(root);
+      final String buildTmp = packTmpDirectory(packageRoot);
+      final List<_ProcessCall> calls = <_ProcessCall>[];
+      String? wrapperPath;
+
+      final BuildEnvironment result = await prepareBuildEnvironment(
+        packageRoot: packageRoot,
+        toolsRoot: '${root.path}\\tools',
+        cachedCompilers: <DetectedCompiler>[
+          _cachedCompiler(root, environmentScript: 'setvars.bat'),
+        ],
+        baseEnvironment: <String, String>{
+          'TMP': r'C:\hostile-tmp',
+          'TEMP': r'C:\hostile-temp',
+        },
+        runner: _runner(calls, (_ProcessCall call) async {
+          wrapperPath = call.arguments[1];
+          return ProcessResult(0, 0, 'Path=C:\\VC\\bin\r\n', '');
+        }),
+      );
+
+      expect(result.compiler.kind, CompilerKind.msvc);
+      expect(wrapperPath, isNotNull, reason: '带环境脚本的编译器必过包装文件这一步');
+      final Directory wrapperDir = Directory(wrapperPath!).parent;
+      expect(
+        wrapperDir.parent.absolute.path.toLowerCase(),
+        Directory(buildTmp).absolute.path.toLowerCase(),
+        reason: '包装目录必须落在已建好的 <包源>/.cache/tmp 下：宿主临时目录不可用'
+            '且当前工作目录同样不可写时，借道 Directory.systemTemp 会在起 cmd '
+            '之前就抛未包装的异常',
+      );
+      expect(baseName(wrapperDir.path), startsWith('cnp-env-'));
+      expect(wrapperDir.existsSync(), isFalse, reason: '捕获用的子目录用完即删');
+      expect(Directory(buildTmp).existsSync(), isTrue, reason: '父目录留给配方的中间产物');
     });
 
     test('无可用编译器时抛 BuildPreparationException 且不捕获', () async {
+      final Directory root = _tempDirectory();
       final List<CompilerKind> captured = <CompilerKind>[];
 
       await expectLater(
         prepareBuildEnvironment(
-          packageRoot: r'C:\libs\demo',
+          packageRoot: _packageRoot(root),
           baseEnvironment: <String, String>{},
           detect: () async => <DetectedCompiler>[],
           capture: _captureStub(captured, (
@@ -753,9 +1061,11 @@ void main() {
     });
 
     test('检测结果不在优先级列表内时视为无可用编译器', () async {
+      final Directory root = _tempDirectory();
+
       await expectLater(
         prepareBuildEnvironment(
-          packageRoot: r'C:\libs\demo',
+          packageRoot: _packageRoot(root),
           priority: <String>['icx'],
           baseEnvironment: <String, String>{},
           detect: () async => <DetectedCompiler>[_compiler()],
@@ -779,7 +1089,7 @@ void main() {
       };
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         toolsRoot: toolsRoot,
         baseEnvironment: base,
         detect: () async => <DetectedCompiler>[
@@ -798,7 +1108,7 @@ void main() {
         '${Directory(toolsRoot).absolute.path};${r'C:\VC'};'
         r'C:\LLVM\bin;C:\Windows',
       );
-      expect(result.environment['CNP_PACKAGE_ROOT'], r'C:\libs\demo');
+      expect(result.environment['CNP_PACKAGE_ROOT'], _packageRoot(root));
       expect(base['Path'], r'C:\Windows');
       expect(base.containsKey('CNP_PACKAGE_ROOT'), isFalse);
     });
@@ -811,7 +1121,7 @@ void main() {
       final Map<String, String> base = <String, String>{'Path': r'C:\Windows'};
 
       final BuildEnvironment result = await prepareBuildEnvironment(
-        packageRoot: r'C:\libs\demo',
+        packageRoot: _packageRoot(root),
         priority: <String>['msvc'],
         toolsRoot: toolsRoot,
         baseEnvironment: base,
@@ -863,6 +1173,7 @@ void main() {
     });
 
     test('包级入口不下发编译参数与选项变量', () async {
+      final Directory root = _tempDirectory();
       Future<Map<String, String>> prepare(PackModel pack) async {
         final BuildEnvironment result = await preparePackBuildEnvironment(
           pack,
@@ -880,7 +1191,7 @@ void main() {
         return result.environment;
       }
 
-      final Map<String, String> environment = await prepare(_pack(sourcePath: r'C:\libs\demo'));
+      final Map<String, String> environment = await prepare(_pack(sourcePath: _packageRoot(root)));
 
       expect(
         environment.keys
@@ -960,21 +1271,25 @@ DetectedCompiler _cachedCompiler(
   );
 }
 
-/// 捕获函数替身：记录选中编译器，环境内容由 [build] 决定。
+/// 捕获函数替身：记录选中编译器，环境内容由 [build] 决定；[scratchDirectories]
+/// 非 null 时逐次记录收到的包装目录父目录。
 ToolchainEnvironmentCapture _captureStub(
   List<CompilerKind> selected,
   Map<String, String> Function(
     DetectedCompiler compiler,
     Map<String, String> baseEnvironment,
   )
-  build,
-) {
+  build, {
+  List<String>? scratchDirectories,
+}) {
   return (
     DetectedCompiler compiler, {
     PackProcessRunner runner = Process.run,
     Map<String, String>? baseEnvironment,
+    required String scratchDirectory,
   }) async {
     selected.add(compiler.kind);
+    scratchDirectories?.add(scratchDirectory);
     return build(compiler, baseEnvironment ?? const <String, String>{});
   };
 }
@@ -1007,6 +1322,10 @@ Directory _tempDirectory() {
   });
   return directory;
 }
+
+/// 包源目录夹具：准备流程会在其下建 `.cache/tmp`，故必须落在 [_tempDirectory]
+/// 之下，不得用固定盘符路径——那会往测试机上写真实目录。
+String _packageRoot(Directory root) => joinPath(root.path, 'demo');
 
 PackProcessRunner _runner(
   List<_ProcessCall> calls,

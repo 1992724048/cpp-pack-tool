@@ -43,7 +43,7 @@ CCPPP（C++ PackTool）是仅支持 Windows 的 Flutter 桌面应用，用于把
 | `CNP_TOOLS_DIR` | 跨包共享的工具根目录。 |
 | `CNP_COMPILER` | 检测到的首选编译器可执行文件全路径。 |
 
-此外固定注入 `PYTHONIOENCODING=utf-8`，保证管道中的 stdout/stderr 恒为 UTF-8。
+此外固定注入 `PYTHONIOENCODING=utf-8`，保证管道中的 stdout/stderr 恒为 UTF-8；并把 `TMP`/`TEMP` 指向 `CNP_TMP_DIR`，故配方用 `tempfile` 拿到的目录同样落在每次构建前清空的中间产物区。
 
 ### 配方需要知道的全部
 

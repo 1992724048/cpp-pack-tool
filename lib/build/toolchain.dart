@@ -16,13 +16,14 @@ const String _vcToolsComponent =
 /// `bin/icx.exe`（2024+ 布局，优先）或 `windows/bin/icx.exe`（旧布局）；驱动缺失时
 /// 回退旧名 `icx-cl.exe`（兼容更早安装）。
 ///
-/// [environment] 为版本探测子进程的环境；null 时继承宿主环境。探测只认退出码
-/// 0 且 stdout 命中版本：ICX 在临时目录不可用时会以 1 退出（`error #10026`，
-/// stdout 为空、横幅与错误写 stderr），不为其放行——该文本形态与 stdout 正常输出
-/// 不同且放行会掩盖真实失败。该失败模式的根因是 `TMP` 指向他人所有的既有目录时
-/// ICX 在自建临时目录内被 `ACCESS DENIED`；应用侧只读检测不改写 `TMP`/`TEMP`，
-/// 宿主 `TMP` 恰为他人所有时该失败会直接暴露为漏检，自行传入 [environment] 的
-/// 调用方需保证其中的 `TMP`/`TEMP` 指向当前用户所有的目录。
+/// [environment] 为版本探测子进程的环境；null 时继承宿主环境。本层不碰
+/// `TMP`/`TEMP`，由调用方决定。探测只认退出码 0 且 stdout 命中版本。ICX 找不到
+/// 可用的临时位置时以 1 退出、错误行写 stderr（实测 ICX 2026.1.1）：`TMP` 与
+/// 当前工作目录都不可写时报 `#10026: error generating temporary file`、stdout
+/// 为空；环境被剥到最小时报的是无编号的 `unable to make temporary file`、
+/// stdout 仍是完整版本横幅。两道判据都不可省。构建路径已把 `TMP`/`TEMP`
+/// 改写为包自带的 `.cache/tmp`（见 `prepareBuildEnvironment`），其余调用方
+/// 须自行保证该位置可用。
 Future<DetectedCompiler?> detectIcx({
   PackProcessRunner runner = Process.run,
   required String oneApiRoot,
