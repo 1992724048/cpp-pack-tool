@@ -679,10 +679,7 @@ class _MainLayoutState extends State<MainLayout> {
       }
       try {
         final int size = await File(joinPath(sourcePath, file.path)).length();
-        files.add(
-          FileModel(name: file.name, path: file.path, size: size)
-            ..buildModel = file.buildModel,
-        );
+        files.add(FileModel(name: file.name, path: file.path, size: size));
       } catch (_) {
         // stat 失败保留原字节数并放过：只为刷新展示，不阻断导出
         files.add(file);

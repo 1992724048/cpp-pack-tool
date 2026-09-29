@@ -1,5 +1,4 @@
-﻿import 'package:cpp_nuget_pack/models/build_model.dart';
-import 'package:cpp_nuget_pack/util/format.dart';
+﻿import 'package:cpp_nuget_pack/util/format.dart';
 
 enum FileType {
   header,
@@ -74,7 +73,6 @@ class FileModel {
   final int size;
   String extension = '';
   FileType type = FileType.other;
-  BuildModel buildModel = BuildModel.all;
 
   FileModel({required this.name, required this.path, this.size = 0}) {
     extension = name.split('.').last.toLowerCase();

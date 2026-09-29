@@ -2,7 +2,6 @@ import 'package:cpp_nuget_pack/models/file_model.dart';
 import 'package:cpp_nuget_pack/models/pack_model.dart';
 import 'package:cpp_nuget_pack/pages/pack_files.dart';
 import 'package:cpp_nuget_pack/util/build_config.dart';
-import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/widgets/tag.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -361,99 +360,28 @@ void main() {
     expect(find.text('无法打开文件：foo.h'), findsOneWidget);
   });
 
-  testWidgets('Release 路径的二进制文件显示绿色 Release 标签', (tester) async {
+  // 构建标签改为编译设置页手选，文件行不再按路径推断配置，故此处钉住「不再出现」。
+  testWidgets('文件行不显示构建配置标签', (tester) async {
     final PackModel pack = _pack('demo', <FileModel>[
       FileModel(name: 'mylib.lib', path: 'release/mylib.lib', size: 10),
+      FileModel(name: 'foo.cpp', path: 'release/foo.cpp', size: 10),
+      FileModel(name: 'tool.pdb', path: r'out\debug\tool.pdb', size: 10),
     ]);
 
     await _pumpPage(tester, PackFiles(pack: pack));
     await tester.tap(find.text('release'));
     await tester.pump(const Duration(milliseconds: 400));
-
-    final Tag tag = tester.widget<Tag>(find.byType(Tag));
-    expect(tag.text, releaseBuildLabel);
-    expect(tag.color, MarkerColors.green);
-    expect(tag.fontSize, 10);
-  });
-
-  testWidgets('Debug 路径的二进制文件显示橙色 Debug 标签', (tester) async {
-    final PackModel pack = _pack('demo', <FileModel>[
-      FileModel(name: 'mylib.pdb', path: r'out\debug\mylib.pdb', size: 10),
-    ]);
-
-    await _pumpPage(tester, PackFiles(pack: pack));
     await tester.tap(find.text('out'));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('debug'));
     await tester.pump(const Duration(milliseconds: 400));
 
-    final Tag tag = tester.widget<Tag>(find.byType(Tag));
-    expect(tag.text, debugBuildLabel);
-    expect(tag.color, MarkerColors.orange);
-  });
-
-  testWidgets('构建标签紧贴名称右侧 5px', (tester) async {
-    final PackModel pack = _pack('demo', <FileModel>[
-      FileModel(name: 'mylib.lib', path: 'release/mylib.lib', size: 10),
-    ]);
-
-    await _pumpPage(tester, PackFiles(pack: pack));
-    await tester.tap(find.text('release'));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Rect nameRect = tester.getRect(find.text('mylib.lib'));
-    final Rect tagRect = tester.getRect(find.byType(Tag));
-    expect(tagRect.left - nameRect.right, 5);
-  });
-
-  testWidgets('超长名称先省略且标签完整可见', (tester) async {
-    final String longName = '${'long_component_name_' * 10}mylib.lib';
-    final PackModel pack = _pack('demo', <FileModel>[
-      FileModel(name: longName, path: 'release/$longName', size: 10),
-    ]);
-
-    await _pumpPage(tester, PackFiles(pack: pack));
-    await tester.tap(find.text('release'));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final Finder row = find
-        .ancestor(of: find.text(longName), matching: find.byType(Row))
-        .at(1);
-    final Rect nameRect = tester.getRect(find.text(longName));
-    final Rect tagRect = tester.getRect(find.byType(Tag));
-    final Rect sizeRect = tester.getRect(
-      find.descendant(of: row, matching: find.text('10 B')),
-    );
-
-    expect(tagRect.left - nameRect.right, 5);
-    expect(sizeRect.left - tagRect.right, 8);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('路径无构建配置段时不显示标签', (tester) async {
-    final PackModel pack = _pack('demo', <FileModel>[
-      FileModel(name: 'mylib.lib', path: 'mylib.lib', size: 10),
-    ]);
-
-    await _pumpPage(tester, PackFiles(pack: pack));
-
     expect(find.text('mylib.lib'), findsOneWidget);
-    expect(find.byType(Tag), findsNothing);
-  });
-
-  testWidgets('源码文件位于 Release 路径时显示绿色 Release 标签', (tester) async {
-    final PackModel pack = _pack('demo', <FileModel>[
-      FileModel(name: 'foo.cpp', path: 'release/foo.cpp', size: 10),
-    ]);
-
-    await _pumpPage(tester, PackFiles(pack: pack));
-    await tester.tap(find.text('release'));
-    await tester.pump(const Duration(milliseconds: 400));
-
     expect(find.text('foo.cpp'), findsOneWidget);
-    final Tag tag = tester.widget<Tag>(find.byType(Tag));
-    expect(tag.text, releaseBuildLabel);
-    expect(tag.color, MarkerColors.green);
+    expect(find.text('tool.pdb'), findsOneWidget);
+    expect(find.byType(Tag), findsNothing);
+    expect(find.text(releaseBuildLabel), findsNothing);
+    expect(find.text(debugBuildLabel), findsNothing);
   });
 
   testWidgets('exe 与 msi 文件使用 exe 图标', (tester) async {
