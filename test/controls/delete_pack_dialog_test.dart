@@ -101,7 +101,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(result!.confirmed, isTrue);
-    expect(result!.deleteCache, isFalse);
     expect(find.byKey(const Key('deletePackDialog')), findsNothing);
   });
 
@@ -117,67 +116,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(result!.confirmed, isFalse);
-    expect(result!.deleteCache, isFalse);
     expect(find.byKey(const Key('deletePackDialog')), findsNothing);
-  });
-
-  testWidgets('无构建缓存时复选禁用且提示未发现缓存', (tester) async {
-    await _pumpDialog(tester);
-
-    expect(find.text('同时删除构建缓存'), findsOneWidget);
-    expect(
-      tester
-          .widget<Checkbox>(find.byKey(const Key('deletePackCacheCheckbox')))
-          .onChanged,
-      isNull,
-    );
-    expect(find.text('未发现该包的构建缓存。'), findsOneWidget);
-  });
-
-  testWidgets('有构建缓存时提示清洗后的缓存路径', (tester) async {
-    await _pumpDialog(tester, hasBuildCache: true);
-
-    expect(find.textContaining('cache/build/$_packName'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('勾选后确认返回删除缓存标记', (tester) async {
-    DeletePackResult? result;
-    await _pumpDialog(
-      tester,
-      hasBuildCache: true,
-      onResult: (DeletePackResult value) => result = value,
-    );
-
-    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
-    await tester.pump();
-    expect(
-      tester
-          .widget<Checkbox>(find.byKey(const Key('deletePackCacheCheckbox')))
-          .checked,
-      isTrue,
-    );
-
-    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(result!.confirmed, isTrue);
-    expect(result!.deleteCache, isTrue);
-  });
-
-  testWidgets('点击整行可切换复选状态', (tester) async {
-    await _pumpDialog(tester, hasBuildCache: true);
-
-    await tester.tap(find.text('同时删除构建缓存'));
-    await tester.pump();
-
-    expect(
-      tester
-          .widget<Checkbox>(find.byKey(const Key('deletePackCacheCheckbox')))
-          .checked,
-      isTrue,
-    );
   });
 }
 
@@ -185,7 +124,6 @@ Future<void> _pumpDialog(
   WidgetTester tester, {
   ValueChanged<DeletePackResult>? onResult,
   List<PackDependent> dependents = const <PackDependent>[],
-  bool hasBuildCache = false,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -201,7 +139,6 @@ Future<void> _pumpDialog(
                 context,
                 packName: _packName,
                 dependents: dependents,
-                hasBuildCache: hasBuildCache,
               );
               onResult?.call(result);
             },

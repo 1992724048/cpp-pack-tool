@@ -1015,16 +1015,19 @@ void main() {
   });
 
   // 本组不注入 probeSourceAbsent，走 MainLayout 构造函数的**生产默认实现**
-  // （absentByPresetSourceProbe）对真实临时目录求值。缺省替身取 true、对本组零
+  // （sourceDirAbsent）对真实临时目录求值。缺省替身取 true、对本组零
   // 判别力，故生产默认的极性只能由本组钉住——上面那两条用例只钉住「接线正确、
   // 两个极性各自走对时间线」，替身换成什么值都照样通过。
-  testWidgets('生产默认实现：有 .cnp-src 的包走准备环境时间线', (tester) async {
+  testWidgets('生产默认实现：源码区已就绪的包走准备环境时间线', (tester) async {
     final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
     addTearDown(() => sourceDir.deleteSync(recursive: true));
-    Directory('${sourceDir.path}${Platform.pathSeparator}.cnp-src')
-        .createSync(recursive: true);
+    Directory(
+      '${sourceDir.path}${Platform.pathSeparator}.cache'
+      '${Platform.pathSeparator}src',
+    ).createSync(recursive: true);
     File(
-      '${sourceDir.path}${Platform.pathSeparator}.cnp-src'
+      '${sourceDir.path}${Platform.pathSeparator}.cache'
+      '${Platform.pathSeparator}src'
       '${Platform.pathSeparator}lib.h',
     ).writeAsStringSync('#pragma once\n');
 
@@ -1038,7 +1041,7 @@ void main() {
     expect(find.text('准备源码'), findsOneWidget);
   });
 
-  testWidgets('生产默认实现：无 .cnp-src 的包走下载时间线', (tester) async {
+  testWidgets('生产默认实现：源码区尚未就绪的包走下载时间线', (tester) async {
     final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
     addTearDown(() => sourceDir.deleteSync(recursive: true));
 
@@ -2172,113 +2175,6 @@ void main() {
 
     expect(_dependencyGraphButton(tester).onPressed, isNull);
   });
-
-  testWidgets('删除包时探测构建缓存并可按需删除缓存', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[_pack('demo', '1.0.0')],
-    );
-    String? probedName;
-    String? deletedName;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      hasBuildCache: (String packName) async {
-        probedName = packName;
-        return true;
-      },
-      deleteBuildCache: (String packName) async {
-        deletedName = packName;
-      },
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.byTooltip('删除文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(probedName, 'demo');
-    expect(find.textContaining('cache/build/demo'), findsOneWidget);
-    expect(
-      tester
-          .widget<Checkbox>(find.byKey(const Key('deletePackCacheCheckbox')))
-          .onChanged,
-      isNotNull,
-    );
-
-    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(store.packs, isEmpty);
-    expect(deletedName, 'demo');
-    expect(find.text('已删除（含构建缓存）'), findsOneWidget);
-  });
-
-  testWidgets('构建缓存删除失败时提示且不阻断包删除', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[_pack('demo', '1.0.0')],
-    );
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      hasBuildCache: (String packName) async => true,
-      deleteBuildCache: (String packName) async =>
-          throw const FileSystemException('目录被占用'),
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.byTooltip('删除文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.byKey(const Key('deletePackCacheCheckbox')));
-    await tester.pump();
-    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(store.packs, isEmpty);
-    expect(find.textContaining('已删除包，但构建缓存删除失败'), findsOneWidget);
-    expect(find.textContaining('目录被占用'), findsOneWidget);
-    expect(find.text('已删除（含构建缓存）'), findsNothing);
-  });
-
-  testWidgets('未勾选删除缓存时仅删除包并提示已删除', (tester) async {
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[_pack('demo', '1.0.0')],
-    );
-    String? deletedName;
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      hasBuildCache: (String packName) async => true,
-      deleteBuildCache: (String packName) async {
-        deletedName = packName;
-      },
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-    );
-
-    await tester.tap(find.byTooltip('删除文件夹'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.byKey(const Key('deletePackConfirmButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-
-    expect(store.packs, isEmpty);
-    expect(deletedName, isNull);
-    expect(find.text('已删除'), findsOneWidget);
-  });
 }
 
 Future<void> _pumpMainLayout(
@@ -2296,8 +2192,6 @@ Future<void> _pumpMainLayout(
   DateTime Function()? now,
   PackSourceAbsentProbe? probeSourceAbsent,
   PackHeaderIncludeFixer? fixIncludes,
-  PackBuildCacheProbe? hasBuildCache,
-  PackBuildCacheDeleter? deleteBuildCache,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
   tester.view.devicePixelRatio = 1.0;
@@ -2318,8 +2212,6 @@ Future<void> _pumpMainLayout(
         probeSourceAbsent: probeSourceAbsent ?? _absentPresetSource,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
-        hasBuildCache: hasBuildCache ?? _noBuildCache,
-        deleteBuildCache: deleteBuildCache ?? _noDeleteBuildCache,
       ),
     ),
   );
@@ -2328,7 +2220,7 @@ Future<void> _pumpMainLayout(
 }
 
 /// 铺好 `MainLayout` 并打开构建对话框，**刻意不传 probeSourceAbsent**，使其落到
-/// 构造函数的默认实现（[absentByPresetSourceProbe]）；对话框停在准备阶段（由
+/// 构造函数的默认实现（[sourceDirAbsent]）；对话框停在准备阶段（由
 /// 未完成的 gate 保持），便于断言时间线文案。构建与环境准备均为桩，避免真实工具链。
 Future<void> _openBuildDialogWithProductionProbe(
   WidgetTester tester, {
@@ -2382,18 +2274,14 @@ Future<void> _openBuildDialogWithProductionProbe(
   await tester.pump(const Duration(milliseconds: 400));
 }
 
-Future<bool> _noBuildCache(String packName) async => false;
-
-/// 预置源码探测的缺省替身：**无**预置源码（`sourceNone` 为 true，走下载/分类
-/// 时间线）。名字与极性同向，取反只写在生产实现里。极性见 `PackSourceAbsentProbe`。
+/// 源码区探测的缺省替身：**源码区缺席**（`sourceNone` 为 true，走下载/分类
+/// 时间线）。名字与极性同向。极性见 `PackSourceAbsentProbe`。
 ///
-/// 取 true 而非 false：与生产默认 [absentByPresetSourceProbe] 的取值同向，替身
-/// 与生产不会因极性不同而各自走一条时间线。默认值本身不承载判别力——两个极性
+/// 取 true 而非 false：与生产默认 [sourceDirAbsent] 在源码区空目录上的取值同向，
+/// 替身与生产不会因极性不同而各自走一条时间线。默认值本身不承载判别力——两个极性
 /// 各由本文件里显式注入的用例钉住，生产默认的极性由 `_openBuildDialogWithProductionProbe`
 /// 那组钉住。
 Future<bool> _absentPresetSource(String sourcePath) async => true;
-
-Future<void> _noDeleteBuildCache(String packName) async {}
 
 Future<HeaderIncludeFixReport> _emptyFixIncludes(
   String sourcePath, {

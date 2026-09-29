@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:cpp_nuget_pack/build/build_cache.dart';
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/build/build_script.dart';
@@ -125,22 +124,19 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
   );
 }
 
-/// 包构建缓存探测（删除对话框用）；测试注入。
-typedef PackBuildCacheProbe = Future<bool> Function(String packName);
-
-/// 包构建缓存删除；测试注入。
-typedef PackBuildCacheDeleter = Future<void> Function(String packName);
-
-/// 包内预置源码缺席探测（构建对话框 `sourceNone` 判据）；测试注入。
+/// 源码区缺席探测（构建对话框 `sourceNone` 判据）；测试注入。
 ///
-/// 返回 `true` 表示**包内无预置源码**（产物落在配方自管的源码区），
-/// 与消费方 `sourceNone` 同极性。
+/// 返回 `true` 表示**配方自管的源码区（`CNP_SRC_DIR`）尚未出现**——本次构建的
+/// 源码要由配方去拉，时间线走下载/分类；与消费方 `sourceNone` 同极性。
 typedef PackSourceAbsentProbe = Future<bool> Function(String sourcePath);
 
-/// 生产默认的预置源码缺席探测：全仓唯一把「有无预置源码」取反成 `sourceNone`
-/// 极性的地方，提取为具名函数是因为 const 默认值不接受 `async` 闭包。
-Future<bool> absentByPresetSourceProbe(String sourcePath) async =>
-    !await hasPresetSource(sourcePath);
+/// 生产默认的源码区缺席探测：全仓唯一把「源码区有无」映射成 `sourceNone` 极性
+/// 的地方，提取为具名函数是因为 const 默认值不接受 `async` 闭包。
+///
+/// 判据只到「目录在不在」为止：源码区的内容由配方自己摆，软件无从判断它拉到
+/// 哪一步，故目录存在即视为已就绪。
+Future<bool> sourceDirAbsent(String sourcePath) async =>
+    !await Directory(packSourceDirectory(sourcePath)).exists();
 
 class MainLayout extends StatefulWidget {
   const MainLayout({
@@ -154,11 +150,9 @@ class MainLayout extends StatefulWidget {
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
     this.detectCompilers = detectCompilersReadOnly,
-    this.probeSourceAbsent = absentByPresetSourceProbe,
+    this.probeSourceAbsent = sourceDirAbsent,
     this.fixIncludes = fixHeaderIncludes,
     this.now = DateTime.now,
-    this.hasBuildCache = hasPackBuildCache,
-    this.deleteBuildCache = deletePackBuildCache,
   });
 
   final Future<String?> Function() pickDirectory;
@@ -172,23 +166,17 @@ class MainLayout extends StatefulWidget {
 
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
 
-  /// 探测包内**无**预置源码（缺省 [absentByPresetSourceProbe]）；构建对话框的
+  /// 探测配方源码区**尚未就绪**（缺省 [sourceDirAbsent]）；构建对话框的
   /// `sourceNone` 标记据此展示下载/准备源码时间线，仅测试注入替代实现。
   ///
-  /// 极性见 [PackSourceAbsentProbe]：`true` = 无预置源码。取反只写在默认值指向的
-  /// 那一个函数里，调用点原样透传，从命名上即排除再次接反。
+  /// 极性见 [PackSourceAbsentProbe]：`true` = 源码区缺席。生产实现只此一处，
+  /// 调用点原样透传，从命名上即排除再次接反。
   final PackSourceAbsentProbe probeSourceAbsent;
 
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
 
   final DateTime Function() now;
-
-  /// 删除包时探测其构建缓存是否存在；测试注入。
-  final PackBuildCacheProbe hasBuildCache;
-
-  /// 删除包时按需删除其构建缓存；测试注入。
-  final PackBuildCacheDeleter deleteBuildCache;
 
   @override
   State<MainLayout> createState() => _MainLayoutState();
@@ -350,15 +338,10 @@ class _MainLayoutState extends State<MainLayout> {
             if (dependency.name.toLowerCase() == pack.name.toLowerCase())
               (name: item.name, version: dependency.version),
     ];
-    final bool hasCache = await _probeBuildCache(pack.name);
-    if (!mounted) {
-      return;
-    }
     final DeletePackResult result = await showDeletePackDialog(
       context,
       packName: pack.name,
       dependents: dependents,
-      hasBuildCache: hasCache,
     );
     if (!result.confirmed || !mounted) {
       return;
@@ -383,37 +366,7 @@ class _MainLayoutState extends State<MainLayout> {
         _selected = _packs.length - 1;
       }
     });
-    if (result.deleteCache) {
-      try {
-        await widget.deleteBuildCache(pack.name);
-      } catch (error) {
-        if (!mounted) {
-          return;
-        }
-        showFloatingToast(
-          context,
-          '已删除包，但构建缓存删除失败：${formatError(error)}',
-          type: FloatingToastType.error,
-          duration: const Duration(seconds: 5),
-        );
-        return;
-      }
-      if (!mounted) {
-        return;
-      }
-      showFloatingToast(context, '已删除（含构建缓存）');
-      return;
-    }
     showFloatingToast(context, '已删除');
-  }
-
-  /// 构建缓存探测：异常按无缓存处理（不阻断删除）。
-  Future<bool> _probeBuildCache(String packName) async {
-    try {
-      return await widget.hasBuildCache(packName);
-    } catch (_) {
-      return false;
-    }
   }
 
   Future<void> _remapSelectedPack() async {
@@ -559,11 +512,11 @@ class _MainLayoutState extends State<MainLayout> {
     _upsertPack(current);
   }
 
-  /// 取构建对话框的 `sourceNone` 标记：**包内无预置源码时为 true**（此时
-  /// 源码与产物都落在配方自管的区里，时间线走下载/分类）。
+  /// 取构建对话框的 `sourceNone` 标记：**配方源码区尚未就绪时为 true**（此时本次
+  /// 构建的源码要由配方去拉，时间线走下载/分类）。
   ///
   /// 极性由 [MainLayout.probeSourceAbsent] 自身定义，本方法只做缺省与异常兜底，
-  /// 取值原样透传，不再取反。探测失败按「有预置源码」（false）兜底。
+  /// 取值原样透传，不再取反。探测失败按「源码区已就绪」（false）兜底。
   Future<bool> _probeSourceNone(PackModel pack) async {
     final String? sourcePath = pack.sourcePath;
     if (sourcePath == null || sourcePath.isEmpty) {

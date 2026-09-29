@@ -13,7 +13,7 @@ import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:cpp_nuget_pack/util/pack_remap.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-enum _BuildStage { preparing, staging, building, fixingIncludes, remapping, completed, failed }
+enum _BuildStage { preparing, building, fixingIncludes, remapping, completed, failed }
 
 typedef BuildPackPrepare = Future<BuildEnvironment> Function(PackModel pack);
 
@@ -85,7 +85,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   BuildTimelineStepId _stepFor(_BuildStage stage) {
     return switch (stage) {
       _BuildStage.preparing => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.prepare,
-      _BuildStage.staging => BuildTimelineStepId.download,
       _BuildStage.building => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.build,
       _BuildStage.fixingIncludes => BuildTimelineStepId.includes,
       _BuildStage.remapping => BuildTimelineStepId.remap,
@@ -120,8 +119,7 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    // 备源阶段已随单段流水线消失：环境就绪后整个会话就是构建，此刻起「执行构建」
-    // 步骤为进行中。
+    // 备源阶段已随单段流水线消失：环境就绪后整个会话就是构建，直接推进到构建阶段。
     setState(() => _advanceTo(_BuildStage.building));
     try {
       await widget.build(
@@ -312,7 +310,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   bool get _isRunning =>
       _stage == _BuildStage.preparing ||
-      _stage == _BuildStage.staging ||
       _stage == _BuildStage.building ||
       _stage == _BuildStage.fixingIncludes ||
       _stage == _BuildStage.remapping;
