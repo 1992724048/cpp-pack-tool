@@ -34,7 +34,6 @@ class BuildPackDialog extends StatefulWidget {
   const BuildPackDialog({
     super.key,
     required this.pack,
-    this.sourceNone = false,
     this.build = runPackBuild,
     required this.prepare,
     required this.scanFiles,
@@ -44,7 +43,6 @@ class BuildPackDialog extends StatefulWidget {
   });
 
   final PackModel pack;
-  final bool sourceNone;
   final PackBuildRunner build;
   final BuildPackPrepare prepare;
   final Future<List<FileModel>> Function(String sourcePath) scanFiles;
@@ -72,7 +70,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   HeaderIncludeFixReport? _fixReport;
   BuildTimelineStepId _failedStep = BuildTimelineStepId.prepare;
   final Set<BuildTimelineStepId> _visitedSteps = <BuildTimelineStepId>{};
-  int? _buildProgressPercent;
 
   @override
   void initState() {
@@ -84,8 +81,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   BuildTimelineStepId _stepFor(_BuildStage stage) {
     return switch (stage) {
-      _BuildStage.preparing => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.prepare,
-      _BuildStage.building => widget.sourceNone ? BuildTimelineStepId.download : BuildTimelineStepId.build,
+      _BuildStage.preparing => BuildTimelineStepId.prepare,
+      _BuildStage.building => BuildTimelineStepId.build,
       _BuildStage.fixingIncludes => BuildTimelineStepId.includes,
       _BuildStage.remapping => BuildTimelineStepId.remap,
       _BuildStage.completed => BuildTimelineStepId.done,
@@ -209,14 +206,10 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     if (!mounted) {
       return;
     }
-    final int? percent = widget.sourceNone ? extractProgressPercent(line) : null;
     setState(() {
       _outputLines.add(line);
       _trimOutputLines();
       _outputRevision++;
-      if (percent != null) {
-        _buildProgressPercent = percent;
-      }
     });
   }
 
@@ -317,7 +310,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
   List<BuildTimelineStep> get _timelineSteps {
     final bool failed = _stage == _BuildStage.failed;
     return buildTimelineSteps(
-      sourceNone: widget.sourceNone,
       activeStep: _activeStep,
       sessionState: switch (_stage) {
         _BuildStage.failed => BuildTimelineSessionState.failed,
@@ -325,11 +317,6 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
         _ => BuildTimelineSessionState.running,
       },
       visitedSteps: <BuildTimelineStepId>{..._visitedSteps, _activeStep},
-      activeDetails: buildActiveStepDetails(
-        step: _activeStep,
-        sourceNone: widget.sourceNone,
-        buildProgressPercent: _buildProgressPercent,
-      ),
       doneDetails: buildCompletionDetails(
         fileCount: _files.length,
         totalSize: totalFileSize(_files),

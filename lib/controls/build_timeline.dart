@@ -2,7 +2,7 @@ import 'package:cpp_nuget_pack/util/colors.dart';
 import 'package:cpp_nuget_pack/util/format.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
-enum BuildTimelineStepId { prepare, download, build, includes, classify, remap, done }
+enum BuildTimelineStepId { prepare, download, build, includes, remap, done }
 
 enum BuildTimelineStepStatus { pending, active, done, failed, skipped }
 
@@ -31,7 +31,7 @@ class BuildTimelineStep {
   final String? error;
 }
 
-const List<BuildTimelineStepId> normalTimelineOrder = <BuildTimelineStepId>[
+const List<BuildTimelineStepId> buildTimelineOrder = <BuildTimelineStepId>[
   BuildTimelineStepId.prepare,
   BuildTimelineStepId.download,
   BuildTimelineStepId.build,
@@ -40,21 +40,12 @@ const List<BuildTimelineStepId> normalTimelineOrder = <BuildTimelineStepId>[
   BuildTimelineStepId.done,
 ];
 
-const List<BuildTimelineStepId> sourceNoneTimelineOrder = <BuildTimelineStepId>[
-  BuildTimelineStepId.download,
-  BuildTimelineStepId.classify,
-  BuildTimelineStepId.includes,
-  BuildTimelineStepId.remap,
-  BuildTimelineStepId.done,
-];
-
-String buildTimelineStepLabel(BuildTimelineStepId id, {bool sourceNone = false}) {
+String buildTimelineStepLabel(BuildTimelineStepId id) {
   return switch (id) {
     BuildTimelineStepId.prepare => '准备环境',
-    BuildTimelineStepId.download => sourceNone ? '下载' : '准备源码',
+    BuildTimelineStepId.download => '准备源码',
     BuildTimelineStepId.build => '执行构建',
     BuildTimelineStepId.includes => '检查头文件引用',
-    BuildTimelineStepId.classify => '分类',
     BuildTimelineStepId.remap => '重新映射',
     BuildTimelineStepId.done => '完成',
   };
@@ -69,22 +60,19 @@ String buildTimelineStepLabel(BuildTimelineStepId id, {bool sourceNone = false})
 List<BuildTimelineStep> buildTimelineSteps({
   required BuildTimelineStepId activeStep,
   required BuildTimelineSessionState sessionState,
-  bool sourceNone = false,
   Set<BuildTimelineStepId> visitedSteps = const <BuildTimelineStepId>{},
-  List<BuildTimelineDetail> activeDetails = const <BuildTimelineDetail>[],
   List<BuildTimelineDetail> doneDetails = const <BuildTimelineDetail>[],
   String? failureText,
 }) {
-  final List<BuildTimelineStepId> order = sourceNone ? sourceNoneTimelineOrder : normalTimelineOrder;
-  final int found = order.indexOf(activeStep);
+  final int found = buildTimelineOrder.indexOf(activeStep);
   final int activeIndex = found < 0 ? 0 : found;
   final bool failed = sessionState == BuildTimelineSessionState.failed;
   final List<BuildTimelineStep> steps = <BuildTimelineStep>[];
-  for (int index = 0; index < order.length; index++) {
+  for (int index = 0; index < buildTimelineOrder.length; index++) {
     if (failed && index > activeIndex) {
       break;
     }
-    final BuildTimelineStepId id = order[index];
+    final BuildTimelineStepId id = buildTimelineOrder[index];
     final BuildTimelineStepStatus status;
     List<BuildTimelineDetail> details = const <BuildTimelineDetail>[];
     String? error;
@@ -97,7 +85,6 @@ List<BuildTimelineStep> buildTimelineSteps({
         details = doneDetails;
       } else {
         status = BuildTimelineStepStatus.active;
-        details = activeDetails;
       }
     } else if (index < activeIndex) {
       status = visitedSteps.contains(id) ? BuildTimelineStepStatus.done : BuildTimelineStepStatus.skipped;
@@ -107,7 +94,7 @@ List<BuildTimelineStep> buildTimelineSteps({
     steps.add(
       BuildTimelineStep(
         id: id,
-        label: buildTimelineStepLabel(id, sourceNone: sourceNone),
+        label: buildTimelineStepLabel(id),
         status: status,
         details: details,
         error: error,
@@ -115,18 +102,6 @@ List<BuildTimelineStep> buildTimelineSteps({
     );
   }
   return steps;
-}
-
-List<BuildTimelineDetail> buildActiveStepDetails({
-  required BuildTimelineStepId step,
-  required bool sourceNone,
-  int? buildProgressPercent,
-}) {
-  final List<BuildTimelineDetail> details = <BuildTimelineDetail>[];
-  if (sourceNone && step == BuildTimelineStepId.download && buildProgressPercent != null) {
-    details.add(BuildTimelineDetail('已下载 $buildProgressPercent%'));
-  }
-  return details;
 }
 
 List<BuildTimelineDetail> buildCompletionDetails({

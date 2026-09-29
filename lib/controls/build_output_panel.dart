@@ -5,25 +5,6 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show SelectionRegistrar;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
-/// 构建脚本进度行的百分比提取：匹配 `... progress 42.0% ...` 形态（不依赖
-/// 具体库名）；不可解析返回 null。
-final RegExp _progressPercentPattern = RegExp(
-  r'progress[^0-9%]*([0-9]{1,3}(?:\.[0-9]+)?)\s*%',
-  caseSensitive: false,
-);
-
-int? extractProgressPercent(String line) {
-  final RegExpMatch? match = _progressPercentPattern.firstMatch(line);
-  if (match == null) {
-    return null;
-  }
-  final double? value = double.tryParse(match.group(1)!);
-  if (value == null || value < 0 || value > 100) {
-    return null;
-  }
-  return value.round();
-}
-
 const String _errorKeyword = 'ERROR';
 const String _warningKeyword = 'WARNING';
 const String _infoKeyword = 'INFO';

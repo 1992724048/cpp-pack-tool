@@ -912,9 +912,11 @@ void main() {
     );
   });
 
-  testWidgets('构建对话框：sourceNone 为 true 时走下载时间线', (tester) async {
-    // 与下面那条成对，把 sourceNone 的两个极性都显式钉住：注入 true 时
-    // 走下载/分类时间线（无「准备环境」步骤），注入 false 时走准备源码时间线。
+  testWidgets('构建对话框：时间线恒为准备环境 → 准备源码 → 执行构建 → 检查头文件引用 → 重新映射 → 完成', (tester) async {
+    // 时间线已合一：不再按「源码区有无」分叉，打开对话框只可能是这一张表，
+    // 过去那对「注入 true / 注入 false」的极性用例随之失去判别对象。下面把六步
+    // 的文案、步骤节点与「下载」「分类」不再是任何步骤的标签一并钉住——实现若把
+    // 构建阶段映回 download 步骤、或把下载百分比说成下载进度，此处即转红。
     final _FakePackStore store = _FakePackStore(
       packs: <PackModel>[
         _pack(
@@ -927,13 +929,13 @@ void main() {
     );
     final Completer<BuildEnvironment> prepareGate =
         Completer<BuildEnvironment>();
+    final Completer<void> buildGate = Completer<void>();
 
     await _pumpMainLayout(
       tester,
       store: store,
       pickDirectory: () async => null,
       scanFiles: (_) async => <FileModel>[],
-      probeSourceAbsent: (String sourcePath) async => true,
       prepareBuildEnv: (
         PackModel pack, {
         required List<String> compilerPriority,
@@ -944,57 +946,9 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
-      }) async {},
-    );
-
-    await tester.tap(find.text('文件管理'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.byKey(const Key('buildPackButton')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('下载'), findsOneWidget);
-    expect(find.text('准备环境'), findsNothing);
-
-    prepareGate.complete(_buildEnvironment());
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-  });
-
-  testWidgets('构建对话框：sourceNone 为 false 时走准备环境时间线', (tester) async {
-    // 与上面那条成对，把 sourceNone 的两个极性都显式钉住。缺省替身是 true，
-    // 若这里也注入 true，即使实现把极性接反两条都会照样通过、判别力归零。
-    final _FakePackStore store = _FakePackStore(
-      packs: <PackModel>[
-        _pack(
-          'demo',
-          '1.0.0',
-          sourcePath: r'C:\libs\demo',
-          files: _buildPyFiles(),
-        ),
-      ],
-    );
-    final Completer<BuildEnvironment> prepareGate =
-        Completer<BuildEnvironment>();
-
-    await _pumpMainLayout(
-      tester,
-      store: store,
-      pickDirectory: () async => null,
-      scanFiles: (_) async => <FileModel>[],
-      probeSourceAbsent: (String sourcePath) async => false,
-      prepareBuildEnv: (
-        PackModel pack, {
-        required List<String> compilerPriority,
-        required List<DetectedCompiler> cachedCompilers,
-        required CompilerDetectionCallback onCompilersDetected,
-      }) => prepareGate.future,
-      buildPack: (
-        PackModel pack, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-      }) async {},
+      }) async {
+        await buildGate.future;
+      },
     );
 
     await tester.tap(find.text('文件管理'));
@@ -1006,53 +960,47 @@ void main() {
 
     expect(find.text('准备环境'), findsOneWidget);
     expect(find.text('准备源码'), findsOneWidget);
-    expect(find.text('下载'), findsNothing);
-    expect(find.text('分类'), findsNothing);
+    expect(find.text('执行构建'), findsOneWidget);
+    expect(find.text('检查头文件引用'), findsOneWidget);
+    expect(find.text('重新映射'), findsOneWidget);
+    expect(find.text('完成'), findsOneWidget);
+    expect(find.text('下载'), findsNothing, reason: '「下载」不再是任何步骤的标签');
+    expect(find.text('分类'), findsNothing, reason: '分类步骤已随时间线合一删除');
+    expect(find.byKey(const Key('buildTimelineStep_prepare')), findsOneWidget);
+    expect(find.byKey(const Key('buildTimelineStep_download')), findsOneWidget);
+    expect(find.byKey(const Key('buildTimelineStep_build')), findsOneWidget);
+    expect(find.byKey(const Key('buildTimelineStep_includes')), findsOneWidget);
+    expect(find.byKey(const Key('buildTimelineStep_remap')), findsOneWidget);
+    expect(find.byKey(const Key('buildTimelineStep_done')), findsOneWidget);
+    expect(
+      find.byKey(const Key('buildTimelineStep_classify')),
+      findsNothing,
+      reason: '分类步骤已随时间线合一删除，序列表里不再有它',
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('buildTimelineStep_prepare')),
+        matching: find.byType(ProgressRing),
+      ),
+      findsOneWidget,
+      reason: '环境准备未完成时进行中的步骤恒为准备环境',
+    );
 
     prepareGate.complete(_buildEnvironment());
     await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('buildTimelineStep_build')),
+        matching: find.byType(ProgressRing),
+      ),
+      findsOneWidget,
+      reason: '环境就绪后进行中的步骤恒为执行构建，不再是下载/准备源码',
+    );
+
+    buildGate.complete();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-  });
-
-  // 本组不注入 probeSourceAbsent，走 MainLayout 构造函数的**生产默认实现**
-  // （sourceDirAbsent）对真实临时目录求值。缺省替身取 true、对本组零
-  // 判别力，故生产默认的极性只能由本组钉住——上面那两条用例只钉住「接线正确、
-  // 两个极性各自走对时间线」，替身换成什么值都照样通过。
-  testWidgets('生产默认实现：源码区已就绪的包走准备环境时间线', (tester) async {
-    final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
-    addTearDown(() => sourceDir.deleteSync(recursive: true));
-    Directory(
-      '${sourceDir.path}${Platform.pathSeparator}.cache'
-      '${Platform.pathSeparator}src',
-    ).createSync(recursive: true);
-    File(
-      '${sourceDir.path}${Platform.pathSeparator}.cache'
-      '${Platform.pathSeparator}src'
-      '${Platform.pathSeparator}lib.h',
-    ).writeAsStringSync('#pragma once\n');
-
-    await _openBuildDialogWithProductionProbe(
-      tester,
-      sourcePath: sourceDir.path,
-    );
-
-    expect(find.text('准备环境'), findsOneWidget);
-    expect(find.text('下载'), findsNothing);
-    expect(find.text('准备源码'), findsOneWidget);
-  });
-
-  testWidgets('生产默认实现：源码区尚未就绪的包走下载时间线', (tester) async {
-    final Directory sourceDir = Directory.systemTemp.createTempSync('cnp_src_');
-    addTearDown(() => sourceDir.deleteSync(recursive: true));
-
-    await _openBuildDialogWithProductionProbe(
-      tester,
-      sourcePath: sourceDir.path,
-    );
-
-    expect(find.text('下载'), findsOneWidget);
-    expect(find.text('准备环境'), findsNothing);
-    expect(find.text('准备源码'), findsNothing);
   });
 
   testWidgets('构建后自动修复头文件引用并以悬浮提示与待处理对话框上报', (tester) async {
@@ -2190,7 +2138,6 @@ Future<void> _pumpMainLayout(
   PackBuildEnvironmentPreparer? prepareBuildEnv,
   Future<List<DetectedCompiler>> Function()? detectCompilers,
   DateTime Function()? now,
-  PackSourceAbsentProbe? probeSourceAbsent,
   PackHeaderIncludeFixer? fixIncludes,
 }) async {
   tester.view.physicalSize = const Size(1280, 800);
@@ -2209,7 +2156,6 @@ Future<void> _pumpMainLayout(
         buildPack: buildPack ?? runPackBuild,
         prepareBuildEnv: prepareBuildEnv,
         detectCompilers: detectCompilers ?? _noCompilers,
-        probeSourceAbsent: probeSourceAbsent ?? _absentPresetSource,
         fixIncludes: fixIncludes ?? _emptyFixIncludes,
         now: now ?? DateTime.now,
       ),
@@ -2218,70 +2164,6 @@ Future<void> _pumpMainLayout(
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
 }
-
-/// 铺好 `MainLayout` 并打开构建对话框，**刻意不传 probeSourceAbsent**，使其落到
-/// 构造函数的默认实现（[sourceDirAbsent]）；对话框停在准备阶段（由
-/// 未完成的 gate 保持），便于断言时间线文案。构建与环境准备均为桩，避免真实工具链。
-Future<void> _openBuildDialogWithProductionProbe(
-  WidgetTester tester, {
-  required String sourcePath,
-}) async {
-  tester.view.physicalSize = const Size(1280, 800);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.reset);
-
-  final Completer<BuildEnvironment> prepareGate = Completer<BuildEnvironment>();
-  final _FakePackStore store = _FakePackStore(
-    packs: <PackModel>[
-      _pack('demo', '1.0.0', sourcePath: sourcePath, files: _buildPyFiles()),
-    ],
-  );
-
-  await tester.pumpWidget(
-    FluentApp(
-      home: MainLayout(
-        pickDirectory: () async => null,
-        scanFiles: (_) async => <FileModel>[],
-        store: store,
-        buildPack: (
-          PackModel pack, {
-          Map<String, String>? environment,
-          void Function(String line)? onOutput,
-        }) async {},
-        prepareBuildEnv: (
-          PackModel pack, {
-          required List<String> compilerPriority,
-          required List<DetectedCompiler> cachedCompilers,
-          required CompilerDetectionCallback onCompilersDetected,
-        }) => prepareGate.future,
-        detectCompilers: _noCompilers,
-      ),
-    ),
-  );
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
-
-  await tester.tap(find.text('文件管理'));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 400));
-  // 生产默认探测含真实文件 I/O，须在 runAsync 的真实事件循环中完成，
-  // 否则 fake_async 测试区里该 future 永不落定、构建对话框不会打开。
-  await tester.runAsync(() async {
-    await tester.tap(find.byKey(const Key('buildPackButton')));
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-  });
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 400));
-}
-
-/// 源码区探测的缺省替身：**源码区缺席**（`sourceNone` 为 true，走下载/分类
-/// 时间线）。名字与极性同向。极性见 `PackSourceAbsentProbe`。
-///
-/// 取 true 而非 false：与生产默认 [sourceDirAbsent] 在源码区空目录上的取值同向，
-/// 替身与生产不会因极性不同而各自走一条时间线。默认值本身不承载判别力——两个极性
-/// 各由本文件里显式注入的用例钉住，生产默认的极性由 `_openBuildDialogWithProductionProbe`
-/// 那组钉住。
-Future<bool> _absentPresetSource(String sourcePath) async => true;
 
 Future<HeaderIncludeFixReport> _emptyFixIncludes(
   String sourcePath, {

@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:cpp_nuget_pack/build/build_environment.dart';
 import 'package:cpp_nuget_pack/build/build_runner.dart';
-import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/config/pack_store.dart';
@@ -124,20 +123,6 @@ Future<BuildEnvironment> _preparePackBuildEnvironment(
   );
 }
 
-/// 源码区缺席探测（构建对话框 `sourceNone` 判据）；测试注入。
-///
-/// 返回 `true` 表示**配方自管的源码区（`CNP_SRC_DIR`）尚未出现**——本次构建的
-/// 源码要由配方去拉，时间线走下载/分类；与消费方 `sourceNone` 同极性。
-typedef PackSourceAbsentProbe = Future<bool> Function(String sourcePath);
-
-/// 生产默认的源码区缺席探测：全仓唯一把「源码区有无」映射成 `sourceNone` 极性
-/// 的地方，提取为具名函数是因为 const 默认值不接受 `async` 闭包。
-///
-/// 判据只到「目录在不在」为止：源码区的内容由配方自己摆，软件无从判断它拉到
-/// 哪一步，故目录存在即视为已就绪。
-Future<bool> sourceDirAbsent(String sourcePath) async =>
-    !await Directory(packSourceDirectory(sourcePath)).exists();
-
 class MainLayout extends StatefulWidget {
   const MainLayout({
     super.key,
@@ -150,7 +135,6 @@ class MainLayout extends StatefulWidget {
     this.buildPack = runPackBuildStreaming,
     this.prepareBuildEnv,
     this.detectCompilers = detectCompilersReadOnly,
-    this.probeSourceAbsent = sourceDirAbsent,
     this.fixIncludes = fixHeaderIncludes,
     this.now = DateTime.now,
   });
@@ -165,13 +149,6 @@ class MainLayout extends StatefulWidget {
   final PackBuildEnvironmentPreparer? prepareBuildEnv;
 
   final Future<List<toolchain.DetectedCompiler>> Function() detectCompilers;
-
-  /// 探测配方源码区**尚未就绪**（缺省 [sourceDirAbsent]）；构建对话框的
-  /// `sourceNone` 标记据此展示下载/准备源码时间线，仅测试注入替代实现。
-  ///
-  /// 极性见 [PackSourceAbsentProbe]：`true` = 源码区缺席。生产实现只此一处，
-  /// 调用点原样透传，从命名上即排除再次接反。
-  final PackSourceAbsentProbe probeSourceAbsent;
 
   /// 构建成功后、重新映射前的 include 引用检查与自动修复；测试注入替代实现。
   final PackHeaderIncludeFixer fixIncludes;
@@ -439,17 +416,12 @@ class _MainLayoutState extends State<MainLayout> {
           cachedCompilers: cachedCompilers,
           onCompilersDetected: onCompilersDetected,
         );
-    final bool sourceNone = await _probeSourceNone(pack);
-    if (!mounted) {
-      return;
-    }
     final BuildDialogResult? result = await showDialog<BuildDialogResult>(
       context: context,
       // 关闭必须经对话框内「关闭」按钮回传失败条目/修复报告：Esc 撤走会丢构建历史
       dismissWithEsc: false,
       builder: (_) => BuildPackDialog(
         pack: pack,
-        sourceNone: sourceNone,
         build: widget.buildPack,
         prepare: (PackModel pack) => prepare(
           pack,
@@ -510,23 +482,6 @@ class _MainLayoutState extends State<MainLayout> {
       return;
     }
     _upsertPack(current);
-  }
-
-  /// 取构建对话框的 `sourceNone` 标记：**配方源码区尚未就绪时为 true**（此时本次
-  /// 构建的源码要由配方去拉，时间线走下载/分类）。
-  ///
-  /// 极性由 [MainLayout.probeSourceAbsent] 自身定义，本方法只做缺省与异常兜底，
-  /// 取值原样透传，不再取反。探测失败按「源码区已就绪」（false）兜底。
-  Future<bool> _probeSourceNone(PackModel pack) async {
-    final String? sourcePath = pack.sourcePath;
-    if (sourcePath == null || sourcePath.isEmpty) {
-      return false;
-    }
-    try {
-      return await widget.probeSourceAbsent(sourcePath);
-    } catch (_) {
-      return false;
-    }
   }
 
   /// 把构建准备阶段的新检测结果写回配置（经 [MainLayout.onSaveSettings]）。

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('buildTimelineSteps', () {
-    test('常规构建：已完成 / 进行中 / 未开始', () {
+    test('统一时间线：已完成 / 进行中 / 未开始', () {
       final List<BuildTimelineStep> steps = buildTimelineSteps(
         activeStep: BuildTimelineStepId.build,
         sessionState: BuildTimelineSessionState.running,
@@ -43,49 +43,45 @@ void main() {
       );
     });
 
-    test('预构建配方：步骤表为 下载 → 分类 → 检查头文件引用 → 重新映射 → 完成', () {
-      final List<BuildTimelineStep> steps = buildTimelineSteps(
-        sourceNone: true,
-        activeStep: BuildTimelineStepId.download,
-        sessionState: BuildTimelineSessionState.running,
-        visitedSteps: const <BuildTimelineStepId>{
-          BuildTimelineStepId.download,
-        },
-      );
-
+    test('步骤集合恒为六步且序列表不含多余步骤：新增枚举值须转红', () {
       expect(
-        steps.map((BuildTimelineStep step) => step.id),
+        BuildTimelineStepId.values,
         <BuildTimelineStepId>[
+          BuildTimelineStepId.prepare,
           BuildTimelineStepId.download,
-          BuildTimelineStepId.classify,
+          BuildTimelineStepId.build,
           BuildTimelineStepId.includes,
           BuildTimelineStepId.remap,
           BuildTimelineStepId.done,
         ],
+        reason: '构建时间线只有一张序列表，枚举里多出的步骤没有任何序列表能渲染它',
       );
-      expect(steps.first.label, '下载');
-      expect(steps.first.status, BuildTimelineStepStatus.active);
+      expect(
+        buildTimelineOrder,
+        BuildTimelineStepId.values.toList(),
+        reason: '序列表即枚举声明序：多一个或少一个步骤都要在此转红',
+      );
     });
 
     test('越过但未执行的步骤显示跳过', () {
       final List<BuildTimelineStep> steps = buildTimelineSteps(
-        sourceNone: true,
         activeStep: BuildTimelineStepId.includes,
         sessionState: BuildTimelineSessionState.running,
         visitedSteps: const <BuildTimelineStepId>{
+          BuildTimelineStepId.prepare,
           BuildTimelineStepId.download,
           BuildTimelineStepId.includes,
         },
       );
 
-      final BuildTimelineStep classify = steps.singleWhere(
-        (BuildTimelineStep step) => step.id == BuildTimelineStepId.classify,
+      final BuildTimelineStep build = steps.singleWhere(
+        (BuildTimelineStep step) => step.id == BuildTimelineStepId.build,
       );
-      expect(classify.status, BuildTimelineStepStatus.skipped);
+      expect(build.status, BuildTimelineStepStatus.skipped);
       expect(
         steps.first.status,
         BuildTimelineStepStatus.done,
-        reason: '已执行的下载步骤保持完成',
+        reason: '已执行的准备源码步骤保持完成',
       );
     });
 
@@ -131,31 +127,6 @@ void main() {
         <String>['文件数量：2', '总大小：2.0 KB'],
       );
       expect(done.details.last.key, const Key('buildSyncedVersion'));
-    });
-
-    test('进行中步骤附加活动详情', () {
-      final List<BuildTimelineStep> steps = buildTimelineSteps(
-        activeStep: BuildTimelineStepId.prepare,
-        sessionState: BuildTimelineSessionState.running,
-        activeDetails: const <BuildTimelineDetail>[
-          BuildTimelineDetail('示例进度：50%'),
-        ],
-      );
-
-      expect(steps.first.details.single.text, '示例进度：50%');
-    });
-  });
-
-  group('buildActiveStepDetails', () {
-    test('预构建配方下载步骤展示已下载百分比', () {
-      final List<BuildTimelineDetail> details = buildActiveStepDetails(
-        step: BuildTimelineStepId.download,
-        sourceNone: true,
-        buildProgressPercent: 42,
-      );
-
-      expect(details.single.text, '已下载 42%');
-      expect(details.single.key, isNull);
     });
   });
 
@@ -220,6 +191,8 @@ void main() {
       expect(find.text('检查头文件引用'), findsOneWidget);
       expect(find.text('重新映射'), findsOneWidget);
       expect(find.text('完成'), findsOneWidget);
+      expect(find.text('下载'), findsNothing, reason: '时间线已合一，「下载」不是任何步骤的标签');
+      expect(find.text('分类'), findsNothing, reason: '分类步骤已随合一删除');
       expect(find.byType(ProgressRing), findsOneWidget);
       expect(find.byIcon(FluentIcons.check_mark), findsNWidgets(2));
       expect(find.byIcon(FluentIcons.error), findsNothing);
@@ -253,10 +226,10 @@ void main() {
 
     testWidgets('跳过步骤不渲染对勾与进度指示', (tester) async {
       final List<BuildTimelineStep> steps = buildTimelineSteps(
-        sourceNone: true,
         activeStep: BuildTimelineStepId.includes,
         sessionState: BuildTimelineSessionState.running,
         visitedSteps: const <BuildTimelineStepId>{
+          BuildTimelineStepId.prepare,
           BuildTimelineStepId.download,
           BuildTimelineStepId.includes,
         },
@@ -271,37 +244,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byIcon(FluentIcons.check_mark), findsOneWidget);
+      expect(find.byIcon(FluentIcons.check_mark), findsNWidgets(2), reason: '仅准备环境与准备源码已完成');
       expect(find.byIcon(FluentIcons.error), findsNothing);
       expect(find.byType(ProgressRing), findsOneWidget);
-    });
-
-    testWidgets('预构建配方恒渲染分类步骤：元素缺失须转红', (tester) async {
-      final List<BuildTimelineStep> steps = buildTimelineSteps(
-        sourceNone: true,
-        activeStep: BuildTimelineStepId.includes,
-        sessionState: BuildTimelineSessionState.running,
-        visitedSteps: const <BuildTimelineStepId>{
-          BuildTimelineStepId.download,
-          BuildTimelineStepId.includes,
-        },
-      );
-
-      await tester.pumpWidget(
-        FluentApp(
-          home: Center(
-            child: SizedBox(width: 260, child: BuildTimeline(steps: steps)),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.byKey(const Key('buildTimelineStep_classify')), findsOneWidget);
-      expect(buildTimelineStepLabel(BuildTimelineStepId.classify), isNotEmpty);
-      expect(
-        find.text(buildTimelineStepLabel(BuildTimelineStepId.classify)),
-        findsOneWidget,
-      );
     });
   });
 }

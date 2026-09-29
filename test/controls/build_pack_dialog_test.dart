@@ -351,26 +351,6 @@ void main() {
     expect(find.text('编译器：MSVC 14.44.35207'), findsOneWidget);
   });
 
-  testWidgets('预构建配方未经分类标记时分类步骤不显示完成', (tester) async {
-    await _pumpDialog(
-      tester,
-      sourceNone: true,
-      build: (
-        PackModel pack, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-      }) async {},
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {},
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(_stepIsDone(tester, 'classify'), isFalse, reason: '未执行分类标记');
-    expect(_stepIsDone(tester, 'download'), isTrue);
-    expect(_stepIsDone(tester, 'done'), isTrue);
-  });
-
   testWidgets('无输出时显示等待占位', (tester) async {
     final Completer<void> buildGate = Completer<void>();
 
@@ -781,8 +761,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('预构建包阶段：下载 → 重新映射 → 完成', (tester) async {
-    final Completer<void> downloadGate = Completer<void>();
+  testWidgets('构建阶段恒显示「执行构建」且不出现下载进度文案', (tester) async {
+    // 时间线已合一：构建期只有一个「执行构建」步骤在跑，既不显示「下载」步骤，
+    // 也不把构建输出行里的 progress 百分比说成下载进度（它记的是下载）。
     final Completer<void> buildGate = Completer<void>();
     final Completer<List<FileModel>> scanCompleter =
         Completer<List<FileModel>>();
@@ -790,14 +771,12 @@ void main() {
 
     await _pumpDialog(
       tester,
-      sourceNone: true,
       build:
           (
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
           }) async {
-            await downloadGate.future;
             onOutput?.call(
               '[openvino] progress 42.0% (88000000/208000000 bytes)',
             );
@@ -807,14 +786,11 @@ void main() {
       onApply: (PackModel pack) => applyCompleter.future,
     );
 
-    expect(find.text('下载'), findsOneWidget);
-    expect(_stepIsActive(tester, 'download'), isTrue);
-    expect(find.text('准备源码'), findsNothing);
-
-    downloadGate.complete();
-    await tester.pump();
-    expect(find.text('已下载 42%'), findsOneWidget);
-    expect(find.text('执行构建'), findsNothing);
+    expect(_stepIsActive(tester, 'build'), isTrue);
+    expect(find.text('执行构建'), findsOneWidget);
+    expect(find.text('下载'), findsNothing);
+    expect(find.text('分类'), findsNothing);
+    expect(find.text('已下载 42%'), findsNothing, reason: '构建输出的百分比不是下载进度');
 
     buildGate.complete();
     await tester.pump();
@@ -828,7 +804,7 @@ void main() {
     expect(_stepIsDone(tester, 'done'), isTrue);
   });
 
-  testWidgets('sourceNone 时构建输出行不再触发阶段切换', (tester) async {
+  testWidgets('构建输出行不触发阶段切换', (tester) async {
     final Completer<void> buildGate = Completer<void>();
     final Completer<List<FileModel>> scanCompleter =
         Completer<List<FileModel>>();
@@ -836,7 +812,6 @@ void main() {
 
     await _pumpDialog(
       tester,
-      sourceNone: true,
       build:
           (
             PackModel pack, {
@@ -853,11 +828,11 @@ void main() {
     await tester.pump();
 
     expect(
-      _stepIsActive(tester, 'classify'),
-      isFalse,
-      reason: '预置源码无产出分类标记的模块，构建输出行不得推进到分类阶段',
+      _stepIsActive(tester, 'build'),
+      isTrue,
+      reason: '构建输出行是日志而非阶段信号，不得推进时间线',
     );
-    expect(_stepIsActive(tester, 'download'), isTrue, reason: '无替代信号时全程停在下载阶段');
+    expect(_stepIsActive(tester, 'includes'), isFalse);
 
     buildGate.complete();
     await tester.pump();
@@ -867,14 +842,6 @@ void main() {
     await tester.pump();
     applyCompleter.complete();
     await tester.pump();
-  });
-
-  test('extractProgressPercent 通用提取 progress 百分比', () {
-    expect(extractProgressPercent('[openvino] progress 42.0% (1/2 bytes)'), 42);
-    expect(extractProgressPercent('progress: 7%'), 7);
-    expect(extractProgressPercent('Receiving objects: 45% (9/20)'), isNull);
-    expect(extractProgressPercent('progress 120%'), isNull);
-    expect(extractProgressPercent('无进度行'), isNull);
   });
 
   testWidgets('构建成功后先检查头文件引用再重新映射并随关闭返回报告', (tester) async {
@@ -1083,7 +1050,6 @@ Future<void> _pumpDialog(
   required Future<List<FileModel>> Function(String sourcePath) scanFiles,
   required Future<void> Function(PackModel pack) onApply,
   PackModel? pack,
-  bool sourceNone = false,
   PackHeaderIncludeFixer? fixIncludes,
   ValueChanged<BuildDialogResult?>? onResult,
   DateTime Function()? now,
@@ -1103,7 +1069,6 @@ Future<void> _pumpDialog(
                     context: context,
                     builder: (_) => BuildPackDialog(
                       pack: pack ?? _pack(),
-                      sourceNone: sourceNone,
                       build: build,
                       prepare:
                           prepare ?? (PackModel pack) async => _environment(),
