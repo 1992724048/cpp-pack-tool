@@ -240,8 +240,7 @@ void main() {
           ]
           ..macros = <MacroModel>[const MacroModel(value: 'OLD=1')]
           ..libDirectories = <LibDirModel>[const LibDirModel(path: 'libs')]
-          ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')]
-          ..buildOptions = <String, String>{'tbb': 'on'};
+          ..libraries = <LibraryModel>[const LibraryModel(name: 'old.lib')];
     PackModel? saved;
 
     await _pumpPage(
@@ -280,7 +279,6 @@ void main() {
     expect(saved!.macros[1].buildModel, BuildModel.release);
     expect(saved!.libDirectories.single.path, 'libs');
     expect(saved!.libraries.single.name, 'old.lib');
-    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已添加'), findsOneWidget);
   });
 

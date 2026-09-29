@@ -30,7 +30,6 @@ void main() {
       expect(changed.libraries, same(source.libraries));
       expect(changed.history, same(source.history));
       expect(changed.scripts, same(source.scripts));
-      expect(changed.buildOptions, same(source.buildOptions));
       expect(changed.name, 'demo');
       expect(changed.author, 'tester');
     });
@@ -55,15 +54,6 @@ void main() {
 
       final PackModel replaced = source.copyWith(description: '新说明');
       expect(replaced.description, '新说明');
-    });
-
-    test('copyWith 原样保留 buildOptions 中的旧 runtime 键（无人读取的死键）', () {
-      final PackModel source = PackModel(name: 'demo', version: '1.0.0', author: 'tester')
-        ..buildOptions = <String, String>{'runtime': 'MT', 'tbb': 'on'};
-
-      final PackModel changed = source.copyWith(version: '2.0.0');
-
-      expect(changed.buildOptions, <String, String>{'runtime': 'MT', 'tbb': 'on'});
     });
   });
 
@@ -590,103 +580,6 @@ void main() {
       expect(warnings.single, contains('script_1'));
     });
 
-    test('buildOptions 默认为空', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      );
-
-      expect(pack.buildOptions, isEmpty);
-    });
-
-    test('toMap 空 buildOptions 省略键', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      );
-
-      expect(pack.toMap().containsKey('buildOptions'), isFalse);
-    });
-
-    test('toMap/fromMap 往返保留构建选项', () {
-      final PackModel pack =
-          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
-            ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'};
-
-      final Map<String, Object?> map = pack.toMap();
-
-      expect(map['buildOptions'], <String, String>{'tbb': 'on', 'mp': 'off'});
-      final PackModel loaded = PackModel.fromMap(map);
-      expect(loaded.buildOptions, hasLength(2));
-      expect(loaded.buildOptions['tbb'], 'on');
-      expect(loaded.buildOptions['mp'], 'off');
-    });
-
-    test('toMap/fromMap 往返保留空串选项值（多选全不选）', () {
-      final PackModel pack =
-          PackModel(name: 'demo', version: '1.0.0', author: 'tester')
-            ..buildOptions = <String, String>{'accel': '', 'tbb': 'on'};
-
-      final Map<String, Object?> map = pack.toMap();
-
-      expect(map['buildOptions'], <String, String>{'accel': '', 'tbb': 'on'});
-      final PackModel loaded = PackModel.fromMap(map);
-      expect(loaded.buildOptions, <String, String>{'accel': '', 'tbb': 'on'});
-    });
-
-    test('fromMap 缺少 buildOptions 时默认为空', () {
-      final PackModel pack = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-      });
-
-      expect(pack.buildOptions, isEmpty);
-    });
-
-    test('fromMap buildOptions 类型错误时容错为空', () {
-      for (final Object? value in <Object?>['oops', <Object?>[], 42]) {
-        final PackModel pack = PackModel.fromMap(<String, Object?>{
-          'name': 'demo',
-          'version': '1.0.0',
-          'author': 'tester',
-          'buildOptions': value,
-        });
-
-        expect(pack.buildOptions, isEmpty);
-      }
-    });
-
-    test('fromMap buildOptions 丢弃非法键值项', () {
-      final PackModel pack = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-        'buildOptions': <Object?, Object?>{1: 'a', 'k': 7, 'tbb': 'on'},
-      });
-
-      expect(pack.buildOptions, <String, String>{'tbb': 'on'});
-    });
-
-    test('老包 buildOptions.runtime 经 fromMap 原样读回（无人读取的死键）', () {
-      final List<String> warnings = <String>[];
-      final PackModel pack = PackModel.fromMap(<String, Object?>{
-        'name': 'demo',
-        'version': '1.0.0',
-        'author': 'tester',
-        'buildOptions': <String, Object?>{
-          'runtime': 'MT',
-          'tbb': 'on',
-        },
-      }, warnings: warnings);
-
-      expect(pack.buildOptions['runtime'], 'MT');
-      expect(pack.buildOptions['tbb'], 'on');
-      expect(warnings, isEmpty);
-    });
-
     test('老包已删除的 enabledFormats 键按未知键忽略，写回时不再出现', () {
       final PackModel pack = PackModel.fromMap(<String, Object?>{
         'name': 'demo',
@@ -697,6 +590,20 @@ void main() {
 
       expect(pack.name, 'demo');
       expect(pack.toMap().containsKey('enabledFormats'), isFalse);
+    });
+
+    test('已删除的 buildOptions 键按未知键忽略，且写回时不再出现', () {
+      final List<String> warnings = <String>[];
+      final PackModel loaded = PackModel.fromMap(<String, Object?>{
+        'name': 'demo',
+        'version': '1.0.0',
+        'author': 'tester',
+        'buildOptions': <String, String>{'runtime': 'mt'},
+      }, warnings: warnings);
+
+      expect(loaded.name, 'demo');
+      expect(warnings, isEmpty, reason: '未知键不得产生警告噪声');
+      expect(loaded.toMap().containsKey('buildOptions'), isFalse);
     });
   });
 

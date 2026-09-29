@@ -128,7 +128,6 @@ void main() {
         dependencies: <DependencyModel>[
           const DependencyModel(name: 'keep', version: '3.0'),
         ],
-        buildOptions: <String, String>{'tbb': 'on'},
         license: 'MIT',
         sourcePath: r'D:\libs\demo',
       )
@@ -156,7 +155,6 @@ void main() {
       expect(updated.dependencies.single.version, '3.0');
       expect(updated.macros.single.value, 'A=1');
       expect(updated.history.single.message, '创建包');
-      expect(updated.buildOptions, <String, String>{'tbb': 'on'});
       // 不修改入参：原包列表保持原样
       expect(pack.commands, isEmpty);
       expect(pack.dependencies, hasLength(1));
@@ -169,7 +167,6 @@ PackModel _pack({
   List<FileModel> files = const <FileModel>[],
   List<CmdModel> commands = const <CmdModel>[],
   List<DependencyModel> dependencies = const <DependencyModel>[],
-  Map<String, String>? buildOptions,
   String? license,
   String? sourcePath,
 }) {
@@ -183,9 +180,6 @@ PackModel _pack({
   pack.files = List<FileModel>.of(files);
   pack.commands = List<CmdModel>.of(commands);
   pack.dependencies = List<DependencyModel>.of(dependencies);
-  if (buildOptions != null) {
-    pack.buildOptions = buildOptions;
-  }
   return pack;
 }
 

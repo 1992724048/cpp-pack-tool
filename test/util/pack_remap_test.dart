@@ -106,8 +106,7 @@ void main() {
                 name: '脚本 1',
                 trigger: ScriptTrigger.pre,
               ),
-            ]
-            ..buildOptions = <String, String>{'tbb': 'on', 'mp': 'off'};
+            ];
       final List<FileModel> files = <FileModel>[
         FileModel(name: 'logo.svg', path: 'assets/logo.svg', size: 128),
         FileModel(name: 'foo.h', path: 'include/foo.h', size: 256),
@@ -131,7 +130,6 @@ void main() {
       expect(updated.libraries, same(pack.libraries));
       expect(updated.history, same(pack.history));
       expect(updated.scripts, same(pack.scripts));
-      expect(updated.buildOptions, <String, String>{'tbb': 'on', 'mp': 'off'});
     });
 
     test('新快照无图片文件时 iconPath 为空', () {
@@ -147,18 +145,6 @@ void main() {
       ]);
 
       expect(updated.iconPath, isNull);
-    });
-
-    test('buildOptions 为空时拷贝结果同样为空', () {
-      final PackModel pack = PackModel(
-        name: 'demo',
-        version: '1.0.0',
-        author: 'tester',
-      );
-
-      final PackModel updated = copyPackWithFiles(pack, const <FileModel>[]);
-
-      expect(updated.buildOptions, isEmpty);
     });
   });
 }

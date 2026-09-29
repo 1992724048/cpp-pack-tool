@@ -198,8 +198,7 @@ void main() {
       ..libDirectories = <LibDirModel>[
         const LibDirModel(path: 'third_party/lib'),
       ]
-      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
-      ..buildOptions = <String, String>{'tbb': 'on'};
+      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
     PackModel? saved;
 
     await _pumpPage(
@@ -231,7 +230,6 @@ void main() {
     expect(saved!.macros.single.value, 'MY_MACRO=1');
     expect(saved!.libDirectories.single.path, 'third_party/lib');
     expect(saved!.libraries.single.name, 'mylib.lib');
-    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
   });
 
   testWidgets('保存包信息时保留脚本列表', (tester) async {

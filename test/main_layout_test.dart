@@ -1939,7 +1939,7 @@ void main() {
           '1.0.0',
           sourcePath: r'C:\libs\demo',
           files: <FileModel>[FileModel(name: 'old.h', path: 'old.h', size: 64)],
-        )..buildOptions = <String, String>{'tbb': 'on'},
+        ),
       ],
     );
     final Completer<List<FileModel>> completer = Completer<List<FileModel>>();
@@ -1964,7 +1964,6 @@ void main() {
     await tester.pump();
 
     expect(store.packs.single.files.single.path, 'new/new.h');
-    expect(store.packs.single.buildOptions, <String, String>{'tbb': 'on'});
     expect(store.packs.single.history, hasLength(1));
     final HistoryModel entry = store.packs.single.history.single;
     expect(entry.type, HistoryType.filesChanged);

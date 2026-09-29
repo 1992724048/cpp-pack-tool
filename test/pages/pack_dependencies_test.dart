@@ -230,8 +230,7 @@ void main() {
       ..libDirectories = <LibDirModel>[
         const LibDirModel(path: 'third_party/lib'),
       ]
-      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
-      ..buildOptions = <String, String>{'tbb': 'on'};
+      ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
     PackModel? saved;
 
     await _pumpPage(
@@ -267,7 +266,6 @@ void main() {
     expect(saved!.macros.single.value, 'MY_MACRO=1');
     expect(saved!.libDirectories.single.path, 'third_party/lib');
     expect(saved!.libraries.single.name, 'mylib.lib');
-    expect(saved!.buildOptions, <String, String>{'tbb': 'on'});
     expect(find.text('已添加'), findsOneWidget);
     expect(find.byKey(const Key('dependencyDialog')), findsNothing);
   });

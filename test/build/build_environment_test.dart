@@ -862,7 +862,7 @@ void main() {
       expect(result.environment['FOO'], '1');
     });
 
-    test('包级入口不下发编译参数与选项变量且不改写老包 buildOptions', () async {
+    test('包级入口不下发编译参数与选项变量', () async {
       Future<Map<String, String>> prepare(PackModel pack) async {
         final BuildEnvironment result = await preparePackBuildEnvironment(
           pack,
@@ -880,11 +880,7 @@ void main() {
         return result.environment;
       }
 
-      final PackModel legacy = _pack(
-        sourcePath: r'C:\libs\demo',
-        buildOptions: <String, String>{'runtime': 'MT'},
-      );
-      final Map<String, String> environment = await prepare(legacy);
+      final Map<String, String> environment = await prepare(_pack(sourcePath: r'C:\libs\demo'));
 
       expect(
         environment.keys
@@ -898,7 +894,6 @@ void main() {
         reason: '不再注入构建选项变量',
       );
       expect(environment['CNP_COMPILER'], r'C:\VC\cl.exe');
-      expect(legacy.buildOptions['runtime'], 'MT', reason: '旧 YAML 键不再被改写');
     });
 
     test('包缺少源目录信息时抛 BuildPreparationException 且不检测编译器', () async {
@@ -986,16 +981,13 @@ ToolchainEnvironmentCapture _captureStub(
 
 PackModel _pack({
   String? sourcePath,
-  Map<String, String> buildOptions = const <String, String>{},
 }) {
-  final PackModel pack = PackModel(
+  return PackModel(
     name: 'demo',
     version: '1.0.0',
     author: 'tester',
     sourcePath: sourcePath,
   );
-  pack.buildOptions = <String, String>{...buildOptions};
-  return pack;
 }
 
 void _createFile(String path, {String content = 'MZ'}) {

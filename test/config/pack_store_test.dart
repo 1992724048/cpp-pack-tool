@@ -274,23 +274,6 @@ void main() {
       expect(result.errors.single.message, contains('脚本'));
     });
 
-    test('老包 buildOptions.runtime 经 YAML 落盘原样读回（无人读取的死键）', () async {
-      await store.ensureConfigExist();
-      File('${tempDir.path}/packs/legacy_runtime.yaml').writeAsStringSync(
-        'name: legacy_runtime\nversion: 1.0.0\nauthor: tester\n'
-        'buildOptions:\n'
-        '  runtime: MT\n'
-        '  tbb: "on"\n',
-      );
-
-      final PackLoadResult result = await store.loadPacks();
-
-      expect(result.errors, isEmpty);
-      final PackModel loaded = result.packs.single;
-      expect(loaded.buildOptions['runtime'], 'MT');
-      expect(loaded.buildOptions['tbb'], 'on');
-    });
-
     test('老包 compilerProfile 键被忽略且不产生加载错误', () async {
       await store.ensureConfigExist();
       File('${tempDir.path}/packs/legacy_profile.yaml').writeAsStringSync(

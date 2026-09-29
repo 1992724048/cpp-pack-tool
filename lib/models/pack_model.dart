@@ -28,7 +28,6 @@ class PackModel {
   List<LibraryModel> libraries = [];
   List<HistoryModel> history = [];
   List<ScriptProjectModel> scripts = [];
-  Map<String, String> buildOptions = <String, String>{};
 
   static List<PackModel> packs = [];
 
@@ -36,7 +35,7 @@ class PackModel {
       {required this.name, required this.version, required this.author, this.description, this.license, this.iconPath, this.sourcePath});
 
   /// 全字段拷贝：未传入的可空字段保留原值（显式传 `null` 才清空），
-  /// 未传入的列表/映射保持原引用（既有 identity 断言依赖此语义）。
+  /// 未传入的列表保持原引用（既有 identity 断言依赖此语义）。
   PackModel copyWith({
     String? name,
     String? version,
@@ -53,7 +52,6 @@ class PackModel {
     List<LibraryModel>? libraries,
     List<HistoryModel>? history,
     List<ScriptProjectModel>? scripts,
-    Map<String, String>? buildOptions,
   }) {
     final PackModel next = PackModel(
       name: name ?? this.name,
@@ -72,7 +70,6 @@ class PackModel {
     next.libraries = libraries ?? this.libraries;
     next.history = history ?? this.history;
     next.scripts = scripts ?? this.scripts;
-    next.buildOptions = buildOptions ?? this.buildOptions;
     return next;
   }
 
@@ -95,7 +92,6 @@ class PackModel {
       'libraries': <Map<String, Object?>>[for (final LibraryModel library in libraries) library.toMap()],
       'history': <Map<String, Object?>>[for (final HistoryModel entry in history) entry.toMap()],
       'scripts': <Map<String, Object?>>[for (final ScriptProjectModel script in scripts) script.toMap()],
-      if (buildOptions.isNotEmpty) 'buildOptions': <String, String>{...buildOptions},
     };
   }
 
@@ -140,7 +136,6 @@ class PackModel {
         warnings?.add(_describeScriptError(item, error));
       }
     }
-    pack.buildOptions = _stringStringMap(map, 'buildOptions');
     return pack;
   }
 }
@@ -167,17 +162,6 @@ Map<String, Object?> _stringKeyMap(Map<Object?, Object?> map) {
   return <String, Object?>{
     for (final MapEntry<Object?, Object?> entry in map.entries)
       if (entry.key is String) entry.key as String: entry.value,
-  };
-}
-
-Map<String, String> _stringStringMap(Map<String, Object?> map, String key) {
-  final Object? value = map[key];
-  if (value is! Map) {
-    return <String, String>{};
-  }
-  return <String, String>{
-    for (final MapEntry<Object?, Object?> entry in value.entries)
-      if (entry.key is String && entry.value is String) entry.key as String: entry.value as String,
   };
 }
 

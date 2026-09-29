@@ -133,7 +133,6 @@ config/
 | `dependencies` | 包依赖（`name`/`version`）。 |
 | `commands` / `macros` / `libDirectories` / `libraries` | 编译集成配置，条目可带 `buildModel`。 |
 | `scripts` | 节点脚本项目、节点、连线和视口数据。 |
-| `buildOptions` | 历史键：仅随配置原样读写，构建侧已无消费方。 |
 | `history` | 创建、版本变更、重新映射、导出和构建历史。 |
 
 `buildModel` 取值为 `all`、`release` 或 `debug`。损坏或缺少必填字段的包配置会被跳过，应用启动后以悬浮提示列出问题文件。
