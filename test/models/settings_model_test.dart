@@ -92,9 +92,9 @@ void main() {
     );
   });
 
-  test('优先级读回丢弃 mingw 并按声明序补齐有效种类', () {
+  test('优先级读回丢弃无法映射的标识并按声明序补齐有效种类', () {
     final SettingsModel settings = SettingsModel.fromMap(<String, Object?>{
-      'compilerPriority': <Object?>['icx', 'mingw', 'msvc'],
+      'compilerPriority': <Object?>['icx', 'retired-kind', 'msvc'],
     });
 
     expect(settings.compilerPriority, <String>['icx', 'msvc', 'clang-cl']);
@@ -182,15 +182,12 @@ void main() {
     expect(missing.detectedCompilers, isEmpty);
   });
 
+  // 夹具只放「结构损坏」的条目：kind 为不认识的字符串不属此列，它走整表作废
+  // 路径（见下方整表作废用例），不逐条跳过。
   test('检测缓存条目容错：坏条目跳过、好条目保留', () {
     final SettingsModel loaded = SettingsModel.fromMap(<String, Object?>{
       'detectedCompilers': <Object?>[
         42,
-        <String, Object?>{
-          'kind': 'unknown',
-          'version': '1',
-          'executablePath': 'x',
-        },
         <String, Object?>{'kind': 7, 'version': '1', 'executablePath': 'x'},
         <String, Object?>{'kind': 'icx', 'version': '', 'executablePath': 'x'},
         <String, Object?>{'kind': 'icx', 'version': '2026.1.0'},
@@ -211,6 +208,60 @@ void main() {
     expect(loaded.detectedCompilers.single.extraPathEntries, <String>[
       r'C:\LLVM\bin',
     ]);
+  });
+
+  test('检测缓存混入本版本不认识的种类时整表作废（强制重检）', () {
+    final SettingsModel legacyOnly = SettingsModel.fromMap(<String, Object?>{
+      'detectedCompilers': <Object?>[
+        <String, Object?>{
+          'kind': 'retired-kind',
+          'version': '14.2.0',
+          'executablePath': r'C:\legacy\bin\gcc.exe',
+        },
+      ],
+    });
+    final SettingsModel mixed = SettingsModel.fromMap(<String, Object?>{
+      'detectedCompilers': <Object?>[
+        <String, Object?>{
+          'kind': 'icx',
+          'version': '2026.1.0',
+          'executablePath': r'D:\oneAPI\bin\icx-cl.exe',
+        },
+        <String, Object?>{
+          'kind': 'Retired-Kind',
+          'version': '14.2.0',
+          'executablePath': r'C:\legacy\bin\gcc.exe',
+        },
+        <String, Object?>{
+          'kind': 'msvc',
+          'version': '14.44.35207',
+          'executablePath': r'C:\VS\cl.exe',
+        },
+      ],
+    });
+    final SettingsModel recognized = SettingsModel.fromMap(<String, Object?>{
+      'detectedCompilers': <Object?>[
+        <String, Object?>{
+          'kind': 'MSVC',
+          'version': '14.44.35207',
+          'executablePath': r'C:\VS\cl.exe',
+        },
+      ],
+    });
+
+    expect(legacyOnly.detectedCompilers, isEmpty);
+    expect(
+      mixed.detectedCompilers,
+      isEmpty,
+      reason: '识别不出的种类说明整份缓存出自旧版本，逐条丢弃会让优先级中对应种类'
+          '无缓存可匹配而回落到其它编译器，必须整表作废',
+    );
+    expect(
+      recognized.detectedCompilers,
+      hasLength(1),
+      reason: '作废只由不认识的种类触发，种类全部认识时不得牵连整表',
+    );
+    expect(recognized.detectedCompilers.single.kind, CompilerKind.msvc);
   });
 
   test('检测缓存 R23 回退迁移：含 GNU clang 条目时整表作废（强制重检）', () {
@@ -247,43 +298,6 @@ void main() {
       mixed.detectedCompilers,
       isEmpty,
       reason: '仅丢弃旧条目会让 clang-cl 无缓存可匹配而回落 msvc，必须整表作废',
-    );
-  });
-
-  test('检测缓存含 mingw 时整表丢弃等待重检', () {
-    final SettingsModel settings = SettingsModel.fromMap(<String, Object?>{
-      'detectedCompilers': <Object?>[
-        <String, Object?>{
-          'kind': 'mingw',
-          'version': '14.2.0（UCRT64）',
-          'executablePath': r'C:\msys64\ucrt64\bin\gcc.exe',
-        },
-      ],
-    });
-
-    expect(settings.detectedCompilers, isEmpty);
-  });
-
-  test('检测缓存混入 mingw 时连同其余条目整表作废', () {
-    final SettingsModel settings = SettingsModel.fromMap(<String, Object?>{
-      'detectedCompilers': <Object?>[
-        <String, Object?>{
-          'kind': 'msvc',
-          'version': '14.44.35207',
-          'executablePath': r'C:\VS\cl.exe',
-        },
-        <String, Object?>{
-          'kind': 'MINGW',
-          'version': '14.2.0',
-          'executablePath': r'C:\msys64\mingw64\bin\gcc.exe',
-        },
-      ],
-    });
-
-    expect(
-      settings.detectedCompilers,
-      isEmpty,
-      reason: '已删除的编译器种类不可复用，整表作废交设置页/构建重检',
     );
   });
 

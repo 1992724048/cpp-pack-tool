@@ -433,12 +433,14 @@ void main() {
       );
     });
 
+    // 损坏样本取「缺字段」而非「不认识的种类」：后者按设计触发整表作废，
+    // 由下一条用例覆盖。
     test('损坏的检测缓存条目被跳过而不影响其余设置', () async {
       File('${tempDir.path}/config.yaml').createSync(recursive: true);
       File('${tempDir.path}/config.yaml').writeAsStringSync(
         'version: 1\nthemeMode: dark\ndetectedCompilers:\n'
-        '  - kind: gcc\n    version: 13\n    executablePath: /usr/bin/gcc\n'
-        '  - kind: msvc\n    version: 14.44.35207\n    executablePath: C:\\\\VC\\\\cl.exe\n',
+        '  - kind: msvc\n    version: 14.44.35207\n    executablePath: C:\\\\VC\\\\cl.exe\n'
+        '  - kind: msvc\n    executablePath: C:\\\\VC\\\\cl.exe\n',
       );
 
       final SettingsModel settings = await store.loadSettings();
@@ -448,27 +450,31 @@ void main() {
       expect(settings.detectedCompilers.single.kind, CompilerKind.msvc);
     });
 
-    test('旧 mingw 优先级与检测缓存加载后被丢弃', () async {
+    test('旧配置的未知编译器标识与检测缓存加载后被丢弃', () async {
       File('${tempDir.path}/config.yaml').createSync(recursive: true);
       File('${tempDir.path}/config.yaml').writeAsStringSync(
         'version: 1\n'
         'compilerPriority:\n'
         '  - icx\n'
-        '  - mingw\n'
+        '  - retired-kind\n'
         '  - msvc\n'
         'detectedCompilers:\n'
         '  - kind: msvc\n'
         '    version: 14.44.35207\n'
         '    executablePath: C:\\\\VC\\\\cl.exe\n'
-        '  - kind: mingw\n'
+        '  - kind: retired-kind\n'
         '    version: 14.2.0\n'
-        '    executablePath: C:\\\\msys64\\\\ucrt64\\\\bin\\\\gcc.exe\n',
+        '    executablePath: C:\\\\legacy\\\\gcc.exe\n',
       );
 
       final SettingsModel settings = await store.loadSettings();
 
       expect(settings.compilerPriority, <String>['icx', 'msvc', 'clang-cl']);
-      expect(settings.detectedCompilers, isEmpty);
+      expect(
+        settings.detectedCompilers,
+        isEmpty,
+        reason: '优先级只丢弃单个未知标识，检测缓存则整表作废交重检',
+      );
     });
   });
 

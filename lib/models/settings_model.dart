@@ -89,16 +89,16 @@ Map<String, Object?> _detectedCompilerToMap(DetectedCompiler compiler) {
 
 /// 缓存列表容错：非列表或损坏条目视为无缓存/跳过，不抛异常。
 ///
-/// 已删除编译器种类与 R23 回退迁移的整表作废：缓存含 MinGW（`kind: mingw`）或 GNU
-/// clang（`kind: clang`）条目时整表作废（返回空 = 无缓存），由设置页与构建触发一次
-/// 重检。这两类条目指向的工具链驱动与已删除/已恢复的旗标体系均不兼容，不能复用；
-/// 若仅丢弃该条目而保留其余缓存，优先级中对应种类将无条目可匹配而回落到其它编译器
-/// ——整表作废可保证首次选择仍按用户优先级重检。
+/// 旧版本缓存的整表作废：列表里出现本版本不认识的编译器种类（随版本删除的种类，或
+/// R23 曾用的 GNU clang 标识）时整表作废（返回空 = 无缓存），由设置页与构建触发
+/// 一次重检。识别不出的种类说明该缓存由枚举不同的旧版本写出，不能假定其余条目
+/// 与现行口径一致；且若仅丢弃该条目而保留其余缓存，优先级中对应种类将无条目可
+/// 匹配而回落到其它编译器——整表作废可保证首次选择仍按用户优先级重检。
 List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   if (value is! List) {
     return const <DetectedCompiler>[];
   }
-  if (value.any(_isLegacyMingwEntry) || value.any(_isLegacyGnuClangEntry)) {
+  if (value.any(_hasUnrecognizedCompilerKind)) {
     return const <DetectedCompiler>[];
   }
   final List<DetectedCompiler> compilers = <DetectedCompiler>[];
@@ -111,22 +111,15 @@ List<DetectedCompiler> _detectedCompilersFrom(Object? value) {
   return compilers;
 }
 
-/// 历史 MinGW 稳定标识（大小写不敏感、容忍首尾空白）；只为配置迁移识别，
-/// 不对应任何 [CompilerKind]（[compilerKindFromId] 对其返回 null）。
-bool _isLegacyMingwEntry(Object? value) {
+/// 条目的 `kind` 是否为本版本不认识的编译器种类（大小写不敏感、容忍首尾空白，与
+/// [compilerKindFromId] 同口径）。`kind` 缺失或非字符串不算：那属于单条目损坏，
+/// 交由 [_detectedCompilerFrom] 逐条跳过。
+bool _hasUnrecognizedCompilerKind(Object? value) {
   if (value is! Map) {
     return false;
   }
   final Object? kindValue = value['kind'];
-  return kindValue is String && kindValue.trim().toLowerCase() == 'mingw';
-}
-
-bool _isLegacyGnuClangEntry(Object? value) {
-  if (value is! Map) {
-    return false;
-  }
-  final Object? kindValue = value['kind'];
-  return kindValue is String && isLegacyCompilerKindId(kindValue);
+  return kindValue is String && compilerKindFromId(kindValue) == null;
 }
 
 DetectedCompiler? _detectedCompilerFrom(Object? value) {
@@ -169,8 +162,8 @@ List<String> _stringList(Object? value) {
   ];
 }
 
-/// 优先级读回：先按有效标识过滤（已删除的编译器种类如 MinGW 及其历史遗留值一律
-/// 丢弃），R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见顺序
+/// 优先级读回：先按有效标识过滤（无法映射到 [CompilerKind] 的标识一律丢弃），
+/// R23 回退迁移把 GNU clang 标识 `clang` 改写为 `clang-cl`（按首见顺序
 /// 去重）；随后把「已支持但列表缺失」的种类按声明序补到末尾——新编译器种类随版本
 /// 升级自动进入旧配置，且置末不改变既有选择；设置页只支持排序、不支持增删，补入
 /// 是旧配置触达新种类的唯一路径。
