@@ -167,7 +167,7 @@ void main() {
     expect(find.text('二进制文件'), findsOneWidget);
   });
 
-  testWidgets('预览未映射的二进制扩展名显示为二进制而非格式错误', (tester) async {
+  testWidgets('预览未映射的二进制扩展名显示为二进制而非读取失败', (tester) async {
     final PackModel pack = PackModel(
       name: 'demo',
       version: '1.0.0',
@@ -175,7 +175,12 @@ void main() {
       sourcePath: r'D:\libs\demo',
     )..files = <FileModel>[FileModel(name: 'logo.png', path: 'assets/logo.png', size: 4)];
 
-    await _pumpDialog(tester, plan: await const NuGetPackageBuilder().buildPlan(pack), pack: pack);
+    await _pumpDialog(
+      tester,
+      plan: await const NuGetPackageBuilder().buildPlan(pack),
+      pack: pack,
+      readFile: (String path) async => throw const FormatException('Invalid UTF-8'),
+    );
     await _expandDirectories(tester, <String>[
       'build',
       'build/native',
@@ -187,7 +192,7 @@ void main() {
 
     expect(find.text('二进制文件（4 B），无法预览'), findsOneWidget);
     expect(find.text('二进制文件'), findsOneWidget);
-    expect(find.textContaining('格式错误'), findsNothing);
+    expect(find.textContaining('读取失败'), findsNothing);
   });
 
   testWidgets('点击关闭按钮关闭对话框', (tester) async {

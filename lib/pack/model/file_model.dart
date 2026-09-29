@@ -82,6 +82,7 @@ const Set<String> _binaryExtensions = <String>{
 
 /// 明确排除的文本类扩展名在此不列：map（链接器 map 文件）、exp（导出表）、
 /// txt / md / json / xml / html / rc 均按文本处理。
+/// [extension] 须为已小写归一的扩展名（[FileModel.extension] 即是）。
 bool isBinaryFileType(FileType type, String extension) => switch (type) {
       FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
       _ => _binaryExtensions.contains(extension),
