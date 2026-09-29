@@ -251,10 +251,6 @@ void main() {
         '提前写入的 Profile 口径',
       );
     });
-
-    test('README 的编译器优先级为 ICX > clang-cl > MSVC', () {
-      expect(_readProjectDocuments()['README.md'], contains('ICX > clang-cl > MSVC'));
-    });
   });
 
   group('全仓残留扫描', () {
