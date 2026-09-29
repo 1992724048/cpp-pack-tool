@@ -27,8 +27,6 @@ const String _relationshipsNamespace = 'http://schemas.openxmlformats.org/packag
 const int _opcFileCount = 3;
 const int _iconFileCount = 1;
 
-const int maxNuGetIconBytes = 1024 * 1024;
-
 const Duration _isolateExitGrace = Duration(seconds: 5);
 
 class ExportCancelToken {
@@ -62,12 +60,6 @@ Future<PackageExportResult> exportNuGetPackage(
 
   final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(pack);
   final Uint8List iconBytes = await (iconResolver ?? resolvePackageIconPng)(pack);
-  if (iconBytes.length > maxNuGetIconBytes) {
-    throw StateError(
-      '图标 ${formatBytes(iconBytes.length)} 超过 nuget.org 上限 '
-      '${formatBytes(maxNuGetIconBytes)}',
-    );
-  }
   final String nuspecPath = '${pack.name}.nuspec';
   final PackageEntry nuspecEntry = plan.entries.firstWhere(
     (PackageEntry entry) => entry.packagePath == nuspecPath,
