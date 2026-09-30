@@ -29,7 +29,11 @@ void main() {
     expect(find.textContaining('native 段名必须字面一致'), findsOneWidget);
     expect(find.textContaining('native@0.0'), findsOneWidget);
     expect(find.textContaining('「包 ID.targets」与「包 ID.props」'), findsOneWidget);
-    expect(find.textContaining('只有 .vcxproj（含 C++/CLI）项目会导入'), findsOneWidget);
+    // 「只约束 .targets」与「.props 任一 TFM 都导入」必须成对出现：只写前半句会让用户
+    // 以为 .props 也只被 .vcxproj 导入，写成「其它项目类型不导入」则直接与事实相反。
+    expect(find.textContaining('.targets 只有 .vcxproj（含 C++/CLI）项目会导入'), findsOneWidget);
+    expect(find.textContaining('任何目标框架的项目都会导入'), findsOneWidget);
+    expect(find.textContaining('其它项目类型不导入'), findsNothing);
     expect(find.textContaining('名为 build / out 的目录'), findsOneWidget);
     // 第 5 条（.lib / .a 的配置隔离）沿用既有提示，不重复写。
     expect(find.textContaining('release / debug 目录名'), findsOneWidget);

@@ -23,7 +23,8 @@ const String _consumerContract =
     'NuGet 为 .vcxproj 硬编码的目标框架标识恰是 native@0.0，'
     '改成 build/native/x64/ 这类四段路径后整个 .targets 会被静默忽略；'
     '文件名必须恰好是「包 ID.targets」与「包 ID.props」，改名同样静默失效；'
-    '只有 .vcxproj（含 C++/CLI）项目会导入，其它项目类型不导入；'
+    '.targets 只有 .vcxproj（含 C++/CLI）项目会导入；'
+    '而 build/<包 ID>.props 是两段路径，任何目标框架的项目都会导入；'
     '产物不得落在点开头或名为 build / out 的目录里（任意层级），否则扫描时被静默跳过。';
 
 class PackPackaging extends StatefulWidget {
