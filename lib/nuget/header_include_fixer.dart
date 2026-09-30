@@ -5,6 +5,7 @@ import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/pack/file_scan.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 const Set<String> headerIncludeSourceExtensions = <String>{
   'h',
@@ -252,6 +253,12 @@ bool _landsUnderFilesRoot(String path) {
   };
 }
 
+/// `_landsUnderFilesRoot` 的白盒入口。规格 §5.4 的 FileType 闸在包内布局下与落点目录
+/// 比较功能重叠（files/library 下只可能装 lib/dll/pdb，而这三类不会被扫描），公开入口
+/// 观察不到差异，只有白盒断言能让「去掉排除 → 应红」成立。
+@visibleForTesting
+bool landsUnderFilesRootForTesting(String path) => _landsUnderFilesRoot(path);
+
 /// 剥掉 [root] 前缀（`/` 分隔，不匹配返回 null）。[root] 取自全小写的布局常量，落点
 /// 以该常量拼接而成，故前缀比较无需再小写化，调用方传小写化或原样皆可。
 String? _stripRoot(String landing, String root) {
@@ -466,22 +473,21 @@ class _FileScanner {
     );
   }
 
+  /// 包内可解析：MSVC 对引号引用先查引用文件所在目录、再查 `.targets` 下发的搜索根，
+  /// 尖括号只查搜索根。搜索根与 nuget_builder 共用 [payloadSearchRoots]（规格 §5.3）。
   bool _resolvesInPackageLayout(String includePath, {required bool searchOwnDirectory}) {
     if (searchOwnDirectory) {
-      final String selfLanding = _packageDestination(filePath, index.namespace);
-      if (_landsUnderIncludeRoot(filePath)) {
-        final String? selfDir = _stripRoot(_directoryOf(selfLanding).toLowerCase(), includeRoot);
-        if (selfDir != null && _existsInIncludeRoot(_normalizeRelativePath(selfDir, includePath))) {
-          return true;
-        }
-      } else if (_landsUnderFilesRoot(filePath)) {
-        final String? selfDir = _stripRoot(_directoryOf(selfLanding).toLowerCase(), filesRoot);
-        if (selfDir != null && _existsInFilesRoot(_normalizeRelativePath(selfDir, includePath))) {
-          return true;
-        }
+      final String? selfLanding = stripBuildNative(_packageDestination(filePath, index.namespace));
+      if (selfLanding != null && _payloadExistsUnder(_directoryOf(selfLanding), includePath)) {
+        return true;
       }
     }
-    return _existsInIncludeRoot(_normalizeRelativePath('', includePath));
+    return index.searchRoots.any((String root) => _payloadExistsUnder(root, includePath));
+  }
+
+  bool _payloadExistsUnder(String root, String includePath) {
+    final String? candidate = _normalizeRelativePath(root, includePath);
+    return candidate != null && index.payloadPaths.contains(candidate.toLowerCase());
   }
 
   String? _includeRootRelativeTarget(String candidate) => _landsUnderIncludeRoot(candidate)
@@ -518,12 +524,6 @@ class _FileScanner {
     }
     return !index.directoryNames.contains(first.toLowerCase());
   }
-
-  bool _existsInIncludeRoot(String? normalizedRelativePath) =>
-      normalizedRelativePath != null && index.includeRootPaths.contains(normalizedRelativePath.toLowerCase());
-
-  bool _existsInFilesRoot(String? normalizedRelativePath) =>
-      normalizedRelativePath != null && index.filesRootPaths.contains(normalizedRelativePath.toLowerCase());
 }
 
 class _IncludeIndex {
@@ -534,10 +534,17 @@ class _IncludeIndex {
   final Set<String> directoryNames = <String>{};
   final List<String> includeRoots = <String>[];
 
-  /// 两个索引都存包内落点，且各自相对自己的根（[includeRoot] / [filesRoot]）—— 与
-  /// `.targets` 下发的搜索根同坐标系，存源路径会让本目录查找与 files/ 兄弟判定同时失配。
-  final Set<String> includeRootPaths = <String>{};
-  final Set<String> filesRootPaths = <String>{};
+  /// 包内可被 `#include` 的载荷落点，相对 [buildNativeRoot]、小写。判定口径只有这一份：
+  /// 「包内可解析」= 任一搜索根拼出的路径命中本集合（规格 §5.3）。
+  final Set<String> payloadPaths = <String>{};
+
+  /// `.targets` 下发给消费者的搜索根，相对 [buildNativeRoot]、小写。与 nuget_builder
+  /// 共用 [payloadSearchRoots]：修复器少认一条就会把包内能解析的引用误报成「跳树」。
+  /// 首次读取发生在索引建完之后（扫描阶段），故取到的是完整根列表。
+  late final List<String> searchRoots = payloadSearchRoots(payloadPaths)
+      .map((String root) => root.toLowerCase())
+      .toList(growable: false);
+
   final Map<String, Map<String, String>> _candidateByLanding = <String, Map<String, String>>{};
   final Set<String> _includeRootLowerPaths = <String>{};
   final Map<String, Set<String>> _includeRootChildDirs = <String, Set<String>>{};
@@ -560,16 +567,11 @@ class _IncludeIndex {
     if (representative == null || _comparePaths(path, representative) < 0) {
       byLanding[landing] = path;
     }
-    if (_landsUnderIncludeRoot(path)) {
-      final String? stripped = _stripRoot(landing, includeRoot);
-      if (stripped != null) {
-        includeRootPaths.add(stripped);
-      }
-    } else if (_landsUnderFilesRoot(path)) {
-      final String? stripped = _stripRoot(landing, filesRoot);
-      if (stripped != null) {
-        filesRootPaths.add(stripped);
-      }
+    // lib/dll/pdb 虽落在已下发搜索根的 files/library/ 下，但不是可包含类型，不进
+    // payloadPaths（规格 §5.4）；落点不在包内布局下时同样不进，避免错误数据静默入索引。
+    final String? relative = stripBuildNative(destination);
+    if (relative != null && (_landsUnderIncludeRoot(path) || _landsUnderFilesRoot(path))) {
+      payloadPaths.add(relative.toLowerCase());
     }
   }
 

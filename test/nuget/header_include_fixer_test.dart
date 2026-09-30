@@ -241,8 +241,8 @@ void main() {
   });
 
   test('同目录 .lib 候选不做裸文件名回落：库文件不是可包含类型，报 crossTree', () async {
-    // `.lib` 虽与 `.rc` / `.c` 同处已下发搜索根的 `files/library/`，但库文件不是可包含
-    // 类型，修复器按 FileType 排除（规格 §5.4）——该排除按文件类型判定，与所在目录无关。
+    // `.lib` 落在已下发搜索根的 `files/library/` 下，但库文件不是可包含类型，修复器按
+    // FileType 排除（规格 §5.4）——该排除按文件类型判定，与所在目录无关。
     // 少了文件类型闸就会产出一次 from != to 的无效改写且不报告。
     await writeText('src/x/one.cc', '#include "q/helper.lib"\n');
     await writeText('src/x/helper.lib', '');
@@ -296,6 +296,33 @@ void main() {
     expect(await readText('src/bar.c'), '#include "foo.c"\n');
   });
 
+  test('files/source 动态搜索根命中：跨目录裸文件名引用不误报跳树（§5.2/§5.3）', () async {
+    // `one.c` 落 files/source/src/a/、`foo.c` 落 files/source/src/，两者不在同一目录，
+    // 裸文件名靠「引用文件所在目录」那条查找路径落空；.targets 为 files/source 之下每个
+    // 实际含源文件的目录各发一条搜索根（files/source/src），故包内解析得到。
+    // 修复器少认这条动态根就会误报 crossTree。
+    await writeText('src/a/one.c', '#include "foo.c"\n');
+    await writeText('src/foo.c', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.isEmpty, isTrue);
+    expect(await readText('src/a/one.c'), '#include "foo.c"\n');
+  });
+
+  test('files 固定搜索根命中：跨子目录的资源引用不误报跳树（§5.1/§5.3）', () async {
+    // `res/app.ico` 落 files/resource/res/，引用文件落 files/source/src/a/，本目录查找落空；
+    // .targets 固定下发 files/resource 搜索根，故 "res/app.ico" 在包内解析得到
+    // （规格 §4.1 的跨子目录写法）。修复器只认「引用文件所在目录」与 files/source 时会误报。
+    await writeText('src/a/one.c', '#include "res/app.ico"\n');
+    await writeText('res/app.ico', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.isEmpty, isTrue);
+    expect(await readText('src/a/one.c'), '#include "res/app.ico"\n');
+  });
+
   test('lib/dll/pdb 不因落在 files/library 下而算已解析：三者一律报 crossTree', () async {
     // 排除按文件类型判定，与所在目录无关（规格 §5.4）：`files/library` 确是已下发的
     // 搜索根，但这三类文件不是可包含类型，不得因落在该目录下就获得裸文件名改写。
@@ -319,6 +346,35 @@ void main() {
       await readText('x/one.cc'),
       '#include "foo.lib"\n#include "bar.dll"\n#include "baz.pdb"\n',
     );
+  });
+
+  test('_landsUnderFilesRoot 按 FileType 排除 lib/dll/pdb，与所在目录无关（§5.4）', () {
+    // 包内布局下这一闸与「落点目录比较」功能重叠：files/library 下只可能装 lib/dll/pdb，
+    // 而这三类又不会被扫描，公开入口观察到的差异恒为空。上一条用例真正拦住它的是首行的
+    // 源目录比较，不是这道闸 —— 只有白盒断言才能让「去掉排除 → 应红」成立。
+    // 头文件与 module 同理落 include/，本就不在 files 根之下。
+    for (final String path in <String>[
+      'lib/x64/foo.lib',
+      'x64/Release/foo.a',
+      'bin/foo.dll',
+      'bin/foo.pdb',
+      'include/demo/foo.h',
+      'src/mod.cppm',
+    ]) {
+      expect(landsUnderFilesRootForTesting(path), isFalse, reason: path);
+    }
+    for (final String path in <String>[
+      'src/a/one.c',
+      'res/app.rc',
+      'res/app.ico',
+      'tools/build.bat',
+      'tools/gen.py',
+      'data/x.db',
+      'bin/tool.exe',
+      'Makefile',
+    ]) {
+      expect(landsUnderFilesRootForTesting(path), isTrue, reason: path);
+    }
   });
 
   test('include 索引存命名空间相对路径：源码树写法不算已解析', () async {

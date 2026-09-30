@@ -72,12 +72,23 @@ int comparePackagePathsByEntry(PackageEntry first, PackageEntry second) =>
 /// 三个根前缀的单一事实源。nuget_builder 与 header_include_fixer 都从这里取，
 /// 避免两处各写一份字面量导致载荷推导静默失配。
 const String buildNativeRoot = 'build/native';
-const String includeRoot = '$buildNativeRoot/include';
-const String filesRoot = '$buildNativeRoot/files';
+
+/// 相对 [buildNativeRoot] 的根目录名 —— 搜索根与载荷判定共用这一坐标系。
+const String includeRelativeRoot = 'include';
+const String filesRelativeRoot = 'files';
+
+const String includeRoot = '$buildNativeRoot/$includeRelativeRoot';
+const String filesRoot = '$buildNativeRoot/$filesRelativeRoot';
+
+/// files/ 下的源文件子目录名。§5.2 的动态搜索根只覆盖它之下更深的目录。
+const String sourceSubdirectory = 'source';
+
+/// files/ 下的源文件根（相对 [buildNativeRoot]）。
+const String sourceRelativeRoot = '$filesRelativeRoot/$sourceSubdirectory';
 
 /// files/ 下全部 11 个子目录，顺序即发射顺序（保证 .targets 可重现）。
 const List<String> filesSubdirectories = <String>[
-  'source', 'library', 'assembly', 'resource', 'script',
+  sourceSubdirectory, 'library', 'assembly', 'resource', 'script',
   'fortran', 'llvm', 'python', 'data', 'executable', 'other',
 ];
 
@@ -118,6 +129,35 @@ String _withoutLeadingLibOrBin(String path) {
   }
   final String leading = path.substring(0, separator).toLowerCase();
   return _libraryLeadingSegments.contains(leading) ? path.substring(separator + 1) : path;
+}
+
+/// `.targets` 发射到 `ClCompile/AdditionalIncludeDirectories` 的搜索根，相对
+/// [buildNativeRoot]、`/` 分隔：`include` + files/ 下全部 11 个子目录 + files/source/ 之下
+/// 每个实际含源文件的目录。入参与出参同坐标系 —— 载荷路径（[stripBuildNative] 的结果）。
+///
+/// nuget_builder 原样发射该列表，header_include_fixer 用同一份判断包内能否解析。两者
+/// 口径一旦分裂，要么产出注定失效的改写，要么把能解析的引用误报成「跳树」。
+List<String> payloadSearchRoots(Iterable<String> relativePayloadPaths) {
+  final List<String> sourceDirectories = <String>[];
+  final Set<String> seenSourceDirectories = <String>{};
+  for (final String relative in relativePayloadPaths) {
+    if (!relative.toLowerCase().startsWith('$sourceRelativeRoot/')) {
+      continue;
+    }
+    final int separator = relative.lastIndexOf('/');
+    if (separator > sourceRelativeRoot.length) {
+      final String directory = relative.substring(0, separator);
+      if (seenSourceDirectories.add(directory)) {
+        sourceDirectories.add(directory);
+      }
+    }
+  }
+  sourceDirectories.sort();
+  return List<String>.unmodifiable(<String>[
+    includeRelativeRoot,
+    for (final String subdirectory in filesSubdirectories) '$filesRelativeRoot/$subdirectory',
+    ...sourceDirectories,
+  ]);
 }
 
 int comparePackagePaths(String first, String second) {

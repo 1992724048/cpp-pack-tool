@@ -189,6 +189,46 @@ void main() {
     });
   });
 
+  group('payloadSearchRoots', () {
+    test('include + files 下 11 个子目录；源文件直接在 files/source 下时不多发动态根', () {
+      expect(payloadSearchRoots(<String>['files/source/a.c']), <String>[
+        'include',
+        for (final String subdirectory in filesSubdirectories) 'files/$subdirectory',
+      ]);
+    });
+
+    test('files/source 之下每个含源文件的更深目录各一条，确定性排序且去重', () {
+      final List<String> roots = payloadSearchRoots(<String>[
+        'files/source/third_party/foo/b.c',
+        'files/source/src/b.cpp',
+        'files/source/src/a.c',
+        'files/source/src/a.c',
+        'files/other/x.txt',
+        'include/demo/foo.h',
+      ]);
+      // 固定部分：include + files 下 11 个子目录。
+      final int fixedRootCount = filesSubdirectories.length + 1;
+
+      expect(roots, hasLength(fixedRootCount + 2));
+      expect(roots.take(fixedRootCount), <String>[
+        'include',
+        for (final String subdirectory in filesSubdirectories) 'files/$subdirectory',
+      ]);
+      expect(roots.sublist(fixedRootCount), <String>[
+        'files/source/src',
+        'files/source/third_party/foo',
+      ]);
+    });
+
+    test('files/ 根目录不作为搜索根下发', () {
+      expect(
+        payloadSearchRoots(<String>['files/LICENSE']).where((String root) => root == 'files'),
+        isEmpty,
+        reason: 'files/ 根只承载许可证',
+      );
+    });
+  });
+
   test('filesSubdirectories 覆盖 filesSubdirectoryOf 的全部取值', () {
     for (final FileType type in FileType.values) {
       final String? subdirectory = filesSubdirectoryOf(type);

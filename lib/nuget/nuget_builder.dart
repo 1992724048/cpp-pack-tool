@@ -19,12 +19,10 @@ class NuGetPackageBuilder {
   static const String _buildNative = buildNativeRoot;
   static const String _filesPrefix = filesRoot;
   /// .targets 与包内载荷同层，故搜索根一律相对 build/native/ 而非包根。
-  static const String _includeSearchRoot = 'include';
-  static const String _filesSearchRoot = 'files';
+  static const String _filesSearchRoot = filesRelativeRoot;
   static const String _librarySubdirectory = 'library';
   static const String _assemblySubdirectory = 'assembly';
   static const String _resourceSubdirectory = 'resource';
-  static const String _sourceSubdirectory = 'source';
   static const String _masmImportCondition =
       r"'$(MASMBeforeTargets)' == '' And '$(VCTargetsPath)' != '' "
       r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.props') "
@@ -166,13 +164,14 @@ class NuGetPackageBuilder {
     final _BuildValueGroup runtimeBinaries = _BuildValueGroup();
     final List<String> asmFiles = <String>[];
     final List<String> resourceFiles = <String>[];
-    final Set<String> sourceDirectories = <String>{};
+    final List<String> relativePayloads = <String>[];
     for (final PackageEntry entry in fileEntries) {
       _addDerivedLibEntries(libDirectories, libraries, entry.packagePath);
       final String? relative = stripBuildNative(entry.packagePath);
       if (relative == null) {
         continue;
       }
+      relativePayloads.add(relative);
       final String lower = relative.toLowerCase();
       if (lower.startsWith('$_filesSearchRoot/$_assemblySubdirectory/') &&
           lower.endsWith('.asm')) {
@@ -182,16 +181,11 @@ class NuGetPackageBuilder {
         resourceFiles.add(relative);
       } else if (_isRuntimeBinary(lower)) {
         runtimeBinaries.add(_msbuildPath(relative), BuildModel.all, dedupe: true);
-      } else if (lower.startsWith('$_filesSearchRoot/$_sourceSubdirectory/')) {
-        _addSourceDirectory(sourceDirectories, relative);
       }
     }
 
     final List<String> includeRoots = <String>[
-      _msbuildPath(_includeSearchRoot),
-      for (final String subdirectory in filesSubdirectories)
-        _msbuildPath('$_filesSearchRoot/$subdirectory'),
-      for (final String directory in sourceDirectories.toList()..sort()) _msbuildPath(directory),
+      for (final String root in payloadSearchRoots(relativePayloads)) _msbuildPath(root),
     ];
 
     final StringBuffer buffer = StringBuffer()
@@ -230,14 +224,6 @@ class NuGetPackageBuilder {
     _writeLicenseTarget(buffer, pack);
     buffer.writeln('</Project>');
     return buffer.toString();
-  }
-
-  /// 只收比固定根 files/source 更深的目录：直接子文件所在目录已被固定根覆盖。
-  static void _addSourceDirectory(Set<String> sourceDirectories, String relative) {
-    final int separator = relative.lastIndexOf('/');
-    if (separator > '$_filesSearchRoot/$_sourceSubdirectory'.length) {
-      sourceDirectories.add(relative.substring(0, separator));
-    }
   }
 
   static void _addDerivedLibEntries(_BuildValueGroup libDirectories, _BuildValueGroup libraries, String packagePath) {
