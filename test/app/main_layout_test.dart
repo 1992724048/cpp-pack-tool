@@ -13,6 +13,7 @@ import 'package:cpp_nuget_pack/pack/model/dependency_model.dart';
 import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/pack/model/history_model.dart';
 import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
+import 'package:cpp_nuget_pack/pack/package_scaffold.dart';
 import 'package:cpp_nuget_pack/settings/settings_model.dart';
 import 'package:cpp_nuget_pack/nuget/ui/pack_export_dialog.dart';
 import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
@@ -2223,6 +2224,89 @@ void main() {
     expect(find.text(r'路径：C:\libs\foo'), findsOneWidget);
     expect(find.byKey(const Key('packIdField')), findsOneWidget);
     expect(find.textContaining('不会因为创建文件就自动注册进命令列表'), findsOneWidget);
+  });
+
+  testWidgets('创建包结构确认后落盘为包、记一次创建历史并选中', (tester) async {
+    // 真实文件 I/O 整体放进 runAsync（口径同「打包前自动修复」用例）：先用真实脚手架
+    // 把结构铺满，对话框内那次落盘便只剩同步存在性检查，fake_async 测试区不会挂死。
+    late Directory sourceRoot;
+    await tester.runAsync(() async {
+      sourceRoot = await Directory.systemTemp.createTemp('cnp_scaffold_');
+      await createPackageStructure(sourceRoot.path);
+    });
+    addTearDown(() {
+      if (sourceRoot.existsSync()) {
+        sourceRoot.deleteSync(recursive: true);
+      }
+    });
+
+    final _FakePackStore store = _FakePackStore();
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 30, 10, 0, 0),
+      pickDirectory: () async => sourceRoot.path,
+      scanFiles: (_) async => <FileModel>[
+        FileModel(name: 'build.py', path: 'build.py', size: 900),
+        FileModel(name: 'post.bat', path: 'post.bat', size: 120),
+        FileModel(name: 'pre.bat', path: 'pre.bat', size: 120),
+      ],
+    );
+
+    await tester.tap(find.byTooltip('创建包结构'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await _fillRequiredFields(tester, name: 'demo');
+    await _tapDialogButton(tester, '确定');
+    expect(find.text('目标目录非空'), findsOneWidget);
+    await _tapDialogButton(tester, '继续创建');
+
+    expect(store.saveCount, 1);
+    expect(store.packs, hasLength(1));
+    final PackModel saved = store.packs.single;
+    expect(saved.name, 'demo');
+    expect(saved.author, 'tester');
+    expect(saved.sourcePath, sourceRoot.path);
+    expect(saved.files, hasLength(3));
+    expect(saved.history, hasLength(1));
+    expect(saved.history.single.type, HistoryType.created);
+    expect(saved.history.single.message, '创建包：3 个文件，总大小 1.1 KB');
+    expect(_selectedIndex(tester), 0);
+    expect(find.text('尚未添加'), findsNothing);
+  });
+
+  testWidgets('创建包结构后扫描源目录失败时提示且不落盘', (tester) async {
+    late Directory sourceRoot;
+    await tester.runAsync(() async {
+      sourceRoot = await Directory.systemTemp.createTemp('cnp_scaffold_scan_');
+      await createPackageStructure(sourceRoot.path);
+    });
+    addTearDown(() {
+      if (sourceRoot.existsSync()) {
+        sourceRoot.deleteSync(recursive: true);
+      }
+    });
+
+    final _FakePackStore store = _FakePackStore();
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => sourceRoot.path,
+      scanFiles: (_) async => throw ArgumentError('目录不存在: ${sourceRoot.path}'),
+    );
+
+    await tester.tap(find.byTooltip('创建包结构'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await _fillRequiredFields(tester, name: 'demo');
+    await _tapDialogButton(tester, '确定');
+    await _tapDialogButton(tester, '继续创建');
+
+    expect(store.saveCount, 0);
+    expect(store.packs, isEmpty);
+    expect(find.textContaining('扫描包源目录失败'), findsOneWidget);
   });
 }
 

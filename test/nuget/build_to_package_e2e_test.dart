@@ -9,8 +9,11 @@ import 'package:cpp_nuget_pack/build/build_script.dart';
 import 'package:cpp_nuget_pack/build/compiler_model.dart';
 import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
+import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
 import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/pack/file_scan.dart';
+import 'package:cpp_nuget_pack/pack/package_scaffold.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -217,6 +220,53 @@ void main() {
       names.any((String name) => name.startsWith('build/native/lib/')),
       isFalse,
       reason: 'build/native/lib/ 已取消',
+    );
+  });
+
+  test('脚手架产出的包经 buildPlan 后恰好两条模板文件条目', () async {
+    final Directory root = Directory.systemTemp.createTempSync('cnp-e2e-scaffold-');
+    addTearDown(() {
+      if (root.existsSync()) {
+        root.deleteSync(recursive: true);
+      }
+    });
+
+    final ScaffoldOutcome outcome = await createPackageStructure(root.path);
+    expect(outcome.createdFiles, hasLength(3), reason: 'build.py / pre.bat / post.bat 三个模板全部落盘');
+    expect(
+      outcome.createdDirectories,
+      hasLength(scaffoldDirectories.length),
+      reason: '包源根本身已存在，不计入 createdDirectories',
+    );
+
+    final List<FileModel> files = await FileScan.scan(root.path);
+    final PackModel pack = PackModel(
+      name: 'scaffold',
+      version: '1.0.0',
+      author: 'e2e',
+      sourcePath: root.path,
+    )..files = files;
+
+    final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(pack);
+
+    final List<String> fileEntries = plan.entries
+        .map((PackageEntry entry) => entry.packagePath)
+        .where(
+          (String path) =>
+              !path.endsWith('.nuspec') &&
+              !path.endsWith('.targets') &&
+              !path.endsWith('.props'),
+        )
+        .toList();
+    expect(fileEntries, <String>[
+      'build/native/files/script/post.bat',
+      'build/native/files/script/pre.bat',
+    ], reason: '4 个空目录不进包，build.py 作为配方入口被排除，只剩两个 .bat');
+
+    expect(
+      fileEntries.any((String path) => path.endsWith('build.py')),
+      isFalse,
+      reason: 'build.py 是配方入口，不进包',
     );
   });
 }

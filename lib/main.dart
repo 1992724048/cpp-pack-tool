@@ -39,6 +39,7 @@ import 'nuget/ui/packaging_issues_dialog.dart';
 import 'pack/ui/dialogs/remap_pack_dialog.dart';
 import 'app/about_page.dart';
 import 'pack/ui/dialogs/create_package_structure_dialog.dart';
+import 'pack/ui/dialogs/pack_metadata_form.dart';
 import 'settings/ui/setting.dart';
 
 void main() {
@@ -244,8 +245,45 @@ class _MainLayoutState extends State<MainLayout> {
     if (result == null || !mounted) {
       return;
     }
-    // Task 6 接入：据 result.metadata 构造 PackModel，跑 FileScan.scan 与
-    // PackStore.savePack 并追加 HistoryType.created 历史。此刻元数据与落盘汇总均已就绪。
+
+    final PackMetadata metadata = result.metadata;
+    final List<FileModel> files;
+    try {
+      files = await widget.scanFiles(path);
+    } catch (error) {
+      if (mounted) {
+        showFloatingToast(
+          context,
+          '扫描包源目录失败：${formatError(error)}',
+          type: FloatingToastType.error,
+          duration: const Duration(seconds: 5),
+        );
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    final PackModel pack = PackModel(
+      name: metadata.name,
+      version: metadata.version,
+      author: metadata.author,
+      description: metadata.description,
+      license: metadata.license,
+      sourcePath: path,
+    )..files = files;
+    final int totalSize = files.fold<int>(0, (int sum, FileModel file) => sum + file.size);
+    pack.history = appendHistoryEntry(
+      pack.history,
+      HistoryModel(
+        time: widget.now(),
+        type: HistoryType.created,
+        message: '创建包：${files.length} 个文件，总大小 ${formatBytes(totalSize)}',
+      ),
+    );
+
+    await _savePack(pack);
   }
 
   Future<bool> _savePack(PackModel pack) async {

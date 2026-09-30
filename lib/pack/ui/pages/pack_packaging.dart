@@ -15,6 +15,17 @@ const String _description =
     '提示：.lib 与 .a 的 Release/Debug 隔离按路径中的 release / debug 目录名'
     '推断（大小写不敏感，多段命中取最后一个），目录改名会导致隔离失效。';
 
+// 消费方契约违反后 NuGet 与 MSBuild 一律不报错、只静默失效，不写在这里用户就永远看不到。
+// 单独成段而非并入 _description：那是版式说明，这条是失效边界，混作一段会互相淹没。
+const String _consumerContract =
+    '消费本包需遵守以下约定，违反后均无任何报错：'
+    '.targets 固定落在 build/native/，其中 native 段名必须字面一致 —— '
+    'NuGet 为 .vcxproj 硬编码的目标框架标识恰是 native@0.0，'
+    '改成 build/native/x64/ 这类四段路径后整个 .targets 会被静默忽略；'
+    '文件名必须恰好是「包 ID.targets」与「包 ID.props」，改名同样静默失效；'
+    '只有 .vcxproj（含 C++/CLI）项目会导入，其它项目类型不导入；'
+    '产物不得落在点开头或名为 build / out 的目录里（任意层级），否则扫描时被静默跳过。';
+
 class PackPackaging extends StatefulWidget {
   const PackPackaging({super.key, required this.pack});
 
@@ -79,6 +90,8 @@ class _PackPackagingState extends State<PackPackaging> {
               FilledButton(key: const Key('packPreviewButton'), onPressed: _preview, child: const Text('预览打包内容')),
               const SizedBox(height: 16),
               Text(_description, style: TextStyle(color: theme.resources.textFillColorSecondary)),
+              const SizedBox(height: 8),
+              Text(_consumerContract, style: TextStyle(color: theme.resources.textFillColorSecondary)),
               const SizedBox(height: 8),
               Text('点击「预览打包内容」可查看包内完整文件列表与文件内容。', style: TextStyle(color: theme.resources.textFillColorSecondary)),
             ],

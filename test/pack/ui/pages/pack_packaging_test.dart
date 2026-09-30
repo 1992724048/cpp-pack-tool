@@ -21,6 +21,20 @@ void main() {
     expect(find.textContaining('根级许可证直接放在 files/ 下'), findsOneWidget);
   });
 
+  testWidgets('渲染消费方契约：五条失效边界逐条可见', (tester) async {
+    await _pumpPage(tester, PackPackaging(pack: _pack()));
+
+    // 违反后 NuGet / MSBuild 一律不报错，只静默失效；删掉任一句用户就再也无从得知。
+    expect(find.textContaining('违反后均无任何报错'), findsOneWidget);
+    expect(find.textContaining('native 段名必须字面一致'), findsOneWidget);
+    expect(find.textContaining('native@0.0'), findsOneWidget);
+    expect(find.textContaining('「包 ID.targets」与「包 ID.props」'), findsOneWidget);
+    expect(find.textContaining('只有 .vcxproj（含 C++/CLI）项目会导入'), findsOneWidget);
+    expect(find.textContaining('名为 build / out 的目录'), findsOneWidget);
+    // 第 5 条（.lib / .a 的配置隔离）沿用既有提示，不重复写。
+    expect(find.textContaining('release / debug 目录名'), findsOneWidget);
+  });
+
   testWidgets('点击预览生成 NuGet 计划并打开对话框', (tester) async {
     await _pumpPage(
       tester,
