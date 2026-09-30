@@ -248,7 +248,8 @@ bool _landsUnderIncludeRoot(String path) {
 
 bool _landsUnderFilesRoot(String path) {
   return switch (_fileTypeOf(path)) {
-    FileType.header || FileType.module || FileType.lib || FileType.dll || FileType.pdb => false,
+    FileType.header || FileType.module || FileType.lib || FileType.dll || FileType.pdb ||
+    FileType.msbuild => false,
     _ => true,
   };
 }

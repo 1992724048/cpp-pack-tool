@@ -394,6 +394,33 @@ void main() {
     }
   });
 
+  test('_landsUnderFilesRoot 按 FileType 排除 msbuild 类型', () {
+    // `.props`/`.targets` 随 files/msbuild 成为固定搜索根，但搜索根的存在不代表该类文件
+    // 可被 `#include` —— 与 §5.4 对 lib/dll/pdb 的排除同一条原则：按文件类型判定，与
+    // 所在目录无关（故嵌套子目录下的 .props 同样要排除）。
+    for (final String path in <String>[
+      'msbuild/mytool.props',
+      'msbuild/mytool.targets',
+      'msbuild/nested/mytool.props',
+    ]) {
+      expect(landsUnderFilesRootForTesting(path), isFalse, reason: path);
+    }
+  });
+
+  test('_landsUnderFilesRoot 仍放行其它非排除类型', () {
+    // false 名单是逐类型枚举而非「非源码即排除」：一旦有人图省事改成兜底排除，.c/.rc/.ico/
+    // .bat/Makefile 会一并失去裸文件名改写，且没有任何报错提示 —— 正向放行面也得钉住。
+    for (final String path in <String>[
+      'src/main.c',
+      'res/app.rc',
+      'res/app.ico',
+      'script/pre.bat',
+      'Makefile',
+    ]) {
+      expect(landsUnderFilesRootForTesting(path), isTrue, reason: path);
+    }
+  });
+
   test('include 索引存命名空间相对路径：源码树写法不算已解析', () async {
     // 头文件落 `include/gtest/foo.h`、索引存 `gtest/foo.h`（相对 include 根）。索引若改存
     // 落点全路径或源路径，`include/gtest/foo.h` 这条过期的源码树写法就会被判为已解析而
