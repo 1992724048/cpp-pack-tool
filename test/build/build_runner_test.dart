@@ -760,6 +760,27 @@ void main() {
       expect(versions, <String>[''], reason: '空声明也走同一条通道，是否忽略由调用方决定');
     });
 
+    test('空声明后刷屏两千余行仍照样上报空串', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, _echoBuilder());
+      final List<String> versions = <String>[];
+      final StringBuffer stdout = StringBuffer('CNP_VERSION=\n');
+      for (int index = 0; index < 2100; index++) {
+        stdout.writeln('verbose line $index');
+      }
+
+      await runPackBuildStreaming(
+        _pack(sourcePath: sourcePath),
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+        streamRunner: _streamingRunner(
+          (_StreamCall call) async => _fakeProcess(stdout: stdout.toString()),
+        ),
+        onVersion: versions.add,
+      );
+
+      expect(versions, <String>[''], reason: '解析读完整 ProcessResult，不受任何行数窗口影响');
+    });
+
     test('最后一次声明为空值时先前的非空声明也不采纳', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(root, _echoBuilder());

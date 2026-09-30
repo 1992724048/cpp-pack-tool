@@ -965,7 +965,7 @@ void main() {
         void Function(String line)? onOutput,
         void Function(String version)? onVersion,
       }) async {
-        // 真实 runner 也会把协议行回显进输出，面板不得据此再解析一次。
+        // 真实 runner 也会把协议行回显进输出，面板只消费版本通道的回调。
         onOutput?.call('CNP_VERSION=1.1.0');
         onVersion?.call('1.1.0');
       },
@@ -1012,6 +1012,32 @@ void main() {
     expect(find.textContaining('值为空', findRichText: true), findsNothing);
   });
 
+  testWidgets('版本通道无回调时输出里的协议行不构成声明', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {
+        onOutput?.call('CNP_VERSION=1.1.0');
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0', reason: '版本只认通道回调，输出缓冲不参与解析');
+    expect(find.textContaining('版本已更新', findRichText: true), findsNothing);
+    expect(find.textContaining('值为空', findRichText: true), findsNothing);
+  });
+
   testWidgets('配方声明版本但值为空时保持原版本并在面板警告', (tester) async {
     PackModel? applied;
 
@@ -1040,39 +1066,6 @@ void main() {
       reason: '配方声明了版本却没给内容，必须显式告知被忽略',
     );
     expect(find.textContaining('版本已更新', findRichText: true), findsNothing);
-  });
-
-  testWidgets('空声明的警告不受输出缓冲裁剪影响', (tester) async {
-    PackModel? applied;
-
-    await _pumpDialog(
-      tester,
-      build: (
-        PackModel pack, {
-        Map<String, String>? environment,
-        void Function(String line)? onOutput,
-        void Function(String version)? onVersion,
-      }) async {
-        onVersion?.call('');
-        // 超出面板 2000 行上限的刷屏：警告若挂在输出行上必被驱逐。
-        for (int index = 0; index < 2100; index++) {
-          onOutput?.call('verbose line $index');
-        }
-      },
-      scanFiles: (String sourcePath) async => const <FileModel>[],
-      onApply: (PackModel pack) async {
-        applied = pack;
-      },
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(applied!.version, '1.0.0');
-    expect(
-      find.textContaining('值为空', findRichText: true),
-      findsOneWidget,
-      reason: '警告来自版本通道而非输出缓冲，不随刷屏被裁掉',
-    );
   });
 
   testWidgets('配方声明的版本与现值相同时不改版本也不提示', (tester) async {
