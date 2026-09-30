@@ -1,7 +1,7 @@
 name: cpp_nuget_pack
 description: "Windows Flutter 桌面应用，用于将 C/C++ 头文件、源码和库打包为 NuGet 包。"
 publish_to: "none"
-version: 26.3.0+1
+version: 26.4.0-a+1
 
 environment:
   sdk: ^3.13.2
