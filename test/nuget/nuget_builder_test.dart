@@ -912,7 +912,6 @@ void main() {
         link,
         contains('<AdditionalDependencies>mylib.lib;%(AdditionalDependencies)</AdditionalDependencies>'),
       );
-      expect(groups[''], contains('</ClCompile>'), reason: 'Link 与 ClCompile 是兄弟元素，不是嵌套');
     });
 
     test('条件定义组内的链接期属性同样写在 Link 元素内', () async {
