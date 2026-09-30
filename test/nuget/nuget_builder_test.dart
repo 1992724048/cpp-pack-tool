@@ -1331,9 +1331,11 @@ void main() {
     });
 
     test('多个用户 msbuild .props 与 .targets 按路径字典序全部发射', () async {
+      // 两个桶都按字典序【倒序】插入：删掉任一 sort() 都必须让本用例变红。
       final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
         ..files = <FileModel>[
           FileModel(name: 'zeta.props', path: 'msbuild/zeta.props', size: 1),
+          FileModel(name: 'zeta.targets', path: 'msbuild/zeta.targets', size: 1),
           FileModel(name: 'alpha.targets', path: 'msbuild/alpha.targets', size: 1),
           FileModel(name: 'alpha.props', path: 'msbuild/alpha.props', size: 1),
         ];
@@ -1341,16 +1343,98 @@ void main() {
       final PackagePlan plan = await _builder.buildPlan(pack);
       final String props = _generatedContent(plan, 'build/demo.props');
       final String targets = _targetsOf(plan);
+      final StringBuffer expectedProps = StringBuffer()
+        ..writeln('<?xml version="1.0" encoding="utf-8"?>')
+        ..writeln(
+          '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" '
+          'TreatAsLocalProperty="Platform">',
+        )
+        ..writeln(
+          r'  <Import Project="$(MSBuildThisFileDirectory)native\files\msbuild\msbuild'
+          r'\alpha.props" />',
+        )
+        ..writeln(
+          r'  <Import Project="$(MSBuildThisFileDirectory)native\files\msbuild\msbuild'
+          r'\zeta.props" />',
+        )
+        ..writeln('</Project>');
+      final List<String> expectedTargetImports = <String>[
+        r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\alpha.targets" />',
+        r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\zeta.targets" />',
+      ];
 
       expect(
-        props.indexOf('alpha.props'),
-        lessThan(props.indexOf('zeta.props')),
-        reason: '包级 .props 须按路径字典序发射以保证可重现',
+        props,
+        expectedProps.toString(),
+        reason: '包级 .props 全文：无 ToolsVersion，全部用户 .props 按路径字典序逐条发射',
+      );
+      for (final String importLine in expectedTargetImports) {
+        expect(targets, contains(importLine), reason: '每个用户 .targets 都须被发射');
+      }
+      expect(
+        targets.indexOf(expectedTargetImports.first),
+        lessThan(targets.indexOf(expectedTargetImports.last)),
+        reason: '多个 .targets 须按路径字典序发射以保证可重现',
+      );
+    });
+
+    test('用户 msbuild 路径含 & 时 .props 与 .targets 的导入路径转义', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'a&b.props', path: 'msbuild/a&b/a&b.props', size: 1),
+          FileModel(name: 'a&b.targets', path: 'msbuild/a&b/a&b.targets', size: 1),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String props = _generatedContent(plan, 'build/demo.props');
+      final String targets = _targetsOf(plan);
+
+      expect(
+        props,
+        contains(
+          r'$(MSBuildThisFileDirectory)native\files\msbuild\msbuild\a&amp;b\a&amp;b.props',
+        ),
+        reason: '包级 .props 的导入路径须转义 & ，否则消费方 MSBuild 读到畸形 XML',
+      );
+      expect(props, isNot(contains(r'a&b')));
+      expect(
+        targets,
+        contains(r'$(MSBuildThisFileDirectory)files\msbuild\msbuild\a&amp;b\a&amp;b.targets'),
+      );
+      expect(targets, isNot(contains(r'a&b')));
+    });
+
+    test('MASM / Resource / 运行库路径含 & 时各自转义', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'a&b.asm', path: 'msbuild/a&b/a&b.asm', size: 1),
+          FileModel(name: 'a&b.rc', path: 'msbuild/a&b/a&b.rc', size: 1),
+          FileModel(name: 'a&b.dll', path: 'lib/a&b.dll', size: 1),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\assembly\msbuild\a&amp;b\a&amp;b.asm">',
+        ),
       );
       expect(
         targets,
-        contains(r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\alpha.targets" />'),
+        contains(
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\resource\msbuild'
+          r'\a&amp;b\a&amp;b.rc">',
+        ),
       );
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library'
+          r'\a&amp;b.dll" />',
+        ),
+      );
+      expect(targets, isNot(contains(r'a&b')));
     });
 
     test('无宏、库目录、附加库、命令与特殊文件时仅保留 include 行', () async {

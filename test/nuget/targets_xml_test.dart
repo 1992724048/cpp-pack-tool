@@ -84,7 +84,7 @@ String _licenseTargetBlock(String targets) {
 }
 
 void main() {
-  test('三份 .targets 均通过 [xml] 整文档解析（含对抗性包名）', () async {
+  test('4 个夹具的 .targets 与包级 .props 均通过 [xml] 整文档解析（msbuild 与对抗性包名）', () async {
     final Directory tempDir = Directory.systemTemp.createTempSync(
       'cnp_targets_xml_',
     );
