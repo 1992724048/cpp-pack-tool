@@ -1077,6 +1077,43 @@ void main() {
       );
     });
 
+    test('同名运行时二进制按无条件 → release → debug 顺序发射', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 10),
+          FileModel(name: 'foo.dll', path: 'bin/Release/foo.dll', size: 10),
+          FileModel(name: 'foo.dll', path: 'bin/Debug/foo.dll', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+      const String allFoo = r'$(MSBuildThisFileDirectory)files\library\foo.dll';
+      const String releaseFoo = r'$(MSBuildThisFileDirectory)files\library\Release\foo.dll';
+      const String debugFoo = r'$(MSBuildThisFileDirectory)files\library\Debug\foo.dll';
+
+      expect(
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          '': <String>[allFoo],
+          r"'$(Configuration)'!='Debug'": <String>[releaseFoo],
+          r"'$(Configuration)'=='Debug'": <String>[debugFoo],
+        },
+        reason: '同名跨配置条目各归各组，组归属先钉死',
+      );
+      // Map 的 == 与插入顺序无关，故顺序只能靠发射下标观测：同名条目在 MSBuild
+      // 的项集合里靠后者覆盖前者，配置专属组必须排在无条件组之后。
+      expect(targets.indexOf(allFoo), greaterThanOrEqualTo(0));
+      expect(
+        targets.indexOf(releaseFoo),
+        greaterThan(targets.indexOf(allFoo)),
+        reason: '配置专属的条目要压过无条件的那条：release 组的 foo.dll 必须后写',
+      );
+      expect(
+        targets.indexOf(debugFoo),
+        greaterThan(targets.indexOf(releaseFoo)),
+        reason: 'Debug 组排最后，同名跨配置条目下 Debug 消费方取到的才是 Debug 产物',
+      );
+    });
+
     test('dll 不参与附加库派生且只经运行时项发射一次', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
