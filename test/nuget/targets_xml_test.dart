@@ -218,7 +218,7 @@ void main() {
     expect(pattern.firstMatch(first)!.group(1), isNot(pattern.firstMatch(second)!.group(1)));
   });
 
-  test('同包名的两个包因 hash 不同仍不相等', () async {
+  test('同 cleanId 不同原始名因 hash 不同仍不相等', () async {
     // 用同一 cleanId、不同原始名构造：'A.B' 与 'A-B' → cleanId 同为 A_B
     final String first = await _targetsOf(_packNamed('A.B'));
     final String second = await _targetsOf(_packNamed('A-B'));
@@ -230,6 +230,6 @@ void main() {
       FileModel(name: 'boot.asm', path: 'src/boot.asm', size: 1),
     ], name: 'A.B'));
     expect(targets, contains(r'asm_A_B_'));
-    expect(targets, isNot(contains(r'\$(IntDir)asm_src_boot.asm.obj')));
+    expect(targets, isNot(contains(r'$(IntDir)asm_files_src_boot.asm.obj')));
   });
 }
