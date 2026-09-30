@@ -99,7 +99,7 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 | ---- | ---- | ---- |
 | 1 | `.targets` 所在路径的 `native` 段名必须**字面一致** | 改成 `build/native/x64/` 之类四段路径，整个 `.targets` 静默不导入，零报错 |
 | 2 | 文件名必须**恰好**是 `<包ID>.targets` / `<包ID>.props` | 改名后静默不导入 |
-| 3 | 消费方项目必须是 `.vcxproj`（C++/CLI 亦可） | 其它项目类型不导入 |
+| 3 | 消费方项目必须是 **`.vcxproj`**（C++/CLI 亦可）—— 这条只约束 `.targets`（即 `build/native/<包ID>.targets`）；`build/<包ID>.props` 走两段式布局，**任何目标框架的项目都会导入** | 其它项目类型只丢 `.targets`，`.props` 照常导入 |
 | 4 | 产物不得落 `.` 开头或名为 `build` / `out` 的目录（任意层级） | 扫描器静默跳过，不进包、不报错 |
 | 5 | 自动派生的（`files/library/` 下的）`.lib` / `.a`，其配置隔离靠路径里的 `release` / `debug` 段（大小写不敏感、多段命中取最后一个） | 目录改名后隔离静默失效，链接器挑到错误版本 |
 
