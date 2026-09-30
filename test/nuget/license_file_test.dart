@@ -46,62 +46,62 @@ void main() {
     });
   });
 
-  group('findPrimaryLicensePath', () {
+  group('findLicensePaths', () {
     test('仅源目录根部的许可证参与识别', () {
       final List<FileModel> files = <FileModel>[
         FileModel(name: 'LICENSE', path: 'docs/LICENSE', size: 10),
         FileModel(name: 'COPYING', path: r'docs\licenses\COPYING', size: 20),
       ];
 
-      expect(findPrimaryLicensePath(files), isNull);
+      expect(findLicensePaths(files), isEmpty);
     });
 
-    test('核心名优先级 license > licence > copying > unlicense > notice', () {
+    test('全部根级许可文件都被收集而非只取排名先者', () {
       expect(
-        findPrimaryLicensePath(<FileModel>[
+        findLicensePaths(<FileModel>[
           FileModel(name: 'NOTICE', path: 'NOTICE', size: 10),
           FileModel(name: 'COPYING', path: 'COPYING', size: 10),
           FileModel(name: 'LICENCE', path: 'LICENCE', size: 10),
           FileModel(name: 'LICENSE', path: 'LICENSE', size: 10),
         ]),
-        'LICENSE',
+        <String>['COPYING', 'LICENCE', 'LICENSE', 'NOTICE'],
       );
       expect(
-        findPrimaryLicensePath(<FileModel>[
+        findLicensePaths(<FileModel>[
           FileModel(name: 'notice.md', path: 'notice.md', size: 10),
           FileModel(name: 'unlicense.txt', path: 'unlicense.txt', size: 10),
           FileModel(name: 'copying.txt', path: 'copying.txt', size: 10),
           FileModel(name: 'licence.txt', path: 'licence.txt', size: 10),
         ]),
-        'licence.txt',
+        <String>['copying.txt', 'licence.txt', 'notice.md', 'unlicense.txt'],
       );
     });
 
-    test('同核心名按小写文件名字典序取先者', () {
+    test('按小写路径字典序排序，同名变体以原始路径定序', () {
       expect(
-        findPrimaryLicensePath(<FileModel>[
+        findLicensePaths(<FileModel>[
           FileModel(name: 'LICENSE.txt', path: 'LICENSE.txt', size: 10),
           FileModel(name: 'LICENSE', path: 'LICENSE', size: 10),
         ]),
-        'LICENSE',
+        <String>['LICENSE', 'LICENSE.txt'],
       );
       expect(
-        findPrimaryLicensePath(<FileModel>[
+        findLicensePaths(<FileModel>[
+          FileModel(name: 'LICENSE.TXT', path: 'LICENSE.TXT', size: 10),
           FileModel(name: 'license.txt', path: 'license.txt', size: 10),
-          FileModel(name: 'license.md', path: 'license.md', size: 10),
         ]),
-        'license.md',
+        <String>['LICENSE.TXT', 'license.txt'],
       );
     });
 
-    test('无匹配或空列表返回 null', () {
+    test('无匹配或空列表返回空列表', () {
       expect(
-        findPrimaryLicensePath(<FileModel>[
+        findLicensePaths(<FileModel>[
           FileModel(name: 'README.md', path: 'README.md', size: 10),
         ]),
-        isNull,
+        isEmpty,
       );
-      expect(findPrimaryLicensePath(const <FileModel>[]), isNull);
+      expect(findLicensePaths(const <FileModel>[]), isEmpty);
     });
   });
 }

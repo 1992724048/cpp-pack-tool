@@ -138,21 +138,21 @@ void main() {
         expect(content, isNot(contains('DeployPkgRuntimeBinaries')));
       }
       if (fixture.key == 'with_license') {
-        expect(content, contains('<Target Name="DeployPkgLicense__licensed_'));
+        expect(content, contains('<Target Name="DeployPkgLicenses__licensed_'));
         expect(
           content,
           contains(
-            r"""Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')">""",
+            r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"''',
           ),
         );
         expect(
           content,
           contains(
-            r'DestinationFiles="$(OutDir)licenses\&amp;licensed_license.txt"',
+            r'DestinationFiles="$(OutDir)LICENSES\&amp;licensed_LICENSE"',
           ),
         );
       } else {
-        expect(content, isNot(contains('DeployPkgLicense')));
+        expect(content, isNot(contains('DeployPkgLicenses')));
       }
 
       final String targetsPath = joinPath(tempDir.path, '${fixture.key}.targets');
@@ -283,5 +283,46 @@ void main() {
       1,
       reason: r'files\source 固定根只发一次，src/a.c 不应让它重复出现',
     );
+  });
+
+  test('LICENSE 与 NOTICE 同时存在时两个都部署', () async {
+    final String targets = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'LICENSE', path: 'LICENSE', size: 8),
+      FileModel(name: 'NOTICE', path: 'NOTICE', size: 8),
+    ], name: 'demo'));
+
+    expect(targets, contains(r'$(OutDir)LICENSES\demo_LICENSE'));
+    expect(targets, contains(r'$(OutDir)LICENSES\demo_NOTICE'));
+    expect(RegExp(r'<Target Name="DeployPkgLicenses_').allMatches(targets), hasLength(1));
+    expect(RegExp(r'<Copy ').allMatches(targets), hasLength(2));
+  });
+
+  test('部署目录是大写 LICENSES', () async {
+    final String targets = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'LICENSE', path: 'LICENSE', size: 8),
+    ], name: 'demo'));
+
+    expect(targets, contains(r'$(OutDir)LICENSES'));
+    expect(targets, isNot(contains(r'$(OutDir)licenses')));
+  });
+
+  test('两个包的许可证目标文件名互不覆盖', () async {
+    final String first = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'NOTICE', path: 'NOTICE', size: 8),
+    ], name: 'Alpha'));
+    final String second = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'NOTICE', path: 'NOTICE', size: 8),
+    ], name: 'Beta'));
+
+    expect(first, contains(r'$(OutDir)LICENSES\Alpha_NOTICE'));
+    expect(second, contains(r'$(OutDir)LICENSES\Beta_NOTICE'));
+  });
+
+  test('无许可文件时不发射部署目标', () async {
+    final String targets = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'a.c', path: 'src/a.c', size: 1),
+    ], name: 'demo'));
+
+    expect(targets, isNot(contains('DeployPkgLicenses_')));
   });
 }

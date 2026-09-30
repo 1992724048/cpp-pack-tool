@@ -20,7 +20,7 @@ class NuGetPackageBuilder {
   static const String _filesPrefix = filesRoot;
   /// .targets 与包内载荷同层，故搜索根一律相对 build/native/ 而非包根。
   static const String _filesSearchRoot = filesRelativeRoot;
-  static const String _librarySubdirectory = 'library';
+  static final String _librarySubdirectory = filesSubdirectoryOf(FileType.lib)!;
   static const String _assemblySubdirectory = 'assembly';
   static const String _resourceSubdirectory = 'resource';
   static const String _masmImportCondition =
@@ -283,7 +283,7 @@ class NuGetPackageBuilder {
     for (final CmdModel command in pack.commands) {
       commands.add(command);
     }
-    final String cleanId = pack.name.replaceAll(_invalidTargetNameChar, '_');
+    final String cleanId = cleanTargetId(pack.name);
     final String hash = hash8(pack.name);
     _writeCommandGroupTargets(buffer, cleanId: cleanId, hash: hash, commands: commands.all);
     _writeCommandGroupTargets(
@@ -427,29 +427,34 @@ class NuGetPackageBuilder {
   }
 
   static void _writeLicenseTarget(StringBuffer buffer, PackModel pack) {
-    final String? licensePath = findPrimaryLicensePath(pack.files);
-    if (licensePath == null) {
+    final List<String> sources = <String>[
+      for (final String licensePath in findLicensePaths(pack.files))
+        if (_licenseRelativePath(pack, licensePath) case final String relative) _msbuildPath(relative),
+    ];
+    if (sources.isEmpty) {
       return;
     }
-    final String? relative = _licenseRelativePath(pack, licensePath);
-    if (relative == null) {
-      return;
+    const String destinationFolder = r'$(OutDir)LICENSES';
+    final List<String> destinations = <String>[
+      for (final String source in sources)
+        '$destinationFolder\\${_escapeXml('${pack.name}_${baseName(source)}')}',
+    ];
+    buffer.writeln(
+      '  <Target Name="DeployPkgLicenses_${cleanTargetId(pack.name)}_${hash8(pack.name)}" '
+      'AfterTargets="Build">',
+    );
+    for (int index = 0; index < sources.length; index++) {
+      final String source = _escapeXml(sources[index]);
+      buffer
+        ..writeln("    <Copy Condition=\"Exists('$source')\" SourceFiles=\"$source\"")
+        ..writeln('          DestinationFiles="${destinations[index]}"')
+        ..writeln('          SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />');
     }
-    final String source = _msbuildPath(relative);
-    const String destinationPrefix = r'$(OutDir)licenses';
-    final String destination = '$destinationPrefix\\${_escapeXml(pack.name)}_license.txt';
-    final String cleanId = pack.name.replaceAll(_invalidTargetNameChar, '_');
+    buffer.writeln('    <ItemGroup>');
+    for (final String destination in destinations) {
+      buffer.writeln('      <FileWrites Include="$destination" />');
+    }
     buffer
-      ..writeln(
-        '  <Target Name="DeployPkgLicense_${cleanId}_${hash8(pack.name)}" '
-        'AfterTargets="Build"',
-      )
-      ..writeln("          Condition=\"Exists('${_escapeXml(source)}')\">")
-      ..writeln('    <Copy SourceFiles="${_escapeXml(source)}"')..writeln(
-        '          DestinationFiles="$destination"')..writeln(
-        '          SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />')
-      ..writeln('    <ItemGroup>')
-      ..writeln('      <FileWrites Include="$destination" />')
       ..writeln('    </ItemGroup>')
       ..writeln('  </Target>');
   }

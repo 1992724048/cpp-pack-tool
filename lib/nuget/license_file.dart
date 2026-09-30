@@ -5,8 +5,6 @@ final RegExp _licenseNamePattern = RegExp(r'^(license|licence|copying|unlicense|
 
 final RegExp _directorySeparator = RegExp(r'[/\\]');
 
-const List<String> _coreNamePriority = <String>['license', 'licence', 'copying', 'unlicense', 'notice'];
-
 bool isLicenseFileName(String name) => _licenseNamePattern.hasMatch(name.toLowerCase());
 
 /// 归一化后的源路径是否落在「根级许可文件」特例上：无路径分隔符且名字命中许可名模式。
@@ -14,36 +12,16 @@ bool isRootLicenseFile(String normalizedPath) =>
     !_directorySeparator.hasMatch(normalizedPath) &&
     isLicenseFileName(baseName(normalizedPath));
 
-String? findPrimaryLicensePath(List<FileModel> files) {
-  FileModel? primary;
-  for (final FileModel file in files) {
-    if (_directorySeparator.hasMatch(file.path) || !isLicenseFileName(file.name)) {
-      continue;
-    }
-    if (primary == null || _precedes(file.name, primary.name)) {
-      primary = file;
-    }
-  }
-  return primary?.path;
+/// 全部根级许可文件的源路径，按小写路径字典序（确定性）。
+List<String> findLicensePaths(List<FileModel> files) {
+  final List<String> paths = <String>[
+    for (final FileModel file in files)
+      if (isRootLicenseFile(file.path)) file.path,
+  ]..sort(_compareLicensePaths);
+  return List<String>.unmodifiable(paths);
 }
 
-bool _precedes(String candidateName, String currentName) {
-  final String candidate = candidateName.toLowerCase();
-  final String current = currentName.toLowerCase();
-  final int candidateRank = _coreRank(candidate);
-  final int currentRank = _coreRank(current);
-  if (candidateRank != currentRank) {
-    return candidateRank < currentRank;
-  }
-  return candidate.compareTo(current) < 0;
-}
-
-int _coreRank(String lowerName) {
-  for (int index = 0; index < _coreNamePriority.length; index++) {
-    final String coreName = _coreNamePriority[index];
-    if (lowerName == coreName || lowerName.startsWith('$coreName-') || lowerName.startsWith('$coreName.')) {
-      return index;
-    }
-  }
-  return _coreNamePriority.length;
+int _compareLicensePaths(String first, String second) {
+  final int insensitive = first.toLowerCase().compareTo(second.toLowerCase());
+  return insensitive != 0 ? insensitive : first.compareTo(second);
 }

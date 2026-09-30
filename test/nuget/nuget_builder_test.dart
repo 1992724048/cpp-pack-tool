@@ -1076,24 +1076,19 @@ void main() {
       expect(
         targets,
         contains(
-          '<Target Name="DeployPkgLicense_demo_89e495e7" AfterTargets="Build"',
+          '<Target Name="DeployPkgLicenses_demo_89e495e7" AfterTargets="Build">',
         ),
       );
       expect(
         targets,
         contains(
-          r"""Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')">""",
+          r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''
+          r''' SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"''',
         ),
       );
       expect(
         targets,
-        contains(
-          r'''<Copy SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"''',
-        ),
-      );
-      expect(
-        targets,
-        contains(r'DestinationFiles="$(OutDir)licenses\demo_license.txt"'),
+        contains(r'DestinationFiles="$(OutDir)LICENSES\demo_LICENSE"'),
       );
       expect(
         targets,
@@ -1102,19 +1097,54 @@ void main() {
       expect(
         targets,
         contains(
-          r'<FileWrites Include="$(OutDir)licenses\demo_license.txt" />',
+          r'<FileWrites Include="$(OutDir)LICENSES\demo_LICENSE" />',
         ),
       );
       expect(
         targets.indexOf('</Project>'),
-        greaterThan(targets.indexOf('DeployPkgLicense_demo_89e495e7')),
+        greaterThan(targets.indexOf('DeployPkgLicenses_demo_89e495e7')),
       );
+    });
+
+    test('LICENSE 与 NOTICE 共存时两个 Copy 各带自己的 Exists 条件', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'LICENSE', path: 'LICENSE', size: 10),
+          FileModel(name: 'NOTICE', path: 'NOTICE', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''
+          r''' SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"''',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\NOTICE')"'''
+          r''' SourceFiles="$(MSBuildThisFileDirectory)files\NOTICE"''',
+        ),
+      );
+      expect(
+        targets,
+        contains(r'<FileWrites Include="$(OutDir)LICENSES\demo_LICENSE" />'),
+      );
+      expect(
+        targets,
+        contains(r'<FileWrites Include="$(OutDir)LICENSES\demo_NOTICE" />'),
+      );
+      expect('<Target Name="DeployPkgLicenses_'.allMatches(targets).length, 1);
+      expect('<Copy '.allMatches(targets).length, 2);
     });
 
     test('无许可证时不生成许可证部署目标', () async {
       final String targets = _targetsOf(await _builder.buildPlan(_pack()));
 
-      expect(targets, isNot(contains('DeployPkgLicense')));
+      expect(targets, isNot(contains('DeployPkgLicenses')));
     });
 
     test('仅子目录中的许可证不生成部署目标', () async {
@@ -1125,7 +1155,7 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      expect(targets, isNot(contains('DeployPkgLicense')));
+      expect(targets, isNot(contains('DeployPkgLicenses')));
     });
 
     test('资源文件生成 ResourceCompile 项并附加所在目录', () async {
@@ -1252,7 +1282,7 @@ void main() {
       expect(targets, isNot(contains('<MASM')));
       expect(targets, isNot(contains('<ResourceCompile')));
       expect(targets, isNot(contains('PkgRuntimeBinary')));
-      expect(targets, isNot(contains('DeployPkgLicense')));
+      expect(targets, isNot(contains('DeployPkgLicenses')));
     });
   });
 
