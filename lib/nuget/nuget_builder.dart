@@ -21,8 +21,8 @@ class NuGetPackageBuilder {
   /// .targets 与包内载荷同层，故搜索根一律相对 build/native/ 而非包根。
   static const String _filesSearchRoot = filesRelativeRoot;
   static final String _librarySubdirectory = filesSubdirectoryOf(FileType.lib)!;
-  static const String _assemblySubdirectory = 'assembly';
-  static const String _resourceSubdirectory = 'resource';
+  static final String _assemblySubdirectory = filesSubdirectoryOf(FileType.asm)!;
+  static final String _resourceSubdirectory = filesSubdirectoryOf(FileType.resource)!;
   static const String _masmImportCondition =
       r"'$(MASMBeforeTargets)' == '' And '$(VCTargetsPath)' != '' "
       r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.props') "
