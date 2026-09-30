@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/nuget/license_file.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 
 sealed class PackageEntrySource {
@@ -67,12 +69,55 @@ List<String> duplicatePackagePaths(PackagePlan plan) {
 int comparePackagePathsByEntry(PackageEntry first, PackageEntry second) =>
     comparePackagePaths(first.packagePath, second.packagePath);
 
-String? buildNativeRelativePath(String packagePath) {
-  const String prefix = 'build/native/';
+/// 三个根前缀的单一事实源。nuget_builder 与 header_include_fixer 都从这里取，
+/// 避免两处各写一份字面量导致载荷推导静默失配。
+const String buildNativeRoot = 'build/native';
+const String includeRoot = '$buildNativeRoot/include';
+const String filesRoot = '$buildNativeRoot/files';
+
+/// files/ 下全部 11 个子目录，顺序即发射顺序（保证 .targets 可重现）。
+const List<String> filesSubdirectories = <String>[
+  'source', 'library', 'assembly', 'resource', 'script',
+  'fortran', 'llvm', 'python', 'data', 'executable', 'other',
+];
+
+/// library 子目录下需剥掉的首段（大小写不敏感）。
+const Set<String> _libraryLeadingSegments = <String>{'lib', 'bin'};
+
+String? stripBuildNative(String packagePath) {
+  final String prefix = '$buildNativeRoot/';
   if (!packagePath.startsWith(prefix)) {
     return null;
   }
   return packagePath.substring(prefix.length);
+}
+
+/// 包内载荷落点（完整包内路径）。normalizedPath 须以 '/' 分隔且已归一。
+/// 判定顺序：根级许可文件特例 → header/module → 其余按 FileType 取子目录。
+String buildNativePayloadPath(String normalizedPath, FileType type, String namespace) {
+  if (isRootLicenseFile(normalizedPath)) {
+    return '$filesRoot/${baseName(normalizedPath)}';
+  }
+  if (type == FileType.header || type == FileType.module) {
+    return '$includeRoot/${includePackageRelativePath(normalizedPath, namespace)}';
+  }
+  final String? subdirectory = filesSubdirectoryOf(type);
+  if (subdirectory == null) {
+    return '$filesRoot/$normalizedPath';
+  }
+  if (subdirectory == 'library') {
+    return '$filesRoot/$subdirectory/${_withoutLeadingLibOrBin(normalizedPath)}';
+  }
+  return '$filesRoot/$subdirectory/$normalizedPath';
+}
+
+String _withoutLeadingLibOrBin(String path) {
+  final int separator = path.indexOf('/');
+  if (separator <= 0) {
+    return path;
+  }
+  final String leading = path.substring(0, separator).toLowerCase();
+  return _libraryLeadingSegments.contains(leading) ? path.substring(separator + 1) : path;
 }
 
 int comparePackagePaths(String first, String second) {

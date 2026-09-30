@@ -1716,7 +1716,7 @@ void main() {
       find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
-    expect(find.byTooltip('build/native/files/bin/tool.exe'), findsOneWidget);
+    expect(find.byTooltip('build/native/files/executable/bin/tool.exe'), findsOneWidget);
     expect(
       find.descendant(of: dialog, matching: find.text('可执行二进制随包分发')),
       findsOneWidget,
@@ -1792,7 +1792,7 @@ void main() {
       find.descendant(of: dialog, matching: find.text('tool.exe')),
       findsOneWidget,
     );
-    expect(find.byTooltip('build/native/files/bin/tool.exe'), findsOneWidget);
+    expect(find.byTooltip('build/native/files/executable/bin/tool.exe'), findsOneWidget);
     // 两类问题并存时仍展示供应链提示
     expect(
       find.descendant(

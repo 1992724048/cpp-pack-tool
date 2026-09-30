@@ -40,6 +40,7 @@ const Map<String, FileType> _extensionTypes = {
   'mxx': FileType.module,
   'mpp': FileType.module,
   'rc': FileType.resource,
+  'ico': FileType.resource,
   'lib': FileType.lib,
   'a': FileType.lib,
   'dll': FileType.dll,
@@ -87,6 +88,26 @@ bool isBinaryFileType(FileType type, String extension) => switch (type) {
       FileType.lib || FileType.dll || FileType.pdb || FileType.executable => true,
       _ => _binaryExtensions.contains(extension),
     };
+
+/// 包内 files/ 下的子目录名，取值须与 package_plan.dart 的 filesSubdirectories 对齐。
+const Map<FileType, String> _filesSubdirectories = <FileType, String>{
+  FileType.source: 'source',
+  FileType.lib: 'library',
+  FileType.dll: 'library',
+  FileType.pdb: 'library',
+  FileType.asm: 'assembly',
+  FileType.resource: 'resource',
+  FileType.script: 'script',
+  FileType.fortran: 'fortran',
+  FileType.llvm: 'llvm',
+  FileType.python: 'python',
+  FileType.database: 'data',
+  FileType.executable: 'executable',
+  FileType.other: 'other',
+};
+
+/// header / module 返回 null —— 它们落 include/ 而非 files/ 下。
+String? filesSubdirectoryOf(FileType type) => _filesSubdirectories[type];
 
 class FileModel {
   final String name;

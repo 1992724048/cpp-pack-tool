@@ -6,7 +6,8 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 typedef CompileEntryResult = ({String text, BuildModel buildModel});
 
-const String _packFilesPrefix = r'$(MSBuildThisFileDirectory)files\script';
+const String _packFilesRoot = r'$(MSBuildThisFileDirectory)files';
+const String _fallbackScriptSubdirectory = 'script';
 
 const List<String> _msbuildMacros = <String>[
   r'$(Configuration)',
@@ -114,8 +115,10 @@ class _CompileEntryDialogState extends State<CompileEntryDialog> {
   }
 
   String _scriptReference(FileModel script) {
+    final String subdirectory =
+        filesSubdirectoryOf(script.type) ?? _fallbackScriptSubdirectory;
     final String relative = script.path.replaceAll('/', '\\');
-    final String path = '"$_packFilesPrefix\\$relative"';
+    final String path = '"$_packFilesRoot\\$subdirectory\\$relative"';
     return switch (script.extension) {
       'ps1' => 'powershell -NoProfile -ExecutionPolicy Bypass -File $path',
       'py' => 'python $path',

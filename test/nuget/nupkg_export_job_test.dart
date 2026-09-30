@@ -221,7 +221,7 @@ void main() {
           ExportJobRequest(
             entries: <ExportEntrySource>[
               ExportFileEntry(
-                packagePath: 'build/native/lib/big.lib',
+                packagePath: 'build/native/files/library/big.lib',
                 absolutePath: '${root.path}/source/big.lib',
                 size: size,
               ),
@@ -238,7 +238,7 @@ void main() {
           .decodeBytes(File(tempPath).readAsBytesSync())
           .files
           .single;
-      expect(entry.name, 'build/native/lib/big.lib');
+      expect(entry.name, 'build/native/files/library/big.lib');
       expect(entry.size, size);
       expect(entry.content, payload);
     }, timeout: const Timeout(Duration(minutes: 5)));

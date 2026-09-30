@@ -141,7 +141,7 @@ void main() {
       );
     });
 
-    test('库文件映射到 build/native/lib 并剥离 lib/bin 前缀保留子目录', () async {
+    test('库文件映射到 files/library 并剥离 lib/bin 前缀保留子目录', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 40),
@@ -155,21 +155,21 @@ void main() {
 
       expect(
         _packagePathOf(plan, 'lib/x64/Release/foo.lib'),
-        'build/native/lib/x64/Release/foo.lib',
+        'build/native/files/library/x64/Release/foo.lib',
       );
       expect(
         _packagePathOf(plan, 'Lib/foo/bar.lib'),
-        'build/native/lib/foo/bar.lib',
+        'build/native/files/library/foo/bar.lib',
       );
       expect(
         _packagePathOf(plan, 'bin/x64/Debug/baz.dll'),
-        'build/native/lib/x64/Debug/baz.dll',
+        'build/native/files/library/x64/Debug/baz.dll',
       );
-      expect(_packagePathOf(plan, 'Bin/qux.pdb'), 'build/native/lib/qux.pdb');
-      expect(_packagePathOf(plan, 'plain.lib'), 'build/native/lib/plain.lib');
+      expect(_packagePathOf(plan, 'Bin/qux.pdb'), 'build/native/files/library/qux.pdb');
+      expect(_packagePathOf(plan, 'plain.lib'), 'build/native/files/library/plain.lib');
     });
 
-    test('NuGet 将 .a 放入 build/native/lib 并保留二进制标记', () async {
+    test('NuGet 将 .a 放入 files/library 并保留二进制标记', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'libz.a', path: 'lib/release/libz.a', size: 10),
@@ -181,13 +181,13 @@ void main() {
 
       expect(
         _packagePathOf(plan, 'lib/release/libz.a'),
-        'build/native/lib/release/libz.a',
+        'build/native/files/library/release/libz.a',
       );
       expect(
         _packagePathOf(plan, 'lib/debug/libz.dll.a'),
-        'build/native/lib/debug/libz.dll.a',
+        'build/native/files/library/debug/libz.dll.a',
       );
-      expect(_packagePathOf(plan, 'plain.a'), 'build/native/lib/plain.a');
+      expect(_packagePathOf(plan, 'plain.a'), 'build/native/files/library/plain.a');
       expect(_fileSource(plan, 'lib/release/libz.a').isBinary, isTrue);
       expect(_fileSource(plan, 'lib/debug/libz.dll.a').isBinary, isTrue);
       expect(_fileSource(plan, 'plain.a').isBinary, isTrue);
@@ -208,24 +208,24 @@ void main() {
 
       expect(
         _packagePathOf(plan, 'src/main.cpp'),
-        'build/native/files/src/main.cpp',
+        'build/native/files/source/src/main.cpp',
       );
-      expect(_packagePathOf(plan, 'README.md'), 'build/native/files/README.md');
+      expect(_packagePathOf(plan, 'README.md'), 'build/native/files/other/README.md');
       expect(
         _packagePathOf(plan, 'assets/logo.png'),
-        'build/native/files/assets/logo.png',
+        'build/native/files/other/assets/logo.png',
       );
       expect(
         _packagePathOf(plan, 'bin/app.exe'),
-        'build/native/files/bin/app.exe',
+        'build/native/files/executable/bin/app.exe',
       );
       expect(
         _packagePathOf(plan, 'lib/util.cpp'),
-        'build/native/files/lib/util.cpp',
+        'build/native/files/source/lib/util.cpp',
       );
       expect(
         _packagePathOf(plan, 'scripts/build.bat'),
-        'build/native/files/scripts/build.bat',
+        'build/native/files/script/scripts/build.bat',
       );
     });
 
@@ -249,7 +249,7 @@ void main() {
       expect(filePaths, isNot(contains('Build.py')));
       expect(
         _packagePathOf(plan, 'scripts/build.py'),
-        'build/native/files/scripts/build.py',
+        'build/native/files/python/scripts/build.py',
       );
     });
 
@@ -408,14 +408,35 @@ void main() {
   });
 
   group('targets', () {
-    test('始终写入 include 目录行', () async {
+    test('始终写入 include 目录行与 files 下 11 个子目录搜索根', () async {
       final String targets = _targetsOf(await _builder.buildPlan(_pack()));
 
       expect(
         targets,
         contains(
-          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;'
+          r'$(MSBuildThisFileDirectory)files\source;'
+          r'$(MSBuildThisFileDirectory)files\library;'
+          r'$(MSBuildThisFileDirectory)files\assembly;'
+          r'$(MSBuildThisFileDirectory)files\resource;'
+          r'$(MSBuildThisFileDirectory)files\script;'
+          r'$(MSBuildThisFileDirectory)files\fortran;'
+          r'$(MSBuildThisFileDirectory)files\llvm;'
+          r'$(MSBuildThisFileDirectory)files\python;'
+          r'$(MSBuildThisFileDirectory)files\data;'
+          r'$(MSBuildThisFileDirectory)files\executable;'
+          r'$(MSBuildThisFileDirectory)files\other;'
+          r'%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
         ),
+      );
+      expect(
+        targets,
+        isNot(
+          contains(
+            r'$(MSBuildThisFileDirectory)files;%(AdditionalIncludeDirectories)',
+          ),
+        ),
+        reason: 'files/ 根只承载许可证，不再作为搜索根',
       );
       expect(
         targets,
@@ -498,9 +519,9 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
-        reason: '路径里的 release 段原样保留，仍派生 lib/ 下的库目录',
+        reason: '路径里的 release 段原样保留，仍派生 files/library 下的库目录',
       );
       expect(
         targets,
@@ -584,7 +605,7 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>third_party\lib;$(MSBuildThisFileDirectory)lib\x64\Release;$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>third_party\lib;$(MSBuildThisFileDirectory)files\library\x64\Release;$(MSBuildThisFileDirectory)files\library;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
         reason: '用户条目在前、派生目录按文件顺序并入同一条',
       );
@@ -606,7 +627,7 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)lib\x64\Release;$(MSBuildThisFileDirectory)lib\Debug;$(MSBuildThisFileDirectory)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\x64\Release;$(MSBuildThisFileDirectory)files\library\Debug;$(MSBuildThisFileDirectory)files\library;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
         reason: '路径里的 Release/Debug 段只作为目录名保留，不影响分组',
       );
@@ -617,7 +638,7 @@ void main() {
         ),
       );
       expect(
-        r'$(MSBuildThisFileDirectory)lib\x64\Release'
+        r'$(MSBuildThisFileDirectory)files\library\x64\Release'
             .allMatches(targets)
             .length,
         1,
@@ -637,22 +658,23 @@ void main() {
 
       expect(
         _packagePathOf(plan, 'lib/release/rel.a'),
-        'build/native/lib/release/rel.a',
+        'build/native/files/library/release/rel.a',
       );
       expect(
         _packagePathOf(plan, 'lib/debug/libz.dll.a'),
-        'build/native/lib/debug/libz.dll.a',
+        'build/native/files/library/debug/libz.dll.a',
       );
       expect(
         targets,
         contains(
-          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;'
+          r'$(MSBuildThisFileDirectory)files\source;',
         ),
       );
       expect(targets, isNot(contains('<AdditionalLibraryDirectories>')));
       expect(targets, isNot(contains('<AdditionalDependencies>')));
-      expect(targets, isNot(contains(r'lib\release')));
-      expect(targets, isNot(contains(r'lib\debug')));
+      expect(targets, isNot(contains(r'files\library\release')));
+      expect(targets, isNot(contains(r'files\library\debug')));
       expect(targets, isNot(contains('rel.a')));
       expect(targets, isNot(contains('libz.dll.a')));
       expect(targets, isNot(contains('<PkgRuntimeBinary')));
@@ -802,19 +824,19 @@ void main() {
       expect(
         targets,
         contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\x64\Release\foo.dll" />',
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\x64\Release\foo.dll" />',
         ),
       );
       expect(
         targets,
         contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\bar.dll" />',
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\bar.dll" />',
         ),
       );
       expect(
         targets,
         contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\x64\Debug\foo.pdb" />',
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\x64\Debug\foo.pdb" />',
         ),
       );
       expect(
@@ -852,7 +874,7 @@ void main() {
       expect(
         targets,
         contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\foo.dll" />',
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\foo.dll" />',
         ),
       );
       expect(targets, isNot(contains('<ItemGroup Condition')));
@@ -933,25 +955,25 @@ void main() {
       expect(
         targets,
         contains(
-          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\res\app.rc">',
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\resource\res\app.rc">',
         ),
       );
       expect(
         targets,
         contains(
-          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files\res;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files\resource\res;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
         ),
       );
       expect(
         targets,
         contains(
-          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\version.rc">',
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\resource\version.rc">',
         ),
       );
       expect(
         targets,
         contains(
-          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files\resource;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
         ),
       );
     });
@@ -994,25 +1016,25 @@ void main() {
       expect(
         targets,
         contains(
-          r'<MASM Include="$(MSBuildThisFileDirectory)files\src\x.asm">',
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\assembly\src\x.asm">',
         ),
       );
       expect(
         targets,
         contains(
-          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_src_x.asm.obj</ObjectFileName>',
+          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_assembly_src_x.asm.obj</ObjectFileName>',
         ),
       );
       expect(
         targets,
         contains(
-          r'<MASM Include="$(MSBuildThisFileDirectory)files\asm\vendor\y.asm">',
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\assembly\asm\vendor\y.asm">',
         ),
       );
       expect(
         targets,
         contains(
-          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_asm_vendor_y.asm.obj</ObjectFileName>',
+          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_assembly_asm_vendor_y.asm.obj</ObjectFileName>',
         ),
       );
       expect(targets, isNot(contains('z.s')));
@@ -1065,9 +1087,9 @@ void main() {
 
       expect(paths, <String>[
         'build/native/demo.targets',
+        'build/native/files/library/zeta.lib',
         'build/native/include/demo/a.h',
         'build/native/include/demo/B.h',
-        'build/native/lib/zeta.lib',
         'demo.nuspec',
       ]);
 

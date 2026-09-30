@@ -50,7 +50,7 @@ const Map<String, String> _seeds = <String, String>{
 void main() {
   final Object? pythonSkipReason = _pythonSkipReason();
 
-  test('一个最小配方产出的 .nupkg 结构正确：include/lib/files 分类与 runtimes 都对', () async {
+  test('一个最小配方产出的 .nupkg 结构正确：include 与 files 分类与 runtimes 都对', () async {
     final Directory root = Directory.systemTemp.createTempSync('cnp-e2e-');
     addTearDown(() {
       if (root.existsSync()) {
@@ -107,9 +107,9 @@ void main() {
     expect(entries, hasLength(10), reason: '包内条目不多不少：4 份产物 + nuspec/targets + OPC 三件套 + 图标');
     expect(entries, containsAll(<String>[
       'build/native/include/demo/demo.h',
-      'build/native/lib/demo.lib',
-      'build/native/lib/demo.dll',
-      'build/native/files/src/main.cpp',
+      'build/native/files/library/demo.lib',
+      'build/native/files/library/demo.dll',
+      'build/native/files/source/src/main.cpp',
       _targetsEntry,
     ]));
     expect(
@@ -124,11 +124,14 @@ void main() {
       reason: '包内载荷应是配方产出的字节，而非种子目录里的残留',
     );
     expect(
-      _textOf(archive, 'build/native/lib/demo.lib'),
+      _textOf(archive, 'build/native/files/library/demo.lib'),
       'MZlib',
       reason: '静态库按二进制原样入包',
     );
-    expect(_textOf(archive, 'build/native/files/src/main.cpp'), 'int main() {}\n');
+    expect(
+      _textOf(archive, 'build/native/files/source/src/main.cpp'),
+      'int main() {}\n',
+    );
 
     final String targets = _textOf(archive, _targetsEntry);
     expect(
@@ -138,16 +141,84 @@ void main() {
     );
     expect(
       targets,
-      contains(r'$(MSBuildThisFileDirectory)lib'),
-      reason: '.targets 应把包内 lib 目录交给消费者链接器',
+      contains(r'$(MSBuildThisFileDirectory)files\library'),
+      reason: r'.targets 应把包内 files\library 目录交给消费者链接器',
     );
     expect(targets, contains('demo.lib'));
     expect(
       targets,
-      contains(r'PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)lib\demo.dll"'),
-      reason: 'lib 下的 dll 应作为运行时二进制随包部署',
+      contains(
+        r'PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\demo.dll"',
+      ),
+      reason: 'files/library 下的 dll 应作为运行时二进制随包部署',
     );
   }, skip: pythonSkipReason);
+
+  test('nupkg 内载荷按 FileType 分类落位且 build/native/lib 不再存在', () async {
+    final Directory root = Directory.systemTemp.createTempSync('cnp-e2e-classify-');
+    addTearDown(() {
+      if (root.existsSync()) {
+        root.deleteSync(recursive: true);
+      }
+    });
+
+    // 源目录固定名 `demo`：include 命名空间取自包源目录名，包内路径才稳定。
+    final String source = joinPath(root.path, 'demo');
+    const Map<String, String> sources = <String, String>{
+      'src/a.cpp': 'int a() {}\n',
+      'lib/x64/foo.lib': 'MZlib',
+      'bin/bar.dll': 'MZdll',
+      'res/app.rc': '1 ICON "app.ico"\n',
+      'res/app.ico': 'ICO',
+      'tools/pre.bat': '@echo off\n',
+      'include/demo/demo.h': '#pragma once\n',
+      'LICENSE': 'MIT\n',
+    };
+    for (final MapEntry<String, String> entry in sources.entries) {
+      final String absolute = joinPath(source, entry.key);
+      Directory(parentDirectory(absolute)).createSync(recursive: true);
+      File(absolute).writeAsStringSync(entry.value);
+    }
+
+    final PackModel pack = PackModel(
+      name: 'demo',
+      version: '1.0.0',
+      author: 'tester',
+      license: 'MIT',
+      sourcePath: source,
+    )..files = await FileScan.scan(source);
+
+    final PackageExportResult result = await exportNuGetPackage(
+      pack,
+      joinPath(root.path, 'out'),
+      iconResolver: (PackModel pack) async => _fakeIconPng,
+    );
+    final Archive archive = ZipDecoder().decodeBytes(
+      File(result.outputPath).readAsBytesSync(),
+    );
+    final Set<String> names = archive.files
+        .map((ArchiveFile file) => file.name)
+        .toSet();
+
+    expect(
+      names,
+      containsAll(<String>[
+        'build/native/files/source/src/a.cpp',
+        'build/native/files/library/x64/foo.lib',
+        'build/native/files/library/bar.dll',
+        'build/native/files/resource/res/app.rc',
+        'build/native/files/resource/res/app.ico',
+        'build/native/files/script/tools/pre.bat',
+        'build/native/include/demo/demo.h',
+        'build/native/files/LICENSE',
+      ]),
+    );
+    expect(
+      names.any((String name) => name.startsWith('build/native/lib/')),
+      isFalse,
+      reason: 'build/native/lib/ 已取消',
+    );
+  });
 }
 
 /// 编译器的可执行文件与本测试无关（配方不做真实编译），只需一个合法条目供

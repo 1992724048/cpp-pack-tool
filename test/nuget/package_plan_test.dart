@@ -76,6 +76,134 @@ void main() {
       <String>['build/native/include/demo/foo.h'],
     );
   });
+
+  group('buildNativePayloadPath', () {
+    test('各 FileType 的包内落点', () {
+      const String ns = 'demo';
+
+      expect(
+        buildNativePayloadPath('include/demo/foo.h', FileType.header, ns),
+        'build/native/include/$ns/foo.h',
+      );
+      expect(
+        buildNativePayloadPath('src/foo.c', FileType.source, ns),
+        'build/native/files/source/src/foo.c',
+      );
+      expect(
+        buildNativePayloadPath('lib/x64/foo.lib', FileType.lib, ns),
+        'build/native/files/library/x64/foo.lib',
+      );
+      expect(
+        buildNativePayloadPath('bin/foo.dll', FileType.dll, ns),
+        'build/native/files/library/foo.dll',
+      );
+      expect(
+        buildNativePayloadPath('bin/foo.pdb', FileType.pdb, ns),
+        'build/native/files/library/foo.pdb',
+      );
+      expect(
+        buildNativePayloadPath('src/a.asm', FileType.asm, ns),
+        'build/native/files/assembly/src/a.asm',
+      );
+      expect(
+        buildNativePayloadPath('res/app.rc', FileType.resource, ns),
+        'build/native/files/resource/res/app.rc',
+      );
+      expect(
+        buildNativePayloadPath('res/app.ico', FileType.resource, ns),
+        'build/native/files/resource/res/app.ico',
+      );
+      expect(
+        buildNativePayloadPath('tools/x.bat', FileType.script, ns),
+        'build/native/files/script/tools/x.bat',
+      );
+      expect(
+        buildNativePayloadPath('f/x.f90', FileType.fortran, ns),
+        'build/native/files/fortran/f/x.f90',
+      );
+      expect(
+        buildNativePayloadPath('l/x.bc', FileType.llvm, ns),
+        'build/native/files/llvm/l/x.bc',
+      );
+      expect(
+        buildNativePayloadPath('p/x.py', FileType.python, ns),
+        'build/native/files/python/p/x.py',
+      );
+      expect(
+        buildNativePayloadPath('d/x.db', FileType.database, ns),
+        'build/native/files/data/d/x.db',
+      );
+      expect(
+        buildNativePayloadPath('b/x.exe', FileType.executable, ns),
+        'build/native/files/executable/b/x.exe',
+      );
+      expect(
+        buildNativePayloadPath('r/x.txt', FileType.other, ns),
+        'build/native/files/other/r/x.txt',
+      );
+      expect(
+        buildNativePayloadPath('Makefile', FileType.other, ns),
+        'build/native/files/other/Makefile',
+      );
+    });
+
+    test('模块与头文件同落 include，库仅剥 lib/bin 首段', () {
+      const String ns = 'demo';
+
+      expect(
+        buildNativePayloadPath('src/mod.cppm', FileType.module, ns),
+        'build/native/include/$ns/src/mod.cppm',
+      );
+      expect(
+        buildNativePayloadPath('release/z.lib', FileType.lib, ns),
+        'build/native/files/library/release/z.lib',
+      );
+      expect(
+        buildNativePayloadPath('libs/z.lib', FileType.lib, ns),
+        'build/native/files/library/libs/z.lib',
+      );
+    });
+
+    test('根级许可证不进子目录，带路径分隔符的按 other 走', () {
+      expect(
+        buildNativePayloadPath('LICENSE', FileType.other, 'demo'),
+        'build/native/files/LICENSE',
+      );
+      expect(
+        buildNativePayloadPath('NOTICE', FileType.other, 'demo'),
+        'build/native/files/NOTICE',
+      );
+      expect(
+        buildNativePayloadPath('sub/LICENSE', FileType.other, 'demo'),
+        'build/native/files/other/sub/LICENSE',
+      );
+    });
+  });
+
+  group('stripBuildNative', () {
+    test('剥掉 build/native/ 前缀，不匹配返回 null', () {
+      expect(stripBuildNative('build/native/files/source/src/a.c'), 'files/source/src/a.c');
+      expect(stripBuildNative('build/native/other.targets'), 'other.targets');
+      expect(stripBuildNative('demo.nuspec'), isNull);
+      expect(stripBuildNative('build/native'), isNull);
+    });
+  });
+
+  test('filesSubdirectories 覆盖 filesSubdirectoryOf 的全部取值', () {
+    for (final FileType type in FileType.values) {
+      final String? subdirectory = filesSubdirectoryOf(type);
+      if (subdirectory == null) {
+        expect(type, anyOf(FileType.header, FileType.module));
+        continue;
+      }
+      expect(
+        filesSubdirectories,
+        contains(subdirectory),
+        reason: '${type.name} 的子目录须在 filesSubdirectories 中',
+      );
+    }
+    expect(filesSubdirectories, hasLength(11));
+  });
 }
 
 PackageEntry _entry(String packagePath) => PackageEntry(

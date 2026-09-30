@@ -145,7 +145,7 @@ void main() {
   testWidgets('点击二进制文件显示无法预览提示', (tester) async {
     final PackagePlan plan = _plan(<PackageEntry>[
       _file(
-        'build/native/lib/x64/Release/foo.lib',
+        'build/native/files/library/x64/Release/foo.lib',
         'lib/x64/Release/foo.lib',
         isBinary: true,
         size: 2048,
@@ -156,9 +156,10 @@ void main() {
     await _expandDirectories(tester, <String>[
       'build',
       'build/native',
-      'build/native/lib',
-      'build/native/lib/x64',
-      'build/native/lib/x64/Release',
+      'build/native/files',
+      'build/native/files/library',
+      'build/native/files/library/x64',
+      'build/native/files/library/x64/Release',
     ]);
     await tester.tap(find.text('foo.lib'));
     await tester.pump();
@@ -185,7 +186,8 @@ void main() {
       'build',
       'build/native',
       'build/native/files',
-      'build/native/files/assets',
+      'build/native/files/other',
+      'build/native/files/other/assets',
     ]);
     await tester.tap(find.text('logo.png'));
     await tester.pump();

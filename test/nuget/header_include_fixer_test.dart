@@ -240,9 +240,9 @@ void main() {
     expect(await readText('src/a/one.cc'), '#include "helper.cc"\n');
   });
 
-  test('同目录 .lib 候选不做裸文件名回落：落 lib/ 无搜索根，报 crossTree', () async {
-    // `.lib` 落 `build/native/lib/`，`.targets` 不为 `lib/` 下发任何搜索根，裸文件名
-    // 在包内必然解析不到。少了文件类型闸就会产出一次 from != to 的无效改写且不报告。
+  test('同目录 .lib 候选不做裸文件名回落：落 files/library 无搜索根，报 crossTree', () async {
+    // `.lib` 落 `build/native/files/library/`，`.targets` 不为库文件下发可包含搜索根，
+    // 裸文件名在包内必然解析不到。少了文件类型闸就会产出一次 from != to 的无效改写且不报告。
     await writeText('src/x/one.cc', '#include "q/helper.lib"\n');
     await writeText('src/x/helper.lib', '');
 

@@ -16,10 +16,15 @@ import 'package:cpp_nuget_pack/nuget/sha1.dart';
 class NuGetPackageBuilder {
   const NuGetPackageBuilder();
 
-  static const String _buildNative = 'build/native';
-  static const String _includePrefix = '$_buildNative/include';
-  static const String _libPrefix = '$_buildNative/lib';
-  static const String _filesPrefix = '$_buildNative/files';
+  static const String _buildNative = buildNativeRoot;
+  static const String _filesPrefix = filesRoot;
+  /// .targets 与包内载荷同层，故搜索根一律相对 build/native/ 而非包根。
+  static const String _includeSearchRoot = 'include';
+  static const String _filesSearchRoot = 'files';
+  static const String _librarySubdirectory = 'library';
+  static const String _assemblySubdirectory = 'assembly';
+  static const String _resourceSubdirectory = 'resource';
+  static const String _sourceSubdirectory = 'source';
   static const String _masmImportCondition =
       r"'$(MASMBeforeTargets)' == '' And '$(VCTargetsPath)' != '' "
       r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.props') "
@@ -69,20 +74,12 @@ class NuGetPackageBuilder {
     if (path.isEmpty) {
       return null;
     }
-    return switch (file.type) {
-      FileType.header || FileType.module => '$_includePrefix/${_includeRelativePath(pack, path)}',
-      FileType.lib ||
-      FileType.dll ||
-      FileType.pdb => '$_libPrefix/${_withoutLeadingSegment(path, const <String>['lib', 'bin'])}',
-      _ => '$_filesPrefix/$path',
-    };
+    return buildNativePayloadPath(path, file.type, includeNamespaceOf(pack.sourcePath, pack.name));
   }
 
-  static String _includeRelativePath(PackModel pack, String path) =>
-      includePackageRelativePath(path, includeNamespaceOf(pack.sourcePath, pack.name));
-
+  /// 入参是 build/native 相对路径（stripBuildNative 的结果），故前缀不带 build/native/。
   static bool _isRuntimeBinary(String relativeLowerPath) =>
-      relativeLowerPath.startsWith('lib/') &&
+      relativeLowerPath.startsWith('$_filesSearchRoot/$_librarySubdirectory/') &&
       (relativeLowerPath.endsWith('.dll') || relativeLowerPath.endsWith('.pdb'));
 
   static String _normalizePath(String path) =>
@@ -95,17 +92,6 @@ class NuGetPackageBuilder {
 
   static String asmObjectName(String packName, String flattenedPath) =>
       r'$(IntDir)' 'asm_${cleanTargetId(packName)}_${hash8(packName)}_$flattenedPath.obj';
-
-  static String _withoutLeadingSegment(String path, List<String> prefixes) {
-    final int separator = path.indexOf('/');
-    if (separator <= 0) {
-      return path;
-    }
-    if (!prefixes.contains(path.substring(0, separator).toLowerCase())) {
-      return path;
-    }
-    return path.substring(separator + 1);
-  }
 
   static String _nuspecContent(PackModel pack) {
     final StringBuffer buffer = StringBuffer()
@@ -180,21 +166,33 @@ class NuGetPackageBuilder {
     final _BuildValueGroup runtimeBinaries = _BuildValueGroup();
     final List<String> asmFiles = <String>[];
     final List<String> resourceFiles = <String>[];
+    final Set<String> sourceDirectories = <String>{};
     for (final PackageEntry entry in fileEntries) {
       _addDerivedLibEntries(libDirectories, libraries, entry.packagePath);
-      final String? relative = buildNativeRelativePath(entry.packagePath);
+      final String? relative = stripBuildNative(entry.packagePath);
       if (relative == null) {
         continue;
       }
       final String lower = relative.toLowerCase();
-      if (lower.startsWith('files/') && lower.endsWith('.asm')) {
+      if (lower.startsWith('$_filesSearchRoot/$_assemblySubdirectory/') &&
+          lower.endsWith('.asm')) {
         asmFiles.add(relative);
-      } else if (lower.startsWith('files/') && lower.endsWith('.rc')) {
+      } else if (lower.startsWith('$_filesSearchRoot/$_resourceSubdirectory/') &&
+          lower.endsWith('.rc')) {
         resourceFiles.add(relative);
       } else if (_isRuntimeBinary(lower)) {
         runtimeBinaries.add(_msbuildPath(relative), BuildModel.all, dedupe: true);
+      } else if (lower.startsWith('$_filesSearchRoot/$_sourceSubdirectory/')) {
+        _addSourceDirectory(sourceDirectories, relative);
       }
     }
+
+    final List<String> includeRoots = <String>[
+      _msbuildPath(_includeSearchRoot),
+      for (final String subdirectory in filesSubdirectories)
+        _msbuildPath('$_filesSearchRoot/$subdirectory'),
+      for (final String directory in sourceDirectories.toList()..sort()) _msbuildPath(directory),
+    ];
 
     final StringBuffer buffer = StringBuffer()
       ..writeln('<?xml version="1.0" encoding="utf-8"?>')
@@ -205,7 +203,7 @@ class NuGetPackageBuilder {
     _writeItemDefinitionGroup(
       buffer,
       condition: null,
-      includeLine: true,
+      includeRoots: includeRoots,
       macros: macros.all,
       libDirectories: libDirectories.all,
       libraries: libraries.all,
@@ -234,12 +232,20 @@ class NuGetPackageBuilder {
     return buffer.toString();
   }
 
+  /// 只收比固定根 files/source 更深的目录：直接子文件所在目录已被固定根覆盖。
+  static void _addSourceDirectory(Set<String> sourceDirectories, String relative) {
+    final int separator = relative.lastIndexOf('/');
+    if (separator > '$_filesSearchRoot/$_sourceSubdirectory'.length) {
+      sourceDirectories.add(relative.substring(0, separator));
+    }
+  }
+
   static void _addDerivedLibEntries(_BuildValueGroup libDirectories, _BuildValueGroup libraries, String packagePath) {
     final String lower = packagePath.toLowerCase();
-    if (!lower.endsWith('.lib') || !lower.startsWith('$_libPrefix/')) {
+    if (!lower.endsWith('.lib') || !lower.startsWith('$_filesPrefix/$_librarySubdirectory/')) {
       return;
     }
-    final String relative = buildNativeRelativePath(packagePath)!;
+    final String relative = stripBuildNative(packagePath)!;
     final String relativeDirectory = relative.substring(0, relative.lastIndexOf('/'));
     libDirectories.add(_msbuildPath(relativeDirectory), BuildModel.all, dedupe: true);
     libraries.add(baseName(packagePath), BuildModel.all, dedupe: true);
@@ -261,7 +267,7 @@ class NuGetPackageBuilder {
     _writeItemDefinitionGroup(
       buffer,
       condition: _configurationCondition(configuration),
-      includeLine: false,
+      includeRoots: const <String>[],
       macros: macros,
       libDirectories: libDirectories,
       libraries: libraries,
@@ -453,7 +459,7 @@ class NuGetPackageBuilder {
       }
       final String? packagePath = _packagePath(pack, file);
       if (packagePath != null) {
-        return buildNativeRelativePath(packagePath);
+        return stripBuildNative(packagePath);
       }
     }
     return null;
@@ -462,7 +468,7 @@ class NuGetPackageBuilder {
   static void _writeItemDefinitionGroup(
     StringBuffer buffer, {
     required String? condition,
-    required bool includeLine,
+    required List<String> includeRoots,
     required List<String> macros,
     required List<String> libDirectories,
     required List<String> libraries,
@@ -471,9 +477,7 @@ class NuGetPackageBuilder {
     buffer
       ..writeln('  <ItemDefinitionGroup$attribute>')
       ..writeln('    <ClCompile>');
-    if (includeLine) {
-      _writeProperty(buffer, 'AdditionalIncludeDirectories', const <String>[r'$(MSBuildThisFileDirectory)include']);
-    }
+    _writeProperty(buffer, 'AdditionalIncludeDirectories', includeRoots);
     _writeProperty(buffer, 'PreprocessorDefinitions', macros);
     _writeProperty(buffer, 'AdditionalLibraryDirectories', libDirectories);
     _writeProperty(buffer, 'AdditionalDependencies', libraries);

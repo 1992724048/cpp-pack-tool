@@ -4,7 +4,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const List<PackagingIssue> _issues = <PackagingIssue>[
-  PackagingIssue(label: 'lib/demo.lib', message: '包内路径重复：build/native/lib/demo.lib'),
+  PackagingIssue(label: 'lib/demo.lib', message: '包内路径重复：build/native/files/library/demo.lib'),
   PackagingIssue(label: '包内路径', message: '包内路径重复：build/native/files/foo.h'),
 ];
 
@@ -19,7 +19,7 @@ void main() {
     expect(find.text('名称'), findsOneWidget);
     expect(find.text('问题'), findsOneWidget);
     expect(find.text('demo.lib'), findsOneWidget);
-    expect(find.text('包内路径重复：build/native/lib/demo.lib'), findsOneWidget);
+    expect(find.text('包内路径重复：build/native/files/library/demo.lib'), findsOneWidget);
     expect(find.text('包内路径'), findsOneWidget);
     expect(find.text('包内路径重复：build/native/files/foo.h'), findsOneWidget);
     expect(find.text('可继续导出，或取消返回修改。'), findsOneWidget);
@@ -33,7 +33,7 @@ void main() {
     final Rect firstName = tester.getRect(find.text('demo.lib'));
     final Rect secondName = tester.getRect(find.text('包内路径'));
     final Rect firstMessage = tester.getRect(
-      find.text('包内路径重复：build/native/lib/demo.lib'),
+      find.text('包内路径重复：build/native/files/library/demo.lib'),
     );
     final Rect secondMessage = tester.getRect(
       find.text('包内路径重复：build/native/files/foo.h'),
@@ -178,7 +178,7 @@ void main() {
   });
 
   testWidgets('问题文本限制两行截断且 Tooltip 保留全文', (tester) async {
-    const String message = '包内路径重复：build/native/lib/demo.lib，请删除源目录中的重复文件后重新扫描';
+    const String message = '包内路径重复：build/native/files/library/demo.lib，请删除源目录中的重复文件后重新扫描';
     await _pumpDialog(
       tester,
       issues: const <PackagingIssue>[

@@ -8,9 +8,12 @@ import 'package:fluent_ui/fluent_ui.dart';
 
 const String _description =
     '按 NuGet 格式生成包内容：头文件与模块按源目录命名空间放入 '
-    'build/native/include/，库文件（lib/dll/pdb）放入 '
-    'build/native/lib/，其余文件放入 build/native/files/；'
-    '同时生成 .nuspec 与 .targets 构建集成文件。';
+    'build/native/include/，其余文件按类型放入 build/native/files/ 下的 '
+    'source / library / assembly / resource / script / fortran / llvm / '
+    'python / data / executable / other 子目录（根级许可证直接放在 files/ 下）；'
+    '同时生成 .nuspec 与 .targets 构建集成文件。'
+    '提示：.lib 的 Release/Debug 隔离按路径中的 release / debug 目录名推断，'
+    '目录改名会导致隔离失效。';
 
 class PackPackaging extends StatefulWidget {
   const PackPackaging({super.key, required this.pack});

@@ -227,7 +227,7 @@ void main() {
 
     expect(
       _textBox(tester).controller!.text,
-      r'python "$(MSBuildThisFileDirectory)files\script\tools\gen.py"',
+      r'python "$(MSBuildThisFileDirectory)files\python\tools\gen.py"',
     );
   });
 
@@ -260,7 +260,7 @@ void main() {
 
     expect(
       _textBox(tester).controller!.text,
-      r'"$(MSBuildThisFileDirectory)files\script\bin\app.exe"',
+      r'"$(MSBuildThisFileDirectory)files\executable\bin\app.exe"',
     );
   });
 

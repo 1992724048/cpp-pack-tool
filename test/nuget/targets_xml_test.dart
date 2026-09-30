@@ -232,4 +232,56 @@ void main() {
     expect(targets, contains(r'asm_A_B_'));
     expect(targets, isNot(contains(r'$(IntDir)asm_files_src_boot.asm.obj')));
   });
+
+  test('发射 12 条固定搜索根（include 1 条 + files 11 个子目录）', () async {
+    final String targets = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'a.c', path: 'src/a.c', size: 1),
+    ], name: 'demo'));
+
+    expect(
+      targets,
+      contains(r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;'),
+    );
+    for (final String subdirectory in filesSubdirectories) {
+      expect(
+        targets,
+        contains('\$(MSBuildThisFileDirectory)files\\$subdirectory;'),
+        reason: '缺少 files\\$subdirectory 搜索根',
+      );
+    }
+    expect(
+      targets,
+      isNot(
+        contains(r'$(MSBuildThisFileDirectory)files;%(AdditionalIncludeDirectories)'),
+      ),
+      reason: 'files/ 根只承载许可证，不再作为搜索根',
+    );
+  });
+
+  test('files/source 下每个含源文件的更深目录各发一条动态搜索根', () async {
+    final String targets = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'a.c', path: 'src/a.c', size: 1),
+      FileModel(name: 'b.c', path: 'third_party/foo/b.c', size: 1),
+      FileModel(name: 'c.h', path: 'include/demo/c.h', size: 1),
+    ], name: 'demo'));
+
+    expect(
+      targets,
+      contains(r'$(MSBuildThisFileDirectory)files\source\src;'),
+    );
+    expect(
+      targets,
+      contains(r'$(MSBuildThisFileDirectory)files\source\third_party\foo;'),
+    );
+    expect(
+      targets,
+      isNot(contains(r'$(MSBuildThisFileDirectory)files\source\include')),
+      reason: r'头文件落 include/，不该在 files\source 下多发一条',
+    );
+    expect(
+      r'$(MSBuildThisFileDirectory)files\source;'.allMatches(targets).length,
+      1,
+      reason: r'files\source 固定根只发一次，src/a.c 不应让它重复出现',
+    );
+  });
 }

@@ -1,4 +1,5 @@
 import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 
 final RegExp _licenseNamePattern = RegExp(r'^(license|licence|copying|unlicense|notice)([-.][a-z0-9]+)*$');
 
@@ -7,6 +8,11 @@ final RegExp _directorySeparator = RegExp(r'[/\\]');
 const List<String> _coreNamePriority = <String>['license', 'licence', 'copying', 'unlicense', 'notice'];
 
 bool isLicenseFileName(String name) => _licenseNamePattern.hasMatch(name.toLowerCase());
+
+/// 归一化后的源路径是否落在「根级许可文件」特例上：无路径分隔符且名字命中许可名模式。
+bool isRootLicenseFile(String normalizedPath) =>
+    !_directorySeparator.hasMatch(normalizedPath) &&
+    isLicenseFileName(baseName(normalizedPath));
 
 String? findPrimaryLicensePath(List<FileModel> files) {
   FileModel? primary;

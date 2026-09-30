@@ -69,7 +69,7 @@ void main() {
       final PackagePlan plan = PackagePlan(
         entries: <PackageEntry>[
           PackageEntry(
-            packagePath: 'build/native/files/bin/tool.exe',
+            packagePath: 'build/native/files/executable/bin/tool.exe',
             source: const PackageFileSource(
               path: 'bin/tool.exe',
               isBinary: true,
@@ -85,7 +85,7 @@ void main() {
             ),
           ),
           PackageEntry(
-            packagePath: 'build/native/lib/demo.dll',
+            packagePath: 'build/native/files/library/demo.dll',
             source: const PackageFileSource(
               path: 'demo.dll',
               isBinary: true,
@@ -99,7 +99,7 @@ void main() {
 
       expect(warnings, hasLength(2));
       // PackagePlan 按路径大小写不敏感排序，build/... 在 FILES/... 之前
-      expect(warnings[0].label, 'build/native/files/bin/tool.exe');
+      expect(warnings[0].label, 'build/native/files/executable/bin/tool.exe');
       expect(warnings[0].message, '可执行二进制随包分发');
       expect(warnings[1].label, 'FILES/Setup.EXE');
       expect(warnings[1].message, '可执行二进制随包分发');
@@ -117,7 +117,7 @@ void main() {
             ),
           ),
           PackageEntry(
-            packagePath: 'build/native/files/bin/tool.bat',
+            packagePath: 'build/native/files/script/bin/tool.bat',
             source: const PackageFileSource(
               path: 'bin/tool.bat',
               isBinary: false,

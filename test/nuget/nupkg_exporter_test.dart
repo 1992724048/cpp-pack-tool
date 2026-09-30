@@ -94,10 +94,10 @@ void main() {
       _relationshipsPath,
       'demo.nuspec',
       'build/native/demo.targets',
-      'build/native/files/src/main.cpp',
+      'build/native/files/library/x64/Release/foo.lib',
+      'build/native/files/source/src/main.cpp',
       'build/native/include/source/empty.h',
       'build/native/include/source/foo.h',
-      'build/native/lib/x64/Release/foo.lib',
       _iconPath,
       _contentTypesPath,
       _corePropertiesPath,
@@ -111,10 +111,10 @@ void main() {
     );
     expect(_bytesOf(archive, 'build/native/include/source/empty.h'), isEmpty);
     expect(
-      _bytesOf(archive, 'build/native/files/src/main.cpp'),
+      _bytesOf(archive, 'build/native/files/source/src/main.cpp'),
       utf8.encode('int main() {}\n'),
     );
-    expect(_bytesOf(archive, 'build/native/lib/x64/Release/foo.lib'), <int>[
+    expect(_bytesOf(archive, 'build/native/files/library/x64/Release/foo.lib'), <int>[
       1,
       2,
       3,
@@ -125,7 +125,7 @@ void main() {
       isNot(contains('main')),
     );
     expect(
-      _textOf(archive, 'build/native/files/src/main.cpp'),
+      _textOf(archive, 'build/native/files/source/src/main.cpp'),
       contains('int main() {}'),
     );
 
