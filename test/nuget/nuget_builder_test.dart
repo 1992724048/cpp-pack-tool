@@ -1270,6 +1270,89 @@ void main() {
       expect(targets, isNot(contains('<MASM')));
     });
 
+    test('包内 .props 产出包级 build/<包ID>.props 并导入用户 msbuild props', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'mytool.props', path: 'msbuild/mytool.props', size: 10),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      final String props = _generatedContent(plan, 'build/demo.props');
+      expect(
+        props,
+        contains(
+          r'<Import Project="$(MSBuildThisFileDirectory)native\files\msbuild\msbuild\mytool.props" />',
+        ),
+      );
+      expect(props, contains('TreatAsLocalProperty="Platform"'));
+    });
+
+    test('包内 .targets 在包级 .targets 的 msbuild 导入组内被导入', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'mytool.targets', path: 'msbuild/mytool.targets', size: 10),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String targets = _targetsOf(plan);
+
+      expect(targets, contains('<ImportGroup>'));
+      expect(
+        targets,
+        contains(
+          r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\mytool.targets" />',
+        ),
+      );
+      expect(
+        plan.entries.where((PackageEntry entry) => entry.packagePath == 'build/demo.props'),
+        isEmpty,
+        reason: '只有 .targets 时不产出空壳包级 .props',
+      );
+    });
+
+    test('包内无 msbuild .props 与 .targets 时不产出包级 props 且无相关导入', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 3),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(plan.fileCount, 3);
+      expect(
+        plan.entries.where((PackageEntry entry) => entry.packagePath == 'build/demo.props'),
+        isEmpty,
+      );
+      expect(
+        _targetsOf(plan),
+        isNot(contains(r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\')),
+      );
+    });
+
+    test('多个用户 msbuild .props 与 .targets 按路径字典序全部发射', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'zeta.props', path: 'msbuild/zeta.props', size: 1),
+          FileModel(name: 'alpha.targets', path: 'msbuild/alpha.targets', size: 1),
+          FileModel(name: 'alpha.props', path: 'msbuild/alpha.props', size: 1),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String props = _generatedContent(plan, 'build/demo.props');
+      final String targets = _targetsOf(plan);
+
+      expect(
+        props.indexOf('alpha.props'),
+        lessThan(props.indexOf('zeta.props')),
+        reason: '包级 .props 须按路径字典序发射以保证可重现',
+      );
+      expect(
+        targets,
+        contains(r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\alpha.targets" />'),
+      );
+    });
+
     test('无宏、库目录、附加库、命令与特殊文件时仅保留 include 行', () async {
       final String targets = _targetsOf(await _builder.buildPlan(_pack()));
 

@@ -97,6 +97,21 @@ void main() {
     final String checkPath = joinPath(tempDir.path, 'check.ps1');
     File(checkPath).writeAsStringSync(_xmlParseCheckScript, encoding: ascii);
 
+    ProcessResult checkXml(String fileName, String content) {
+      final String path = joinPath(tempDir.path, fileName);
+      File(path).writeAsStringSync(content, encoding: utf8);
+      return Process.runSync('powershell.exe', <String>[
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        checkPath,
+        '-Path',
+        path,
+      ]);
+    }
+
     final List<({String key, PackModel pack, bool hasRuntimeBinaries})>
     fixtures = <({String key, PackModel pack, bool hasRuntimeBinaries})>[
       (
@@ -117,6 +132,14 @@ void main() {
         key: 'with_license',
         pack: _pack('&licensed', <FileModel>[
           FileModel(name: 'LICENSE', path: 'LICENSE', size: 48),
+        ]),
+        hasRuntimeBinaries: false,
+      ),
+      (
+        key: 'with_msbuild',
+        pack: _pack('msbuilddemo', <FileModel>[
+          FileModel(name: 'mytool.props', path: 'msbuild/mytool.props', size: 1),
+          FileModel(name: 'mytool.targets', path: 'msbuild/mytool.targets', size: 1),
         ]),
         hasRuntimeBinaries: false,
       ),
@@ -164,19 +187,30 @@ void main() {
         expect(content, isNot(contains('DeployPkgLicenses')));
       }
 
-      final String targetsPath = joinPath(tempDir.path, '${fixture.key}.targets');
-      File(targetsPath).writeAsStringSync(content, encoding: utf8);
+      final List<PackageEntry> packageProps = plan.entries
+          .where(
+            (PackageEntry entry) =>
+                entry.packagePath == 'build/${fixture.pack.name}.props',
+          )
+          .toList();
+      if (fixture.key == 'with_msbuild') {
+        expect(packageProps, hasLength(1));
+        expect(
+          content,
+          contains(
+            r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\mytool.targets" />',
+          ),
+          reason: '用户 .targets 须由包级 .targets 在正文后导入',
+        );
+      } else {
+        expect(
+          packageProps,
+          isEmpty,
+          reason: '夹具「${fixture.key}」无用户 .props，不应产出空壳包级 .props',
+        );
+      }
 
-      final ProcessResult check = Process.runSync('powershell.exe', <String>[
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        checkPath,
-        '-Path',
-        targetsPath,
-      ]);
+      final ProcessResult check = checkXml('${fixture.key}.targets', content);
       expect(
         check.exitCode,
         0,
@@ -184,6 +218,20 @@ void main() {
             '夹具「${fixture.key}」.targets 整文档 XML 解析失败：'
             'stdout=${check.stdout}\nstderr=${check.stderr}',
       );
+
+      for (final PackageEntry entry in packageProps) {
+        final ProcessResult propsCheck = checkXml(
+          '${fixture.key}.props',
+          (entry.source as PackageGeneratedSource).content,
+        );
+        expect(
+          propsCheck.exitCode,
+          0,
+          reason:
+              '夹具「${fixture.key}」包级 .props 整文档 XML 解析失败：'
+              'stdout=${propsCheck.stdout}\nstderr=${propsCheck.stderr}',
+        );
+      }
     }
   }, skip: _nonWindowsSkip);
 

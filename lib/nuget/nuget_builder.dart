@@ -23,6 +23,7 @@ class NuGetPackageBuilder {
   static final String _librarySubdirectory = filesSubdirectoryOf(FileType.lib)!;
   static final String _assemblySubdirectory = filesSubdirectoryOf(FileType.asm)!;
   static final String _resourceSubdirectory = filesSubdirectoryOf(FileType.resource)!;
+  static final String _msbuildSubdirectory = filesSubdirectoryOf(FileType.msbuild)!;
   static const String _masmImportCondition =
       r"'$(MASMBeforeTargets)' == '' And '$(VCTargetsPath)' != '' "
       r"And Exists('$(VCTargetsPath)\BuildCustomizations\masm.props') "
@@ -52,6 +53,7 @@ class NuGetPackageBuilder {
       );
     }
 
+    final _UserMsbuildFiles msbuildFiles = _userMsbuildFiles(fileEntries);
     return PackagePlan(
       entries: <PackageEntry>[
         ...fileEntries,
@@ -61,8 +63,15 @@ class NuGetPackageBuilder {
         ),
         PackageEntry(
           packagePath: '$_buildNative/${pack.name}.targets',
-          source: PackageGeneratedSource(content: _targetsContent(pack, fileEntries)),
+          source: PackageGeneratedSource(
+            content: _targetsContent(pack, fileEntries, msbuildFiles),
+          ),
         ),
+        if (msbuildFiles.props.isNotEmpty)
+          PackageEntry(
+            packagePath: 'build/${pack.name}.props',
+            source: PackageGeneratedSource(content: _userPropsContent(msbuildFiles.props)),
+          ),
       ],
     );
   }
@@ -82,6 +91,32 @@ class NuGetPackageBuilder {
 
   static String _normalizePath(String path) =>
       path.split(_pathSeparator).where((String segment) => segment.isNotEmpty).join('/');
+
+  /// 用户自带的 .props / .targets 走双入口：.props 交包级 build/<包ID>.props 在正文前导入，
+  /// .targets 交本包的 .targets 在正文后导入。桶内存相对 [buildNativeRoot] 的路径，
+  /// 与既有三桶同坐标系，故发射时直接喂给 [_msbuildPath]。
+  static _UserMsbuildFiles _userMsbuildFiles(List<PackageEntry> fileEntries) {
+    final List<String> props = <String>[];
+    final List<String> targets = <String>[];
+    for (final PackageEntry entry in fileEntries) {
+      final String? relative = stripBuildNative(entry.packagePath);
+      if (relative == null) {
+        continue;
+      }
+      final String lower = relative.toLowerCase();
+      if (!lower.startsWith('$_filesSearchRoot/$_msbuildSubdirectory/')) {
+        continue;
+      }
+      if (lower.endsWith('.props')) {
+        props.add(relative);
+      } else if (lower.endsWith('.targets')) {
+        targets.add(relative);
+      }
+    }
+    props.sort();
+    targets.sort();
+    return _UserMsbuildFiles(props: props, targets: targets);
+  }
 
   static String cleanTargetId(String packName) => packName.replaceAll(_invalidTargetNameChar, '_');
 
@@ -145,7 +180,11 @@ class NuGetPackageBuilder {
     return version.substring(0, metadata);
   }
 
-  static String _targetsContent(PackModel pack, List<PackageEntry> fileEntries) {
+  static String _targetsContent(
+    PackModel pack,
+    List<PackageEntry> fileEntries,
+    _UserMsbuildFiles msbuildFiles,
+  ) {
     final _BuildValueGroup macros = _BuildValueGroup();
     for (final MacroModel macro in pack.macros) {
       macros.add(macro.value, macro.buildModel);
@@ -194,6 +233,7 @@ class NuGetPackageBuilder {
     if (asmFiles.isNotEmpty) {
       _writeMasmImportGroup(buffer);
     }
+    _writeUserTargetsImportGroup(buffer, msbuildFiles.targets);
     _writeItemDefinitionGroup(
       buffer,
       condition: null,
@@ -355,6 +395,36 @@ class NuGetPackageBuilder {
       ..writeln('  </ImportGroup>');
   }
 
+  /// 不加 Condition：来源是包内文件（打包时已确定存在），不同于 masm 面向外部 MSVC
+  /// 文件所需的 Exists 守卫。
+  static void _writeUserTargetsImportGroup(StringBuffer buffer, List<String> targets) {
+    if (targets.isEmpty) {
+      return;
+    }
+    buffer.writeln('  <ImportGroup>');
+    for (final String relative in targets) {
+      buffer.writeln('    <Import Project="${_escapeXml(_msbuildPath(relative))}" />');
+    }
+    buffer.writeln('  </ImportGroup>');
+  }
+
+  /// 包级 .props 由 NuGet 在项目正文【前】导入，承载用户自带的 .props —— 它们给的默认值
+  /// 必须早于项目正文才有意义。基准是 build/ 而载荷在 build/native/，故比 [_msbuildPath]
+  /// 多一段前缀。relativePaths 是相对 [buildNativeRoot] 的路径（[stripBuildNative] 的结果）。
+  static String _userPropsContent(List<String> relativePaths) {
+    final StringBuffer buffer = StringBuffer()
+      ..writeln('<?xml version="1.0" encoding="utf-8"?>')
+      ..writeln(
+        '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" TreatAsLocalProperty="Platform">',
+      );
+    for (final String relative in relativePaths) {
+      final String importPath = r'$(MSBuildThisFileDirectory)native\' + relative.replaceAll('/', r'\');
+      buffer.writeln('  <Import Project="${_escapeXml(importPath)}" />');
+    }
+    buffer.writeln('</Project>');
+    return buffer.toString();
+  }
+
   static void _writeAsmItems(StringBuffer buffer, List<String> asmFiles, {
     required String packName,
   }) {
@@ -509,6 +579,13 @@ class NuGetPackageBuilder {
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&apos;');
   }
+}
+
+class _UserMsbuildFiles {
+  const _UserMsbuildFiles({required this.props, required this.targets});
+
+  final List<String> props;
+  final List<String> targets;
 }
 
 class _BuildValueGroup {
