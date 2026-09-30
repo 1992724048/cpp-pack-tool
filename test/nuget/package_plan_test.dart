@@ -178,6 +178,14 @@ void main() {
         'build/native/files/other/sub/LICENSE',
       );
     });
+
+    // 上面的落点断言都显式传入 FileType，故对「扩展名映射到哪种 FileType」完全盲：
+    // 把 .ico 改判为 other 后本组仍全绿。打包路径上的 FileType 来自 FileModel，
+    // 这里把那条映射钉住，.ico 落 resource 子目录才有单测层的依据。
+    test('资源类扩展名 .rc / .ico 映射为 resource', () {
+      expect(FileModel(name: 'app.rc', path: 'res/app.rc').type, FileType.resource);
+      expect(FileModel(name: 'app.ico', path: 'res/app.ico').type, FileType.resource);
+    });
   });
 
   group('stripBuildNative', () {

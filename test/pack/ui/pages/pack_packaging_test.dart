@@ -1,3 +1,4 @@
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/pack/ui/pages/pack_packaging.dart';
@@ -14,6 +15,10 @@ void main() {
     expect(find.textContaining('build/native/files/'), findsOneWidget);
     expect(find.textContaining('.nuspec'), findsOneWidget);
     expect(find.textContaining('预览打包内容」可查看'), findsOneWidget);
+    // 子目录清单直接由 filesSubdirectories 拼出：共享常量改名而文案未跟随时本用例转红，
+    // 不必等到用户在预览对话框里发现文案与实际落点不符。
+    expect(find.textContaining(filesSubdirectories.join(' / ')), findsOneWidget);
+    expect(find.textContaining('根级许可证直接放在 files/ 下'), findsOneWidget);
   });
 
   testWidgets('点击预览生成 NuGet 计划并打开对话框', (tester) async {

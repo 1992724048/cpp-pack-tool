@@ -348,6 +348,23 @@ void main() {
     );
   });
 
+  test('剥首段后同落点的 lib/bin 两份库文件算单候选：去重键是包内落点而非源路径', () async {
+    // `lib/x64/foo.lib` 与 `bin/x64/foo.lib` 剥掉首段后落同一包内位置（打包侧
+    // duplicatePackagePaths 会把它报成重复路径），本就是同一份包条目而非两个候选。
+    // 去重键若退回源路径，二者会变成 multipleCandidates，引用解析从「一个候选、
+    // 走不通故报 crossTree」退化为「多个候选、无法判定」，还顺带关掉本阶段的主打能力。
+    await writeText('x/one.cc', '#include "foo.lib"\n');
+    await writeText('lib/x64/foo.lib', '');
+    await writeText('bin/x64/foo.lib', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(report.issues.single.kind, HeaderIncludeIssueKind.crossTree);
+    expect(report.issues.single.candidates, <String>['bin/x64/foo.lib']);
+    expect(await readText('x/one.cc'), '#include "foo.lib"\n');
+  });
+
   test('_landsUnderFilesRoot 按 FileType 排除 lib/dll/pdb，与所在目录无关（§5.4）', () {
     // 包内布局下这一闸与「落点目录比较」功能重叠：files/library 下只可能装 lib/dll/pdb，
     // 而这三类又不会被扫描，公开入口观察到的差异恒为空。上一条用例真正拦住它的是首行的

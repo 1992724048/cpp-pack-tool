@@ -145,4 +145,35 @@ void main() {
       expect(FileModel(name: 'Baz.DLL', path: '').extension, 'dll');
     });
   });
+
+  group('isBinaryFileType', () {
+    // 逐一锁定规格 §6.4 表中的 31 个二进制扩展名：从其中任意一个删掉条目，
+    // 本用例必红。FileType 走 FileModel 由文件名推导而非写死，断言的是
+    // 「扩展名映射 + 二进制判定」的组合结果 —— 这才是打包时实际走的路径。
+    test('规格 §6.4 表中的 31 个二进制扩展名全部判为二进制', () {
+      const List<String> binaryExtensions = <String>[
+        'ico', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'cur',
+        'zip', '7z', 'rar', 'tar', 'gz', 'bz2', 'xz',
+        'ttf', 'otf', 'woff', 'woff2',
+        'onnx', 'pt', 'pth', 'safetensors', 'npy',
+        'bin', 'dat', 'ilk', 'dbg', 'idb', 'obj',
+      ];
+      for (final String extension in binaryExtensions) {
+        final FileModel model = FileModel(name: 'fixture.$extension', path: 'assets/fixture.$extension');
+
+        expect(isBinaryFileType(model.type, model.extension), isTrue, reason: '.$extension');
+      }
+    });
+
+    // 规格 §6.4「效果」句点名的三者各留一条具名锚点，回归时能直接指回该句。
+    test('规格 §6.4「效果」点名的 .png / .zip / .ico 判为二进制', () {
+      final FileModel png = FileModel(name: 'logo.png', path: '');
+      final FileModel zip = FileModel(name: 'bundle.zip', path: '');
+      final FileModel ico = FileModel(name: 'app.ico', path: '');
+
+      expect(isBinaryFileType(png.type, png.extension), isTrue, reason: 'logo.png');
+      expect(isBinaryFileType(zip.type, zip.extension), isTrue, reason: 'bundle.zip');
+      expect(isBinaryFileType(ico.type, ico.extension), isTrue, reason: 'app.ico');
+    });
+  });
 }
