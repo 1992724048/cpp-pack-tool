@@ -73,6 +73,16 @@ PackModel _packWithFiles(List<FileModel> files, {required String name}) => _pack
 String _deployTargetName(String targets) =>
     RegExp(r'<Target Name="(DeployPkgRuntimeBinaries[^"]*)"').firstMatch(targets)!.group(1)!;
 
+/// 切出许可证部署目标块（不含其闭合标签）。让 `<Copy>` 计数只覆盖该目标内的副本，
+/// 不被夹具里的 .dll/.pdb 触发的运行库部署项（同样发 `<Copy>`）干扰。
+String _licenseTargetBlock(String targets) {
+  final int start = targets.indexOf(r'<Target Name="DeployPkgLicenses_');
+  expect(start, greaterThanOrEqualTo(0), reason: '未发射许可证部署目标');
+  final int end = targets.indexOf('  </Target>', start);
+  expect(end, greaterThan(start), reason: '许可证部署目标块未正常闭合');
+  return targets.substring(start, end);
+}
+
 void main() {
   test('三份 .targets 均通过 [xml] 整文档解析（含对抗性包名）', () async {
     final Directory tempDir = Directory.systemTemp.createTempSync(
@@ -139,11 +149,10 @@ void main() {
       }
       if (fixture.key == 'with_license') {
         expect(content, contains('<Target Name="DeployPkgLicenses__licensed_'));
+        expect(content, contains(r'<Copy '));
         expect(
           content,
-          contains(
-            r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"''',
-          ),
+          contains(r'''Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''),
         );
         expect(
           content,
@@ -294,7 +303,7 @@ void main() {
     expect(targets, contains(r'$(OutDir)LICENSES\demo_LICENSE'));
     expect(targets, contains(r'$(OutDir)LICENSES\demo_NOTICE'));
     expect(RegExp(r'<Target Name="DeployPkgLicenses_').allMatches(targets), hasLength(1));
-    expect(RegExp(r'<Copy ').allMatches(targets), hasLength(2));
+    expect(RegExp(r'<Copy ').allMatches(_licenseTargetBlock(targets)), hasLength(2));
   });
 
   test('部署目录是大写 LICENSES', () async {

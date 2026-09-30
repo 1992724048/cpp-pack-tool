@@ -116,7 +116,7 @@ String buildNativePayloadPath(String normalizedPath, FileType type, String names
   if (subdirectory == null) {
     return '$filesRoot/$normalizedPath';
   }
-  if (subdirectory == 'library') {
+  if (subdirectory == filesSubdirectoryOf(FileType.lib)) {
     return '$filesRoot/$subdirectory/${_withoutLeadingLibOrBin(normalizedPath)}';
   }
   return '$filesRoot/$subdirectory/$normalizedPath';

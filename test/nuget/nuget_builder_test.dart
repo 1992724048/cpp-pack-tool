@@ -1079,12 +1079,14 @@ void main() {
           '<Target Name="DeployPkgLicenses_demo_89e495e7" AfterTargets="Build">',
         ),
       );
+      expect(targets, contains(r'<Copy '));
       expect(
         targets,
-        contains(
-          r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''
-          r''' SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"''',
-        ),
+        contains(r'''Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''),
+      );
+      expect(
+        targets,
+        contains(r'''SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"'''),
       );
       expect(
         targets,
@@ -1115,20 +1117,20 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      expect(
-        targets,
-        contains(
-          r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''
-          r''' SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"''',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'''<Copy Condition="Exists('$(MSBuildThisFileDirectory)files\NOTICE')"'''
-          r''' SourceFiles="$(MSBuildThisFileDirectory)files\NOTICE"''',
-        ),
-      );
+      expect(targets, contains(r'<Copy '));
+      for (final String license in <String>['LICENSE', 'NOTICE']) {
+        final String source = r'$(MSBuildThisFileDirectory)files\' '$license';
+        expect(
+          targets,
+          contains('Condition="Exists(\'$source\')"'),
+          reason: '$license 的 <Copy> 未带指向自身的 Exists 条件',
+        );
+        expect(
+          targets,
+          contains('SourceFiles="$source"'),
+          reason: '$license 的 <Copy> 源文件不是自身',
+        );
+      }
       expect(
         targets,
         contains(r'<FileWrites Include="$(OutDir)LICENSES\demo_LICENSE" />'),
@@ -1138,7 +1140,7 @@ void main() {
         contains(r'<FileWrites Include="$(OutDir)LICENSES\demo_NOTICE" />'),
       );
       expect('<Target Name="DeployPkgLicenses_'.allMatches(targets).length, 1);
-      expect('<Copy '.allMatches(targets).length, 2);
+      expect(RegExp(r'<Copy ').allMatches(_licenseTargetBlock(targets)), hasLength(2));
     });
 
     test('无许可证时不生成许可证部署目标', () async {
@@ -1379,6 +1381,16 @@ String _nuspecOf(PackagePlan plan) => _generatedContent(plan, 'demo.nuspec');
 
 String _targetsOf(PackagePlan plan) =>
     _generatedContent(plan, 'build/native/demo.targets');
+
+/// 切出许可证部署目标块（不含其闭合标签）。让 `<Copy>` 计数只覆盖该目标内的副本，
+/// 不被夹具里的 .dll/.pdb 触发的运行库部署项（同样发 `<Copy>`）干扰。
+String _licenseTargetBlock(String targets) {
+  final int start = targets.indexOf(r'<Target Name="DeployPkgLicenses_');
+  expect(start, greaterThanOrEqualTo(0), reason: '未发射许可证部署目标');
+  final int end = targets.indexOf('  </Target>', start);
+  expect(end, greaterThan(start), reason: '许可证部署目标块未正常闭合');
+  return targets.substring(start, end);
+}
 
 String _generatedContent(PackagePlan plan, String packagePath) {
   return (plan.entries
