@@ -69,9 +69,15 @@ List<String> duplicatePackagePaths(PackagePlan plan) {
 int comparePackagePathsByEntry(PackageEntry first, PackageEntry second) =>
     comparePackagePaths(first.packagePath, second.packagePath);
 
-/// 三个根前缀的单一事实源。nuget_builder 与 header_include_fixer 都从这里取，
+/// 包内布局路径的单一事实源。nuget_builder 与 header_include_fixer 都从这里取，
 /// 避免两处各写一份字面量导致载荷推导静默失配。
-const String buildNativeRoot = 'build/native';
+const String buildRoot = 'build';
+
+/// [buildNativeRoot] 的末段，字面必须是 native —— 它恰是 NuGet 为 .vcxproj 硬编码的
+/// 目标框架标识 native@0.0，改名后整个 .targets 静默不导入（规格 §8 第 1 条）。
+const String nativeTfmSegment = 'native';
+
+const String buildNativeRoot = '$buildRoot/$nativeTfmSegment';
 
 /// 相对 [buildNativeRoot] 的根目录名 —— 搜索根与载荷判定共用这一坐标系。
 const String includeRelativeRoot = 'include';

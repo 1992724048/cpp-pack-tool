@@ -69,7 +69,7 @@ class NuGetPackageBuilder {
         ),
         if (msbuildFiles.props.isNotEmpty)
           PackageEntry(
-            packagePath: 'build/${pack.name}.props',
+            packagePath: '$buildRoot/${pack.name}.props',
             source: PackageGeneratedSource(content: _userPropsContent(msbuildFiles.props)),
           ),
       ],
@@ -418,7 +418,8 @@ class NuGetPackageBuilder {
         '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" TreatAsLocalProperty="Platform">',
       );
     for (final String relative in relativePaths) {
-      final String importPath = r'$(MSBuildThisFileDirectory)native\' + relative.replaceAll('/', r'\');
+      final String importPath =
+          r'$(MSBuildThisFileDirectory)' '$nativeTfmSegment' r'\' + relative.replaceAll('/', r'\');
       buffer.writeln('  <Import Project="${_escapeXml(importPath)}" />');
     }
     buffer.writeln('</Project>');
