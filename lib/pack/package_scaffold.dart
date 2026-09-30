@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:cpp_nuget_pack/shared/format.dart';
+
 /// 脚手架创建的产物目录。首段 `lib`/`bin` 会被 `package_plan.dart` 的
 /// `_withoutLeadingLibOrBin` 剥除；`Debug`/`Release` 段被 `nuget_builder.dart` 的
 /// `libraryBuildModelOf` 识别为配置段（大小写不敏感、多段取最后一个）。
@@ -84,7 +86,7 @@ Future<ScaffoldOutcome> createPackageStructure(String rootPath) async {
     }
 
     for (final String relative in scaffoldDirectories) {
-      final Directory directory = Directory('$rootPath/$relative');
+      final Directory directory = Directory(joinPath(rootPath, relative));
       if (directory.existsSync()) {
         continue;
       }
@@ -97,7 +99,10 @@ Future<ScaffoldOutcome> createPackageStructure(String rootPath) async {
     await _writeIfAbsent(rootPath, 'pre.bat', _preBatchTemplate, createdFiles, skippedFiles);
     await _writeIfAbsent(rootPath, 'post.bat', _postBatchTemplate, createdFiles, skippedFiles);
   } on FileSystemException catch (error) {
-    throw PackageScaffoldException('无法创建包结构：${error.message}');
+    // 插值整个异常而非 [FileSystemException.message]：后者恒为英文通用文案
+    // （「Cannot open file」），丢掉失败路径与本地化 OS 原因，而本条消息要
+    // 经 toast 直接面向用户。口径同 build_environment.dart / build_runner.dart。
+    throw PackageScaffoldException('无法创建包结构：$error');
   }
 
   return ScaffoldOutcome(
@@ -116,7 +121,7 @@ Future<void> _writeIfAbsent(
   List<String> createdFiles,
   List<String> skippedFiles,
 ) async {
-  final File file = File('$rootPath/$name');
+  final File file = File(joinPath(rootPath, name));
   if (file.existsSync()) {
     skippedFiles.add(name);
     return;

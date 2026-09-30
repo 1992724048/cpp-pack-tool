@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/pack/package_scaffold.dart';
+import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const List<String> _scaffoldDirectories = <String>[
@@ -68,9 +69,10 @@ void main() {
     test('目标目录不存在时自动创建', () async {
       final Directory nested = Directory('${root.path}/a/b/c');
 
-      await createPackageStructure(nested.path);
+      final ScaffoldOutcome outcome = await createPackageStructure(nested.path);
 
       expect(nested.existsSync(), isTrue);
+      expect(outcome.createdDirectories, <String>['.', ..._scaffoldDirectories]);
       for (final String relative in _scaffoldDirectories) {
         expect(
           Directory('${nested.path}/$relative').existsSync(),
@@ -110,7 +112,7 @@ void main() {
     });
 
     test('目标路径被目录占位时抛 PackageScaffoldException', () async {
-      Directory('${root.path}/build.py').createSync();
+      Directory(joinPath(root.path, 'build.py')).createSync();
 
       await expectLater(
         createPackageStructure(root.path),
@@ -118,7 +120,38 @@ void main() {
           isA<PackageScaffoldException>().having(
             (PackageScaffoldException error) => error.message,
             'message',
-            contains('无法创建包结构'),
+            allOf(
+              contains('无法创建包结构'),
+              contains(joinPath(root.path, 'build.py')),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('中途失败不回滚已写入的模板文件', () async {
+      Directory(joinPath(root.path, 'post.bat')).createSync();
+
+      await expectLater(
+        createPackageStructure(root.path),
+        throwsA(isA<PackageScaffoldException>()),
+      );
+
+      for (final String name in <String>['build.py', 'pre.bat']) {
+        expect(File(joinPath(root.path, name)).existsSync(), isTrue, reason: name);
+      }
+    });
+
+    test('根路径带尾分隔符时上报的失败路径是规范化后的路径', () async {
+      Directory(joinPath(root.path, 'post.bat')).createSync();
+
+      await expectLater(
+        createPackageStructure('${root.path}\\'),
+        throwsA(
+          isA<PackageScaffoldException>().having(
+            (PackageScaffoldException error) => error.message,
+            'message',
+            contains(joinPath(root.path, 'post.bat')),
           ),
         ),
       );
