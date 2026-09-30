@@ -17,15 +17,18 @@ const String _description =
 
 // 消费方契约违反后 NuGet 与 MSBuild 一律不报错、只静默失效，不写在这里用户就永远看不到。
 // 单独成段而非并入 _description：那是版式说明，这条是失效边界，混作一段会互相淹没。
+// 只列用户能行动的两条；工具自身的包内布局约定（native@0.0、文件名等）属改本工具的人，
+// 整段见 README「包消费契约」，在配包页写出来只会让读者去遵守一件自己控制不了的事。
 const String _consumerContract =
-    '消费本包需遵守以下约定，违反后均无任何报错：'
-    '.targets 固定落在 build/native/，其中 native 段名必须字面一致 —— '
-    'NuGet 为 .vcxproj 硬编码的目标框架标识恰是 native@0.0，'
-    '改成 build/native/x64/ 这类四段路径后整个 .targets 会被静默忽略；'
-    '文件名必须恰好是「包 ID.targets」与「包 ID.props」，改名同样静默失效；'
-    '.targets 只有 .vcxproj（含 C++/CLI）项目会导入；'
-    '而 build/<包 ID>.props 是两段路径，任何目标框架的项目都会导入；'
-    '产物不得落在点开头或名为 build / out 的目录里（任意层级），否则扫描时被静默跳过。';
+    '使用本包时的两条硬性约束，违反后不会有任何报错：\n'
+    '\n'
+    '1. 产物不要放进点开头的目录，也不要把目录命名为 build 或 out（任意层级都算）'
+    '—— 扫描器会跳过它们，产物不会进包。\n'
+    '\n'
+    '2. 本包生成的 .targets 只会被 .vcxproj（含 C++/CLI）工程导入。'
+    '工程类型不对时，包里的编译选项、库目录、pre/post 钩子全部不生效，且不报错。\n'
+    '\n'
+    '另：放在 msbuild/ 目录的 .props 与 .targets 会被自动导入。';
 
 class PackPackaging extends StatefulWidget {
   const PackPackaging({super.key, required this.pack});

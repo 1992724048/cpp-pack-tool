@@ -21,21 +21,25 @@ void main() {
     expect(find.textContaining('根级许可证直接放在 files/ 下'), findsOneWidget);
   });
 
-  testWidgets('渲染消费方契约：五条失效边界逐条可见', (tester) async {
+  testWidgets('渲染消费方契约：两条用户约束编号可见，工具自身布局约定不上 UI', (tester) async {
     await _pumpPage(tester, PackPackaging(pack: _pack()));
 
-    // 违反后 NuGet / MSBuild 一律不报错，只静默失效；删掉任一句用户就再也无从得知。
-    expect(find.textContaining('违反后均无任何报错'), findsOneWidget);
-    expect(find.textContaining('native 段名必须字面一致'), findsOneWidget);
-    expect(find.textContaining('native@0.0'), findsOneWidget);
-    expect(find.textContaining('「包 ID.targets」与「包 ID.props」'), findsOneWidget);
-    // 「只约束 .targets」与「.props 任一 TFM 都导入」必须成对出现：只写前半句会让用户
-    // 以为 .props 也只被 .vcxproj 导入，写成「其它项目类型不导入」则直接与事实相反。
-    expect(find.textContaining('.targets 只有 .vcxproj（含 C++/CLI）项目会导入'), findsOneWidget);
-    expect(find.textContaining('任何目标框架的项目都会导入'), findsOneWidget);
+    // 违反后 NuGet / MSBuild 一律不报错，只静默失效；删掉任一条用户就再也无从得知。
+    expect(find.textContaining('两条硬性约束'), findsOneWidget);
+    expect(find.textContaining('违反后不会有任何报错'), findsOneWidget);
+    expect(find.textContaining('1. 产物不要放进点开头的目录'), findsOneWidget);
+    expect(find.textContaining('把目录命名为 build 或 out（任意层级都算）'), findsOneWidget);
+    expect(find.textContaining('2. 本包生成的 .targets 只会被'), findsOneWidget);
+    expect(find.textContaining('只会被 .vcxproj（含 C++/CLI）工程导入'), findsOneWidget);
+    // .props 与 .targets 的导入范围差异曾被写成「其它项目类型不导入」，与事实相反；
+    // 即使该句已移出配包页，也要防止它改回来。
     expect(find.textContaining('其它项目类型不导入'), findsNothing);
-    expect(find.textContaining('名为 build / out 的目录'), findsOneWidget);
-    // 第 5 条（.lib / .a 的配置隔离）沿用既有提示，不重复写。
+    // 工具自身的包内布局（native 段名、文件名）不是用户能行动的事，只属 README。
+    // 混进配包页等于让读者去遵守一件自己控制不了的约定，故以 findsNothing 钉住。
+    expect(find.textContaining('native@0.0'), findsNothing);
+    expect(find.textContaining('native 段名必须字面一致'), findsNothing);
+    expect(find.textContaining('「包 ID.targets」与「包 ID.props」'), findsNothing);
+    // .lib / .a 的配置隔离沿用 _description 的既有提示，不在契约段重复写。
     expect(find.textContaining('release / debug 目录名'), findsOneWidget);
   });
 
