@@ -120,7 +120,7 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 | 2 | 文件名必须**恰好**是 `<包ID>.targets` / `<包ID>.props`                                                                            | 改名后静默不导入                                                          |
 | 3 | 消费方项目必须是 **`.vcxproj`**（C++/CLI 亦可）—— 这条只约束 `build/native/<包ID>.targets`                                        | 非 `.vcxproj` 的工程静默丢弃 `.targets`                                   |
 | 4 | `build/<包ID>.props` 走的是两段式布局，**任何目标框架的项目都会导入**                                                             | 不受第 3 条约束：非 `.vcxproj` 工程照样导入 `.props`                      |
-| 5 | 产物不得落 `.` 开头或名为 `build` / `out` 的目录（任意层级）                                                                      | 扫描器静默跳过，不进包、不报错                                            |
+| 5 | 产物不得落 `.` 开头或名为 `build` / `out` / `__pycache__` 的目录（任意层级）                                                | 扫描器静默跳过，不进包、不报错                                            |
 | 6 | `files/library/` 下的 `.lib` / `.a` / `.dll` / `.pdb`，其配置隔离靠路径里的 `release` / `debug` 段（大小写不敏感、多段命中取最后一个） | 目录改名后隔离静默失效，链接器与输出目录拿到错误版本                    |
 
 关于第 1 条：它最反直觉，值得单独说明。`build/native/` 之所以能生效， **纯粹因为 `native` 恰好是 NuGet 为 `.vcxproj` 硬编码的字面目标框架标识 `native@0.0`**。这不是能自然理解的规则，调整包内布局时务必让

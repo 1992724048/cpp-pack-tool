@@ -5,6 +5,12 @@ import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 abstract final class FileScan {
   static final RegExp _pathSeparator = RegExp(r'[/\\]');
 
+  /// 构建产物目录名，任意层级都跳。`__pycache__` 虽非隐藏目录，但同属产物目录：
+  /// 包源根住着 build.py，任何 import 它的测试 / IDE 都会在原地留下 .pyc。
+  /// 生态里其余工具缓存（.mypy_cache / .pytest_cache / .ruff_cache / .tox 等）都是
+  /// `.` 开头，已由 [shouldSkipDirectory] 的隐藏目录规则覆盖。
+  static const Set<String> _artifactDirectories = <String>{'build', 'out', '__pycache__'};
+
   static Future<List<FileModel>> scan(String directoryPath) async {
     final FileSystemEntityType type = FileSystemEntity.typeSync(directoryPath);
     if (type == FileSystemEntityType.notFound) {
@@ -38,7 +44,7 @@ abstract final class FileScan {
 
   static bool shouldSkipDirectory(String name) {
     final String lowerName = name.toLowerCase();
-    return lowerName.startsWith('.') || lowerName == 'build' || lowerName == 'out';
+    return lowerName.startsWith('.') || _artifactDirectories.contains(lowerName);
   }
 
   static String _baseName(String path) => path.split(_pathSeparator).last;

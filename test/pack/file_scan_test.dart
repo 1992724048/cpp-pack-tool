@@ -57,6 +57,23 @@ void main() {
       expect(paths, isNot(contains('src/out/artifact.txt')));
     });
 
+    test('排除 __pycache__ 目录（任意深度）', () async {
+      await _createFixtureTree(root);
+      await _writeFile(root, '__pycache__/build.cpython-313.pyc', 'pyc\n');
+      await _writeFile(root, 'src/__pycache__/helper.cpython-313.pyc', 'pyc\n');
+
+      final List<FileModel> files = await FileScan.scan(root.path);
+      final Set<String> paths = files.map((file) => file.path).toSet();
+
+      expect(
+        paths,
+        isNot(contains('__pycache__/build.cpython-313.pyc')),
+        reason: 'build.py 住在包源根，import 它的测试 / IDE 会在原地留下 __pycache__',
+      );
+      expect(paths, isNot(contains('src/__pycache__/helper.cpython-313.pyc')));
+      expect(paths, contains('src/main.cpp'), reason: '只跳目录本身，不牵连同层相邻文件');
+    });
+
     test('同一文件只收集一次', () async {
       await _createFixtureTree(root);
 
