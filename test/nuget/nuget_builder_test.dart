@@ -481,7 +481,7 @@ void main() {
       );
       expect(
         _runtimeBinariesByCondition(targets).keys,
-        <String>[r"'$(Configuration)'=='Release'", r"'$(Configuration)'=='Debug'"],
+        <String>[r"'$(Configuration)'!='Debug'", r"'$(Configuration)'=='Debug'"],
         reason: 'dll / pdb 按路径段独立切组，不与手选模型的口径串味',
       );
     });
@@ -987,7 +987,7 @@ void main() {
         _runtimeBinariesByCondition(targets),
         <String, List<String>>{
           '': <String>[r'$(MSBuildThisFileDirectory)files\library\bar.dll'],
-          r"'$(Configuration)'=='Release'": <String>[
+          r"'$(Configuration)'!='Debug'": <String>[
             r'$(MSBuildThisFileDirectory)files\library\x64\Release\foo.dll',
           ],
           r"'$(Configuration)'=='Debug'": <String>[
@@ -1018,6 +1018,62 @@ void main() {
       expect(
         targets.indexOf('<Target Name="DeployPkgRuntimeBinaries_demo_'),
         greaterThan(targets.indexOf('<PkgRuntimeBinary')),
+      );
+    });
+
+    test('非 Debug 的任意配置名都能取到 release 侧 dll', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/Release/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+      const String releaseFoo = r'$(MSBuildThisFileDirectory)files\library\Release\foo.dll';
+      const String debugBar = r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll';
+
+      expect(
+        _reachableRuntimeBinaries(targets, 'RelWithDebInfo'),
+        <String>[releaseFoo],
+        reason: "MSBuild 对未定义属性静默求值为空串且不报警告：'=='Release' 放行不了 RelWithDebInfo，"
+            '两组皆空会让部署目标一个 dll 都拷不出，消费方构建通过但启动崩溃',
+      );
+      expect(
+        _reachableRuntimeBinaries(targets, 'MinSizeRel'),
+        <String>[releaseFoo],
+        reason: 'release 组是「非 Debug」兜底而非逐个配置名枚举',
+      );
+      expect(
+        _reachableRuntimeBinaries(targets, ''),
+        <String>[releaseFoo],
+        reason: 'Configuration 未定义时求值为空串，同样不能落空',
+      );
+      expect(
+        _reachableRuntimeBinaries(targets, 'DEBUG'),
+        <String>[debugBar],
+        reason: '!= 与 == 一样大小写不敏感：DEBUG 仍归 debug 组，不被 release 组抢走',
+      );
+    });
+
+    test('Release / Debug 配置名下的分组归属不变', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/Release/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+      const String releaseFoo = r'$(MSBuildThisFileDirectory)files\library\Release\foo.dll';
+      const String debugBar = r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll';
+
+      expect(_reachableRuntimeBinaries(targets, 'Release'), <String>[releaseFoo]);
+      expect(_reachableRuntimeBinaries(targets, 'RELEASE'), <String>[releaseFoo]);
+      expect(_reachableRuntimeBinaries(targets, 'Debug'), <String>[debugBar]);
+      expect(_reachableRuntimeBinaries(targets, 'debug'), <String>[debugBar]);
+      expect(
+        _runtimeBinariesByCondition(targets).keys,
+        <String>[r"'$(Configuration)'!='Debug'", r"'$(Configuration)'=='Debug'"],
+        reason: '两组条件互补，任一配置名下恰有一组命中',
       );
     });
 
@@ -1085,7 +1141,7 @@ void main() {
 
       expect(
         _runtimeBinariesByCondition(targets).keys,
-        <String>[r"'$(Configuration)'=='Release'", r"'$(Configuration)'=='Debug'"],
+        <String>[r"'$(Configuration)'!='Debug'", r"'$(Configuration)'=='Debug'"],
       );
       expect(
         _runtimeBinariesByCondition(targets)[r"'$(Configuration)'=='Debug'"],
@@ -1097,7 +1153,7 @@ void main() {
         reason: '多段命中取最后一个（foo 归 Debug 而非 RELEASE），目录段大小写不敏感',
       );
       expect(
-        _runtimeBinariesByCondition(targets)[r"'$(Configuration)'=='Release'"],
+        _runtimeBinariesByCondition(targets)[r"'$(Configuration)'!='Debug'"],
         <String>[r'$(MSBuildThisFileDirectory)files\library\RELEASE\qux.dll'],
       );
     });
@@ -1632,6 +1688,38 @@ Map<String, List<String>> _runtimeBinariesByCondition(String targets) {
     groups.putIfAbsent(group.group(1) ?? '', () => <String>[]).addAll(includes);
   }
   return groups;
+}
+
+/// 复现 MSBuild 对 Configuration 条件求值后的可见集合：项组条件在求值期已把项挡在
+/// PkgRuntimeBinary 之外，部署目标只看得见剩下的。MSBuild 的 == 与 != 都大小写不敏感，
+/// 属性未定义时为空串。配置名含 Release / Debug 时返回各自产物，其余一律归 release。
+List<String> _reachableRuntimeBinaries(String targets, String configuration) {
+  final String lowerConfiguration = configuration.toLowerCase();
+  final List<String> reachable = <String>[];
+  for (final RegExpMatch group in RegExp(
+    r'<ItemGroup(?: Condition="([^"]*)")?>(.*?)</ItemGroup>',
+    dotAll: true,
+  ).allMatches(targets)) {
+    final String? condition = group.group(1);
+    if (condition != null && !_configurationConditionHolds(condition, lowerConfiguration)) {
+      continue;
+    }
+    reachable.addAll(RegExp(r'<PkgRuntimeBinary Include="([^"]*)"')
+        .allMatches(group.group(2)!)
+        .map((RegExpMatch include) => include.group(1)!));
+  }
+  return reachable;
+}
+
+bool _configurationConditionHolds(String condition, String lowerConfiguration) {
+  final RegExpMatch? predicate = RegExp(
+    r"""^'\$\(Configuration\)'(==|!=)'(.+)'$$""",
+  ).firstMatch(condition);
+  expect(predicate, isNotNull, reason: '条件不是可求值的 Configuration 谓词: $condition');
+  final String expected = predicate!.group(2)!.toLowerCase();
+  return predicate.group(1) == '=='
+      ? lowerConfiguration == expected
+      : lowerConfiguration != expected;
 }
 
 String _generatedContent(PackagePlan plan, String packagePath) {

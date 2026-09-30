@@ -322,6 +322,13 @@ class NuGetPackageBuilder {
 
   static String _configurationCondition(String configuration) => "'\$(Configuration)'=='$configuration'";
 
+  /// 运行时二进制的 release 组刻意写成「非 Debug」而非 '==Release'：MSBuild 对未定义的
+  /// Configuration 静默求值为空串且不报警告，RelWithDebInfo / MinSizeRel 之类的配置名在
+  /// 字面比较下两组皆不命中，部署目标便一个 dll 都拷不出 —— 构建照样通过，只是消费方
+  /// 启动时才崩。!= 与 == 同样大小写不敏感，故两组仍互补：DEBUG 归 debug 组，其余全归
+  /// release 组。宏 / 库 / 命令走 [_configurationCondition] 的严格 Release 语义不变。
+  static String _nonDebugConfigurationCondition() => "'\$(Configuration)'!='$debugBuildLabel'";
+
   static void _writeCommandGroups(StringBuffer buffer, PackModel pack) {
     final _CommandGroup commands = _CommandGroup();
     for (final CmdModel command in pack.commands) {
@@ -466,13 +473,15 @@ class NuGetPackageBuilder {
     buffer.writeln('  </ItemGroup>');
   }
 
-  /// 配置隔离只落在项组上：非本配置的项进不了 PkgRuntimeBinary 集合，部署目标无需再判配置。
+  /// 配置隔离只落在项组上：非本配置的项进不了 PkgRuntimeBinary 集合，部署目标无需再判配置
+  /// —— 项组条件在求值期就生效，而目标条件在执行期求值，看到的已是过滤后的集合。
+  /// 三组依次发射：同名条目靠后的覆盖靠前的，配置专属组因此压过无条件组。
   static void _writeRuntimeBinaryItems(StringBuffer buffer, _BuildValueGroup runtimeBinaries) {
     _writeBinaryItemGroup(buffer, runtimeBinaries.all);
     _writeBinaryItemGroup(
       buffer,
       runtimeBinaries.release,
-      condition: _configurationCondition(releaseBuildLabel),
+      condition: _nonDebugConfigurationCondition(),
     );
     _writeBinaryItemGroup(
       buffer,
