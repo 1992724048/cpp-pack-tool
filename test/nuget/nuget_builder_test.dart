@@ -447,7 +447,7 @@ void main() {
       );
     });
 
-    test(r'手选模型全为所有配置、库文件只有 dll 与 pdb 时 .targets 不含任何 $(Configuration)', () async {
+    test('手选模型全为所有配置时宏、库目录、附加库与命令都不切条件组', () async {
       final PackModel pack = _pack()
         ..macros = <MacroModel>[const MacroModel(value: 'ALL=1')]
         ..libDirectories = <LibDirModel>[
@@ -466,11 +466,24 @@ void main() {
 
       expect(
         targets,
-        isNot(contains(r'$(Configuration)')),
-        reason: '本用例守的是手选全配置模型不切条件组；dll / pdb 走独立的运行时'
-            '项组，其不参与配置推断由「dll 与 pdb 不做配置隔离」用例把关',
+        isNot(contains('<ItemDefinitionGroup Condition')),
+        reason: '本用例守的是手选全配置模型不切条件组，与 dll / pdb 走运行时项组无关',
       );
       expect(targets, contains('<ItemDefinitionGroup>'), reason: '仍有全配置的分组');
+      expect(
+        targets,
+        isNot(contains(r'<Target Name="CnpPreBuild_demo_89e495e7_Release"')),
+        reason: '全配置的手选命令不切出带配置后缀的条件目标',
+      );
+      expect(
+        targets,
+        isNot(contains(r'<Target Name="CnpPreBuild_demo_89e495e7_Debug"')),
+      );
+      expect(
+        _runtimeBinariesByCondition(targets).keys,
+        <String>[r"'$(Configuration)'=='Release'", r"'$(Configuration)'=='Debug'"],
+        reason: 'dll / pdb 按路径段独立切组，不与手选模型的口径串味',
+      );
     });
 
     test('手选 Release 的宏落在 Release 条件定义组内', () async {
@@ -960,7 +973,7 @@ void main() {
       expect(targets, isNot(contains('<PropertyGroup')));
     });
 
-    test('dll/pdb 生成唯一无条件运行时项组与硬链接部署目标', () async {
+    test('dll/pdb 按路径段分配置部署且部署目标不受配置条件影响', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
@@ -971,33 +984,24 @@ void main() {
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
       expect(
-        targets,
-        isNot(contains(r"'$(Configuration)'")),
-        reason: '路径里的 Release/Debug 段不再切出条件组',
-      );
-      expect(
-        targets,
-        contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\x64\Release\foo.dll" />',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\bar.dll" />',
-        ),
-      );
-      expect(
-        targets,
-        contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\x64\Debug\foo.pdb" />',
-        ),
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          '': <String>[r'$(MSBuildThisFileDirectory)files\library\bar.dll'],
+          r"'$(Configuration)'=='Release'": <String>[
+            r'$(MSBuildThisFileDirectory)files\library\x64\Release\foo.dll',
+          ],
+          r"'$(Configuration)'=='Debug'": <String>[
+            r'$(MSBuildThisFileDirectory)files\library\x64\Debug\foo.pdb',
+          ],
+        },
+        reason: '三组同存：无配置段的进无条件组，Release/Debug 段各自切出条件组',
       );
       expect(
         targets,
         contains(
           r'''<Target Name="DeployPkgRuntimeBinaries_demo_89e495e7" AfterTargets="Build" Condition="'@(PkgRuntimeBinary)' != ''">''',
         ),
+        reason: '部署目标自身不切配置：项组上的条件已把非本配置的项挡在集合外',
       );
       expect(
         targets,
@@ -1017,7 +1021,7 @@ void main() {
       );
     });
 
-    test('dll 与 pdb 不做配置隔离', () async {
+    test('dll 不参与附加库派生且只经运行时项发射一次', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 4),
@@ -1033,23 +1037,24 @@ void main() {
       expect(
         'bar.dll'.allMatches(targets).length,
         1,
-        reason: 'dll 仅经 PkgRuntimeBinary 发射一次：既不派生附加库与库目录，'
-            '也不因路径段被切进条件组',
+        reason: 'dll 仅经 PkgRuntimeBinary 发射一次：既不派生附加库与库目录，也不重复进多个组',
       );
       expect(
-        targets,
-        contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\Debug\bar.dll" />',
-        ),
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          r"'$(Configuration)'=='Debug'": <String>[
+            r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll',
+          ],
+        },
       );
       expect(
         targets,
         isNot(contains('<ItemDefinitionGroup Condition')),
-        reason: '运行时二进制不产生按配置切分的定义组',
+        reason: '配置隔离落在 ItemGroup 上：运行时二进制不产生按配置切分的定义组',
       );
     });
 
-    test('运行时二进制无构建标签时仅生成无条件项组', () async {
+    test('运行时二进制无配置段时仅生成无条件项组', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 10),
@@ -1058,12 +1063,43 @@ void main() {
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
       expect(
-        targets,
-        contains(
-          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\foo.dll" />',
-        ),
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          '': <String>[r'$(MSBuildThisFileDirectory)files\library\foo.dll'],
+        },
+        reason: '无 release/debug 段的 dll 向后兼容：仍无条件部署，不因本次分配置改行为',
       );
       expect(targets, isNot(contains('<ItemGroup Condition')));
+    });
+
+    test('运行时二进制取最后一个命中段且大小写不敏感', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'lib/x64/RELEASE/Debug/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 20),
+          FileModel(name: 'baz.pdb', path: 'bin/debug/baz.pdb', size: 30),
+          FileModel(name: 'qux.dll', path: 'bin/RELEASE/qux.dll', size: 40),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        _runtimeBinariesByCondition(targets).keys,
+        <String>[r"'$(Configuration)'=='Release'", r"'$(Configuration)'=='Debug'"],
+      );
+      expect(
+        _runtimeBinariesByCondition(targets)[r"'$(Configuration)'=='Debug'"],
+        unorderedEquals(<String>[
+          r'$(MSBuildThisFileDirectory)files\library\x64\RELEASE\Debug\foo.dll',
+          r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll',
+          r'$(MSBuildThisFileDirectory)files\library\debug\baz.pdb',
+        ]),
+        reason: '多段命中取最后一个（foo 归 Debug 而非 RELEASE），目录段大小写不敏感',
+      );
+      expect(
+        _runtimeBinariesByCondition(targets)[r"'$(Configuration)'=='Release'"],
+        <String>[r'$(MSBuildThisFileDirectory)files\library\RELEASE\qux.dll'],
+      );
     });
 
     test('根目录许可证生成硬链接部署目标且位于 </Project> 之前', () async {
@@ -1576,6 +1612,26 @@ String _licenseTargetBlock(String targets) {
   final int end = targets.indexOf('  </Target>', start);
   expect(end, greaterThan(start), reason: '许可证部署目标块未正常闭合');
   return targets.substring(start, end);
+}
+
+/// 按所在 ItemGroup 的 Condition 归拢 PkgRuntimeBinary 的 Include 路径，无条件组键为空串。
+/// 条目归属只能靠所在组判定，故不以纯文本 contains 断言配置隔离。
+Map<String, List<String>> _runtimeBinariesByCondition(String targets) {
+  final Map<String, List<String>> groups = <String, List<String>>{};
+  for (final RegExpMatch group in RegExp(
+    r'<ItemGroup(?: Condition="([^"]*)")?>(.*?)</ItemGroup>',
+    dotAll: true,
+  ).allMatches(targets)) {
+    final List<String> includes = RegExp(r'<PkgRuntimeBinary Include="([^"]*)"')
+        .allMatches(group.group(2)!)
+        .map((RegExpMatch include) => include.group(1)!)
+        .toList();
+    if (includes.isEmpty) {
+      continue;
+    }
+    groups.putIfAbsent(group.group(1) ?? '', () => <String>[]).addAll(includes);
+  }
+  return groups;
 }
 
 String _generatedContent(PackagePlan plan, String packagePath) {

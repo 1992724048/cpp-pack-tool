@@ -219,7 +219,11 @@ class NuGetPackageBuilder {
           lower.endsWith('.rc')) {
         resourceFiles.add(relative);
       } else if (_isRuntimeBinary(lower)) {
-        runtimeBinaries.add(_msbuildPath(relative), BuildModel.all, dedupe: true);
+        runtimeBinaries.add(
+          _msbuildPath(relative),
+          libraryBuildModelOf(relative),
+          dedupe: true,
+        );
       }
     }
 
@@ -279,7 +283,7 @@ class NuGetPackageBuilder {
     libraries.add(baseName(packagePath), buildModel, dedupe: true);
   }
 
-  /// 按包内路径中的 release / debug 段推断静态库配置。多段命中取最后一个 ——
+  /// 按包内路径中的 release / debug 段推断库与运行时二进制的配置。多段命中取最后一个 ——
   /// 越靠近文件的那段语义最强。
   static BuildModel libraryBuildModelOf(String packageRelativePath) {
     BuildModel inferred = BuildModel.all;
@@ -462,15 +466,27 @@ class NuGetPackageBuilder {
     buffer.writeln('  </ItemGroup>');
   }
 
+  /// 配置隔离只落在项组上：非本配置的项进不了 PkgRuntimeBinary 集合，部署目标无需再判配置。
   static void _writeRuntimeBinaryItems(StringBuffer buffer, _BuildValueGroup runtimeBinaries) {
     _writeBinaryItemGroup(buffer, runtimeBinaries.all);
+    _writeBinaryItemGroup(
+      buffer,
+      runtimeBinaries.release,
+      condition: _configurationCondition(releaseBuildLabel),
+    );
+    _writeBinaryItemGroup(
+      buffer,
+      runtimeBinaries.debug,
+      condition: _configurationCondition(debugBuildLabel),
+    );
   }
 
-  static void _writeBinaryItemGroup(StringBuffer buffer, List<String> binaries) {
+  static void _writeBinaryItemGroup(StringBuffer buffer, List<String> binaries, {String? condition}) {
     if (binaries.isEmpty) {
       return;
     }
-    buffer.writeln('  <ItemGroup>');
+    final String attribute = condition == null ? '' : ' Condition="$condition"';
+    buffer.writeln('  <ItemGroup$attribute>');
     for (final String binary in binaries) {
       buffer.writeln('    <PkgRuntimeBinary Include="${_escapeXml(binary)}" />');
     }

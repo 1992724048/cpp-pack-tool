@@ -86,24 +86,29 @@ shutil.copy(TMP / "zlib.h", OUT / "zlib.h")
 shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 ```
 
-### .lib / .a 的配置隔离约定
+### 库文件与运行时二进制的配置隔离约定
 
-自动派生的 `.lib` 与 `.a` 适用同一约定：按**包内路径中的 `release` / `debug` 目录名**判定配置。
+`files/library/` 下的一切适用同一约定：按**包内路径中的 `release` / `debug` 目录名**判定配置。既管自动派生的 `.lib` / `.a`（链接期选库），也管 `.dll` / `.pdb`（往消费方输出目录拷运行时产物）。
 
 | 路径 | 生效范围 |
 | --- | --- |
 | `files/library/x64/Release/foo.lib` | 仅 `Configuration=Release` |
 | `files/library/x64/Debug/foo.lib` | 仅 `Configuration=Debug` |
 | `files/library/foo.lib` | 所有配置 |
+| `files/library/x64/Release/foo.dll` | 仅 `Configuration=Release` |
+| `files/library/x64/Debug/foo.pdb` | 仅 `Configuration=Debug` |
+| `files/library/foo.dll` | 所有配置 |
 
 判定细则：
 
 - **大小写不敏感** —— `Release` / `RELEASE` / `release` 等价。
 - **多段命中取最后一个** —— `files/library/release/Debug/foo.lib` 归 `Debug`，越靠近文件名的目录段语义最强。
 
+命中配置段的 `.dll` / `.pdb` 落进带 `Condition` 的项组，部署目标因此只拷当前配置的产物：`Debug` 工程拿不到 `Release` 的 dll，反之亦然。同一个包同时带两套产物时，无需手选。
+
 写进 `.targets` 的附加库条目用的是包内文件名（如 MinGW 的 `libz.dll.a` 原样写入），链接器是否接受取决于工具链。
 
-**目录名即契约**：把 `Release` 目录改名会让该文件退回「所有配置」，链接器可能挑到错误版本且不报错。
+**目录名即契约**：把 `Release` 目录改名会让该文件退回「所有配置」，链接器与输出目录都可能同时拿到错误版本且不报错。
 
 ## 包消费契约
 
@@ -116,7 +121,7 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 | 3 | 消费方项目必须是 **`.vcxproj`**（C++/CLI 亦可）—— 这条只约束 `build/native/<包ID>.targets`                                        | 非 `.vcxproj` 的工程静默丢弃 `.targets`                                   |
 | 4 | `build/<包ID>.props` 走的是两段式布局，**任何目标框架的项目都会导入**                                                             | 不受第 3 条约束：非 `.vcxproj` 工程照样导入 `.props`                      |
 | 5 | 产物不得落 `.` 开头或名为 `build` / `out` 的目录（任意层级）                                                                      | 扫描器静默跳过，不进包、不报错                                            |
-| 6 | 自动派生的（`files/library/` 下的）`.lib` / `.a`，其配置隔离靠路径里的 `release` / `debug` 段（大小写不敏感、多段命中取最后一个） | 目录改名后隔离静默失效，链接器挑到错误版本                                |
+| 6 | `files/library/` 下的 `.lib` / `.a` / `.dll` / `.pdb`，其配置隔离靠路径里的 `release` / `debug` 段（大小写不敏感、多段命中取最后一个） | 目录改名后隔离静默失效，链接器与输出目录拿到错误版本                    |
 
 关于第 1 条：它最反直觉，值得单独说明。`build/native/` 之所以能生效， **纯粹因为 `native` 恰好是 NuGet 为 `.vcxproj` 硬编码的字面目标框架标识 `native@0.0`**。这不是能自然理解的规则，调整包内布局时务必让
 `native` 原样保留。`build/<包ID>.props` 则是两段路径（等价于 `any`），任何目标框架的项目都会导入。
