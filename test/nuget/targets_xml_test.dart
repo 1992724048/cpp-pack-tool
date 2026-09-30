@@ -60,6 +60,19 @@ String _targetsContent(PackagePlan plan, String packName) {
       .content;
 }
 
+Future<String> _targetsOf(PackModel pack) async {
+  return _targetsContent(await const NuGetPackageBuilder().buildPlan(pack), pack.name);
+}
+
+PackModel _packNamed(String name) => _pack(name, <FileModel>[
+  FileModel(name: '$name.dll', path: 'lib/$name.dll', size: 64),
+]);
+
+PackModel _packWithFiles(List<FileModel> files, {required String name}) => _pack(name, files);
+
+String _deployTargetName(String targets) =>
+    RegExp(r'<Target Name="(DeployPkgRuntimeBinaries[^"]*)"').firstMatch(targets)!.group(1)!;
+
 void main() {
   test('三份 .targets 均通过 [xml] 整文档解析（含对抗性包名）', () async {
     final Directory tempDir = Directory.systemTemp.createTempSync(
@@ -120,7 +133,7 @@ void main() {
         reason: '夹具「${fixture.key}」的命令 Exec 应转义 XML 特殊字符',
       );
       if (fixture.hasRuntimeBinaries) {
-        expect(content, contains('<Target Name="DeployPkgRuntimeBinaries"'));
+        expect(content, contains('<Target Name="DeployPkgRuntimeBinaries_demo_'));
       } else {
         expect(content, isNot(contains('DeployPkgRuntimeBinaries')));
       }
@@ -197,4 +210,26 @@ void main() {
       reason: '检查脚本应打印解析错误消息',
     );
   }, skip: _nonWindowsSkip);
+
+  test('两个包的部署目标名不相等', () async {
+    final String first = await _targetsOf(_packNamed('Alpha'));
+    final String second = await _targetsOf(_packNamed('Beta'));
+    final RegExp pattern = RegExp(r'<Target Name="(DeployPkgRuntimeBinaries_[A-Za-z0-9_]+)"');
+    expect(pattern.firstMatch(first)!.group(1), isNot(pattern.firstMatch(second)!.group(1)));
+  });
+
+  test('同包名的两个包因 hash 不同仍不相等', () async {
+    // 用同一 cleanId、不同原始名构造：'A.B' 与 'A-B' → cleanId 同为 A_B
+    final String first = await _targetsOf(_packNamed('A.B'));
+    final String second = await _targetsOf(_packNamed('A-B'));
+    expect(_deployTargetName(first), isNot(_deployTargetName(second)));
+  });
+
+  test('asm 的 ObjectFileName 含包标识', () async {
+    final String targets = await _targetsOf(_packWithFiles(<FileModel>[
+      FileModel(name: 'boot.asm', path: 'src/boot.asm', size: 1),
+    ], name: 'A.B'));
+    expect(targets, contains(r'asm_A_B_'));
+    expect(targets, isNot(contains(r'\$(IntDir)asm_src_boot.asm.obj')));
+  });
 }

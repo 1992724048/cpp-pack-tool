@@ -820,7 +820,7 @@ void main() {
       expect(
         targets,
         contains(
-          r'''<Target Name="DeployPkgRuntimeBinaries" AfterTargets="Build" Condition="'@(PkgRuntimeBinary)' != ''">''',
+          r'''<Target Name="DeployPkgRuntimeBinaries_demo_89e495e7" AfterTargets="Build" Condition="'@(PkgRuntimeBinary)' != ''">''',
         ),
       );
       expect(
@@ -836,7 +836,7 @@ void main() {
         ),
       );
       expect(
-        targets.indexOf('<Target Name="DeployPkgRuntimeBinaries"'),
+        targets.indexOf('<Target Name="DeployPkgRuntimeBinaries_demo_'),
         greaterThan(targets.indexOf('<PkgRuntimeBinary')),
       );
     });
@@ -1000,7 +1000,7 @@ void main() {
       expect(
         targets,
         contains(
-          r'<ObjectFileName>$(IntDir)asm_files_src_x.asm.obj</ObjectFileName>',
+          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_src_x.asm.obj</ObjectFileName>',
         ),
       );
       expect(
@@ -1012,7 +1012,7 @@ void main() {
       expect(
         targets,
         contains(
-          r'<ObjectFileName>$(IntDir)asm_files_asm_vendor_y.asm.obj</ObjectFileName>',
+          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_asm_vendor_y.asm.obj</ObjectFileName>',
         ),
       );
       expect(targets, isNot(contains('z.s')));

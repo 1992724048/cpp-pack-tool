@@ -88,6 +88,14 @@ class NuGetPackageBuilder {
   static String _normalizePath(String path) =>
       path.split(_pathSeparator).where((String segment) => segment.isNotEmpty).join('/');
 
+  static String cleanTargetId(String packName) => packName.replaceAll(_invalidTargetNameChar, '_');
+
+  static String deployTargetName(String packName) =>
+      'DeployPkgRuntimeBinaries_${cleanTargetId(packName)}_${hash8(packName)}';
+
+  static String asmObjectName(String packName, String flattenedPath) =>
+      r'$(IntDir)' 'asm_${cleanTargetId(packName)}_${hash8(packName)}_$flattenedPath.obj';
+
   static String _withoutLeadingSegment(String path, List<String> prefixes) {
     final int separator = path.indexOf('/');
     if (separator <= 0) {
@@ -217,10 +225,10 @@ class NuGetPackageBuilder {
       libraries: libraries.debug,
     );
     _writeCommandGroups(buffer, pack);
-    _writeAsmItems(buffer, asmFiles);
+    _writeAsmItems(buffer, asmFiles, packName: pack.name);
     _writeResourceItems(buffer, resourceFiles);
     _writeRuntimeBinaryItems(buffer, runtimeBinaries);
-    _writeDeployTarget(buffer, runtimeBinaries);
+    _writeDeployTarget(buffer, runtimeBinaries, packName: pack.name);
     _writeLicenseTarget(buffer, pack);
     buffer.writeln('</Project>');
     return buffer.toString();
@@ -339,15 +347,18 @@ class NuGetPackageBuilder {
       ..writeln('  </ImportGroup>');
   }
 
-  static void _writeAsmItems(StringBuffer buffer, List<String> asmFiles) {
+  static void _writeAsmItems(StringBuffer buffer, List<String> asmFiles, {
+    required String packName,
+  }) {
     if (asmFiles.isEmpty) {
       return;
     }
     buffer.writeln('  <ItemGroup>');
     for (final String path in asmFiles) {
-      final String objectName = path.replaceAll(_pathSeparator, '_');
-      buffer..writeln('    <MASM Include="${_escapeXml(_msbuildPath(path))}">')..writeln(
-          '      <ObjectFileName>\$(IntDir)asm_${_escapeXml(objectName)}.obj</ObjectFileName>')
+      final String objectName = asmObjectName(packName, path.replaceAll(_pathSeparator, '_'));
+      buffer
+        ..writeln('    <MASM Include="${_escapeXml(_msbuildPath(path))}">')
+        ..writeln('      <ObjectFileName>${_escapeXml(objectName)}</ObjectFileName>')
         ..writeln('    </MASM>');
     }
     buffer.writeln('  </ItemGroup>');
@@ -386,13 +397,15 @@ class NuGetPackageBuilder {
     buffer.writeln('  </ItemGroup>');
   }
 
-  static void _writeDeployTarget(StringBuffer buffer, _BuildValueGroup runtimeBinaries) {
+  static void _writeDeployTarget(StringBuffer buffer, _BuildValueGroup runtimeBinaries, {
+    required String packName,
+  }) {
     if (runtimeBinaries.isEmpty) {
       return;
     }
     buffer
       ..writeln(
-        '  <Target Name="DeployPkgRuntimeBinaries" AfterTargets="Build" '
+        '  <Target Name="${deployTargetName(packName)}" AfterTargets="Build" '
         "Condition=\"'@(PkgRuntimeBinary)' != ''\">",
       )
       ..writeln(
