@@ -88,23 +88,26 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 
 ### 库文件与运行时二进制的配置隔离约定
 
-`files/library/` 下的一切适用同一约定：按**包内路径中的 `release` / `debug` 目录名**判定配置。既管自动派生的 `.lib` / `.a`（链接期选库），也管 `.dll` / `.pdb`（往消费方输出目录拷运行时产物）。
+`files/library/` 下的一切都按**包内路径中的 `release` / `debug` 目录名**判定配置。既管自动派生的 `.lib` / `.a`（链接期选库），也管 `.dll` / `.pdb`（往消费方输出目录拷运行时产物）。但两侧落进 `.targets` 的条件并不相同：
 
-| 路径 | 生效范围 |
-| --- | --- |
-| `files/library/x64/Release/foo.lib` | 仅 `Configuration=Release` |
-| `files/library/x64/Debug/foo.lib` | 仅 `Configuration=Debug` |
-| `files/library/foo.lib` | 所有配置 |
-| `files/library/x64/Release/foo.dll` | 仅 `Configuration=Release` |
-| `files/library/x64/Debug/foo.pdb` | 仅 `Configuration=Debug` |
-| `files/library/foo.dll` | 所有配置 |
+| 路径 | 生效范围 | 写进 `.targets` 的条件 |
+| --- | --- | --- |
+| `files/library/x64/Release/foo.lib` | 仅 `Configuration=Release` | `'$(Configuration)'=='Release'` |
+| `files/library/x64/Debug/foo.lib` | 仅 `Configuration=Debug` | `'$(Configuration)'=='Debug'` |
+| `files/library/foo.lib` | 所有配置 | 无条件 |
+| `files/library/x64/Release/foo.dll` | 所有**非 `Debug`** 的配置 | `'$(Configuration)'!='Debug'` |
+| `files/library/x64/Debug/foo.pdb` | 仅 `Configuration=Debug` | `'$(Configuration)'=='Debug'` |
+| `files/library/foo.dll` | 所有配置 | 无条件 |
 
 判定细则：
 
-- **大小写不敏感** —— `Release` / `RELEASE` / `release` 等价。
+- **大小写不敏感** —— 路径段的 `Release` / `RELEASE` / `release` 等价；MSBuild 侧 `==` 与 `!=` 同样大小写不敏感，配置名写 `RELEASE` 也命中 release 侧，写 `DEBUG` 也命中 debug 侧。
 - **多段命中取最后一个** —— `files/library/release/Debug/foo.lib` 归 `Debug`，越靠近文件名的目录段语义最强。
+- **`.dll` / `.pdb` 的 release 侧是「非 `Debug`」兜底，不是「等于 `Release`」** —— MSBuild 对未定义的属性静默求值为空串且不报任何错误，若按字面比较，`RelWithDebInfo` / `MinSizeRel` 之类的配置名会两边都不命中，部署目标一个 dll 都拷不出（构建照样通过，只是消费方启动时崩）。所以除 `Debug` 外的**一切**配置名（含自定义的 release 变体）都拿 release 产物；Debug 组则是严格字面 `Debug`，非 Debug 的一切都归 release 侧。
+- **`.lib` / `.a` 仍是严格 `Release`** —— 它们是链接期选库，「只在 `Release` 生效」就是字面语义。于是 `RelWithDebInfo` 工程既拿不到 `Release` 侧的库，也拿不到 `Debug` 侧的，只拿得到无配置段的那些；手选的宏 / 附加库 / 编译命令同理。
+- **只发单侧符号文件时，另一侧就是没有符号** —— 例如 `files/library/x64/Debug/zlibd.pdb` 配 `files/library/x64/Release/zlib.lib` 这种只发 debug 侧 pdb 的包，release 侧消费方的输出目录里不会有 pdb。不会拿 Debug 的 pdb 去凑 —— 那本就是另一个 dll 的符号。
 
-命中配置段的 `.dll` / `.pdb` 落进带 `Condition` 的项组，部署目标因此只拷当前配置的产物：`Debug` 工程拿不到 `Release` 的 dll，反之亦然。同一个包同时带两套产物时，无需手选。
+命中配置段的 `.dll` / `.pdb` 落进带 `Condition` 的项组：项组条件在 MSBuild 求值期就把非本配置的项挡在 `PkgRuntimeBinary` 集合外，部署目标（自身的 `Condition` 在执行期求值，看到的已是过滤后的集合）因此只拷当前配置该拿到的产物。同一个包同时带两套产物时，无需手选。
 
 写进 `.targets` 的附加库条目用的是包内文件名（如 MinGW 的 `libz.dll.a` 原样写入），链接器是否接受取决于工具链。
 
@@ -120,7 +123,7 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 | 2 | 文件名必须**恰好**是 `<包ID>.targets` / `<包ID>.props`                                                                            | 改名后静默不导入                                                          |
 | 3 | 消费方项目必须是 **`.vcxproj`**（C++/CLI 亦可）—— 这条只约束 `build/native/<包ID>.targets`                                        | 非 `.vcxproj` 的工程静默丢弃 `.targets`                                   |
 | 4 | `build/<包ID>.props` 走的是两段式布局，**任何目标框架的项目都会导入**                                                             | 不受第 3 条约束：非 `.vcxproj` 工程照样导入 `.props`                      |
-| 5 | 产物不得落 `.` 开头或名为 `build` / `out` / `__pycache__` 的目录（任意层级）                                                | 扫描器静默跳过，不进包、不报错                                            |
+| 5 | 产物不得落 `.` 开头或名为 `build` / `out` / `__pycache__` 的目录（任意层级）                                                        | 扫描器静默跳过，不进包、不报错                                            |
 | 6 | `files/library/` 下的 `.lib` / `.a` / `.dll` / `.pdb`，其配置隔离靠路径里的 `release` / `debug` 段（大小写不敏感、多段命中取最后一个） | 目录改名后隔离静默失效，链接器与输出目录拿到错误版本                    |
 
 关于第 1 条：它最反直觉，值得单独说明。`build/native/` 之所以能生效， **纯粹因为 `native` 恰好是 NuGet 为 `.vcxproj` 硬编码的字面目标框架标识 `native@0.0`**。这不是能自然理解的规则，调整包内布局时务必让
