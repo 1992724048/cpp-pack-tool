@@ -156,6 +156,26 @@ void main() {
       contains(r'$(MSBuildThisFileDirectory)files\library'),
       reason: r'.targets 应把包内 files\library 目录交给消费者链接器',
     );
+    final RegExpMatch definitionGroup = RegExp(
+      r'<ItemDefinitionGroup(?: Condition="([^"]*)")?>(.*?)</ItemDefinitionGroup>',
+      dotAll: true,
+    ).firstMatch(targets)!;
+    final String? link = RegExp(
+      r'<Link>(.*?)</Link>',
+      dotAll: true,
+    ).firstMatch(definitionGroup.group(2)!)?.group(1);
+    expect(
+      link,
+      contains('demo.lib'),
+      reason: '静态库名必须落在 Link 内：ClCompile 里的附加库没有任何 MSVC 任务会读',
+    );
+    expect(
+      RegExp('<ClCompile>(.*?)</ClCompile>', dotAll: true)
+          .firstMatch(definitionGroup.group(2)!)!
+          .group(1),
+      isNot(contains('AdditionalDependencies')),
+      reason: 'ClCompile 不得残留链接期属性',
+    );
     expect(targets, contains('demo.lib'));
     expect(
       targets,

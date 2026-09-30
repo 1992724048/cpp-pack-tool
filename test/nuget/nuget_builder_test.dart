@@ -871,6 +871,83 @@ void main() {
       );
     });
 
+    test('附加库目录与附加库写在 Link 元素内而非 ClCompile', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[const MacroModel(value: 'ALL=1')]
+        ..libDirectories = <LibDirModel>[
+          const LibDirModel(path: r'third_party\lib'),
+        ]
+        ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      final Map<String, String> groups = _itemDefinitionGroups(targets);
+      final String? compile = _definitionElement(groups[''] ?? '', 'ClCompile');
+      expect(compile, isNotNull, reason: '无条件定义组应含 ClCompile 元素');
+      expect(
+        compile,
+        contains('<PreprocessorDefinitions>ALL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>'),
+        reason: '宏是编译期输入，留在 ClCompile',
+      );
+      expect(
+        compile,
+        isNot(contains('AdditionalLibraryDirectories')),
+        reason: 'ClCompile 里的库目录没有任何 MSVC 任务会读，link.exe 拿不到 /LIBPATH',
+      );
+      expect(
+        compile,
+        isNot(contains('AdditionalDependencies')),
+        reason: 'ClCompile 里的附加库不进 link.exe 命令行，消费方必然 LNK2019',
+      );
+      final String? link = _definitionElement(groups[''] ?? '', 'Link');
+      expect(link, isNotNull, reason: '链接期属性需要独立的 Link 元素承载');
+      expect(
+        link,
+        contains(
+          r'<AdditionalLibraryDirectories>third_party\lib;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        link,
+        contains('<AdditionalDependencies>mylib.lib;%(AdditionalDependencies)</AdditionalDependencies>'),
+      );
+      expect(groups[''], contains('</ClCompile>'), reason: 'Link 与 ClCompile 是兄弟元素，不是嵌套');
+    });
+
+    test('条件定义组内的链接期属性同样写在 Link 元素内', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
+          FileModel(name: 'bar.lib', path: 'lib/x64/Debug/bar.lib', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      for (final String configuration in <String>['Release', 'Debug']) {
+        final String condition = r"'$(Configuration)'=='" "$configuration'";
+        final String? group = _itemDefinitionGroups(targets)[condition];
+        expect(group, isNotNull, reason: '$configuration 应切出条件定义组');
+        expect(
+          _definitionElement(group!, 'Link'),
+          isNotNull,
+          reason: '$configuration 的库目录与附加库要落在 Link 内',
+        );
+        expect(
+          _definitionElement(group, 'ClCompile'),
+          isNot(contains('AdditionalDependencies')),
+          reason: '$configuration 的 ClCompile 不得再携带链接期属性',
+        );
+      }
+    });
+
+    test('无库目录与附加库时不发射空 Link 元素', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('<Link>')), reason: '空 Link 元素会覆盖 link.exe 的默认项定义');
+      expect(targets, contains('</ClCompile>'), reason: '无链接期属性时 ClCompile 仍须闭合');
+    });
+
     test('编译前/后命令生成自定义目标与逐命令 Exec 并转义 XML 特殊字符', () async {
       final PackModel pack = _pack()
         ..commands = <CmdModel>[
@@ -1725,6 +1802,26 @@ Map<String, List<String>> _runtimeBinariesByCondition(String targets) {
     groups.putIfAbsent(group.group(1) ?? '', () => <String>[]).addAll(includes);
   }
   return groups;
+}
+
+/// 按所在 ItemDefinitionGroup 的 Condition 归拢组体，无条件组键为空串。
+/// 属性归属只能靠所在元素判定，故不以纯文本 contains 断言落在哪个元素里。
+Map<String, String> _itemDefinitionGroups(String targets) {
+  final Map<String, String> groups = <String, String>{};
+  for (final RegExpMatch group in RegExp(
+    r'<ItemDefinitionGroup(?: Condition="([^"]*)")?>(.*?)</ItemDefinitionGroup>',
+    dotAll: true,
+  ).allMatches(targets)) {
+    final String condition = group.group(1) ?? '';
+    final String body = group.group(2)!;
+    groups.update(condition, (String existing) => '$existing$body', ifAbsent: () => body);
+  }
+  return groups;
+}
+
+/// 切出定义组内某个子元素（ClCompile / Link）的体；元素缺位返回 null。
+String? _definitionElement(String groupBody, String element) {
+  return RegExp('<$element>(.*?)</$element>', dotAll: true).firstMatch(groupBody)?.group(1);
 }
 
 /// 复现 MSBuild 对 Configuration 条件求值后的可见集合：项组条件在求值期已把项挡在

@@ -111,6 +111,8 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 
 写进 `.targets` 的附加库条目用的是包内文件名（如 MinGW 的 `libz.dll.a` 原样写入），链接器是否接受取决于工具链。
 
+`AdditionalLibraryDirectories` 与 `AdditionalDependencies` 写在 `<ItemDefinitionGroup>` 内的 **`<Link>`** 元素，`AdditionalIncludeDirectories` 与 `PreprocessorDefinitions` 写在 **`<ClCompile>`**。这不是风格选择：`link.exe` 只读 `%(Link.*)`，放在 `ClCompile` 下的链接期属性没有任何 MSVC 任务会读，消费方链接器既拿不到包内库目录的 `/LIBPATH`，也拿不到库名，MSBuild 零报错、构建照样「成功」，直到符号解析失败才暴露。
+
 **目录名即契约**：把 `Release` 目录改名会让该文件退回「所有配置」，链接器与输出目录都可能同时拿到错误版本且不报错。
 
 ## 包消费契约

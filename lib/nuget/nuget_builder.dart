@@ -583,11 +583,16 @@ class NuGetPackageBuilder {
       ..writeln('    <ClCompile>');
     _writeProperty(buffer, 'AdditionalIncludeDirectories', includeRoots);
     _writeProperty(buffer, 'PreprocessorDefinitions', macros);
-    _writeProperty(buffer, 'AdditionalLibraryDirectories', libDirectories);
-    _writeProperty(buffer, 'AdditionalDependencies', libraries);
-    buffer
-      ..writeln('    </ClCompile>')
-      ..writeln('  </ItemDefinitionGroup>');
+    buffer.writeln('    </ClCompile>');
+    if (libDirectories.isNotEmpty || libraries.isNotEmpty) {
+      // link.exe 只读 %(Link.*)，写在 ClCompile 下静默失效：消费方链接器既拿不到包内
+      // 库目录的 /LIBPATH，也拿不到库名，表现为构建成功而运行期或链接期符号解析失败。
+      buffer.writeln('    <Link>');
+      _writeProperty(buffer, 'AdditionalLibraryDirectories', libDirectories);
+      _writeProperty(buffer, 'AdditionalDependencies', libraries);
+      buffer.writeln('    </Link>');
+    }
+    buffer.writeln('  </ItemDefinitionGroup>');
   }
 
   static void _writeProperty(StringBuffer buffer, String name, List<String> values) {
