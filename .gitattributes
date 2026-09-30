@@ -1,0 +1,12 @@
+# 行尾策略由本文件声明，不依赖各人本地的 core.autocrlf 设置。
+# 效果：仓库内一律存 LF；检出到工作区时按平台原生行尾（Windows = CRLF）。
+* text=auto
+
+# 供 cmd.exe / MSBuild 消费者侧执行的脚本保持 CRLF —— 这类文件按字节解析，
+# 混入 LF 可能触发批处理解析异常。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell 与 VBScript 同样按行解析，一并保持 CRLF。
+*.ps1 text eol=crlf
+*.vbs text eol=crlf
