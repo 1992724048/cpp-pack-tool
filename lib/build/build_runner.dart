@@ -14,6 +14,8 @@ typedef PackProcessRunner = Future<ProcessResult> Function(
   Map<String, String>? environment,
 });
 
+/// 构建配方。成功构建后回调 `onVersion`：值是配方最后一条 `CNP_VERSION=`
+/// 声明（去首尾空白），空串表示声明了却没给值，null（不回调）表示没声明。
 typedef PackBuildRunner = Future<void> Function(
   PackModel pack, {
   Map<String, String>? environment,
@@ -43,7 +45,8 @@ const int _outputTailLineCount = 20;
 /// 配方声明包版本的协议前缀，必须位于行首。
 const String _versionDeclarationPrefix = 'CNP_VERSION=';
 
-/// 输出行里最后一条版本声明的值（去首尾空白）；未声明时为 null。
+/// 输出行里最后一条版本声明的值（去首尾空白）；未声明时为 null。空串表示
+/// 配方声明了版本却没给值，与「没声明」是两种语义，不可混同。
 String? _declaredRecipeVersion(Iterable<String> lines) {
   String? declared;
   for (final String line in lines) {
@@ -53,10 +56,6 @@ String? _declaredRecipeVersion(Iterable<String> lines) {
   }
   return declared;
 }
-
-/// 配方是否声明了版本却没给内容（只打了 `CNP_VERSION=`）。构建面板据此把
-/// 「忽略空版本」显式告知用户，而不是让它与「配方没声明版本」同样静默。
-bool declaresEmptyRecipeVersion(List<String> lines) => _declaredRecipeVersion(lines) == '';
 
 String _resolveSourcePath(PackModel pack) {
   final String? sourcePath = pack.sourcePath;
@@ -109,12 +108,15 @@ Future<void> runPackBuild(
   _reportRecipeVersion(result, onVersion);
 }
 
+/// 版本协议只在本文件解析，是唯一解析者：空声明也照样回调空串，由调用方决定
+/// 显式告知用户「忽略了空版本」，而不是与「没声明」同样静默。调用方的输出
+/// 缓冲不作数——非流式路径根本没有它，它本身又会被行数上限裁剪。
 void _reportRecipeVersion(ProcessResult result, void Function(String version)? onVersion) {
   if (onVersion == null) {
     return;
   }
   final String? declared = _declaredRecipeVersion(_outputLines(result));
-  if (declared == null || declared.isEmpty) {
+  if (declared == null) {
     return;
   }
   onVersion(declared);

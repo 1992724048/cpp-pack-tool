@@ -92,6 +92,7 @@ void main() {
       expect(content, contains('CNP_TMP_DIR'));
       expect(content, contains('CNP_TOOLS_DIR'));
       expect(content, contains('CNP_COMPILER'));
+      expect(content, contains('CNP_VERSION='), reason: '模板须演示版本号回传协议，否则新用户无从发现');
       expect(content, contains('build'));
       expect(content, contains('out'));
     });

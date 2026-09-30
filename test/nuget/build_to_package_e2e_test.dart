@@ -40,6 +40,7 @@ for name, folder in (('demo.h', 'include'), ('demo.lib', 'lib'),
     shutil.copyfile(os.path.join(src, name), os.path.join(root, folder, name))
 print('CNP_PACKAGE_ROOT=' + root)
 print('CNP_SRC_DIR=' + src)
+print('CNP_VERSION=1.1.0')
 ''';
 
 /// 配方种子：`CNP_SRC_DIR` 下由软件放好的「源码」，构建前的既有状态。
@@ -80,7 +81,15 @@ void main() {
     );
 
     // 1) 真实构建：真实 python 子进程、真实工作目录、真实 CNP_* 注入。
-    await runPackBuildStreaming(pack, environment: env.environment);
+    final List<String> versions = <String>[];
+    await runPackBuildStreaming(pack, environment: env.environment, onVersion: versions.add);
+
+    expect(
+      versions,
+      <String>['1.1.0'],
+      reason: '真实子进程打印的 CNP_VERSION 应被解析：Windows 上 print 产 \\r\\n、'
+          'stdout 与 stderr 交错，只有真进程能暴露这类行解析差异',
+    );
 
     expect(
       File(joinPath(packageRoot, 'include/demo.h')).existsSync(),

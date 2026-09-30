@@ -743,7 +743,7 @@ void main() {
       expect(versions, <String>['1.2.0'], reason: '后声明的版本覆盖先声明的，且只回调一次');
     });
 
-    test('声明了版本但值为空时不回调', () async {
+    test('声明了版本但值为空时上报空串', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(root, _echoBuilder());
       final List<String> versions = <String>[];
@@ -757,7 +757,7 @@ void main() {
         onVersion: versions.add,
       );
 
-      expect(versions, isEmpty, reason: '空版本会让包配置加载失败，必须挡在回调之前');
+      expect(versions, <String>[''], reason: '空声明也走同一条通道，是否忽略由调用方决定');
     });
 
     test('最后一次声明为空值时先前的非空声明也不采纳', () async {
@@ -775,7 +775,25 @@ void main() {
         onVersion: versions.add,
       );
 
-      expect(versions, isEmpty, reason: '最后一次声明说了算，与多次声明的取值口径一致');
+      expect(versions, <String>[''], reason: '最后一次声明说了算，与多次声明的取值口径一致');
+    });
+
+    test('空声明之后再声明非空值时按最后一次取值', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, _echoBuilder());
+      final List<String> versions = <String>[];
+
+      await runPackBuildStreaming(
+        _pack(sourcePath: sourcePath),
+        processRunner: _runner(<_ProcessCall>[], (_) async => _success()),
+        streamRunner: _streamingRunner(
+          (_StreamCall call) async =>
+              _fakeProcess(stdout: 'CNP_VERSION=\nCNP_VERSION=1.1.0\n'),
+        ),
+        onVersion: versions.add,
+      );
+
+      expect(versions, <String>['1.1.0'], reason: '被后面的非空声明覆盖，不再是空声明');
     });
 
     test('无 CNP_VERSION 行时不回调', () async {
@@ -867,6 +885,23 @@ void main() {
       expect(versions, <String>['1.1.0'], reason: '非流式降级路径不产生 onOutput，但仍要上报版本');
     });
 
+    test('未注入流式执行器时空声明同样上报空串', () async {
+      final Directory root = _tempDirectory();
+      final String sourcePath = _createSource(root, _echoBuilder());
+      final List<String> versions = <String>[];
+
+      await runPackBuild(
+        _pack(sourcePath: sourcePath),
+        processRunner: _runner(
+          <_ProcessCall>[],
+          (_) async => ProcessResult(1, 0, 'done\nCNP_VERSION=\n', ''),
+        ),
+        onVersion: versions.add,
+      );
+
+      expect(versions, <String>[''], reason: '非流式路径没有 onOutput，通道必须自成闭环');
+    });
+
     test('构建非零退出时不回调版本', () async {
       final Directory root = _tempDirectory();
       final String sourcePath = _createSource(root, _echoBuilder());
@@ -888,20 +923,6 @@ void main() {
       );
 
       expect(versions, isEmpty, reason: '失败构建不得让版本通道被触发');
-    });
-
-    test('空声明判定只看最后一次声明', () {
-      expect(declaresEmptyRecipeVersion(<String>['CNP_VERSION=']), isTrue);
-      expect(declaresEmptyRecipeVersion(<String>['CNP_VERSION=  ']), isTrue);
-      expect(
-        declaresEmptyRecipeVersion(<String>['CNP_VERSION=', 'CNP_VERSION=1.1.0']),
-        isFalse,
-      );
-      expect(
-        declaresEmptyRecipeVersion(<String>['CNP_VERSION=1.1.0', 'CNP_VERSION=']),
-        isTrue,
-      );
-      expect(declaresEmptyRecipeVersion(<String>['build ok']), isFalse);
     });
   });
 

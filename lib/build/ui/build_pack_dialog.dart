@@ -59,7 +59,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   /// 失败会话的历史条目：首次失败构造一次，成功完成时丢弃。
   HistoryModel? _failureEntry;
-  /// 配方经版本通道声明的版本（trim 后的原始串），构建成功后才落到包配置。
+  /// 配方经版本通道声明的版本（trim 后的原始串，空串表示声明了却没给值），
+  /// 构建成功后才落到包配置。null 表示配方没声明版本。
   String? _declaredVersion;
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
@@ -202,14 +203,16 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     _declaredVersion = version;
   }
 
-  /// 配方声明的版本与现值相同则原样返回（不必打扰用户），空声明由面板显式
-  /// 警告忽略——静默保持旧版本会让配方的本意无从查证。
+  /// 只认版本通道的回调，不从输出缓冲二次解析：非流式路径不产生输出行，
+  /// 输出缓冲又会被 2000 行上限裁剪，两条路都会让声明凭空消失。
+  /// 与现值相同则原样返回（不必打扰用户），空声明显式警告忽略。
   PackModel _withDeclaredVersion(PackModel remapped) {
     final String? declared = _declaredVersion;
     if (declared == null) {
-      if (declaresEmptyRecipeVersion(_outputLines)) {
-        _onBuildOutput('配方声明了版本号但值为空，已忽略（保持 ${remapped.version}）');
-      }
+      return remapped;
+    }
+    if (declared.isEmpty) {
+      _onBuildOutput('配方声明了版本号但值为空，已忽略（保持 ${remapped.version}）');
       return remapped;
     }
     if (declared == remapped.version) {
