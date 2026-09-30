@@ -446,7 +446,7 @@ void main() {
       );
     });
 
-    test(r'全部模型都是所有配置时 .targets 不含任何 $(Configuration)', () async {
+    test(r'手选模型全为所有配置、库文件只有 dll 与 pdb 时 .targets 不含任何 $(Configuration)', () async {
       final PackModel pack = _pack()
         ..macros = <MacroModel>[const MacroModel(value: 'ALL=1')]
         ..libDirectories = <LibDirModel>[
@@ -457,8 +457,6 @@ void main() {
           const CmdModel(command: 'echo one', type: CmdType.preBuild),
         ]
         ..files = <FileModel>[
-          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
-          FileModel(name: 'bar.lib', path: 'lib/x64/Debug/bar.lib', size: 10),
           FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
           FileModel(name: 'foo.pdb', path: 'bin/x64/Debug/foo.pdb', size: 10),
         ];
@@ -501,7 +499,7 @@ void main() {
       );
     });
 
-    test('路径里的 release 段不切出条件组而手选命令仍带配置后缀', () async {
+    test('路径里的 release 段切出条件组而手选命令仍带配置后缀', () async {
       final PackModel pack = _pack()
         ..commands = <CmdModel>[
           const CmdModel(
@@ -519,9 +517,10 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
-        reason: '路径里的 release 段原样保留，仍派生 files/library 下的库目录',
+        reason: '路径里的 release 段原样保留为库目录名',
       );
       expect(
         targets,
@@ -530,15 +529,57 @@ void main() {
         ),
         reason: '文件本身照旧按扩展名分类',
       );
+      final int releaseGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+      );
+      expect(releaseGroupIndex, greaterThan(-1), reason: 'release 段切出条件定义组');
       expect(
-        '<ItemDefinitionGroup Condition'.allMatches(targets).length,
-        0,
-        reason: '路径里的 release 段不再切出条件定义组',
+        targets.substring(releaseGroupIndex),
+        contains(r'files\library\release'),
+        reason: '派生库目录落在 Release 条件定义组内',
+      );
+      expect(
+        targets.substring(0, releaseGroupIndex),
+        isNot(contains('lib.lib')),
+        reason: '派生附加库不落进无条件定义组',
       );
       expect(
         targets,
         contains('<Target Name="CnpPreBuild_demo_89e495e7_Release" '),
         reason: '手选 Release 的命令仍生成带配置后缀的条件目标',
+      );
+    });
+
+    test('release / debug 路径段决定 lib 的配置', () {
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/x64/Release/foo.lib'),
+        BuildModel.release,
+      );
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/x64/Debug/foo.lib'),
+        BuildModel.debug,
+      );
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/foo.lib'),
+        BuildModel.all,
+      );
+    });
+
+    test('多段命中取最后一个', () {
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/release/Debug/foo.lib'),
+        BuildModel.debug,
+      );
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/Debug/release/foo.lib'),
+        BuildModel.release,
+      );
+    });
+
+    test('大小写不敏感', () {
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/x64/RELEASE/foo.lib'),
+        BuildModel.release,
       );
     });
 
@@ -605,12 +646,21 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>third_party\lib;$(MSBuildThisFileDirectory)files\library\x64\Release;$(MSBuildThisFileDirectory)files\library;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>third_party\lib;'
+          r'$(MSBuildThisFileDirectory)files\library;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
-        reason: '用户条目在前、派生目录按文件顺序并入同一条',
+        reason: '用户条目在前、无配置段的派生目录并入同一条',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\x64\Release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: '带 release 段的派生目录随配置单独落桶',
       );
       expect(r'third_party\lib'.allMatches(targets).length, 1);
-      expect(targets, isNot(contains(r"'$(Configuration)'")), reason: '不再按路径推断出条件组');
     });
 
     test('库文件自动加入库目录与附加库并去重', () async {
@@ -627,14 +677,42 @@ void main() {
       expect(
         targets,
         contains(
-          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\x64\Release;$(MSBuildThisFileDirectory)files\library\Debug;$(MSBuildThisFileDirectory)files\library;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
         ),
-        reason: '路径里的 Release/Debug 段只作为目录名保留，不影响分组',
+        reason: r'无配置段的 baz.lib 只贡献 files\library 根',
       );
       expect(
         targets,
         contains(
-          r'<AdditionalDependencies>foo.lib;bar.lib;baz.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\x64\Release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: 'Release 桶内两个同名文件去重后只留一条目录',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\Debug;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>baz.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>bar.lib;%(AdditionalDependencies)</AdditionalDependencies>',
         ),
       );
       expect(
@@ -646,7 +724,26 @@ void main() {
       expect(r'FOO.LIB'.allMatches(targets).length, 0);
     });
 
-    test('仅含 .a 的包不派生附加库目录与附加库且不生成运行时二进制部署', () async {
+    test('同名 lib 分处 Release 与 Debug 时两条都发射且各带条件', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 4),
+          FileModel(name: 'foo.lib', path: 'lib/x64/Debug/foo.lib', size: 4),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      final RegExp release = RegExp(
+        r"""Condition="'\$\(Configuration\)'=='Release'">\s*<ClCompile>[\s\S]*?<AdditionalDependencies>([^<]*)</AdditionalDependencies>""",
+      );
+      final RegExp debug = RegExp(
+        r"""Condition="'\$\(Configuration\)'=='Debug'">\s*<ClCompile>[\s\S]*?<AdditionalDependencies>([^<]*)</AdditionalDependencies>""",
+      );
+      expect(release.firstMatch(targets)!.group(1), contains('foo.lib'));
+      expect(debug.firstMatch(targets)!.group(1), contains('foo.lib'));
+    });
+
+    test('.a 与 .lib 同规则按路径段隔离且不生成运行时二进制部署', () async {
       final PackModel pack = _pack()
         ..files = <FileModel>[
           FileModel(name: 'rel.a', path: 'lib/release/rel.a', size: 10),
@@ -671,12 +768,40 @@ void main() {
           r'$(MSBuildThisFileDirectory)files\source;',
         ),
       );
-      expect(targets, isNot(contains('<AdditionalLibraryDirectories>')));
-      expect(targets, isNot(contains('<AdditionalDependencies>')));
-      expect(targets, isNot(contains(r'files\library\release')));
-      expect(targets, isNot(contains(r'files\library\debug')));
-      expect(targets, isNot(contains('rel.a')));
-      expect(targets, isNot(contains('libz.dll.a')));
+      expect(
+        targets,
+        contains(
+          r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+        ),
+        reason: 'release 段的 .a 与 .lib 同规则切出条件定义组',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\debug;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>rel.a;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>libz.dll.a;'
+          '%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
       expect(targets, isNot(contains('<PkgRuntimeBinary')));
       expect(targets, isNot(contains('DeployPkgRuntimeBinaries')));
     });
@@ -860,6 +985,31 @@ void main() {
       expect(
         targets.indexOf('<Target Name="DeployPkgRuntimeBinaries_demo_'),
         greaterThan(targets.indexOf('<PkgRuntimeBinary')),
+      );
+    });
+
+    test('dll 与 pdb 不做配置隔离', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 4),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\Debug\bar.dll" />',
+        ),
+      );
+      expect(
+        targets,
+        isNot(contains('AdditionalDependencies>%(AdditionalDependencies)')),
+      );
+      expect(
+        targets,
+        isNot(contains('<ItemDefinitionGroup Condition')),
+        reason: '运行时二进制的路径段不参与配置推断',
       );
     });
 

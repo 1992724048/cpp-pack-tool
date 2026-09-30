@@ -72,6 +72,18 @@ shutil.copy(TMP / "zlib.h", OUT / "zlib.h")
 shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 ```
 
+### .lib 的配置隔离约定
+
+自动派生的 `.lib` / `.a` 按**包内路径中的 `release` / `debug` 目录名**判定配置：
+
+| 路径 | 生效范围 |
+| --- | --- |
+| `files/library/x64/Release/foo.lib` | 仅 `Configuration=Release` |
+| `files/library/x64/Debug/foo.lib` | 仅 `Configuration=Debug` |
+| `files/library/foo.lib` | 所有配置 |
+
+**目录名即契约**：把 `Release` 目录改名会让该 `.lib` 退回「所有配置」，链接器可能挑到错误版本且不报错。
+
 ## 交流群
 
 - QQ: 112986834

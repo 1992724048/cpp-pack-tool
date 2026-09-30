@@ -228,13 +228,29 @@ class NuGetPackageBuilder {
 
   static void _addDerivedLibEntries(_BuildValueGroup libDirectories, _BuildValueGroup libraries, String packagePath) {
     final String lower = packagePath.toLowerCase();
-    if (!lower.endsWith('.lib') || !lower.startsWith('$_filesPrefix/$_librarySubdirectory/')) {
+    final bool isStaticLibrary = lower.endsWith('.lib') || lower.endsWith('.a');
+    if (!isStaticLibrary || !lower.startsWith('$_filesPrefix/$_librarySubdirectory/')) {
       return;
     }
     final String relative = stripBuildNative(packagePath)!;
     final String relativeDirectory = relative.substring(0, relative.lastIndexOf('/'));
-    libDirectories.add(_msbuildPath(relativeDirectory), BuildModel.all, dedupe: true);
-    libraries.add(baseName(packagePath), BuildModel.all, dedupe: true);
+    final BuildModel buildModel = libraryBuildModelOf(relative);
+    libDirectories.add(_msbuildPath(relativeDirectory), buildModel, dedupe: true);
+    libraries.add(baseName(packagePath), buildModel, dedupe: true);
+  }
+
+  /// 按包内路径中的 release / debug 段推断静态库配置。多段命中取最后一个 ——
+  /// 越靠近文件的那段语义最强。
+  static BuildModel libraryBuildModelOf(String packageRelativePath) {
+    BuildModel inferred = BuildModel.all;
+    for (final String segment in packageRelativePath.toLowerCase().split('/')) {
+      if (segment == 'release') {
+        inferred = BuildModel.release;
+      } else if (segment == 'debug') {
+        inferred = BuildModel.debug;
+      }
+    }
+    return inferred;
   }
 
   static String _msbuildPath(String relativePath) =>
