@@ -59,6 +59,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
 
   /// 失败会话的历史条目：首次失败构造一次，成功完成时丢弃。
   HistoryModel? _failureEntry;
+  /// 配方经版本通道声明的版本（trim 后的原始串），构建成功后才落到包配置。
+  String? _declaredVersion;
   _BuildStage _stage = _BuildStage.preparing;
   Object? _error;
   final List<String> _outputLines = <String>[];
@@ -118,7 +120,12 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
     setState(() => _advanceTo(_BuildStage.building));
     try {
-      await widget.build(widget.pack, environment: environment.environment, onOutput: _onBuildOutput);
+      await widget.build(
+        widget.pack,
+        environment: environment.environment,
+        onOutput: _onBuildOutput,
+        onVersion: _onDeclaredVersion,
+      );
     } catch (error) {
       _showFailure(error, outputTail: _tailOf(error));
       return;
@@ -153,7 +160,8 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     }
 
     final PackFilesDiff diff = comparePackFiles(widget.pack.files, files);
-    final PackModel updated = copyPackWithFiles(widget.pack, files);
+    final PackModel remapped = copyPackWithFiles(widget.pack, files);
+    final PackModel updated = _withDeclaredVersion(remapped);
     final String elapsedText = formatDuration(_sessionWatch.elapsed);
     updated.history = appendHistoryEntry(
       updated.history,
@@ -188,6 +196,27 @@ class _BuildPackDialogState extends State<BuildPackDialog> {
     } catch (error) {
       _onBuildOutput('头文件引用检查失败：${formatError(error)}');
     }
+  }
+
+  void _onDeclaredVersion(String version) {
+    _declaredVersion = version;
+  }
+
+  /// 配方声明的版本与现值相同则原样返回（不必打扰用户），空声明由面板显式
+  /// 警告忽略——静默保持旧版本会让配方的本意无从查证。
+  PackModel _withDeclaredVersion(PackModel remapped) {
+    final String? declared = _declaredVersion;
+    if (declared == null) {
+      if (declaresEmptyRecipeVersion(_outputLines)) {
+        _onBuildOutput('配方声明了版本号但值为空，已忽略（保持 ${remapped.version}）');
+      }
+      return remapped;
+    }
+    if (declared == remapped.version) {
+      return remapped;
+    }
+    _onBuildOutput('版本已更新：${remapped.version} → $declared');
+    return remapped.copyWith(version: declared);
   }
 
   void _onBuildOutput(String line) {

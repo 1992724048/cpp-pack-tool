@@ -18,6 +18,7 @@ typedef PackBuildRunner = Future<void> Function(
   PackModel pack, {
   Map<String, String>? environment,
   void Function(String line)? onOutput,
+  void Function(String version)? onVersion,
 });
 
 typedef PackStreamingProcessRunner = Future<Process> Function(
@@ -38,6 +39,24 @@ class PackBuildException implements Exception {
 }
 
 const int _outputTailLineCount = 20;
+
+/// 配方声明包版本的协议前缀，必须位于行首。
+const String _versionDeclarationPrefix = 'CNP_VERSION=';
+
+/// 输出行里最后一条版本声明的值（去首尾空白）；未声明时为 null。
+String? _declaredRecipeVersion(Iterable<String> lines) {
+  String? declared;
+  for (final String line in lines) {
+    if (line.startsWith(_versionDeclarationPrefix)) {
+      declared = line.substring(_versionDeclarationPrefix.length).trim();
+    }
+  }
+  return declared;
+}
+
+/// 配方是否声明了版本却没给内容（只打了 `CNP_VERSION=`）。构建面板据此把
+/// 「忽略空版本」显式告知用户，而不是让它与「配方没声明版本」同样静默。
+bool declaresEmptyRecipeVersion(List<String> lines) => _declaredRecipeVersion(lines) == '';
 
 String _resolveSourcePath(PackModel pack) {
   final String? sourcePath = pack.sourcePath;
@@ -63,6 +82,7 @@ Future<void> runPackBuild(
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner? streamRunner,
   void Function(String line)? onOutput,
+  void Function(String version)? onVersion,
   Map<String, String>? environment,
 }) async {
   final String sourcePath = _resolveSourcePath(pack);
@@ -84,6 +104,20 @@ Future<void> runPackBuild(
   if (result.exitCode != 0) {
     throw PackBuildException('构建失败（退出码 ${result.exitCode}）', outputTail: _outputTail(result));
   }
+  // 置于退出码检查之后：失败构建的输出来自半途中断的配方，它声明的版本没有
+  // 构建结果作背书，让版本通道保持「成功构建才可能触发」这条不变量。
+  _reportRecipeVersion(result, onVersion);
+}
+
+void _reportRecipeVersion(ProcessResult result, void Function(String version)? onVersion) {
+  if (onVersion == null) {
+    return;
+  }
+  final String? declared = _declaredRecipeVersion(_outputLines(result));
+  if (declared == null || declared.isEmpty) {
+    return;
+  }
+  onVersion(declared);
 }
 
 Future<void> runPackBuildStreaming(
@@ -91,6 +125,7 @@ Future<void> runPackBuildStreaming(
   PackProcessRunner processRunner = Process.run,
   PackStreamingProcessRunner streamRunner = Process.start,
   void Function(String line)? onOutput,
+  void Function(String version)? onVersion,
   Map<String, String>? environment,
 }) {
   return runPackBuild(
@@ -98,6 +133,7 @@ Future<void> runPackBuildStreaming(
     processRunner: processRunner,
     streamRunner: streamRunner,
     onOutput: onOutput,
+    onVersion: onVersion,
     environment: environment,
   );
 }
@@ -242,8 +278,10 @@ Future<void> _collectProcessLines(
 /// 还原单流末尾换行的原始文本形态（与 `ProcessResult.stdout` 语义一致）。
 String _withTrailingNewline(List<String> lines) => lines.isEmpty ? '' : '${lines.join('\n')}\n';
 
+List<String> _outputLines(ProcessResult result) => '${result.stdout}\n${result.stderr}'.split(RegExp(r'\r\n|\r|\n'));
+
 String? _outputTail(ProcessResult result) {
-  final List<String> lines = '${result.stdout}\n${result.stderr}'.split(RegExp(r'\r\n|\r|\n'));
+  final List<String> lines = _outputLines(result);
   while (lines.isNotEmpty && lines.last.trim().isEmpty) {
     lines.removeLast();
   }

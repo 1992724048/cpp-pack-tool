@@ -380,6 +380,16 @@ class _MainLayoutState extends State<MainLayout> {
   Future<void> _applyRemap(PackModel pack) async {
     final PackModel? previous = _findPack(pack.name);
     if (previous != null) {
+      if (previous.version != pack.version) {
+        pack.history = appendHistoryEntry(
+          pack.history,
+          HistoryModel(
+            time: widget.now(),
+            type: HistoryType.versionChanged,
+            message: '版本变更：${previous.version} → ${pack.version}',
+          ),
+        );
+      }
       final Set<String> oldPaths = <String>{for (final FileModel file in previous.files) file.path.toLowerCase()};
       final Set<String> newPaths = <String>{for (final FileModel file in pack.files) file.path.toLowerCase()};
       final int added = newPaths.difference(oldPaths).length;

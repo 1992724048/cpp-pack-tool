@@ -187,6 +187,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
     );
 
@@ -862,6 +863,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             builtPack = pack;
             receivedEnvironment = environment;
@@ -948,6 +950,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {
         await buildGate.future;
       },
@@ -1054,6 +1057,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
       fixIncludes: (String sourcePath, {required String packageName}) async {
         received = (sourcePath, packageName);
@@ -1088,6 +1092,104 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const Key('headerIncludeIssuesDialog')), findsNothing);
+  });
+
+  testWidgets('构建返回新版本时落盘为新版本并追加版本变更历史条目', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo', files: _buildPyFiles()),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 11, 14, 30, 5),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => _buildPyFiles(),
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+      }) async => _buildEnvironment(),
+      buildPack: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {
+        onVersion?.call('1.1.0');
+      },
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.version, '1.1.0');
+    final List<HistoryModel> versionEntries = store.packs.single.history
+        .where((HistoryModel entry) => entry.type == HistoryType.versionChanged)
+        .toList();
+    expect(versionEntries, hasLength(1));
+    expect(versionEntries.single.message, '版本变更：1.0.0 → 1.1.0');
+    expect(versionEntries.single.time, DateTime(2026, 9, 11, 14, 30, 5));
+    expect(
+      store.packs.single.history.map((HistoryModel entry) => entry.type),
+      <HistoryType>[HistoryType.built, HistoryType.versionChanged],
+      reason: '按追加顺序：对话框先记构建成功，落盘时再记版本变更',
+    );
+  });
+
+  testWidgets('构建未返回版本时版本与版本历史都不变', (tester) async {
+    final _FakePackStore store = _FakePackStore(
+      packs: <PackModel>[
+        _pack('demo', '1.0.0', sourcePath: r'C:\libs\demo', files: _buildPyFiles()),
+      ],
+    );
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      now: () => DateTime(2026, 9, 11, 14, 30, 5),
+      pickDirectory: () async => null,
+      scanFiles: (_) async => _buildPyFiles(),
+      prepareBuildEnv: (
+        PackModel pack, {
+        required List<String> compilerPriority,
+        required List<DetectedCompiler> cachedCompilers,
+        required CompilerDetectionCallback onCompilersDetected,
+      }) async => _buildEnvironment(),
+      buildPack: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {},
+    );
+
+    await tester.tap(find.text('文件管理'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildPackButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('buildCloseButton')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(store.packs.single.version, '1.0.0');
+    expect(
+      store.packs.single.history.map((HistoryModel entry) => entry.type),
+      <HistoryType>[HistoryType.built],
+      reason: '配方没声明版本时不得凭空追加版本变更条目',
+    );
   });
 
   testWidgets('打包前自动修复失效引用并刷新被改写文件的大小快照', (tester) async {
@@ -1239,6 +1341,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             throw const PackBuildException('构建失败（退出码 1）');
           },
@@ -1946,6 +2049,13 @@ void main() {
     expect(entry.type, HistoryType.filesChanged);
     expect(entry.time, DateTime(2026, 9, 11, 14, 30, 5));
     expect(entry.message, '重新映射：新增 1 个文件、移除 1 个；总大小 64 B → 2.0 KB');
+    expect(
+      store.packs.single.history.whereType<HistoryModel>().where(
+        (HistoryModel item) => item.type == HistoryType.versionChanged,
+      ),
+      isEmpty,
+      reason: '重新映射不改版本，不得凭空追加版本变更条目',
+    );
   });
 
   testWidgets('重新映射无变化时不追加历史条目', (tester) async {

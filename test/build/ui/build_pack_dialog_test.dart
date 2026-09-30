@@ -35,6 +35,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             await buildGate.future;
           },
@@ -122,6 +123,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             throw const PackBuildException(
               '构建失败（退出码 1）',
@@ -156,6 +158,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
       scanFiles: (String sourcePath) async => throw ArgumentError('目录不存在: X'),
       onApply: (PackModel pack) async {},
@@ -177,6 +180,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async => throw Exception('写入失败'),
@@ -197,6 +201,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -219,6 +224,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             throw const PackBuildException('构建失败（退出码 1）');
           },
@@ -252,6 +258,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             throw PackBuildException('${'x' * 200}\nsecond line');
           },
@@ -277,6 +284,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
       scanFiles: (String sourcePath) async => const <FileModel>[],
       onApply: (PackModel pack) async {},
@@ -304,6 +312,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             buildCount++;
           },
@@ -338,6 +347,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             received = environment;
           },
@@ -361,6 +371,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             await buildGate.future;
           },
@@ -388,6 +399,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             receivedLines = <String>[
               'INFO: 开始构建',
@@ -442,6 +454,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             onOutput?.call('ERROR: 即将失败');
             throw const PackBuildException(
@@ -479,6 +492,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             onOutput?.call('line one');
             onOutput?.call('line two');
@@ -625,6 +639,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             await buildGate.future;
           },
@@ -776,6 +791,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             onOutput?.call(
               '[openvino] progress 42.0% (88000000/208000000 bytes)',
@@ -817,6 +833,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             onOutput?.call('[cnp_build_support] classify: C:\\src -> C:\\out');
             onOutput?.call('任意其他输出');
@@ -872,6 +889,7 @@ void main() {
             PackModel pack, {
             Map<String, String>? environment,
             void Function(String line)? onOutput,
+            void Function(String version)? onVersion,
           }) async {
             order.add('build');
           },
@@ -917,6 +935,7 @@ void main() {
         PackModel pack, {
         Map<String, String>? environment,
         void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
       }) async {},
       scanFiles: (String sourcePath) async {
         scanCount++;
@@ -932,6 +951,121 @@ void main() {
     expect(
       find.textContaining('头文件引用检查失败', findRichText: true),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('配方声明新版本时构建后版本已更新并在面板提示', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {
+        onOutput?.call('CNP_VERSION=1.1.0');
+        onVersion?.call('1.1.0');
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied, isNotNull);
+    expect(applied!.version, '1.1.0');
+    expect(
+      find.textContaining('版本已更新：1.0.0 → 1.1.0', findRichText: true),
+      findsOneWidget,
+    );
+    expect(_stepIsDone(tester, 'done'), isTrue);
+  });
+
+  testWidgets('配方未声明版本时保持原版本', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {
+        onOutput?.call('build ok');
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0');
+    expect(find.textContaining('版本', findRichText: true), findsNothing);
+  });
+
+  testWidgets('配方声明版本但值为空时保持原版本并在面板警告', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {
+        onOutput?.call('CNP_VERSION=');
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0');
+    expect(
+      find.textContaining('值为空', findRichText: true),
+      findsOneWidget,
+      reason: '配方声明了版本却没给内容，必须显式告知被忽略',
+    );
+    expect(find.textContaining('版本已更新', findRichText: true), findsNothing);
+  });
+
+  testWidgets('配方声明的版本与现值相同时不改版本也不提示', (tester) async {
+    PackModel? applied;
+
+    await _pumpDialog(
+      tester,
+      build: (
+        PackModel pack, {
+        Map<String, String>? environment,
+        void Function(String line)? onOutput,
+        void Function(String version)? onVersion,
+      }) async {
+        onVersion?.call('1.0.0');
+      },
+      scanFiles: (String sourcePath) async => const <FileModel>[],
+      onApply: (PackModel pack) async {
+        applied = pack;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(applied!.version, '1.0.0');
+    expect(
+      find.textContaining('版本已更新', findRichText: true),
+      findsNothing,
+      reason: '版本没变化时不必打扰用户',
     );
   });
 }
@@ -1024,6 +1158,7 @@ PackBuildRunner _emitLines(List<String> lines) {
     PackModel pack, {
     Map<String, String>? environment,
     void Function(String line)? onOutput,
+    void Function(String version)? onVersion,
   }) async {
     for (final String line in lines) {
       onOutput?.call(line);
