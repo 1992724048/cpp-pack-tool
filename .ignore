@@ -2,3 +2,8 @@
 !.slim/deepwork/
 !.slim/deepwork/**
 # end deepwork managed block
+
+# .slim/ shared block
+!.slim/
+!.slim/**
+# end .slim/ shared block

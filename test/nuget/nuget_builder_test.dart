@@ -1,0 +1,1866 @@
+import 'dart:convert';
+
+import 'package:cpp_nuget_pack/pack/model/build_model.dart';
+import 'package:cpp_nuget_pack/pack/model/cmd_model.dart';
+import 'package:cpp_nuget_pack/pack/model/dependency_model.dart';
+import 'package:cpp_nuget_pack/pack/model/file_model.dart';
+import 'package:cpp_nuget_pack/pack/model/lib_dir_model.dart';
+import 'package:cpp_nuget_pack/pack/model/library_model.dart';
+import 'package:cpp_nuget_pack/pack/model/macro_model.dart';
+import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
+import 'package:cpp_nuget_pack/nuget/nuget_builder.dart';
+import 'package:cpp_nuget_pack/nuget/package_plan.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const NuGetPackageBuilder _builder = NuGetPackageBuilder();
+
+void main() {
+  group('文件映射', () {
+    test('头文件与模块映射到含源目录命名空间的 include 并剥离 include 前缀', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+          FileModel(name: 'bar.hpp', path: 'Include/detail/bar.hpp', size: 20),
+          FileModel(name: 'mod.ixx', path: 'src/mod.ixx', size: 30),
+          FileModel(name: 'plain.h', path: 'plain.h', size: 40),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/foo.h'),
+        'build/native/include/mylib/foo.h',
+      );
+      expect(
+        _packagePathOf(plan, 'Include/detail/bar.hpp'),
+        'build/native/include/mylib/detail/bar.hpp',
+      );
+      expect(
+        _packagePathOf(plan, 'src/mod.ixx'),
+        'build/native/include/mylib/src/mod.ixx',
+      );
+      expect(
+        _packagePathOf(plan, 'plain.h'),
+        'build/native/include/mylib/plain.h',
+      );
+    });
+
+    test('剥离 include 后首段与命名空间同名时不重复叠加', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\gtest')
+        ..files = <FileModel>[
+          FileModel(name: 'gtest.h', path: 'include/gtest/gtest.h', size: 10),
+          FileModel(
+            name: 'gtest-port.h',
+            path: 'include/gtest/internal/gtest-port.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/gtest/gtest.h'),
+        'build/native/include/gtest/gtest.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/gtest/internal/gtest-port.h'),
+        'build/native/include/gtest/internal/gtest-port.h',
+      );
+    });
+
+    test('首段与命名空间大小写不敏感匹配时不叠加且结果沿文件路径大小写', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\OpenVINO')
+        ..files = <FileModel>[
+          FileModel(
+            name: 'openvino.h',
+            path: 'include/openvino/openvino.h',
+            size: 10,
+          ),
+          FileModel(
+            name: 'extra.h',
+            path: 'include/OPENVINO/extra.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/openvino/openvino.h'),
+        'build/native/include/openvino/openvino.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/OPENVINO/extra.h'),
+        'build/native/include/OPENVINO/extra.h',
+      );
+    });
+
+    test('异名首段与平铺文件仍叠加命名空间', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mimalloc')
+        ..files = <FileModel>[
+          FileModel(name: 'mimalloc.h', path: 'include/mimalloc.h', size: 10),
+          FileModel(
+            name: 'foo.h',
+            path: 'include/mimalloc-internal/foo.h',
+            size: 20,
+          ),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'include/mimalloc.h'),
+        'build/native/include/mimalloc/mimalloc.h',
+      );
+      expect(
+        _packagePathOf(plan, 'include/mimalloc-internal/foo.h'),
+        'build/native/include/mimalloc/mimalloc-internal/foo.h',
+      );
+    });
+
+    test('源目录缺失或 basename 为空时顶层命名空间回退为包名', () async {
+      final PackModel noSource = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+        ];
+      final PackModel trailingSeparator = _pack(sourcePath: r'D:\libs\demo\')
+        ..files = <FileModel>[
+          FileModel(name: 'bar.h', path: 'include/bar.h', size: 10),
+        ];
+
+      expect(
+        _packagePathOf(await _builder.buildPlan(noSource), 'include/foo.h'),
+        'build/native/include/demo/foo.h',
+      );
+      expect(
+        _packagePathOf(
+          await _builder.buildPlan(trailingSeparator),
+          'include/bar.h',
+        ),
+        'build/native/include/demo/bar.h',
+      );
+    });
+
+    test('库文件映射到 files/library 并剥离 lib/bin 前缀保留子目录', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 40),
+          FileModel(name: 'bar.lib', path: 'Lib/foo/bar.lib', size: 50),
+          FileModel(name: 'baz.dll', path: 'bin/x64/Debug/baz.dll', size: 60),
+          FileModel(name: 'qux.pdb', path: 'Bin/qux.pdb', size: 70),
+          FileModel(name: 'plain.lib', path: 'plain.lib', size: 80),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'lib/x64/Release/foo.lib'),
+        'build/native/files/library/x64/Release/foo.lib',
+      );
+      expect(
+        _packagePathOf(plan, 'Lib/foo/bar.lib'),
+        'build/native/files/library/foo/bar.lib',
+      );
+      expect(
+        _packagePathOf(plan, 'bin/x64/Debug/baz.dll'),
+        'build/native/files/library/x64/Debug/baz.dll',
+      );
+      expect(_packagePathOf(plan, 'Bin/qux.pdb'), 'build/native/files/library/qux.pdb');
+      expect(_packagePathOf(plan, 'plain.lib'), 'build/native/files/library/plain.lib');
+    });
+
+    test('NuGet 将 .a 放入 files/library 并保留二进制标记', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'libz.a', path: 'lib/release/libz.a', size: 10),
+          FileModel(name: 'libz.dll.a', path: 'lib/debug/libz.dll.a', size: 20),
+          FileModel(name: 'plain.a', path: 'plain.a', size: 30),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'lib/release/libz.a'),
+        'build/native/files/library/release/libz.a',
+      );
+      expect(
+        _packagePathOf(plan, 'lib/debug/libz.dll.a'),
+        'build/native/files/library/debug/libz.dll.a',
+      );
+      expect(_packagePathOf(plan, 'plain.a'), 'build/native/files/library/plain.a');
+      expect(_fileSource(plan, 'lib/release/libz.a').isBinary, isTrue);
+      expect(_fileSource(plan, 'lib/debug/libz.dll.a').isBinary, isTrue);
+      expect(_fileSource(plan, 'plain.a').isBinary, isTrue);
+    });
+
+    test('源码、资源、可执行文件等其他类型映射到 files 且不剥离路径段', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 10),
+          FileModel(name: 'README.md', path: 'README.md', size: 20),
+          FileModel(name: 'logo.png', path: 'assets/logo.png', size: 30),
+          FileModel(name: 'app.exe', path: 'bin/app.exe', size: 40),
+          FileModel(name: 'util.cpp', path: 'lib/util.cpp', size: 50),
+          FileModel(name: 'build.bat', path: 'scripts/build.bat', size: 60),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(
+        _packagePathOf(plan, 'src/main.cpp'),
+        'build/native/files/source/src/main.cpp',
+      );
+      expect(_packagePathOf(plan, 'README.md'), 'build/native/files/other/README.md');
+      expect(
+        _packagePathOf(plan, 'assets/logo.png'),
+        'build/native/files/other/assets/logo.png',
+      );
+      expect(
+        _packagePathOf(plan, 'bin/app.exe'),
+        'build/native/files/executable/bin/app.exe',
+      );
+      expect(
+        _packagePathOf(plan, 'lib/util.cpp'),
+        'build/native/files/source/lib/util.cpp',
+      );
+      expect(
+        _packagePathOf(plan, 'scripts/build.bat'),
+        'build/native/files/script/scripts/build.bat',
+      );
+    });
+
+    test('根级 build.py 不入包且大小写不敏感，子目录保留', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'build.py', path: 'build.py', size: 10),
+          FileModel(name: 'Build.py', path: 'Build.py', size: 20),
+          FileModel(name: 'build.py', path: 'scripts/build.py', size: 30),
+          FileModel(name: 'main.cpp', path: 'main.cpp', size: 40),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final List<String> filePaths = plan.entries
+          .map((PackageEntry entry) => entry.source)
+          .whereType<PackageFileSource>()
+          .map((PackageFileSource source) => source.path)
+          .toList();
+
+      expect(filePaths, isNot(contains('build.py')));
+      expect(filePaths, isNot(contains('Build.py')));
+      expect(
+        _packagePathOf(plan, 'scripts/build.py'),
+        'build/native/files/python/scripts/build.py',
+      );
+    });
+
+    test('空文件列表仅生成 nuspec 与 targets', () async {
+      final PackagePlan plan = await _builder.buildPlan(_pack());
+
+      expect(plan.fileCount, 2);
+      expect(
+        plan.entries.map((PackageEntry entry) => entry.packagePath),
+        <String>['build/native/demo.targets', 'demo.nuspec'],
+      );
+    });
+
+    test('二进制标记覆盖库文件与可执行文件', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 10),
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 15),
+          FileModel(name: 'foo.lib', path: 'lib/foo.lib', size: 20),
+          FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 30),
+          FileModel(name: 'foo.pdb', path: 'lib/foo.pdb', size: 40),
+          FileModel(name: 'app.exe', path: 'bin/app.exe', size: 50),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(_fileSource(plan, 'include/foo.h').isBinary, isFalse);
+      expect(_fileSource(plan, 'src/main.cpp').isBinary, isFalse);
+      expect(_fileSource(plan, 'lib/foo.lib').isBinary, isTrue);
+      expect(_fileSource(plan, 'bin/foo.dll').isBinary, isTrue);
+      expect(_fileSource(plan, 'lib/foo.pdb').isBinary, isTrue);
+      expect(_fileSource(plan, 'bin/app.exe').isBinary, isTrue);
+    });
+
+    test('.png 等未映射扩展名被标记为二进制', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'logo.png', path: 'assets/logo.png', size: 4),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(_fileSource(plan, 'assets/logo.png').isBinary, isTrue);
+    });
+
+    test('.map 与 .exp 不算二进制', () {
+      final FileModel map = FileModel(name: 'foo.map', path: 'x/foo.map', size: 4);
+
+      expect(isBinaryFileType(map.type, map.extension), isFalse);
+
+      final FileModel exp = FileModel(name: 'foo.exp', path: 'x/foo.exp', size: 4);
+
+      expect(isBinaryFileType(exp.type, exp.extension), isFalse);
+    });
+  });
+
+  group('nuspec', () {
+    test('生成完整元数据与 native0.0 依赖组', () async {
+      final PackModel pack =
+          _pack(version: '1.2.3+7', description: '演示包', license: 'MIT')
+            ..dependencies = <DependencyModel>[
+              const DependencyModel(name: 'libfoo', version: '[1.0,)'),
+            ];
+
+      final String nuspec = _nuspecOf(await _builder.buildPlan(pack));
+
+      expect(nuspec, contains('<?xml version="1.0" encoding="utf-8"?>'));
+      expect(
+        nuspec,
+        contains(
+          '<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">',
+        ),
+      );
+      expect(nuspec, contains('<id>demo</id>'));
+      expect(nuspec, contains('<version>1.2.3</version>'));
+      expect(nuspec, contains('<authors>tester</authors>'));
+      expect(nuspec, contains('<description>演示包</description>'));
+      expect(nuspec, contains('<license type="expression">MIT</license>'));
+      expect(
+        nuspec,
+        contains('<requireLicenseAcceptance>false</requireLicenseAcceptance>'),
+      );
+      expect(nuspec, contains('<tags>native C++</tags>'));
+      expect(nuspec, contains('<group targetFramework="native0.0">'));
+      expect(nuspec, contains('<dependency id="libfoo" version="[1.0,)" />'));
+    });
+
+    test('恒定声明包图标且位于许可证声明与许可接受之间', () async {
+      final String nuspec = _nuspecOf(
+        await _builder.buildPlan(_pack(license: 'MIT')),
+      );
+
+      expect(nuspec, contains(r'<icon>images\icon.png</icon>'));
+      expect(
+        nuspec.indexOf(r'<icon>images\icon.png</icon>'),
+        greaterThan(nuspec.indexOf('<license type="expression">MIT</license>')),
+      );
+      expect(
+        nuspec.indexOf(r'<icon>images\icon.png</icon>'),
+        lessThan(nuspec.indexOf('<requireLicenseAcceptance>')),
+      );
+    });
+
+    test('多个依赖全部写入依赖组', () async {
+      final PackModel pack = _pack()
+        ..dependencies = <DependencyModel>[
+          const DependencyModel(name: 'libfoo', version: '[1.0,)'),
+          const DependencyModel(name: 'libbar', version: '2.0.0'),
+        ];
+
+      final String nuspec = _nuspecOf(await _builder.buildPlan(pack));
+
+      expect(nuspec, contains('<dependency id="libfoo" version="[1.0,)" />'));
+      expect(nuspec, contains('<dependency id="libbar" version="2.0.0" />'));
+    });
+
+    test('描述为空时回退为包名', () async {
+      expect(
+        _nuspecOf(await _builder.buildPlan(_pack(description: ''))),
+        contains('<description>demo</description>'),
+      );
+      expect(
+        _nuspecOf(await _builder.buildPlan(_pack())),
+        contains('<description>demo</description>'),
+      );
+    });
+
+    test('许可证为空时省略 license 节点与依赖节点', () async {
+      final String nuspec = _nuspecOf(await _builder.buildPlan(_pack()));
+
+      expect(nuspec, isNot(contains('<license')));
+      expect(nuspec, isNot(contains('<dependencies>')));
+    });
+
+    test('XML 特殊字符被转义', () async {
+      final PackModel pack =
+          _pack(author: 'A & B', description: 'x < y > z "q" \'s\'')
+            ..dependencies = <DependencyModel>[
+              const DependencyModel(name: 'lib&foo', version: '<1.0>'),
+            ];
+
+      final String nuspec = _nuspecOf(await _builder.buildPlan(pack));
+
+      expect(nuspec, contains('<authors>A &amp; B</authors>'));
+      expect(
+        nuspec,
+        contains(
+          '<description>x &lt; y &gt; z &quot;q&quot; &apos;s&apos;</description>',
+        ),
+      );
+      expect(
+        nuspec,
+        contains('<dependency id="lib&amp;foo" version="&lt;1.0&gt;" />'),
+      );
+    });
+  });
+
+  group('targets', () {
+    test('始终写入 include 目录行与 files 下 12 个子目录搜索根', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;'
+          r'$(MSBuildThisFileDirectory)files\source;'
+          r'$(MSBuildThisFileDirectory)files\library;'
+          r'$(MSBuildThisFileDirectory)files\assembly;'
+          r'$(MSBuildThisFileDirectory)files\resource;'
+          r'$(MSBuildThisFileDirectory)files\script;'
+          r'$(MSBuildThisFileDirectory)files\msbuild;'
+          r'$(MSBuildThisFileDirectory)files\fortran;'
+          r'$(MSBuildThisFileDirectory)files\llvm;'
+          r'$(MSBuildThisFileDirectory)files\python;'
+          r'$(MSBuildThisFileDirectory)files\data;'
+          r'$(MSBuildThisFileDirectory)files\executable;'
+          r'$(MSBuildThisFileDirectory)files\other;'
+          r'%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        isNot(
+          contains(
+            r'$(MSBuildThisFileDirectory)files;%(AdditionalIncludeDirectories)',
+          ),
+        ),
+        reason: 'files/ 根只承载许可证，不再作为搜索根',
+      );
+      expect(
+        targets,
+        contains(
+          '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
+        ),
+      );
+    });
+
+    test('手选模型全为所有配置时宏、库目录、附加库与命令都不切条件组', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[const MacroModel(value: 'ALL=1')]
+        ..libDirectories = <LibDirModel>[
+          const LibDirModel(path: r'third_party\lib'),
+        ]
+        ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')]
+        ..commands = <CmdModel>[
+          const CmdModel(command: 'echo one', type: CmdType.preBuild),
+        ]
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
+          FileModel(name: 'foo.pdb', path: 'bin/x64/Debug/foo.pdb', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        isNot(contains('<ItemDefinitionGroup Condition')),
+        reason: '本用例守的是手选全配置模型不切条件组，与 dll / pdb 走运行时项组无关',
+      );
+      expect(targets, contains('<ItemDefinitionGroup>'), reason: '仍有全配置的分组');
+      expect(
+        targets,
+        isNot(contains(r'<Target Name="CnpPreBuild_demo_89e495e7_Release"')),
+        reason: '全配置的手选命令不切出带配置后缀的条件目标',
+      );
+      expect(
+        targets,
+        isNot(contains(r'<Target Name="CnpPreBuild_demo_89e495e7_Debug"')),
+      );
+      expect(
+        _runtimeBinariesByCondition(targets).keys,
+        <String>[r"'$(Configuration)'!='Debug'", r"'$(Configuration)'=='Debug'"],
+        reason: 'dll / pdb 按路径段独立切组，不与手选模型的口径串味',
+      );
+    });
+
+    test('手选 Release 的宏落在 Release 条件定义组内', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[
+          const MacroModel(value: 'ALL=1'),
+          const MacroModel(value: 'REL=1', buildModel: BuildModel.release),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      final int allGroupIndex = targets.indexOf('  <ItemDefinitionGroup>');
+      final int releaseGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+      );
+      expect(
+        releaseGroupIndex,
+        greaterThan(allGroupIndex),
+        reason: '手选的 Release 宏仍切出条件定义组，且排在无条件组之后',
+      );
+      expect(
+        targets.substring(releaseGroupIndex),
+        contains(
+          '<PreprocessorDefinitions>REL=1;'
+          '%(PreprocessorDefinitions)</PreprocessorDefinitions>',
+        ),
+      );
+      expect(
+        targets.substring(allGroupIndex, releaseGroupIndex),
+        isNot(contains('REL=1')),
+        reason: 'REL=1 不落进无条件定义组',
+      );
+    });
+
+    test('路径里的 release 段切出条件组而手选命令仍带配置后缀', () async {
+      final PackModel pack = _pack()
+        ..commands = <CmdModel>[
+          const CmdModel(
+            command: 'echo pre-rel',
+            type: CmdType.preBuild,
+            buildModel: BuildModel.release,
+          ),
+        ]
+        ..files = <FileModel>[
+          FileModel(name: 'lib.lib', path: 'lib/release/lib.lib', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: '路径里的 release 段原样保留为库目录名',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalDependencies>lib.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+        reason: '文件本身照旧按扩展名分类',
+      );
+      final int releaseGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+      );
+      expect(releaseGroupIndex, greaterThan(-1), reason: 'release 段切出条件定义组');
+      expect(
+        targets.substring(releaseGroupIndex),
+        contains(r'files\library\release'),
+        reason: '派生库目录落在 Release 条件定义组内',
+      );
+      expect(
+        targets.substring(0, releaseGroupIndex),
+        isNot(contains('lib.lib')),
+        reason: '派生附加库不落进无条件定义组',
+      );
+      expect(
+        targets,
+        contains('<Target Name="CnpPreBuild_demo_89e495e7_Release" '),
+        reason: '手选 Release 的命令仍生成带配置后缀的条件目标',
+      );
+    });
+
+    test('release / debug 路径段决定 lib 的配置', () {
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/x64/Release/foo.lib'),
+        BuildModel.release,
+      );
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/x64/Debug/foo.lib'),
+        BuildModel.debug,
+      );
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/foo.lib'),
+        BuildModel.all,
+      );
+    });
+
+    test('多段命中取最后一个', () {
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/release/Debug/foo.lib'),
+        BuildModel.debug,
+      );
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/Debug/release/foo.lib'),
+        BuildModel.release,
+      );
+    });
+
+    test('大小写不敏感', () {
+      expect(
+        NuGetPackageBuilder.libraryBuildModelOf('files/library/x64/RELEASE/foo.lib'),
+        BuildModel.release,
+      );
+    });
+
+    test('宏按构建配置分组并生成条件组', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[
+          const MacroModel(value: 'ALL=1'),
+          const MacroModel(value: 'REL=1', buildModel: BuildModel.release),
+          const MacroModel(value: 'DBG=1', buildModel: BuildModel.debug),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<PreprocessorDefinitions>ALL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<PreprocessorDefinitions>REL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">''',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<PreprocessorDefinitions>DBG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>',
+        ),
+      );
+
+      final int releaseIndex = targets.indexOf(r"=='Release'");
+      final int debugIndex = targets.indexOf(r"=='Debug'");
+      expect(releaseIndex, greaterThan(-1));
+      expect(debugIndex, greaterThan(releaseIndex));
+    });
+
+    test('附加库目录合并用户条目与派生目录并去重', () async {
+      final PackModel pack = _pack()
+        ..libDirectories = <LibDirModel>[
+          const LibDirModel(path: r'third_party\lib'),
+          const LibDirModel(path: r'third_party\LIB'),
+        ]
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
+          FileModel(name: 'bar.lib', path: 'lib/bar.lib', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>third_party\lib;'
+          r'$(MSBuildThisFileDirectory)files\library;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: '用户条目在前、无配置段的派生目录并入同一条',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\x64\Release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: '带 release 段的派生目录随配置单独落桶',
+      );
+      expect(r'third_party\lib'.allMatches(targets).length, 1);
+    });
+
+    test('库文件自动加入库目录与附加库并去重', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
+          FileModel(name: 'FOO.LIB', path: 'lib/x64/Release/FOO.LIB', size: 11),
+          FileModel(name: 'bar.lib', path: 'lib/Debug/bar.lib', size: 20),
+          FileModel(name: 'baz.lib', path: 'lib/baz.lib', size: 30),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: r'无配置段的 baz.lib 只贡献 files\library 根',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\x64\Release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+        reason: 'Release 桶内两个同名文件去重后只留一条目录',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\Debug;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>baz.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>bar.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        r'$(MSBuildThisFileDirectory)files\library\x64\Release'
+            .allMatches(targets)
+            .length,
+        1,
+      );
+      expect(r'FOO.LIB'.allMatches(targets).length, 0);
+    });
+
+    test('同名 lib 分处 Release 与 Debug 时两条都发射且各带条件', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 4),
+          FileModel(name: 'foo.lib', path: 'lib/x64/Debug/foo.lib', size: 4),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      final int releaseGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+      );
+      final int debugGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">''',
+      );
+      expect(releaseGroupIndex, greaterThan(-1), reason: 'release 段切出 Release 条件定义组');
+      expect(debugGroupIndex, greaterThan(releaseGroupIndex), reason: 'Debug 条件定义组紧随其后');
+      final String releaseGroup = targets.substring(releaseGroupIndex, debugGroupIndex);
+      final String debugGroup = targets.substring(debugGroupIndex);
+      expect(
+        releaseGroup,
+        contains(
+          '<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+        reason: 'Release 组发射一条 foo.lib',
+      );
+      expect(
+        debugGroup,
+        contains(
+          '<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+        reason: 'Debug 组也发射一条 foo.lib',
+      );
+      expect(releaseGroup, contains(r'files\library\x64\Release'), reason: 'Release 组取 x64/Release 的派生目录');
+      expect(debugGroup, contains(r'files\library\x64\Debug'), reason: 'Debug 组取 x64/Debug 的派生目录');
+      expect(
+        targets.substring(0, releaseGroupIndex),
+        isNot(contains('foo.lib')),
+        reason: '同名不同配置各落一桶，无条件组不重复列出',
+      );
+    });
+
+    test('.a 与 .lib 同规则按路径段隔离且不生成运行时二进制部署', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'rel.a', path: 'lib/release/rel.a', size: 10),
+          FileModel(name: 'libz.dll.a', path: 'lib/debug/libz.dll.a', size: 20),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String targets = _targetsOf(plan);
+
+      expect(
+        _packagePathOf(plan, 'lib/release/rel.a'),
+        'build/native/files/library/release/rel.a',
+      );
+      expect(
+        _packagePathOf(plan, 'lib/debug/libz.dll.a'),
+        'build/native/files/library/debug/libz.dll.a',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)include;'
+          r'$(MSBuildThisFileDirectory)files\source;',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
+        ),
+        reason: 'release 段的 .a 与 .lib 同规则切出条件定义组',
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\release;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalLibraryDirectories>$(MSBuildThisFileDirectory)files\library\debug;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>rel.a;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>libz.dll.a;'
+          '%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(targets, isNot(contains('<PkgRuntimeBinary')));
+      expect(targets, isNot(contains('DeployPkgRuntimeBinaries')));
+    });
+
+    test('附加库按构建配置分组', () async {
+      final PackModel pack = _pack()
+        ..libraries = <LibraryModel>[
+          const LibraryModel(name: 'mylib.lib'),
+          const LibraryModel(name: 'other.lib', buildModel: BuildModel.debug),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>mylib.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<AdditionalDependencies>other.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+      );
+    });
+
+    test('附加库目录与附加库写在 Link 元素内而非 ClCompile', () async {
+      final PackModel pack = _pack()
+        ..macros = <MacroModel>[const MacroModel(value: 'ALL=1')]
+        ..libDirectories = <LibDirModel>[
+          const LibDirModel(path: r'third_party\lib'),
+        ]
+        ..libraries = <LibraryModel>[const LibraryModel(name: 'mylib.lib')];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      final Map<String, String> groups = _itemDefinitionGroups(targets);
+      final String? compile = _definitionElement(groups[''] ?? '', 'ClCompile');
+      expect(compile, isNotNull, reason: '无条件定义组应含 ClCompile 元素');
+      expect(
+        compile,
+        contains('<PreprocessorDefinitions>ALL=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>'),
+        reason: '宏是编译期输入，留在 ClCompile',
+      );
+      expect(
+        compile,
+        isNot(contains('AdditionalLibraryDirectories')),
+        reason: 'ClCompile 里的库目录没有任何 MSVC 任务会读，link.exe 拿不到 /LIBPATH',
+      );
+      expect(
+        compile,
+        isNot(contains('AdditionalDependencies')),
+        reason: 'ClCompile 里的附加库不进 link.exe 命令行，消费方必然 LNK2019',
+      );
+      final String? link = _definitionElement(groups[''] ?? '', 'Link');
+      expect(link, isNotNull, reason: '链接期属性需要独立的 Link 元素承载');
+      expect(
+        link,
+        contains(
+          r'<AdditionalLibraryDirectories>third_party\lib;'
+          r'%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>',
+        ),
+      );
+      expect(
+        link,
+        contains('<AdditionalDependencies>mylib.lib;%(AdditionalDependencies)</AdditionalDependencies>'),
+      );
+    });
+
+    test('条件定义组内的链接期属性同样写在 Link 元素内', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.lib', path: 'lib/x64/Release/foo.lib', size: 10),
+          FileModel(name: 'bar.lib', path: 'lib/x64/Debug/bar.lib', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      for (final String configuration in <String>['Release', 'Debug']) {
+        final String condition = r"'$(Configuration)'=='" "$configuration'";
+        final String? group = _itemDefinitionGroups(targets)[condition];
+        expect(group, isNotNull, reason: '$configuration 应切出条件定义组');
+        expect(
+          _definitionElement(group!, 'Link'),
+          isNotNull,
+          reason: '$configuration 的库目录与附加库要落在 Link 内',
+        );
+        expect(
+          _definitionElement(group, 'ClCompile'),
+          isNot(contains('AdditionalDependencies')),
+          reason: '$configuration 的 ClCompile 不得再携带链接期属性',
+        );
+      }
+    });
+
+    test('无库目录与附加库时不发射空 Link 元素', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('<Link>')), reason: '空 Link 元素会覆盖 link.exe 的默认项定义');
+      expect(targets, contains('</ClCompile>'), reason: '无链接期属性时 ClCompile 仍须闭合');
+    });
+
+    test('编译前/后命令生成自定义目标与逐命令 Exec 并转义 XML 特殊字符', () async {
+      final PackModel pack = _pack()
+        ..commands = <CmdModel>[
+          const CmdModel(command: 'echo one', type: CmdType.preBuild),
+          const CmdModel(command: 'echo two', type: CmdType.preBuild),
+          const CmdModel(
+            command: r'echo $(ProjectDir) & <done>',
+            type: CmdType.postBuild,
+          ),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpPreBuild_demo_89e495e7" BeforeTargets="ClCompile">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpPostBuild_demo_89e495e7" AfterTargets="Build">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Exec Command="echo one" WorkingDirectory="$(ProjectDir)" IgnoreStandardErrorWarningFormat="true" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(r'<Exec Command="echo $(ProjectDir) &amp; &lt;done&gt;"'),
+      );
+      expect(
+        targets.indexOf('echo one'),
+        lessThan(targets.indexOf('echo two')),
+      );
+      expect(
+        targets.indexOf('echo two'),
+        lessThan(targets.indexOf('CnpPostBuild_demo_89e495e7')),
+      );
+      expect(targets, isNot(contains('<PropertyGroup')));
+      expect(targets, isNot(contains('PreBuildEvent')));
+      expect(targets, isNot(contains('PostBuildEvent')));
+    });
+
+    test('编译前/后命令按构建配置生成条件目标（名称带配置后缀）', () async {
+      final PackModel pack = _pack()
+        ..commands = <CmdModel>[
+          const CmdModel(
+            command: 'echo pre-rel',
+            type: CmdType.preBuild,
+            buildModel: BuildModel.release,
+          ),
+          const CmdModel(
+            command: 'echo post-dbg',
+            type: CmdType.postBuild,
+            buildModel: BuildModel.debug,
+          ),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpPreBuild_demo_89e495e7_Release" '
+          'BeforeTargets="ClCompile" '
+          r'''Condition="'$(Configuration)'=='Release'">''',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          '<Target Name="CnpPostBuild_demo_89e495e7_Debug" '
+          'AfterTargets="Build" '
+          r'''Condition="'$(Configuration)'=='Debug'">''',
+        ),
+      );
+      expect(
+        targets.indexOf('echo pre-rel'),
+        greaterThan(targets.indexOf('CnpPreBuild_demo_89e495e7_Release')),
+      );
+      expect(
+        targets.indexOf('echo post-dbg'),
+        greaterThan(targets.indexOf('CnpPostBuild_demo_89e495e7_Debug')),
+      );
+      expect(targets, isNot(contains('CnpPreBuild_demo_89e495e7"')));
+      expect(targets, isNot(contains('CnpPostBuild_demo_89e495e7"')));
+    });
+
+    test('无编译命令时不生成命令目标与 Exec', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('CnpPreBuild')));
+      expect(targets, isNot(contains('CnpPostBuild')));
+      expect(targets, isNot(contains('<Exec')));
+      expect(targets, isNot(contains('<PropertyGroup')));
+    });
+
+    test('dll/pdb 按路径段分配置部署且部署目标不受配置条件影响', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/x64/Release/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/bar.dll', size: 20),
+          FileModel(name: 'foo.pdb', path: 'bin/x64/Debug/foo.pdb', size: 30),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          '': <String>[r'$(MSBuildThisFileDirectory)files\library\bar.dll'],
+          r"'$(Configuration)'!='Debug'": <String>[
+            r'$(MSBuildThisFileDirectory)files\library\x64\Release\foo.dll',
+          ],
+          r"'$(Configuration)'=='Debug'": <String>[
+            r'$(MSBuildThisFileDirectory)files\library\x64\Debug\foo.pdb',
+          ],
+        },
+        reason: '三组同存：无配置段的进无条件组，Release/Debug 段各自切出条件组',
+      );
+      expect(
+        targets,
+        contains(
+          r'''<Target Name="DeployPkgRuntimeBinaries_demo_89e495e7" AfterTargets="Build" Condition="'@(PkgRuntimeBinary)' != ''">''',
+        ),
+        reason: '部署目标自身不切配置：项组上的条件已把非本配置的项挡在集合外',
+      );
+      expect(
+        targets,
+        contains(
+          r'<Copy SourceFiles="@(PkgRuntimeBinary)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r"""<FileWrites Include="@(PkgRuntimeBinary->'$(OutDir)%(Filename)%(Extension)')" />""",
+        ),
+      );
+      expect(
+        targets.indexOf('<Target Name="DeployPkgRuntimeBinaries_demo_'),
+        greaterThan(targets.indexOf('<PkgRuntimeBinary')),
+      );
+    });
+
+    test('非 Debug 的任意配置名都能取到 release 侧 dll', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/Release/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+      const String releaseFoo = r'$(MSBuildThisFileDirectory)files\library\Release\foo.dll';
+      const String debugBar = r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll';
+
+      expect(
+        _reachableRuntimeBinaries(targets, 'RelWithDebInfo'),
+        <String>[releaseFoo],
+        reason: "MSBuild 对未定义属性静默求值为空串且不报警告：'=='Release' 放行不了 RelWithDebInfo，"
+            '两组皆空会让部署目标一个 dll 都拷不出，消费方构建通过但启动崩溃',
+      );
+      expect(
+        _reachableRuntimeBinaries(targets, 'MinSizeRel'),
+        <String>[releaseFoo],
+        reason: 'release 组是「非 Debug」兜底而非逐个配置名枚举',
+      );
+      expect(
+        _reachableRuntimeBinaries(targets, ''),
+        <String>[releaseFoo],
+        reason: 'Configuration 未定义时求值为空串，同样不能落空',
+      );
+      expect(
+        _reachableRuntimeBinaries(targets, 'DEBUG'),
+        <String>[debugBar],
+        reason: '!= 与 == 一样大小写不敏感：DEBUG 仍归 debug 组，不被 release 组抢走',
+      );
+    });
+
+    test('Release / Debug 配置名下的分组归属不变', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/Release/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+      const String releaseFoo = r'$(MSBuildThisFileDirectory)files\library\Release\foo.dll';
+      const String debugBar = r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll';
+
+      expect(_reachableRuntimeBinaries(targets, 'Release'), <String>[releaseFoo]);
+      expect(_reachableRuntimeBinaries(targets, 'RELEASE'), <String>[releaseFoo]);
+      expect(_reachableRuntimeBinaries(targets, 'Debug'), <String>[debugBar]);
+      expect(_reachableRuntimeBinaries(targets, 'debug'), <String>[debugBar]);
+      expect(
+        _runtimeBinariesByCondition(targets).keys,
+        <String>[r"'$(Configuration)'!='Debug'", r"'$(Configuration)'=='Debug'"],
+        reason: '两组条件互补，任一配置名下恰有一组命中',
+      );
+    });
+
+    test('同名运行时二进制按无条件 → release → debug 顺序发射', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 10),
+          FileModel(name: 'foo.dll', path: 'bin/Release/foo.dll', size: 10),
+          FileModel(name: 'foo.dll', path: 'bin/Debug/foo.dll', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+      const String allFoo = r'$(MSBuildThisFileDirectory)files\library\foo.dll';
+      const String releaseFoo = r'$(MSBuildThisFileDirectory)files\library\Release\foo.dll';
+      const String debugFoo = r'$(MSBuildThisFileDirectory)files\library\Debug\foo.dll';
+
+      expect(
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          '': <String>[allFoo],
+          r"'$(Configuration)'!='Debug'": <String>[releaseFoo],
+          r"'$(Configuration)'=='Debug'": <String>[debugFoo],
+        },
+        reason: '同名跨配置条目各归各组，组归属先钉死',
+      );
+      // Map 的 == 与插入顺序无关，故顺序只能靠发射下标观测：同名条目在 MSBuild
+      // 的项集合里靠后者覆盖前者，配置专属组必须排在无条件组之后。
+      expect(targets.indexOf(allFoo), greaterThanOrEqualTo(0));
+      expect(
+        targets.indexOf(releaseFoo),
+        greaterThan(targets.indexOf(allFoo)),
+        reason: '配置专属的条目要压过无条件的那条：release 组的 foo.dll 必须后写',
+      );
+      expect(
+        targets.indexOf(debugFoo),
+        greaterThan(targets.indexOf(releaseFoo)),
+        reason: 'Debug 组排最后，同名跨配置条目下 Debug 消费方取到的才是 Debug 产物',
+      );
+    });
+
+    test('dll 不参与附加库派生且只经运行时项发射一次', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 4),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        isNot(contains('<AdditionalDependencies>')),
+        reason: 'dll 不参与附加库派生：本包既无 .lib / .a 也无手选 libraries',
+      );
+      expect(
+        'bar.dll'.allMatches(targets).length,
+        1,
+        reason: 'dll 仅经 PkgRuntimeBinary 发射一次：既不派生附加库与库目录，也不重复进多个组',
+      );
+      expect(
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          r"'$(Configuration)'=='Debug'": <String>[
+            r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll',
+          ],
+        },
+      );
+      expect(
+        targets,
+        isNot(contains('<ItemDefinitionGroup Condition')),
+        reason: '配置隔离落在 ItemGroup 上：运行时二进制不产生按配置切分的定义组',
+      );
+    });
+
+    test('运行时二进制无配置段时仅生成无条件项组', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'bin/foo.dll', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        _runtimeBinariesByCondition(targets),
+        <String, List<String>>{
+          '': <String>[r'$(MSBuildThisFileDirectory)files\library\foo.dll'],
+        },
+        reason: '无 release/debug 段的 dll 向后兼容：仍无条件部署，不因本次分配置改行为',
+      );
+      expect(targets, isNot(contains('<ItemGroup Condition')));
+    });
+
+    test('运行时二进制取最后一个命中段且大小写不敏感', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.dll', path: 'lib/x64/RELEASE/Debug/foo.dll', size: 10),
+          FileModel(name: 'bar.dll', path: 'bin/Debug/bar.dll', size: 20),
+          FileModel(name: 'baz.pdb', path: 'bin/debug/baz.pdb', size: 30),
+          FileModel(name: 'qux.dll', path: 'bin/RELEASE/qux.dll', size: 40),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        _runtimeBinariesByCondition(targets).keys,
+        <String>[r"'$(Configuration)'!='Debug'", r"'$(Configuration)'=='Debug'"],
+      );
+      expect(
+        _runtimeBinariesByCondition(targets)[r"'$(Configuration)'=='Debug'"],
+        unorderedEquals(<String>[
+          r'$(MSBuildThisFileDirectory)files\library\x64\RELEASE\Debug\foo.dll',
+          r'$(MSBuildThisFileDirectory)files\library\Debug\bar.dll',
+          r'$(MSBuildThisFileDirectory)files\library\debug\baz.pdb',
+        ]),
+        reason: '多段命中取最后一个（foo 归 Debug 而非 RELEASE），目录段大小写不敏感',
+      );
+      expect(
+        _runtimeBinariesByCondition(targets)[r"'$(Configuration)'!='Debug'"],
+        <String>[r'$(MSBuildThisFileDirectory)files\library\RELEASE\qux.dll'],
+      );
+    });
+
+    test('根目录许可证生成硬链接部署目标且位于 </Project> 之前', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'LICENSE', path: 'LICENSE', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          '<Target Name="DeployPkgLicenses_demo_89e495e7" AfterTargets="Build">',
+        ),
+      );
+      expect(targets, contains(r'<Copy '));
+      expect(
+        targets,
+        contains(r'''Condition="Exists('$(MSBuildThisFileDirectory)files\LICENSE')"'''),
+      );
+      expect(
+        targets,
+        contains(r'''SourceFiles="$(MSBuildThisFileDirectory)files\LICENSE"'''),
+      );
+      expect(
+        targets,
+        contains(r'DestinationFiles="$(OutDir)LICENSES\demo_LICENSE"'),
+      );
+      expect(
+        targets,
+        contains(r'SkipUnchangedFiles="true" UseHardlinksIfPossible="true" />'),
+      );
+      expect(
+        targets,
+        contains(
+          r'<FileWrites Include="$(OutDir)LICENSES\demo_LICENSE" />',
+        ),
+      );
+      expect(
+        targets.indexOf('</Project>'),
+        greaterThan(targets.indexOf('DeployPkgLicenses_demo_89e495e7')),
+      );
+    });
+
+    test('LICENSE 与 NOTICE 共存时两个 Copy 各带自己的 Exists 条件', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'LICENSE', path: 'LICENSE', size: 10),
+          FileModel(name: 'NOTICE', path: 'NOTICE', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, contains(r'<Copy '));
+      for (final String license in <String>['LICENSE', 'NOTICE']) {
+        final String source = r'$(MSBuildThisFileDirectory)files\' '$license';
+        expect(
+          targets,
+          contains('Condition="Exists(\'$source\')"'),
+          reason: '$license 的 <Copy> 未带指向自身的 Exists 条件',
+        );
+        expect(
+          targets,
+          contains('SourceFiles="$source"'),
+          reason: '$license 的 <Copy> 源文件不是自身',
+        );
+      }
+      expect(
+        targets,
+        contains(r'<FileWrites Include="$(OutDir)LICENSES\demo_LICENSE" />'),
+      );
+      expect(
+        targets,
+        contains(r'<FileWrites Include="$(OutDir)LICENSES\demo_NOTICE" />'),
+      );
+      expect('<Target Name="DeployPkgLicenses_'.allMatches(targets).length, 1);
+      expect(RegExp(r'<Copy ').allMatches(_licenseTargetBlock(targets)), hasLength(2));
+    });
+
+    test('无许可证时不生成许可证部署目标', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('DeployPkgLicenses')));
+    });
+
+    test('仅子目录中的许可证不生成部署目标', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'LICENSE', path: 'docs/LICENSE', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, isNot(contains('DeployPkgLicenses')));
+    });
+
+    test('资源文件生成 ResourceCompile 项并附加所在目录', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'app.rc', path: 'res/app.rc', size: 10),
+          FileModel(name: 'version.rc', path: 'version.rc', size: 20),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\resource\res\app.rc">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files\resource\res;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\resource\version.rc">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)files\resource;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>',
+        ),
+      );
+    });
+
+    test('汇编文件生成 MASM 条件导入与唯一 ObjectFileName', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'x.asm', path: 'src/x.asm', size: 10),
+          FileModel(name: 'y.asm', path: 'asm/vendor/y.asm', size: 20),
+          FileModel(name: 'z.s', path: 'src/z.s', size: 30),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, contains('<ImportGroup Condition="'));
+      expect(targets, contains(r"'$(MASMBeforeTargets)' == ''"));
+      expect(targets, contains(r"'$(VCTargetsPath)' != ''"));
+      expect(
+        targets,
+        contains(r"Exists('$(VCTargetsPath)\BuildCustomizations\masm.props')"),
+      );
+      expect(
+        targets,
+        contains(
+          r"Exists('$(VCTargetsPath)\BuildCustomizations\masm.targets')",
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\assembly\src\x.asm">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_assembly_src_x.asm.obj</ObjectFileName>',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\assembly\asm\vendor\y.asm">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ObjectFileName>$(IntDir)asm_demo_89e495e7_files_assembly_asm_vendor_y.asm.obj</ObjectFileName>',
+        ),
+      );
+      expect(targets, isNot(contains('z.s')));
+    });
+
+    test('无 .asm 文件时不生成 MASM 导入与项', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 10),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(targets, isNot(contains('<ImportGroup')));
+      expect(targets, isNot(contains('<MASM')));
+    });
+
+    test('包内 .props 产出包级 build/<包ID>.props 并导入用户 msbuild props', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'mytool.props', path: 'msbuild/mytool.props', size: 10),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      final String props = _generatedContent(plan, 'build/demo.props');
+      expect(
+        props,
+        contains(
+          r'<Import Project="$(MSBuildThisFileDirectory)native\files\msbuild\msbuild\mytool.props" />',
+        ),
+      );
+      expect(props, contains('TreatAsLocalProperty="Platform"'));
+    });
+
+    test('包内 .targets 在包级 .targets 的 msbuild 导入组内被导入', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'mytool.targets', path: 'msbuild/mytool.targets', size: 10),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String targets = _targetsOf(plan);
+
+      expect(targets, contains('<ImportGroup>'));
+      expect(
+        targets,
+        contains(
+          r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\mytool.targets" />',
+        ),
+      );
+      expect(
+        plan.entries.where((PackageEntry entry) => entry.packagePath == 'build/demo.props'),
+        isEmpty,
+        reason: '只有 .targets 时不产出空壳包级 .props',
+      );
+    });
+
+    // 桶收窄（files/ 之下还须是 msbuild/ 桶）是双入口唯一的判据。夹具必须让 .props /
+    // .targets 落在 msbuild 桶【之外】，否则删掉桶段这条用例照样绿 —— 即零断言保护。
+    // FileModel.type 覆写正是这种状态的唯一成因：分类与扩展名判定不一致时才会出现。
+    // type 不覆写则 stray.props 会落进 files/msbuild/other/ 而重新落回桶内。
+    test('msbuild 桶外的 .props 与 .targets 不产出包级 props 且无相关导入', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 3),
+          FileModel(name: 'stray.props', path: 'other/stray.props', size: 1)
+            ..type = FileType.other,
+          FileModel(name: 'stray.targets', path: 'other/stray.targets', size: 1)
+            ..type = FileType.other,
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      // 落点自校验：日后 buildNativePayloadPath 若把这两个文件挪回 msbuild 桶，
+      // 本用例会立刻转红报错，而不是退化成上面说的零保护状态。
+      expect(
+        plan.entries.map((PackageEntry entry) => entry.packagePath),
+        containsAll(<String>[
+          'build/native/files/other/other/stray.props',
+          'build/native/files/other/other/stray.targets',
+        ]),
+      );
+      expect(plan.fileCount, 5);
+      expect(
+        plan.entries.where((PackageEntry entry) => entry.packagePath == 'build/demo.props'),
+        isEmpty,
+      );
+      expect(
+        _targetsOf(plan),
+        isNot(contains(r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\')),
+      );
+      expect(_targetsOf(plan), isNot(contains('stray')));
+    });
+
+    test('多个用户 msbuild .props 与 .targets 按路径字典序全部发射', () async {
+      // 两个桶都按字典序【倒序】插入：删掉任一 sort() 都必须让本用例变红。
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'zeta.props', path: 'msbuild/zeta.props', size: 1),
+          FileModel(name: 'zeta.targets', path: 'msbuild/zeta.targets', size: 1),
+          FileModel(name: 'alpha.targets', path: 'msbuild/alpha.targets', size: 1),
+          FileModel(name: 'alpha.props', path: 'msbuild/alpha.props', size: 1),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String props = _generatedContent(plan, 'build/demo.props');
+      final String targets = _targetsOf(plan);
+      final StringBuffer expectedProps = StringBuffer()
+        ..writeln('<?xml version="1.0" encoding="utf-8"?>')
+        ..writeln(
+          '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" '
+          'TreatAsLocalProperty="Platform">',
+        )
+        ..writeln(
+          r'  <Import Project="$(MSBuildThisFileDirectory)native\files\msbuild\msbuild'
+          r'\alpha.props" />',
+        )
+        ..writeln(
+          r'  <Import Project="$(MSBuildThisFileDirectory)native\files\msbuild\msbuild'
+          r'\zeta.props" />',
+        )
+        ..writeln('</Project>');
+      final List<String> expectedTargetImports = <String>[
+        r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\alpha.targets" />',
+        r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\msbuild\zeta.targets" />',
+      ];
+
+      expect(
+        props,
+        expectedProps.toString(),
+        reason: '包级 .props 全文：无 ToolsVersion，全部用户 .props 按路径字典序逐条发射',
+      );
+      for (final String importLine in expectedTargetImports) {
+        expect(targets, contains(importLine), reason: '每个用户 .targets 都须被发射');
+      }
+      expect(
+        targets.indexOf(expectedTargetImports.first),
+        lessThan(targets.indexOf(expectedTargetImports.last)),
+        reason: '多个 .targets 须按路径字典序发射以保证可重现',
+      );
+    });
+
+    test('用户 msbuild 路径含 & 时 .props 与 .targets 的导入路径转义', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'a&b.props', path: 'msbuild/a&b/a&b.props', size: 1),
+          FileModel(name: 'a&b.targets', path: 'msbuild/a&b/a&b.targets', size: 1),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final String props = _generatedContent(plan, 'build/demo.props');
+      final String targets = _targetsOf(plan);
+
+      expect(
+        props,
+        contains(
+          r'$(MSBuildThisFileDirectory)native\files\msbuild\msbuild\a&amp;b\a&amp;b.props',
+        ),
+        reason: '包级 .props 的导入路径须转义 & ，否则消费方 MSBuild 读到畸形 XML',
+      );
+      expect(props, isNot(contains(r'a&b')));
+      expect(
+        targets,
+        contains(r'$(MSBuildThisFileDirectory)files\msbuild\msbuild\a&amp;b\a&amp;b.targets'),
+      );
+      expect(targets, isNot(contains(r'a&b')));
+    });
+
+    test('MASM / Resource / 运行库路径含 & 时各自转义', () async {
+      final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
+        ..files = <FileModel>[
+          FileModel(name: 'a&b.asm', path: 'msbuild/a&b/a&b.asm', size: 1),
+          FileModel(name: 'a&b.rc', path: 'msbuild/a&b/a&b.rc', size: 1),
+          FileModel(name: 'a&b.dll', path: 'lib/a&b.dll', size: 1),
+        ];
+
+      final String targets = _targetsOf(await _builder.buildPlan(pack));
+
+      expect(
+        targets,
+        contains(
+          r'<MASM Include="$(MSBuildThisFileDirectory)files\assembly\msbuild\a&amp;b\a&amp;b.asm">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<ResourceCompile Include="$(MSBuildThisFileDirectory)files\resource\msbuild'
+          r'\a&amp;b\a&amp;b.rc">',
+        ),
+      );
+      expect(
+        targets,
+        contains(
+          r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library'
+          r'\a&amp;b.dll" />',
+        ),
+      );
+      expect(targets, isNot(contains(r'a&b')));
+    });
+
+    test('无宏、库目录、附加库、命令与特殊文件时仅保留 include 行', () async {
+      final String targets = _targetsOf(await _builder.buildPlan(_pack()));
+
+      expect(targets, isNot(contains('<PreprocessorDefinitions>')));
+      expect(targets, isNot(contains('<AdditionalLibraryDirectories>')));
+      expect(targets, isNot(contains('<AdditionalDependencies>')));
+      expect(targets, isNot(contains('ItemDefinitionGroup Condition')));
+      expect(targets, isNot(contains('<PropertyGroup')));
+      expect(targets, isNot(contains('CnpPreBuild')));
+      expect(targets, isNot(contains('CnpPostBuild')));
+      expect(targets, isNot(contains('<Exec')));
+      expect(targets, isNot(contains('<ImportGroup')));
+      expect(targets, isNot(contains('<MASM')));
+      expect(targets, isNot(contains('<ResourceCompile')));
+      expect(targets, isNot(contains('PkgRuntimeBinary')));
+      expect(targets, isNot(contains('DeployPkgLicenses')));
+    });
+  });
+
+  group('计划', () {
+    test('包内条目按大小写不敏感路径确定性排序', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'B.h', path: 'include/B.h', size: 10),
+          FileModel(name: 'a.h', path: 'include/a.h', size: 20),
+          FileModel(name: 'zeta.lib', path: 'lib/zeta.lib', size: 30),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+      final List<String> paths = plan.entries
+          .map((PackageEntry entry) => entry.packagePath)
+          .toList();
+
+      expect(paths, <String>[
+        'build/native/demo.targets',
+        'build/native/files/library/zeta.lib',
+        'build/native/include/demo/a.h',
+        'build/native/include/demo/B.h',
+        'demo.nuspec',
+      ]);
+
+      final PackagePlan rebuilt = await _builder.buildPlan(pack);
+
+      expect(
+        rebuilt.entries.map((PackageEntry entry) => entry.packagePath),
+        paths,
+      );
+    });
+
+    test('文件数量与总大小统计与条目一致', () async {
+      final PackModel pack = _pack()
+        ..files = <FileModel>[
+          FileModel(name: 'foo.h', path: 'include/foo.h', size: 100),
+        ];
+
+      final PackagePlan plan = await _builder.buildPlan(pack);
+
+      expect(plan.fileCount, 3);
+      final int generatedBytes = <String>[
+        _nuspecOf(plan),
+        _targetsOf(plan),
+      ].fold<int>(0, (int sum, String text) => sum + utf8.encode(text).length);
+      expect(plan.totalSize, 100 + generatedBytes);
+    });
+  });
+}
+
+PackModel _pack({
+  String name = 'demo',
+  String version = '1.0.0',
+  String author = 'tester',
+  String? description,
+  String? license,
+  String? sourcePath,
+}) {
+  return PackModel(
+    name: name,
+    version: version,
+    author: author,
+    description: description,
+    license: license,
+    sourcePath: sourcePath,
+  );
+}
+
+String _packagePathOf(PackagePlan plan, String sourcePath) {
+  return plan.entries
+      .firstWhere(
+        (PackageEntry entry) => switch (entry.source) {
+          PackageFileSource(:final String path) => path == sourcePath,
+          PackageGeneratedSource() => false,
+        },
+      )
+      .packagePath;
+}
+
+PackageFileSource _fileSource(PackagePlan plan, String sourcePath) {
+  return plan.entries
+          .firstWhere(
+            (PackageEntry entry) => switch (entry.source) {
+              PackageFileSource(:final String path) => path == sourcePath,
+              PackageGeneratedSource() => false,
+            },
+          )
+          .source
+      as PackageFileSource;
+}
+
+String _nuspecOf(PackagePlan plan) => _generatedContent(plan, 'demo.nuspec');
+
+String _targetsOf(PackagePlan plan) =>
+    _generatedContent(plan, 'build/native/demo.targets');
+
+/// 切出许可证部署目标块（不含其闭合标签）。让 `<Copy>` 计数只覆盖该目标内的副本，
+/// 不被夹具里的 .dll/.pdb 触发的运行库部署项（同样发 `<Copy>`）干扰。
+String _licenseTargetBlock(String targets) {
+  final int start = targets.indexOf(r'<Target Name="DeployPkgLicenses_');
+  expect(start, greaterThanOrEqualTo(0), reason: '未发射许可证部署目标');
+  final int end = targets.indexOf('  </Target>', start);
+  expect(end, greaterThan(start), reason: '许可证部署目标块未正常闭合');
+  return targets.substring(start, end);
+}
+
+/// 按所在 ItemGroup 的 Condition 归拢 PkgRuntimeBinary 的 Include 路径，无条件组键为空串。
+/// 条目归属只能靠所在组判定，故不以纯文本 contains 断言配置隔离。
+Map<String, List<String>> _runtimeBinariesByCondition(String targets) {
+  final Map<String, List<String>> groups = <String, List<String>>{};
+  for (final RegExpMatch group in RegExp(
+    r'<ItemGroup(?: Condition="([^"]*)")?>(.*?)</ItemGroup>',
+    dotAll: true,
+  ).allMatches(targets)) {
+    final List<String> includes = RegExp(r'<PkgRuntimeBinary Include="([^"]*)"')
+        .allMatches(group.group(2)!)
+        .map((RegExpMatch include) => include.group(1)!)
+        .toList();
+    if (includes.isEmpty) {
+      continue;
+    }
+    groups.putIfAbsent(group.group(1) ?? '', () => <String>[]).addAll(includes);
+  }
+  return groups;
+}
+
+/// 按所在 ItemDefinitionGroup 的 Condition 归拢组体，无条件组键为空串。
+/// 属性归属只能靠所在元素判定，故不以纯文本 contains 断言落在哪个元素里。
+Map<String, String> _itemDefinitionGroups(String targets) {
+  final Map<String, String> groups = <String, String>{};
+  for (final RegExpMatch group in RegExp(
+    r'<ItemDefinitionGroup(?: Condition="([^"]*)")?>(.*?)</ItemDefinitionGroup>',
+    dotAll: true,
+  ).allMatches(targets)) {
+    final String condition = group.group(1) ?? '';
+    final String body = group.group(2)!;
+    groups.update(condition, (String existing) => '$existing$body', ifAbsent: () => body);
+  }
+  return groups;
+}
+
+/// 切出定义组内某个子元素（ClCompile / Link）的体；元素缺位返回 null。
+String? _definitionElement(String groupBody, String element) {
+  return RegExp('<$element>(.*?)</$element>', dotAll: true).firstMatch(groupBody)?.group(1);
+}
+
+/// 复现 MSBuild 对 Configuration 条件求值后的可见集合：项组条件在求值期已把项挡在
+/// PkgRuntimeBinary 之外，部署目标只看得见剩下的。MSBuild 的 == 与 != 都大小写不敏感，
+/// 属性未定义时为空串。配置名含 Release / Debug 时返回各自产物，其余一律归 release。
+List<String> _reachableRuntimeBinaries(String targets, String configuration) {
+  final String lowerConfiguration = configuration.toLowerCase();
+  final List<String> reachable = <String>[];
+  for (final RegExpMatch group in RegExp(
+    r'<ItemGroup(?: Condition="([^"]*)")?>(.*?)</ItemGroup>',
+    dotAll: true,
+  ).allMatches(targets)) {
+    final String? condition = group.group(1);
+    if (condition != null && !_configurationConditionHolds(condition, lowerConfiguration)) {
+      continue;
+    }
+    reachable.addAll(RegExp(r'<PkgRuntimeBinary Include="([^"]*)"')
+        .allMatches(group.group(2)!)
+        .map((RegExpMatch include) => include.group(1)!));
+  }
+  return reachable;
+}
+
+bool _configurationConditionHolds(String condition, String lowerConfiguration) {
+  final RegExpMatch? predicate = RegExp(
+    r"""^'\$\(Configuration\)'(==|!=)'(.+)'$$""",
+  ).firstMatch(condition);
+  expect(predicate, isNotNull, reason: '条件不是可求值的 Configuration 谓词: $condition');
+  final String expected = predicate!.group(2)!.toLowerCase();
+  return predicate.group(1) == '=='
+      ? lowerConfiguration == expected
+      : lowerConfiguration != expected;
+}
+
+String _generatedContent(PackagePlan plan, String packagePath) {
+  return (plan.entries
+              .firstWhere(
+                (PackageEntry entry) => entry.packagePath == packagePath,
+              )
+              .source
+          as PackageGeneratedSource)
+      .content;
+}
