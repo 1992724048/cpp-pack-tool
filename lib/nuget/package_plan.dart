@@ -86,9 +86,9 @@ const String sourceSubdirectory = 'source';
 /// files/ 下的源文件根（相对 [buildNativeRoot]）。
 const String sourceRelativeRoot = '$filesRelativeRoot/$sourceSubdirectory';
 
-/// files/ 下全部 11 个子目录，顺序即发射顺序（保证 .targets 可重现）。
+/// files/ 下全部 12 个子目录，顺序即发射顺序（保证 .targets 可重现）。
 const List<String> filesSubdirectories = <String>[
-  sourceSubdirectory, 'library', 'assembly', 'resource', 'script',
+  sourceSubdirectory, 'library', 'assembly', 'resource', 'script', 'msbuild',
   'fortran', 'llvm', 'python', 'data', 'executable', 'other',
 ];
 
@@ -132,7 +132,7 @@ String _withoutLeadingLibOrBin(String path) {
 }
 
 /// `.targets` 发射到 `ClCompile/AdditionalIncludeDirectories` 的搜索根，相对
-/// [buildNativeRoot]、`/` 分隔：`include` + files/ 下全部 11 个子目录 + files/source/ 之下
+/// [buildNativeRoot]、`/` 分隔：`include` + files/ 下全部 12 个子目录 + files/source/ 之下
 /// 每个实际含源文件的目录。入参与出参同坐标系 —— 载荷路径（[stripBuildNative] 的结果）。
 ///
 /// nuget_builder 原样发射该列表，header_include_fixer 用同一份判断包内能否解析。两者

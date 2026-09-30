@@ -242,7 +242,7 @@ void main() {
     expect(targets, isNot(contains(r'$(IntDir)asm_files_src_boot.asm.obj')));
   });
 
-  test('发射 12 条固定搜索根（include 1 条 + files 11 个子目录）', () async {
+  test('发射 13 条固定搜索根（include 1 条 + files 12 个子目录）', () async {
     final String targets = await _targetsOf(_packWithFiles(<FileModel>[
       FileModel(name: 'a.c', path: 'src/a.c', size: 1),
     ], name: 'demo'));

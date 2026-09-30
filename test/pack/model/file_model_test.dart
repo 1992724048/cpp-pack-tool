@@ -102,6 +102,16 @@ void main() {
       }
     });
 
+    test('props 与 targets 映射为 msbuild 类型', () {
+      expect(FileModel(name: 'mytool.props', path: 'mytool.props', size: 1).type, FileType.msbuild);
+      expect(FileModel(name: 'mytool.targets', path: 'mytool.targets', size: 1).type, FileType.msbuild);
+    });
+
+    test('MSBuild 扩展名大小写不敏感', () {
+      expect(FileModel(name: 'MyTool.PROPS', path: 'MyTool.PROPS', size: 1).type, FileType.msbuild);
+      expect(FileModel(name: 'MyTool.Targets', path: 'MyTool.Targets', size: 1).type, FileType.msbuild);
+    });
+
     test('LLVM 扩展名映射为 llvm', () {
       expect(FileModel(name: 'module.ll', path: '').type, FileType.llvm);
       expect(FileModel(name: 'module.bc', path: '').type, FileType.llvm);

@@ -186,6 +186,28 @@ void main() {
       expect(FileModel(name: 'app.rc', path: 'res/app.rc').type, FileType.resource);
       expect(FileModel(name: 'app.ico', path: 'res/app.ico').type, FileType.resource);
     });
+
+    // 落点是「分类桶 + 原相对路径」，与其余 11 个子目录同构（见上组 res/app.rc 先例）：
+    // 子目录只做归类，不剥源目录层级，故包源里的 msbuild/ 一段会原样保留。
+    test('msbuild 类文件落 files/msbuild/ 且保留原相对路径', () {
+      expect(
+        buildNativePayloadPath('mytool.props', FileType.msbuild, 'demo'),
+        'build/native/files/msbuild/mytool.props',
+      );
+      expect(
+        buildNativePayloadPath('msbuild/nested/mytool.targets', FileType.msbuild, 'demo'),
+        'build/native/files/msbuild/msbuild/nested/mytool.targets',
+      );
+    });
+
+    // 规格 §6.1：.xml 不可被 <Import>，归入 msbuild 无机制依据，继续按普通载荷落 other。
+    test('XML 不归 msbuild 类型，落 other 子目录', () {
+      expect(FileModel(name: 'mytool.xml', path: 'mytool.xml', size: 1).type, FileType.other);
+      expect(
+        buildNativePayloadPath('msbuild/mytool.xml', FileType.other, 'demo'),
+        'build/native/files/other/msbuild/mytool.xml',
+      );
+    });
   });
 
   group('stripBuildNative', () {
@@ -198,10 +220,18 @@ void main() {
   });
 
   group('payloadSearchRoots', () {
-    test('include + files 下 11 个子目录；源文件直接在 files/source 下时不多发动态根', () {
+    test('include + files 下 12 个子目录；源文件直接在 files/source 下时不多发动态根', () {
       expect(payloadSearchRoots(<String>['files/source/a.c']), <String>[
         'include',
         for (final String subdirectory in filesSubdirectories) 'files/$subdirectory',
+      ]);
+      // 规格 §11 R4：固定根无条件全发，files/msbuild 在包内不存在时同样照发。
+      // 上面的派生写法会跟着共享常量一起变而永不转红，故另钉一份字面清单与条数。
+      expect(payloadSearchRoots(<String>['files/source/a.c']), <String>[
+        'include',
+        'files/source', 'files/library', 'files/assembly', 'files/resource', 'files/script',
+        'files/msbuild', 'files/fortran', 'files/llvm', 'files/python', 'files/data',
+        'files/executable', 'files/other',
       ]);
     });
 
@@ -214,7 +244,7 @@ void main() {
         'files/other/x.txt',
         'include/demo/foo.h',
       ]);
-      // 固定部分：include + files 下 11 个子目录。
+      // 固定部分：include + files 下 12 个子目录。
       final int fixedRootCount = filesSubdirectories.length + 1;
 
       expect(roots, hasLength(fixedRootCount + 2));
@@ -250,7 +280,20 @@ void main() {
         reason: '${type.name} 的子目录须在 filesSubdirectories 中',
       );
     }
-    expect(filesSubdirectories, hasLength(11));
+    expect(filesSubdirectories, hasLength(12));
+  });
+
+  test('filesSubdirectories 含 msbuild 且与 filesSubdirectoryOf 对齐', () {
+    expect(filesSubdirectories, contains('msbuild'));
+    expect(filesSubdirectories[5], 'msbuild');
+    expect(filesSubdirectoryOf(FileType.msbuild), 'msbuild');
+    expect(filesSubdirectories.last, 'other');
+  });
+
+  // 规格 §8 第 1 条：段名一旦不字面等于 native，NuGet 为 .vcxproj 硬编码的 TFM
+  // 就匹配不上，整个 .targets 被静默不导入且零报错。
+  test('buildNativeRoot 末段必须是字面 native（NuGet 为 .vcxproj 硬编码的 TFM）', () {
+    expect(buildNativeRoot.split('/').last, 'native');
   });
 }
 

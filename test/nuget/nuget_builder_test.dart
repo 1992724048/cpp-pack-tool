@@ -408,7 +408,7 @@ void main() {
   });
 
   group('targets', () {
-    test('始终写入 include 目录行与 files 下 11 个子目录搜索根', () async {
+    test('始终写入 include 目录行与 files 下 12 个子目录搜索根', () async {
       final String targets = _targetsOf(await _builder.buildPlan(_pack()));
 
       expect(
@@ -420,6 +420,7 @@ void main() {
           r'$(MSBuildThisFileDirectory)files\assembly;'
           r'$(MSBuildThisFileDirectory)files\resource;'
           r'$(MSBuildThisFileDirectory)files\script;'
+          r'$(MSBuildThisFileDirectory)files\msbuild;'
           r'$(MSBuildThisFileDirectory)files\fortran;'
           r'$(MSBuildThisFileDirectory)files\llvm;'
           r'$(MSBuildThisFileDirectory)files\python;'

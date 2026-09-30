@@ -9,7 +9,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 const String _description =
     '按 NuGet 格式生成包内容：头文件与模块按源目录命名空间放入 '
     'build/native/include/，其余文件按类型放入 build/native/files/ 下的 '
-    'source / library / assembly / resource / script / fortran / llvm / '
+    'source / library / assembly / resource / script / msbuild / fortran / llvm / '
     'python / data / executable / other 子目录（根级许可证直接放在 files/ 下）；'
     '同时生成 .nuspec 与 .targets 构建集成文件。'
     '提示：.lib 与 .a 的 Release/Debug 隔离按路径中的 release / debug 目录名'
