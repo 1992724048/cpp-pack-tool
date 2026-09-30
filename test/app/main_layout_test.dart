@@ -2173,6 +2173,57 @@ void main() {
 
     expect(_dependencyGraphButton(tester).onPressed, isNull);
   });
+
+  testWidgets('工具栏创建包结构按钮无条件可用', (tester) async {
+    final _FakePackStore store = _FakePackStore();
+
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    expect(store.packs, isEmpty);
+    expect(_createPackageStructureButton(tester).onPressed, isNotNull);
+
+    await tester.tap(find.text('设置'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(_createPackageStructureButton(tester).onPressed, isNotNull);
+  });
+
+  testWidgets('取消目录选择时不弹出创建包结构对话框', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => null,
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('创建包结构'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(ContentDialog), findsNothing);
+  });
+
+  testWidgets('选定目录后弹出创建包结构对话框并显示路径与时序说明', (tester) async {
+    await _pumpMainLayout(
+      tester,
+      pickDirectory: () async => r'C:\libs\foo',
+      scanFiles: (_) async => <FileModel>[],
+    );
+
+    await tester.tap(find.byTooltip('创建包结构'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(ContentDialog), findsOneWidget);
+    expect(find.text(r'路径：C:\libs\foo'), findsOneWidget);
+    expect(find.byKey(const Key('packIdField')), findsOneWidget);
+    expect(find.textContaining('不会因为创建文件就自动注册进命令列表'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpMainLayout(
@@ -2292,6 +2343,14 @@ IconButton _dependencyGraphButton(WidgetTester tester) =>
     tester.widget<IconButton>(
       find.descendant(
         of: find.byTooltip('依赖关系图'),
+        matching: find.byType(IconButton),
+      ),
+    );
+
+IconButton _createPackageStructureButton(WidgetTester tester) =>
+    tester.widget<IconButton>(
+      find.descendant(
+        of: find.byTooltip('创建包结构'),
         matching: find.byType(IconButton),
       ),
     );

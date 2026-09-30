@@ -157,4 +157,58 @@ void main() {
       );
     });
   });
+
+  group('previewPackageStructure 落盘预演', () {
+    test('目录不存在时无需确认且无既有文件', () {
+      final ScaffoldPreview preview = previewPackageStructure('${root.path}/a/b/c');
+
+      expect(preview.existingEntryCount, 0);
+      expect(preview.requiresConfirmation, isFalse);
+      expect(preview.existingFiles, isEmpty);
+    });
+
+    test('空目录无需确认', () {
+      final ScaffoldPreview preview = previewPackageStructure(root.path);
+
+      expect(preview.existingEntryCount, 0);
+      expect(preview.requiresConfirmation, isFalse);
+    });
+
+    test('非空目录需确认并按落盘顺序列出既有模板文件', () {
+      File(joinPath(root.path, 'post.bat')).writeAsStringSync('x');
+      File(joinPath(root.path, 'build.py')).writeAsStringSync('x');
+      Directory(joinPath(root.path, 'include')).createSync();
+
+      final ScaffoldPreview preview = previewPackageStructure(root.path);
+
+      expect(preview.existingEntryCount, 3);
+      expect(preview.requiresConfirmation, isTrue);
+      expect(preview.existingFiles, <String>['build.py', 'post.bat']);
+    });
+
+    test('同名目录占位不算既有文件，写盘冲突留给异常上报', () {
+      Directory(joinPath(root.path, 'pre.bat')).createSync();
+
+      final ScaffoldPreview preview = previewPackageStructure(root.path);
+
+      expect(preview.requiresConfirmation, isTrue);
+      expect(preview.existingFiles, isEmpty);
+    });
+
+    test('路径被文件占位时降级为无需确认而非抛错', () {
+      final File blocker = File(joinPath(root.path, 'pkg'))..writeAsStringSync('x');
+
+      final ScaffoldPreview preview = previewPackageStructure(blocker.path);
+
+      expect(preview.existingEntryCount, 0);
+      expect(preview.requiresConfirmation, isFalse);
+    });
+
+    test('模板表与实际落盘一致', () async {
+      final ScaffoldOutcome outcome = await createPackageStructure(root.path);
+
+      expect(scaffoldTemplates.keys.toList(), _templateFileNames);
+      expect(outcome.createdFiles, scaffoldTemplates.keys.toList());
+    });
+  });
 }

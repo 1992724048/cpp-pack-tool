@@ -75,5 +75,11 @@ class Svgs {
     width: 20,
     height: 20,
   );
+  static final openFolderInNewTab = SvgPicture.asset(
+    'assets/icons/open_folder_in_new_tab.svg',
+    semanticsLabel: '创建包结构',
+    width: 20,
+    height: 20,
+  );
   static final info = SvgPicture.asset('assets/icons/info.svg', semanticsLabel: '信息', width: 20, height: 20);
 }

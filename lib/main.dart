@@ -38,6 +38,7 @@ import 'pack/ui/pack_list.dart';
 import 'nuget/ui/packaging_issues_dialog.dart';
 import 'pack/ui/dialogs/remap_pack_dialog.dart';
 import 'app/about_page.dart';
+import 'pack/ui/dialogs/create_package_structure_dialog.dart';
 import 'settings/ui/setting.dart';
 
 void main() {
@@ -226,6 +227,25 @@ class _MainLayoutState extends State<MainLayout> {
       ),
     );
     await _savePack(pack);
+  }
+
+  Future<void> _createPackageStructure() async {
+    final String? path = await widget.pickDirectory();
+    if (path == null) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final CreatePackageStructureResult? result = await showDialog<CreatePackageStructureResult>(
+      context: context,
+      builder: (_) => CreatePackageStructureDialog(directoryPath: path),
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    // Task 6 接入：据 result.metadata 构造 PackModel，跑 FileScan.scan 与
+    // PackStore.savePack 并追加 HistoryType.created 历史。此刻元数据与落盘汇总均已就绪。
   }
 
   Future<bool> _savePack(PackModel pack) async {
@@ -747,6 +767,10 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Svgs.internetConnection,
                     onPressed: _hasSelectedPack ? _openDependencyGraph : null,
                   ),
+                ),
+                Tooltip(
+                  message: '创建包结构',
+                  child: IconButton(icon: Svgs.openFolderInNewTab, onPressed: _createPackageStructure),
                 ),
               ],
             ),

@@ -1,4 +1,4 @@
-import 'package:cpp_nuget_pack/pack/ui/dialogs/license_field.dart';
+import 'package:cpp_nuget_pack/pack/ui/dialogs/pack_metadata_form.dart';
 import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/pack/model/pack_model.dart';
 import 'package:cpp_nuget_pack/pack/file_image.dart';
@@ -16,32 +16,14 @@ class AddDirectoryDialog extends StatefulWidget {
 }
 
 class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
-  final TextEditingController _idController = TextEditingController();
-  final TextEditingController _versionController = TextEditingController();
-  final TextEditingController _authorController = TextEditingController();
-  final TextEditingController _descriptionController = TextEditingController();
-
-  String? _license;
-  bool _licenseValid = true;
+  PackMetadataDraft? _draft;
   List<FileModel>? _files;
   Object? _scanError;
 
   @override
   void initState() {
     super.initState();
-    _idController.addListener(_refresh);
-    _versionController.addListener(_refresh);
-    _authorController.addListener(_refresh);
     _scan();
-  }
-
-  @override
-  void dispose() {
-    _idController.dispose();
-    _versionController.dispose();
-    _authorController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
   }
 
   Future<void> _scan() async {
@@ -59,28 +41,19 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
     }
   }
 
-  void _refresh() {
-    setState(() {});
-  }
-
-  bool get _canSubmit =>
-      _files != null &&
-      _licenseValid &&
-      _idController.text.trim().isNotEmpty &&
-      _versionController.text.trim().isNotEmpty &&
-      _authorController.text.trim().isNotEmpty;
+  bool get _canSubmit => _files != null && (_draft?.isComplete ?? false);
 
   void _submit() {
     final FileModel? icon = findIconFile(_files);
-    final String description = _descriptionController.text.trim();
+    final PackMetadata metadata = _draft!.metadata;
     Navigator.pop(
       context,
       PackModel(
-        name: _idController.text.trim(),
-        version: _versionController.text.trim(),
-        author: _authorController.text.trim(),
-        description: description.isEmpty ? null : description,
-        license: _license,
+        name: metadata.name,
+        version: metadata.version,
+        author: metadata.author,
+        description: metadata.description,
+        license: metadata.license,
         iconPath: icon?.path,
         sourcePath: widget.directoryPath,
       )..files = _files ?? const <FileModel>[],
@@ -100,7 +73,10 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
             Text('路径：${widget.directoryPath}'),
             const SizedBox(height: 12),
             _buildScanStatus(),
-            if (_files != null) ...[const SizedBox(height: 12), _buildFormFields()],
+            if (_files != null) ...[
+              const SizedBox(height: 12),
+              PackMetadataForm(onChanged: (PackMetadataDraft draft) => setState(() => _draft = draft)),
+            ],
           ],
         ),
       ),
@@ -150,63 +126,6 @@ class _AddDirectoryDialogState extends State<AddDirectoryDialog> {
         const SizedBox(width: 12),
         Expanded(child: Text('图标：${iconFile.path}', overflow: TextOverflow.ellipsis)),
       ],
-    );
-  }
-
-  Widget _buildFormFields() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildField(
-          label: '包 ID',
-          child: TextBox(key: const Key('packIdField'), controller: _idController),
-        ),
-        const SizedBox(height: 12),
-        _buildField(
-          label: '版本',
-          child: TextBox(key: const Key('packVersionField'), controller: _versionController, placeholder: '1.0.0'),
-        ),
-        const SizedBox(height: 12),
-        _buildField(
-          label: '作者',
-          child: TextBox(key: const Key('packAuthorField'), controller: _authorController),
-        ),
-        const SizedBox(height: 12),
-        _buildField(
-          label: '许可证',
-          child: LicenseField(
-            value: _license,
-            comboBoxKey: const Key('packLicenseField'),
-            customFieldKey: const Key('packLicenseCustomField'),
-            errorKey: const Key('packLicenseCustomError'),
-            onChanged: (String? license, bool isValid) {
-              setState(() {
-                _license = license;
-                _licenseValid = isValid;
-              });
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        _buildField(
-          label: '描述',
-          child: TextBox(
-            key: const Key('packDescriptionField'),
-            controller: _descriptionController,
-            minLines: 3,
-            maxLines: 3,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildField({required String label, required Widget child}) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [Text(label), const SizedBox(height: 4), child],
     );
   }
 }

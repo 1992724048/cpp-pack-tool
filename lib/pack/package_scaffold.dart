@@ -46,6 +46,14 @@ rem 由包内 build/native/<包ID>.targets 的 CnpPostBuild_* 目标调用。
 rem 可用 $(MSBuildThisFileDirectory) 定位包内载荷。
 ''';
 
+/// 模板文件内容，键为文件名、值为落盘内容，顺序即落盘顺序。UI 的落盘预览共用此表，
+/// 避免「界面预告的文件」与「实际落盘的文件」两处漂移。
+const Map<String, String> scaffoldTemplates = <String, String>{
+  'build.py': _recipeTemplate,
+  'pre.bat': _preBatchTemplate,
+  'post.bat': _postBatchTemplate,
+};
+
 /// 脚手架落盘汇总。已存在的文件与目录不计入 created*，避免用户把「补齐缺失项」
 /// 误读成「重建了整棵树」。
 class ScaffoldOutcome {
@@ -95,9 +103,9 @@ Future<ScaffoldOutcome> createPackageStructure(String rootPath) async {
       createdDirectories.add(relative);
     }
 
-    await _writeIfAbsent(rootPath, 'build.py', _recipeTemplate, createdFiles, skippedFiles);
-    await _writeIfAbsent(rootPath, 'pre.bat', _preBatchTemplate, createdFiles, skippedFiles);
-    await _writeIfAbsent(rootPath, 'post.bat', _postBatchTemplate, createdFiles, skippedFiles);
+    for (final MapEntry<String, String> template in scaffoldTemplates.entries) {
+      await _writeIfAbsent(rootPath, template.key, template.value, createdFiles, skippedFiles);
+    }
   } on FileSystemException catch (error) {
     // 插值整个异常而非 [FileSystemException.message]：后者恒为英文通用文案
     // （「Cannot open file」），丢掉失败路径与本地化 OS 原因，而本条消息要
@@ -129,4 +137,40 @@ Future<void> _writeIfAbsent(
 
   await file.writeAsString(content, flush: true);
   createdFiles.add(name);
+}
+
+/// 落盘前预演。只回答「哪些会被创建、哪些既有文件会被跳过」，不写盘 ——
+/// 真正的结果以 [createPackageStructure] 的返回为准。
+class ScaffoldPreview {
+  const ScaffoldPreview({required this.existingEntryCount, required this.existingFiles});
+
+  /// 目标目录已存在的条目数（文件与子目录合计）。大于 0 即触发落盘前确认。
+  final int existingEntryCount;
+
+  /// 模板文件中已存在的，将被跳过而非覆盖。顺序同 [scaffoldTemplates]。
+  final List<String> existingFiles;
+
+  bool get requiresConfirmation => existingEntryCount > 0;
+}
+
+ScaffoldPreview previewPackageStructure(String rootPath) {
+  final Directory root = Directory(rootPath);
+  int existingEntryCount = 0;
+  // existsSync 对权限不足等错误返回 false 而不抛出，因此这里只需处理「目录确实存在
+  // 但列不出来」：按无需确认降级，后续写盘失败会经 PackageScaffoldException 提示。
+  if (root.existsSync()) {
+    try {
+      existingEntryCount = root.listSync().length;
+    } on FileSystemException {
+      existingEntryCount = 0;
+    }
+  }
+
+  return ScaffoldPreview(
+    existingEntryCount: existingEntryCount,
+    existingFiles: <String>[
+      for (final String name in scaffoldTemplates.keys)
+        if (File(joinPath(rootPath, name)).existsSync()) name,
+    ],
+  );
 }
