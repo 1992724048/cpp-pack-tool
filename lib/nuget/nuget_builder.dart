@@ -418,8 +418,9 @@ class NuGetPackageBuilder {
         '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" TreatAsLocalProperty="Platform">',
       );
     for (final String relative in relativePaths) {
+      // \$ 保住 $(MSBuildThisFileDirectory) 为字面量，$nativeTfmSegment 走插值取段名常量。
       final String importPath =
-          r'$(MSBuildThisFileDirectory)' '$nativeTfmSegment' r'\' + relative.replaceAll('/', r'\');
+          '\$(MSBuildThisFileDirectory)$nativeTfmSegment\\${relative.replaceAll('/', r'\')}';
       buffer.writeln('  <Import Project="${_escapeXml(importPath)}" />');
     }
     buffer.writeln('</Project>');
