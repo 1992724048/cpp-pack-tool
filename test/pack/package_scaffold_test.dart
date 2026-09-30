@@ -204,6 +204,24 @@ void main() {
       expect(preview.requiresConfirmation, isFalse);
     });
 
+    test('已存在的产物目录计入既有目录且顺序同 scaffoldDirectories', () {
+      Directory(joinPath(root.path, 'bin/x64/Release')).createSync(recursive: true);
+      Directory(joinPath(root.path, 'lib/x64/Debug')).createSync(recursive: true);
+
+      final ScaffoldPreview preview = previewPackageStructure(root.path);
+
+      expect(preview.existingDirectories, <String>['lib/x64/Debug', 'bin/x64/Release']);
+    });
+
+    test('同名文件占位不算既有目录', () {
+      Directory(joinPath(root.path, 'lib/x64')).createSync(recursive: true);
+      File(joinPath(root.path, 'lib/x64/Debug')).writeAsStringSync('x');
+
+      final ScaffoldPreview preview = previewPackageStructure(root.path);
+
+      expect(preview.existingDirectories, isEmpty);
+    });
+
     test('模板表与实际落盘一致', () async {
       final ScaffoldOutcome outcome = await createPackageStructure(root.path);
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cpp_nuget_pack/pack/package_scaffold.dart';
@@ -89,7 +90,11 @@ void main() {
     int createCalls = 0;
     await _pumpDialog(
       tester,
-      preview: (String _) => const ScaffoldPreview(existingEntryCount: 5, existingFiles: <String>['build.py', 'pre.bat']),
+      preview: (String _) => const ScaffoldPreview(
+        existingEntryCount: 2,
+        existingDirectories: <String>[],
+        existingFiles: <String>['build.py', 'pre.bat'],
+      ),
       createStructure: (String rootPath) {
         createCalls++;
         return _scaffoldSucceeding(rootPath);
@@ -102,13 +107,62 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('目标目录非空'), findsOneWidget);
-    expect(find.textContaining('目录中已有 5 个条目'), findsOneWidget);
+    expect(find.textContaining('目录中已有 2 个条目'), findsOneWidget);
     expect(find.text('已存在，将跳过：build.py、pre.bat'), findsOneWidget);
     expect(find.text('  build.py'), findsNothing);
     expect(find.text('  post.bat'), findsOneWidget);
     expect(find.text('  lib/x64/Debug/'), findsOneWidget);
     expect(find.text('  bin/x64/Release/'), findsOneWidget);
     expect(createCalls, 0);
+  });
+
+  testWidgets('确认框把既有目录与将创建目录分列，已存在的不计入将创建', (tester) async {
+    await _pumpDialog(
+      tester,
+      preview: (String _) => const ScaffoldPreview(
+        existingEntryCount: 2,
+        existingDirectories: <String>['lib/x64/Debug', 'bin/x64/Release'],
+        existingFiles: <String>[],
+      ),
+    );
+
+    await _fillRequiredFields(tester);
+    await _tapDialogButton(tester, '确定');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('已存在，将跳过：lib/x64/Debug/、bin/x64/Release/'), findsOneWidget);
+    expect(find.text('  lib/x64/Debug/'), findsNothing);
+    expect(find.text('  bin/x64/Release/'), findsNothing);
+    expect(find.text('  lib/x64/Release/'), findsOneWidget);
+    expect(find.text('  bin/x64/Debug/'), findsOneWidget);
+  });
+
+  testWidgets('包结构已完整时确认框只报已存在，不列将创建项', (tester) async {
+    await _pumpDialog(
+      tester,
+      preview: (String _) => const ScaffoldPreview(
+        existingEntryCount: 7,
+        existingDirectories: <String>[
+          'lib/x64/Debug',
+          'lib/x64/Release',
+          'bin/x64/Debug',
+          'bin/x64/Release',
+        ],
+        existingFiles: <String>['build.py', 'pre.bat', 'post.bat'],
+      ),
+    );
+
+    await _fillRequiredFields(tester);
+    await _tapDialogButton(tester, '确定');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('将创建的目录：'), findsNothing);
+    expect(find.text('将创建的文件：'), findsNothing);
+    expect(find.text('包结构已完整，不会新增任何目录或文件。'), findsOneWidget);
+    expect(find.textContaining('已存在，将跳过：lib/x64/Debug/、lib/x64/Release/、'), findsOneWidget);
+    expect(find.textContaining('bin/x64/Release/、build.py、pre.bat、post.bat'), findsOneWidget);
   });
 
   testWidgets('默认预演读到真实非空目录时同样弹确认框', (tester) async {
@@ -138,7 +192,11 @@ void main() {
     int createCalls = 0;
     await _pumpDialog(
       tester,
-      preview: (String _) => const ScaffoldPreview(existingEntryCount: 1, existingFiles: <String>[]),
+      preview: (String _) => const ScaffoldPreview(
+        existingEntryCount: 1,
+        existingDirectories: <String>[],
+        existingFiles: <String>[],
+      ),
       createStructure: (String rootPath) {
         createCalls++;
         return _scaffoldSucceeding(rootPath);
@@ -205,6 +263,34 @@ void main() {
     expect(createCalls, 2);
     expect(result, isNotNull);
     expect(result!.outcome.createdFiles, <String>['build.py', 'pre.bat', 'post.bat']);
+  });
+
+  testWidgets('落盘在途时确定按钮显示创建中并禁用', (tester) async {
+    final Completer<ScaffoldOutcome> pending = Completer<ScaffoldOutcome>();
+    await _pumpDialog(
+      tester,
+      createStructure: (String _) => pending.future,
+    );
+
+    await _fillRequiredFields(tester);
+    await tester.tap(find.text('确定'));
+    await tester.pump();
+
+    expect(find.text('确定'), findsNothing);
+    expect(find.text('创建中…'), findsOneWidget);
+    expect(_submittingButton(tester).onPressed, isNull);
+
+    pending.complete(
+      const ScaffoldOutcome(
+        createdDirectories: <String>['.'],
+        createdFiles: <String>['build.py', 'pre.bat', 'post.bat'],
+        skippedFiles: <String>[],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(ContentDialog), findsNothing);
   });
 
   testWidgets('点击取消按钮后对话框关闭且不返回数据', (tester) async {
@@ -298,3 +384,6 @@ Future<void> _tapTopmostDialogButton(WidgetTester tester, String label) async {
 
 FilledButton _confirmButton(WidgetTester tester) =>
     tester.widget<FilledButton>(find.widgetWithText(FilledButton, '确定'));
+
+FilledButton _submittingButton(WidgetTester tester) =>
+    tester.widget<FilledButton>(find.widgetWithText(FilledButton, '创建中…'));

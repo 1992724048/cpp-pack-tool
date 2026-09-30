@@ -109,15 +109,23 @@ class _CreatePackageStructureDialogState extends State<CreatePackageStructureDia
       ),
       actions: [
         Button(onPressed: _submitting ? null : () => Navigator.pop(context), child: const Text('取消')),
-        FilledButton(onPressed: _canSubmit ? _submit : null, child: const Text('确定')),
+        FilledButton(onPressed: _canSubmit ? _submit : null, child: Text(_submitting ? '创建中…' : '确定')),
       ],
     );
   }
 
   Widget _buildConfirmationDialog(BuildContext dialogContext) {
+    final List<String> directoriesToCreate = <String>[
+      for (final String relative in scaffoldDirectories)
+        if (!_preview.existingDirectories.contains(relative)) relative,
+    ];
     final List<String> filesToCreate = <String>[
       for (final String name in scaffoldTemplates.keys)
         if (!_preview.existingFiles.contains(name)) name,
+    ];
+    final List<String> existingEntries = <String>[
+      for (final String relative in _preview.existingDirectories) '$relative/',
+      ..._preview.existingFiles,
     ];
     return ContentDialog(
       title: const Text('目标目录非空'),
@@ -128,15 +136,23 @@ class _CreatePackageStructureDialogState extends State<CreatePackageStructureDia
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('目录中已有 ${_preview.existingEntryCount} 个条目。继续创建只补齐缺失项，已存在的文件不会被覆盖。'),
-            const SizedBox(height: 12),
-            const Text('将创建的目录：'),
-            for (final String relative in scaffoldDirectories) Text('  $relative/'),
-            const SizedBox(height: 8),
-            const Text('将创建的文件：'),
-            for (final String name in filesToCreate) Text('  $name'),
-            if (_preview.existingFiles.isNotEmpty) ...[
+            if (directoriesToCreate.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Text('将创建的目录：'),
+              for (final String relative in directoriesToCreate) Text('  $relative/'),
+            ],
+            if (filesToCreate.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('已存在，将跳过：${_preview.existingFiles.join('、')}'),
+              const Text('将创建的文件：'),
+              for (final String name in filesToCreate) Text('  $name'),
+            ],
+            if (existingEntries.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('已存在，将跳过：${existingEntries.join('、')}'),
+            ],
+            if (directoriesToCreate.isEmpty && filesToCreate.isEmpty) ...[
+              const SizedBox(height: 8),
+              const Text('包结构已完整，不会新增任何目录或文件。'),
             ],
           ],
         ),

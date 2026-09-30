@@ -139,13 +139,20 @@ Future<void> _writeIfAbsent(
   createdFiles.add(name);
 }
 
-/// 落盘前预演。只回答「哪些会被创建、哪些既有文件会被跳过」，不写盘 ——
+/// 落盘前预演。只回答「哪些会被创建、哪些既有目录与文件会被跳过」，不写盘 ——
 /// 真正的结果以 [createPackageStructure] 的返回为准。
 class ScaffoldPreview {
-  const ScaffoldPreview({required this.existingEntryCount, required this.existingFiles});
+  const ScaffoldPreview({
+    required this.existingEntryCount,
+    required this.existingDirectories,
+    required this.existingFiles,
+  });
 
   /// 目标目录已存在的条目数（文件与子目录合计）。大于 0 即触发落盘前确认。
   final int existingEntryCount;
+
+  /// [scaffoldDirectories] 中已存在的，将被跳过而非重建。顺序同 [scaffoldDirectories]。
+  final List<String> existingDirectories;
 
   /// 模板文件中已存在的，将被跳过而非覆盖。顺序同 [scaffoldTemplates]。
   final List<String> existingFiles;
@@ -168,6 +175,10 @@ ScaffoldPreview previewPackageStructure(String rootPath) {
 
   return ScaffoldPreview(
     existingEntryCount: existingEntryCount,
+    existingDirectories: <String>[
+      for (final String relative in scaffoldDirectories)
+        if (Directory(joinPath(rootPath, relative)).existsSync()) relative,
+    ],
     existingFiles: <String>[
       for (final String name in scaffoldTemplates.keys)
         if (File(joinPath(rootPath, name)).existsSync()) name,
