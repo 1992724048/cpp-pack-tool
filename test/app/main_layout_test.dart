@@ -2226,7 +2226,7 @@ void main() {
     expect(find.textContaining('不会因为创建文件就自动注册进命令列表'), findsOneWidget);
   });
 
-  testWidgets('创建包结构确认后落盘为包、记一次创建历史并选中', (tester) async {
+  testWidgets('创建包结构确认后落盘为包、记一次创建历史并选中新建的包', (tester) async {
     // 真实文件 I/O 整体放进 runAsync（口径同「打包前自动修复」用例）：先用真实脚手架
     // 把结构铺满，对话框内那次落盘便只剩同步存在性检查，fake_async 测试区不会挂死。
     late Directory sourceRoot;
@@ -2240,7 +2240,8 @@ void main() {
       }
     });
 
-    final _FakePackStore store = _FakePackStore();
+    // 预置 aaa：只有 1 个包时选中下标 0 是唯一可能值，抓不到「选错了包」。
+    final _FakePackStore store = _FakePackStore(packs: <PackModel>[_pack('aaa', '0.9.0')]);
     await _pumpMainLayout(
       tester,
       store: store,
@@ -2258,22 +2259,77 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     await _fillRequiredFields(tester, name: 'demo');
+    await tester.enterText(find.byKey(const Key('packDescriptionField')), '端到端演示包');
+    await _selectLicense(tester, 'MIT');
     await _tapDialogButton(tester, '确定');
     expect(find.text('目标目录非空'), findsOneWidget);
     await _tapDialogButton(tester, '继续创建');
 
     expect(store.saveCount, 1);
-    expect(store.packs, hasLength(1));
-    final PackModel saved = store.packs.single;
-    expect(saved.name, 'demo');
+    expect(store.packs, hasLength(2));
+    final PackModel saved = store.packs.lastWhere((PackModel pack) => pack.name == 'demo');
+    expect(saved.version, '1.0.0');
     expect(saved.author, 'tester');
+    expect(saved.description, '端到端演示包');
+    expect(saved.license, 'MIT');
     expect(saved.sourcePath, sourceRoot.path);
     expect(saved.files, hasLength(3));
     expect(saved.history, hasLength(1));
     expect(saved.history.single.type, HistoryType.created);
     expect(saved.history.single.message, '创建包：3 个文件，总大小 1.1 KB');
-    expect(_selectedIndex(tester), 0);
+    expect(_selectedIndex(tester), 1, reason: '按名排序后 demo 在 aaa 之后；硬编码选中第 0 项会被这条抓住');
     expect(find.text('尚未添加'), findsNothing);
+    // 结构已预铺，3 个模板文件全部走「已存在、未覆盖」：规格 §7.5 要求记入汇总，
+    // 而落盘前的确认框只是预演，不能当汇总用。
+    expect(find.textContaining('跳过 3 个已存在、未覆盖的文件'), findsOneWidget);
+  });
+
+  testWidgets('创建包结构关闭对话框后的扫描空窗期工具栏保持忙碌态', (tester) async {
+    late Directory sourceRoot;
+    await tester.runAsync(() async {
+      sourceRoot = await Directory.systemTemp.createTemp('cnp_scaffold_busy_');
+      await createPackageStructure(sourceRoot.path);
+    });
+    addTearDown(() {
+      if (sourceRoot.existsSync()) {
+        sourceRoot.deleteSync(recursive: true);
+      }
+    });
+
+    // 扫描用 Completer 挂起，把「对话框已关、扫描未完」这段空窗固定住。
+    final Completer<List<FileModel>> scan = Completer<List<FileModel>>();
+    final _FakePackStore store = _FakePackStore();
+    await _pumpMainLayout(
+      tester,
+      store: store,
+      pickDirectory: () async => sourceRoot.path,
+      scanFiles: (_) => scan.future,
+    );
+
+    await tester.tap(find.byTooltip('创建包结构'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await _fillRequiredFields(tester, name: 'demo');
+    await _tapDialogButton(tester, '确定');
+    await _tapDialogButton(tester, '继续创建');
+
+    expect(find.byType(ContentDialog), findsNothing);
+    expect(_createPackageStructureButton(tester).onPressed, isNull);
+    expect(
+      find.descendant(of: find.byTooltip('创建包结构'), matching: find.byType(ProgressRing)),
+      findsOneWidget,
+      reason: '扫描与保存期间没有任何对话框遮挡，忙碌态是用户唯一的进度反馈',
+    );
+    expect(store.saveCount, 0);
+
+    scan.complete(<FileModel>[FileModel(name: 'build.py', path: 'build.py', size: 10)]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+
+    expect(store.saveCount, 1);
+    expect(_createPackageStructureButton(tester).onPressed, isNotNull);
   });
 
   testWidgets('创建包结构后扫描源目录失败时提示且不落盘', (tester) async {
@@ -2304,9 +2360,9 @@ void main() {
     await _tapDialogButton(tester, '确定');
     await _tapDialogButton(tester, '继续创建');
 
-    expect(store.saveCount, 0);
-    expect(store.packs, isEmpty);
+    expect(store.saveCount, 0, reason: '扫描抛错时不得落盘，store 从未被写入');
     expect(find.textContaining('扫描包源目录失败'), findsOneWidget);
+    expect(_createPackageStructureButton(tester).onPressed, isNotNull, reason: '失败后按钮必须恢复可用');
   });
 }
 
@@ -2386,6 +2442,18 @@ Future<void> _fillRequiredFields(
   await tester.enterText(find.byKey(const Key('packVersionField')), version);
   await tester.enterText(find.byKey(const Key('packAuthorField')), 'tester');
   await tester.pump();
+}
+
+Future<void> _selectLicense(WidgetTester tester, String option) async {
+  final Finder field = find.byKey(const Key('packLicenseField'));
+  await tester.ensureVisible(field);
+  await tester.pump();
+  await tester.tap(field);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(find.text(option).last);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 Future<void> _tapDialogButton(WidgetTester tester, String label) async {

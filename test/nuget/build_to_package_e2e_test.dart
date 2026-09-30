@@ -249,14 +249,16 @@ void main() {
 
     final PackagePlan plan = await const NuGetPackageBuilder().buildPlan(pack);
 
+    // 按精确路径而非后缀排除：按后缀会把将来新增的 .props 模板、或被误映射成
+    // .targets 路径的载荷一并静默滤掉，「恰好两条」就成了假绿。
+    const Set<String> templateEntries = <String>{
+      'scaffold.nuspec',
+      'build/native/scaffold.targets',
+      'build/scaffold.props',
+    };
     final List<String> fileEntries = plan.entries
         .map((PackageEntry entry) => entry.packagePath)
-        .where(
-          (String path) =>
-              !path.endsWith('.nuspec') &&
-              !path.endsWith('.targets') &&
-              !path.endsWith('.props'),
-        )
+        .where((String path) => !templateEntries.contains(path))
         .toList();
     expect(fileEntries, <String>[
       'build/native/files/script/post.bat',

@@ -6,6 +6,7 @@ import 'package:cpp_nuget_pack/build/build_runner.dart';
 import 'package:cpp_nuget_pack/nuget/header_include_fixer.dart';
 import 'package:cpp_nuget_pack/build/toolchain.dart' as toolchain;
 import 'package:cpp_nuget_pack/pack/pack_store.dart';
+import 'package:cpp_nuget_pack/pack/package_scaffold.dart';
 import 'package:cpp_nuget_pack/pack/model/dependency_model.dart';
 import 'package:cpp_nuget_pack/pack/model/file_model.dart';
 import 'package:cpp_nuget_pack/pack/model/history_model.dart';
@@ -158,6 +159,7 @@ class _MainLayoutState extends State<MainLayout> {
 
   List<PackModel> _packs = [];
   int? _selected;
+  bool _creatingPackageStructure = false;
 
   @override
   void initState() {
@@ -231,11 +233,26 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Future<void> _createPackageStructure() async {
-    final String? path = await widget.pickDirectory();
-    if (path == null) {
+    if (_creatingPackageStructure) {
       return;
     }
-    if (!mounted) {
+    setState(() => _creatingPackageStructure = true);
+    try {
+      await _createPackageStructureFlow();
+    } finally {
+      if (mounted) {
+        setState(() => _creatingPackageStructure = false);
+      }
+    }
+  }
+
+  /// 落盘（对话框内）→ 扫描 → 保存 → 历史。扫描与保存发生在对话框关闭之后：对话框契约
+  /// 要求关闭时才回传 [ScaffoldOutcome]，规格 §7.2 流程图把这两步画在对话框内并不成立。
+  /// 代价是「对话框已关、扫描未完」有一段无反馈的空窗 —— 全递归扫描大包源树可达数秒，
+  /// 故整段流程由 _creatingPackageStructure 驱动工具栏的 busy 态兜住。
+  Future<void> _createPackageStructureFlow() async {
+    final String? path = await widget.pickDirectory();
+    if (path == null || !mounted) {
       return;
     }
     final CreatePackageStructureResult? result = await showDialog<CreatePackageStructureResult>(
@@ -283,7 +300,24 @@ class _MainLayoutState extends State<MainLayout> {
       ),
     );
 
-    await _savePack(pack);
+    if (!await _savePack(pack) || !mounted) {
+      return;
+    }
+    _reportScaffoldOutcome(result.outcome);
+  }
+
+  /// 规格 §7.5「绝不覆盖 → 跳过，记入汇总报告」。落盘前的确认框是预演，与实际落盘之间
+  /// 存在竞态（确认框停留期间文件被外部改动），故只信落盘的真实返回值。
+  void _reportScaffoldOutcome(ScaffoldOutcome outcome) {
+    if (outcome.skippedFiles.isEmpty) {
+      return;
+    }
+    showFloatingToast(
+      context,
+      '已创建 ${outcome.createdFiles.length} 个文件，'
+      '跳过 ${outcome.skippedFiles.length} 个已存在、未覆盖的文件',
+      duration: const Duration(seconds: 5),
+    );
   }
 
   Future<bool> _savePack(PackModel pack) async {
@@ -808,7 +842,12 @@ class _MainLayoutState extends State<MainLayout> {
                 ),
                 Tooltip(
                   message: '创建包结构',
-                  child: IconButton(icon: Svgs.openFolderInNewTab, onPressed: _createPackageStructure),
+                  child: IconButton(
+                    icon: _creatingPackageStructure
+                        ? const SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
+                        : Svgs.openFolderInNewTab,
+                    onPressed: _creatingPackageStructure ? null : _createPackageStructure,
+                  ),
                 ),
               ],
             ),
