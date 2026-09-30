@@ -240,9 +240,10 @@ void main() {
     expect(await readText('src/a/one.cc'), '#include "helper.cc"\n');
   });
 
-  test('同目录 .lib 候选不做裸文件名回落：落 files/library 无搜索根，报 crossTree', () async {
-    // `.lib` 落 `build/native/files/library/`，`.targets` 不为库文件下发可包含搜索根，
-    // 裸文件名在包内必然解析不到。少了文件类型闸就会产出一次 from != to 的无效改写且不报告。
+  test('同目录 .lib 候选不做裸文件名回落：库文件不是可包含类型，报 crossTree', () async {
+    // `.lib` 虽与 `.rc` / `.c` 同处已下发搜索根的 `files/library/`，但库文件不是可包含
+    // 类型，修复器按 FileType 排除（规格 §5.4）——该排除按文件类型判定，与所在目录无关。
+    // 少了文件类型闸就会产出一次 from != to 的无效改写且不报告。
     await writeText('src/x/one.cc', '#include "q/helper.lib"\n');
     await writeText('src/x/helper.lib', '');
 
@@ -266,6 +267,76 @@ void main() {
     // from == to 的空修复。
     expect(report.isEmpty, isTrue);
     expect(await readText('src/a/one.cc'), '#include "helper.cc"\n');
+  });
+
+  test('跨类型的同目录候选不回落裸文件名：files/ 下各类型分属不同落点目录', () async {
+    // `.c` 落 files/source/、`.rc` 落 files/resource/：同在 files/ 之下却不在同一目录，
+    // 裸文件名在包内两条查找路径都落空（§5.2 的动态根只覆盖 files/source/ 之下的目录）。
+    // 按源目录比较会产出一处 from != to 且必然失效的改写，且全程不报告。
+    await writeText('src/a/one.c', '#include "q/helper.rc"\n');
+    await writeText('src/a/helper.rc', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(report.issues.single.kind, HeaderIncludeIssueKind.crossTree);
+    expect(report.issues.single.candidates, <String>['src/a/helper.rc']);
+    expect(await readText('src/a/one.c'), '#include "q/helper.rc"\n');
+  });
+
+  test('files 索引存落点：同目录裸文件名引用可解析，不产生 from == to 的空修复', () async {
+    // files/ 索引若存源路径，本目录基准却是落点（`source/src`），两边坐标系不一致时
+    // 查不到自己的邻居，只能回落裸文件名改写，fixedCount 虚增。
+    await writeText('src/bar.c', '#include "foo.c"\n');
+    await writeText('src/foo.c', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.isEmpty, isTrue);
+    expect(await readText('src/bar.c'), '#include "foo.c"\n');
+  });
+
+  test('lib/dll/pdb 不因落在 files/library 下而算已解析：三者一律报 crossTree', () async {
+    // 排除按文件类型判定，与所在目录无关（规格 §5.4）：`files/library` 确是已下发的
+    // 搜索根，但这三类文件不是可包含类型，不得因落在该目录下就获得裸文件名改写。
+    await writeText(
+      'x/one.cc',
+      '#include "foo.lib"\n#include "bar.dll"\n#include "baz.pdb"\n',
+    );
+    await writeText('lib/x64/foo.lib', '');
+    await writeText('lib/x64/bar.dll', '');
+    await writeText('lib/x64/baz.pdb', '');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.fixedCount, 0);
+    expect(report.issues, hasLength(3));
+    expect(
+      report.issues.map((HeaderIncludeIssue issue) => issue.kind).toSet(),
+      <HeaderIncludeIssueKind>{HeaderIncludeIssueKind.crossTree},
+    );
+    expect(
+      await readText('x/one.cc'),
+      '#include "foo.lib"\n#include "bar.dll"\n#include "baz.pdb"\n',
+    );
+  });
+
+  test('include 索引存命名空间相对路径：源码树写法不算已解析', () async {
+    // 头文件落 `include/gtest/foo.h`、索引存 `gtest/foo.h`（相对 include 根）。索引若改存
+    // 落点全路径或源路径，`include/gtest/foo.h` 这条过期的源码树写法就会被判为已解析而
+    // 静默放过，改写目标也会带上前缀。
+    await writeText('include/gtest/foo.h', '#pragma once\n');
+    await writeText('src/a/user.cc', '#include "include/gtest/foo.h"\n');
+
+    final HeaderIncludeFixReport report = await runFixer();
+
+    expect(report.issues, isEmpty);
+    expect(report.fixedCount, 1);
+    final HeaderIncludeFix fix = report.fixed.single;
+    expect(fix.filePath, 'src/a/user.cc');
+    expect(fix.from, 'include/gtest/foo.h');
+    expect(fix.to, 'gtest/foo.h');
+    expect(await readText('src/a/user.cc'), '#include "gtest/foo.h"\n');
   });
 
   test('多候选时报 multipleCandidates 且不修改', () async {

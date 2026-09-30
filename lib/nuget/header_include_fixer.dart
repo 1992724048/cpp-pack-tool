@@ -252,12 +252,16 @@ bool _landsUnderFilesRoot(String path) {
   };
 }
 
+/// 剥掉 [root] 前缀（`/` 分隔，不匹配返回 null）。[root] 取自全小写的布局常量，落点
+/// 以该常量拼接而成，故前缀比较无需再小写化，调用方传小写化或原样皆可。
+String? _stripRoot(String landing, String root) {
+  final String prefix = '$root/';
+  return landing.startsWith(prefix) ? landing.substring(prefix.length) : null;
+}
+
 String _packageDestination(String path, String namespace) {
   final String normalized = path.replaceAll('\\', '/');
-  if (!_landsUnderIncludeRoot(normalized)) {
-    return normalized;
-  }
-  return includePackageRelativePath(normalized, namespace);
+  return buildNativePayloadPath(normalized, _fileTypeOf(normalized), namespace);
 }
 
 /// 单个文本文件的 include 扫描状态机（块注释与 raw string 跨行跟踪）。
@@ -465,19 +469,24 @@ class _FileScanner {
   bool _resolvesInPackageLayout(String includePath, {required bool searchOwnDirectory}) {
     if (searchOwnDirectory) {
       final String selfLanding = _packageDestination(filePath, index.namespace);
-      final String? sibling = _normalizeRelativePath(_directoryOf(selfLanding), includePath);
-      if (_landsUnderIncludeRoot(filePath) && _existsInIncludeRoot(sibling)) {
-        return true;
-      }
-      if (_landsUnderFilesRoot(filePath) && _existsInFilesRoot(sibling)) {
-        return true;
+      if (_landsUnderIncludeRoot(filePath)) {
+        final String? selfDir = _stripRoot(_directoryOf(selfLanding).toLowerCase(), includeRoot);
+        if (selfDir != null && _existsInIncludeRoot(_normalizeRelativePath(selfDir, includePath))) {
+          return true;
+        }
+      } else if (_landsUnderFilesRoot(filePath)) {
+        final String? selfDir = _stripRoot(_directoryOf(selfLanding).toLowerCase(), filesRoot);
+        if (selfDir != null && _existsInFilesRoot(_normalizeRelativePath(selfDir, includePath))) {
+          return true;
+        }
       }
     }
     return _existsInIncludeRoot(_normalizeRelativePath('', includePath));
   }
 
-  String? _includeRootRelativeTarget(String candidate) =>
-      _landsUnderIncludeRoot(candidate) ? _packageDestination(candidate, index.namespace) : null;
+  String? _includeRootRelativeTarget(String candidate) => _landsUnderIncludeRoot(candidate)
+      ? _stripRoot(_packageDestination(candidate, index.namespace), includeRoot)
+      : null;
 
   String? _siblingBareNameTarget(String candidate) {
     if (!_landsUnderFilesRoot(candidate) ||
@@ -525,6 +534,8 @@ class _IncludeIndex {
   final Set<String> directoryNames = <String>{};
   final List<String> includeRoots = <String>[];
 
+  /// 两个索引都存包内落点，且各自相对自己的根（[includeRoot] / [filesRoot]）—— 与
+  /// `.targets` 下发的搜索根同坐标系，存源路径会让本目录查找与 files/ 兄弟判定同时失配。
   final Set<String> includeRootPaths = <String>{};
   final Set<String> filesRootPaths = <String>{};
   final Map<String, Map<String, String>> _candidateByLanding = <String, Map<String, String>>{};
@@ -550,9 +561,15 @@ class _IncludeIndex {
       byLanding[landing] = path;
     }
     if (_landsUnderIncludeRoot(path)) {
-      includeRootPaths.add(landing);
+      final String? stripped = _stripRoot(landing, includeRoot);
+      if (stripped != null) {
+        includeRootPaths.add(stripped);
+      }
     } else if (_landsUnderFilesRoot(path)) {
-      filesRootPaths.add(path.toLowerCase());
+      final String? stripped = _stripRoot(landing, filesRoot);
+      if (stripped != null) {
+        filesRootPaths.add(stripped);
+      }
     }
   }
 
