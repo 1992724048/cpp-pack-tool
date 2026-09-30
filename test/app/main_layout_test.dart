@@ -18,6 +18,7 @@ import 'package:cpp_nuget_pack/settings/settings_model.dart';
 import 'package:cpp_nuget_pack/nuget/ui/pack_export_dialog.dart';
 import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/app/about_page.dart';
+import 'package:cpp_nuget_pack/app/pack_app.dart';
 import 'package:cpp_nuget_pack/settings/ui/setting.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';

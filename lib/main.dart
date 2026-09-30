@@ -17,7 +17,6 @@ import 'package:cpp_nuget_pack/nuget/nupkg_exporter.dart';
 import 'package:cpp_nuget_pack/nuget/package_plan.dart';
 import 'package:cpp_nuget_pack/nuget/packaging_issues.dart';
 import 'package:cpp_nuget_pack/pack/file_scan.dart';
-import 'package:cpp_nuget_pack/shared/colors.dart';
 import 'package:cpp_nuget_pack/shared/format.dart';
 import 'package:cpp_nuget_pack/shared/svgs.dart';
 import 'package:cpp_nuget_pack/pack/system_entries.dart';
@@ -27,6 +26,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'app/app_info.dart';
+import 'app/pack_app.dart';
 import 'app/pack_toolbar.dart';
 import 'pack/ui/dialogs/add_directory_dialog.dart';
 import 'build/ui/build_pack_dialog.dart';
@@ -48,80 +48,7 @@ void main() {
   runApp(const PackTool());
 }
 
-class PackTool extends StatefulWidget {
-  const PackTool({super.key, this.store = const PackStore()});
-
-  final PackStore store;
-
-  @override
-  State<PackTool> createState() => _PackToolState();
-}
-
-class _PackToolState extends State<PackTool> {
-  SettingsModel _settings = const SettingsModel();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    SettingsModel settings;
-    try {
-      settings = await widget.store.loadSettings();
-    } catch (_) {
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-    setState(() => _settings = settings);
-  }
-
-  Future<void> _saveSettings(SettingsModel next) async {
-    setState(() => _settings = next);
-    await widget.store.saveSettings(next);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FluentApp(
-      title: 'C++ Pack',
-      themeMode: switch (_settings.themeMode) {
-        ThemeModeSetting.system => ThemeMode.system,
-        ThemeModeSetting.dark => ThemeMode.dark,
-        ThemeModeSetting.light => ThemeMode.light,
-      },
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      home: MainLayout(store: widget.store, settings: _settings, onSaveSettings: _saveSettings),
-    );
-  }
-}
-
 Future<void> _noopSaveSettings(SettingsModel settings) async {}
-
-typedef PackBuildEnvironmentPreparer = Future<BuildEnvironment> Function(
-  PackModel pack, {
-  required List<String> compilerPriority,
-  required List<toolchain.DetectedCompiler> cachedCompilers,
-  required CompilerDetectionCallback onCompilersDetected,
-});
-
-Future<BuildEnvironment> _preparePackBuildEnvironment(
-  PackModel pack, {
-  required List<String> compilerPriority,
-  required List<toolchain.DetectedCompiler> cachedCompilers,
-  required CompilerDetectionCallback onCompilersDetected,
-}) {
-  return preparePackBuildEnvironment(
-    pack,
-    priority: compilerPriority,
-    cachedCompilers: cachedCompilers,
-    onCompilersDetected: onCompilersDetected,
-  );
-}
 
 class MainLayout extends StatefulWidget {
   const MainLayout({
@@ -491,7 +418,7 @@ class _MainLayoutState extends State<MainLayout> {
           required List<String> compilerPriority,
           required List<toolchain.DetectedCompiler> cachedCompilers,
           required CompilerDetectionCallback onCompilersDetected,
-        }) => _preparePackBuildEnvironment(
+        }) => preparePackBuildEnvironmentDefault(
           pack,
           compilerPriority: compilerPriority,
           cachedCompilers: cachedCompilers,
