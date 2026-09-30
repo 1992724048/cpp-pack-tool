@@ -27,6 +27,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'app/app_info.dart';
+import 'app/pack_toolbar.dart';
 import 'pack/ui/dialogs/add_directory_dialog.dart';
 import 'build/ui/build_pack_dialog.dart';
 import 'pack/ui/dialogs/delete_pack_dialog.dart';
@@ -803,56 +804,17 @@ class _MainLayoutState extends State<MainLayout> {
       pane: NavigationPane(
         selected: _selected,
         onChanged: (int newIndex) => setState(() => _selected = newIndex),
-        header: Column(
-          mainAxisSize: .min,
-          spacing: 0,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                Tooltip(
-                  message: '添加文件夹',
-                  child: IconButton(icon: Svgs.addFolder, onPressed: _addFolder),
-                ),
-                Tooltip(
-                  message: '删除文件夹',
-                  child: IconButton(icon: Svgs.deleteFolder, onPressed: _hasSelectedPack ? _deleteSelectedPack : null),
-                ),
-                Tooltip(
-                  message: '重新映射',
-                  child: IconButton(icon: Svgs.mapAsDrive, onPressed: _hasSelectedPack ? _remapSelectedPack : null),
-                ),
-                Tooltip(
-                  message: '打包文件夹',
-                  child: IconButton(icon: Svgs.moveToFolder, onPressed: _hasSelectedPack ? _packSelectedPack : null),
-                ),
-                Tooltip(
-                  message: '历史记录',
-                  child: IconButton(
-                    icon: Svgs.historyFolder,
-                    onPressed: _hasSelectedPack ? _historySelectedPack : null,
-                  ),
-                ),
-                Tooltip(
-                  message: '依赖关系图',
-                  child: IconButton(
-                    icon: Svgs.internetConnection,
-                    onPressed: _hasSelectedPack ? _openDependencyGraph : null,
-                  ),
-                ),
-                Tooltip(
-                  message: '创建包结构',
-                  child: IconButton(
-                    icon: _creatingPackageStructure
-                        ? const SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
-                        : Svgs.openFolderInNewTab,
-                    onPressed: _creatingPackageStructure ? null : _createPackageStructure,
-                  ),
-                ),
-              ],
-            ),
-            Divider(style: DividerThemeData(horizontalMargin: .fromLTRB(0, 3, 8, 0))),
-          ],
+        header: PackToolbar(
+          onAddFolder: _addFolder,
+          onDeleteFolder: _hasSelectedPack ? _deleteSelectedPack : null,
+          onRemap: _hasSelectedPack ? _remapSelectedPack : null,
+          onPackFolder: _hasSelectedPack ? _packSelectedPack : null,
+          onHistory: _hasSelectedPack ? _historySelectedPack : null,
+          onDependencyGraph: _hasSelectedPack ? _openDependencyGraph : null,
+          onCreatePackageStructure: _creatingPackageStructure ? null : _createPackageStructure,
+          createPackageStructureIcon: _creatingPackageStructure
+              ? const SizedBox(width: 16, height: 16, child: ProgressRing(strokeWidth: 2))
+              : Svgs.openFolderInNewTab,
         ),
         displayMode: PaneDisplayMode.expanded,
         size: NavigationPaneSize(openMaxWidth: 260, openMinWidth: 260, compactWidth: 50),
