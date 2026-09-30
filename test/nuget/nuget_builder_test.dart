@@ -1311,15 +1311,32 @@ void main() {
       );
     });
 
-    test('包内无 msbuild .props 与 .targets 时不产出包级 props 且无相关导入', () async {
+    // 桶收窄（files/ 之下还须是 msbuild/ 桶）是双入口唯一的判据。夹具必须让 .props /
+    // .targets 落在 msbuild 桶【之外】，否则删掉桶段这条用例照样绿 —— 即零断言保护。
+    // FileModel.type 覆写正是这种状态的唯一成因：分类与扩展名判定不一致时才会出现。
+    // type 不覆写则 stray.props 会落进 files/msbuild/other/ 而重新落回桶内。
+    test('msbuild 桶外的 .props 与 .targets 不产出包级 props 且无相关导入', () async {
       final PackModel pack = _pack(sourcePath: r'D:\libs\mylib')
         ..files = <FileModel>[
           FileModel(name: 'main.cpp', path: 'src/main.cpp', size: 3),
+          FileModel(name: 'stray.props', path: 'other/stray.props', size: 1)
+            ..type = FileType.other,
+          FileModel(name: 'stray.targets', path: 'other/stray.targets', size: 1)
+            ..type = FileType.other,
         ];
 
       final PackagePlan plan = await _builder.buildPlan(pack);
 
-      expect(plan.fileCount, 3);
+      // 落点自校验：日后 buildNativePayloadPath 若把这两个文件挪回 msbuild 桶，
+      // 本用例会立刻转红报错，而不是退化成上面说的零保护状态。
+      expect(
+        plan.entries.map((PackageEntry entry) => entry.packagePath),
+        containsAll(<String>[
+          'build/native/files/other/other/stray.props',
+          'build/native/files/other/other/stray.targets',
+        ]),
+      );
+      expect(plan.fileCount, 5);
       expect(
         plan.entries.where((PackageEntry entry) => entry.packagePath == 'build/demo.props'),
         isEmpty,
@@ -1328,6 +1345,7 @@ void main() {
         _targetsOf(plan),
         isNot(contains(r'<Import Project="$(MSBuildThisFileDirectory)files\msbuild\')),
       );
+      expect(_targetsOf(plan), isNot(contains('stray')));
     });
 
     test('多个用户 msbuild .props 与 .targets 按路径字典序全部发射', () async {
