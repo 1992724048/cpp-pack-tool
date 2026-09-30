@@ -72,9 +72,9 @@ shutil.copy(TMP / "zlib.h", OUT / "zlib.h")
 shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 ```
 
-### .lib 的配置隔离约定
+### .lib / .a 的配置隔离约定
 
-自动派生的 `.lib` / `.a` 按**包内路径中的 `release` / `debug` 目录名**判定配置：
+自动派生的 `.lib` 与 `.a` 适用同一约定：按**包内路径中的 `release` / `debug` 目录名**判定配置。
 
 | 路径 | 生效范围 |
 | --- | --- |
@@ -82,7 +82,14 @@ shutil.copytree(TMP / "Release", OUT, dirs_exist_ok=True)
 | `files/library/x64/Debug/foo.lib` | 仅 `Configuration=Debug` |
 | `files/library/foo.lib` | 所有配置 |
 
-**目录名即契约**：把 `Release` 目录改名会让该 `.lib` 退回「所有配置」，链接器可能挑到错误版本且不报错。
+判定细则：
+
+- **大小写不敏感** —— `Release` / `RELEASE` / `release` 等价。
+- **多段命中取最后一个** —— `files/library/release/Debug/foo.lib` 归 `Debug`，越靠近文件名的目录段语义最强。
+
+写进 `.targets` 的附加库条目用的是包内文件名（如 MinGW 的 `libz.dll.a` 原样写入），链接器是否接受取决于工具链。
+
+**目录名即契约**：把 `Release` 目录改名会让该文件退回「所有配置」，链接器可能挑到错误版本且不报错。
 
 ## 交流群
 

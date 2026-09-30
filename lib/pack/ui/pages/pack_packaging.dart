@@ -12,8 +12,8 @@ const String _description =
     'source / library / assembly / resource / script / fortran / llvm / '
     'python / data / executable / other 子目录（根级许可证直接放在 files/ 下）；'
     '同时生成 .nuspec 与 .targets 构建集成文件。'
-    '提示：.lib 的 Release/Debug 隔离按路径中的 release / debug 目录名推断，'
-    '目录改名会导致隔离失效。';
+    '提示：.lib 与 .a 的 Release/Debug 隔离按路径中的 release / debug 目录名'
+    '推断（大小写不敏感，多段命中取最后一个），目录改名会导致隔离失效。';
 
 class PackPackaging extends StatefulWidget {
   const PackPackaging({super.key, required this.pack});

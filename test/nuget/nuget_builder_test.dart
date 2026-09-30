@@ -463,7 +463,12 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      expect(targets, isNot(contains(r'$(Configuration)')));
+      expect(
+        targets,
+        isNot(contains(r'$(Configuration)')),
+        reason: '本用例守的是手选全配置模型不切条件组；dll / pdb 走独立的运行时'
+            '项组，其不参与配置推断由「dll 与 pdb 不做配置隔离」用例把关',
+      );
       expect(targets, contains('<ItemDefinitionGroup>'), reason: '仍有全配置的分组');
     });
 
@@ -733,14 +738,37 @@ void main() {
 
       final String targets = _targetsOf(await _builder.buildPlan(pack));
 
-      final RegExp release = RegExp(
-        r"""Condition="'\$\(Configuration\)'=='Release'">\s*<ClCompile>[\s\S]*?<AdditionalDependencies>([^<]*)</AdditionalDependencies>""",
+      final int releaseGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">''',
       );
-      final RegExp debug = RegExp(
-        r"""Condition="'\$\(Configuration\)'=='Debug'">\s*<ClCompile>[\s\S]*?<AdditionalDependencies>([^<]*)</AdditionalDependencies>""",
+      final int debugGroupIndex = targets.indexOf(
+        r'''<ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">''',
       );
-      expect(release.firstMatch(targets)!.group(1), contains('foo.lib'));
-      expect(debug.firstMatch(targets)!.group(1), contains('foo.lib'));
+      expect(releaseGroupIndex, greaterThan(-1), reason: 'release 段切出 Release 条件定义组');
+      expect(debugGroupIndex, greaterThan(releaseGroupIndex), reason: 'Debug 条件定义组紧随其后');
+      final String releaseGroup = targets.substring(releaseGroupIndex, debugGroupIndex);
+      final String debugGroup = targets.substring(debugGroupIndex);
+      expect(
+        releaseGroup,
+        contains(
+          '<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+        reason: 'Release 组发射一条 foo.lib',
+      );
+      expect(
+        debugGroup,
+        contains(
+          '<AdditionalDependencies>foo.lib;%(AdditionalDependencies)</AdditionalDependencies>',
+        ),
+        reason: 'Debug 组也发射一条 foo.lib',
+      );
+      expect(releaseGroup, contains(r'files\library\x64\Release'), reason: 'Release 组取 x64/Release 的派生目录');
+      expect(debugGroup, contains(r'files\library\x64\Debug'), reason: 'Debug 组取 x64/Debug 的派生目录');
+      expect(
+        targets.substring(0, releaseGroupIndex),
+        isNot(contains('foo.lib')),
+        reason: '同名不同配置各落一桶，无条件组不重复列出',
+      );
     });
 
     test('.a 与 .lib 同规则按路径段隔离且不生成运行时二进制部署', () async {
@@ -998,18 +1026,25 @@ void main() {
 
       expect(
         targets,
+        isNot(contains('<AdditionalDependencies>')),
+        reason: 'dll 不参与附加库派生：本包既无 .lib / .a 也无手选 libraries',
+      );
+      expect(
+        'bar.dll'.allMatches(targets).length,
+        1,
+        reason: 'dll 仅经 PkgRuntimeBinary 发射一次：既不派生附加库与库目录，'
+            '也不因路径段被切进条件组',
+      );
+      expect(
+        targets,
         contains(
           r'<PkgRuntimeBinary Include="$(MSBuildThisFileDirectory)files\library\Debug\bar.dll" />',
         ),
       );
       expect(
         targets,
-        isNot(contains('AdditionalDependencies>%(AdditionalDependencies)')),
-      );
-      expect(
-        targets,
         isNot(contains('<ItemDefinitionGroup Condition')),
-        reason: '运行时二进制的路径段不参与配置推断',
+        reason: '运行时二进制不产生按配置切分的定义组',
       );
     });
 
